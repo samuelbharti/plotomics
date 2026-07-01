@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>bioviz dev harness</title>
+    <style>
+      body { margin: 0; font-family: system-ui, sans-serif; }
+      header { padding: 8px 16px; border-bottom: 1px solid #e5e7eb; }
+      select { font-size: 14px; padding: 4px; }
+      #stage { width: 100vw; height: calc(100vh - 50px); }
+    </style>
+  </head>
+  <body>
+    <header>
+      bioviz · <select id="picker"></select>
+      <span id="status"></span>
+    </header>
+    <div id="stage"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

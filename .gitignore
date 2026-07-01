@@ -1,0 +1,36 @@
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+.pnpm-store/
+npm-debug.log*
+pnpm-debug.log*
+
+# Build outputs synced into wrappers (generated)
+r/bioviz/inst/htmlwidgets/lib/bioviz/
+python/src/bioviz/static/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+.pytest_cache/
+.ruff_cache/
+dist-python/
+
+# R
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rcheck/
+bioviz_*.tar.gz
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
+*.log
