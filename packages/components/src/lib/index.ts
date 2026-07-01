@@ -7,6 +7,12 @@ export { registerComponent } from "./umd.js";
 export { decodeModelData } from "./decode-model.js";
 
 export {
+  createClustermap,
+  defaultClustermapOptions,
+  type ClustermapOptions,
+} from "../components/clustermap.js";
+
+export {
   createVolcano,
   defaultVolcanoOptions,
   type VolcanoOptions,
