@@ -7,6 +7,12 @@ export { registerComponent } from "./umd.js";
 export { decodeModelData } from "./decode-model.js";
 
 export {
+  createIgv,
+  defaultIgvOptions,
+  type IgvOptions,
+} from "../components/igv.js";
+
+export {
   createVolcano,
   defaultVolcanoOptions,
   type VolcanoOptions,

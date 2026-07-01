@@ -3,6 +3,7 @@
  * New components: add a `demos.<name> = (el) => { ... }` entry that mounts your
  * factory against synthetic data, then pick it from the dropdown.
  */
+import { createIgv } from "../src/components/igv.js";
 import { createVolcano } from "../src/components/volcano.js";
 import type { BiovizData } from "@bioviz/core";
 
@@ -23,6 +24,22 @@ function syntheticVolcano(n: number): BiovizData {
 }
 
 const demos: Record<string, Demo> = {
+  // Genome viewer: hg38 with a small public bigWig track streamed by igv.js.
+  igv: (el) =>
+    createIgv(el, {
+      options: {
+        genome: "hg38",
+        locus: "chr8:127,736,588-127,739,371",
+        tracks: [
+          {
+            name: "CTCF ENCODE",
+            url: "https://www.encodeproject.org/files/ENCFF356YES/@@download/ENCFF356YES.bigWig",
+            format: "bigWig",
+            height: 100,
+          },
+        ],
+      },
+    }),
   volcano: (el) => {
     const inst = createVolcano(el, {
       data: syntheticVolcano(200_000),
