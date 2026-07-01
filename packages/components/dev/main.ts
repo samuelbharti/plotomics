@@ -3,10 +3,51 @@
  * New components: add a `demos.<name> = (el) => { ... }` entry that mounts your
  * factory against synthetic data, then pick it from the dropdown.
  */
+import { createNetwork } from "../src/components/network.js";
 import { createVolcano } from "../src/components/volcano.js";
 import type { BiovizData } from "@bioviz/core";
 
 type Demo = (el: HTMLElement) => { destroy(): void };
+
+/** Synthetic clustered interaction network: `communities` blobs of nodes with
+ * dense intra-community and sparse inter-community edges. No coordinates, so
+ * the component runs ForceAtlas2 to lay it out. */
+function syntheticNetwork(nodes: number, communities: number): BiovizData {
+  const id: string[] = new Array(nodes);
+  const nodeGroup: string[] = new Array(nodes);
+  const size = new Float32Array(nodes);
+  const comm = new Int32Array(nodes);
+  for (let i = 0; i < nodes; i += 1) {
+    id[i] = `N${i}`;
+    comm[i] = i % communities;
+    nodeGroup[i] = `module ${comm[i] + 1}`;
+    size[i] = 2 + Math.random() * 6;
+  }
+  const byComm: number[][] = Array.from({ length: communities }, () => []);
+  for (let i = 0; i < nodes; i += 1) byComm[comm[i]!]!.push(i);
+
+  const source: string[] = [];
+  const target: string[] = [];
+  const edgesPerNode = 3;
+  for (let i = 0; i < nodes; i += 1) {
+    const peers = byComm[comm[i]!]!;
+    for (let k = 0; k < edgesPerNode; k += 1) {
+      // Mostly wire within community; occasionally bridge to another.
+      const j =
+        Math.random() < 0.05
+          ? Math.floor(Math.random() * nodes)
+          : peers[Math.floor(Math.random() * peers.length)]!;
+      if (j !== i) {
+        source.push(id[i]!);
+        target.push(id[j]!);
+      }
+    }
+  }
+  return {
+    columns: { id, size, source, target },
+    meta: { nodeGroup },
+  };
+}
 
 function syntheticVolcano(n: number): BiovizData {
   const x = new Float32Array(n);
@@ -23,6 +64,13 @@ function syntheticVolcano(n: number): BiovizData {
 }
 
 const demos: Record<string, Demo> = {
+  network: (el) => {
+    const inst = createNetwork(el, {
+      data: syntheticNetwork(5_000, 8),
+      options: { iterations: 150, labelThreshold: 6 },
+    });
+    return inst;
+  },
   volcano: (el) => {
     const inst = createVolcano(el, {
       data: syntheticVolcano(200_000),

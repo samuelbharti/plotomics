@@ -7,6 +7,12 @@ export { registerComponent } from "./umd.js";
 export { decodeModelData } from "./decode-model.js";
 
 export {
+  createNetwork,
+  defaultNetworkOptions,
+  type NetworkOptions,
+} from "../components/network.js";
+
+export {
   createVolcano,
   defaultVolcanoOptions,
   type VolcanoOptions,
