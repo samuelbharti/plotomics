@@ -7,6 +7,12 @@ export { registerComponent } from "./umd.js";
 export { decodeModelData } from "./decode-model.js";
 
 export {
+  createGosling,
+  defaultGoslingOptions,
+  type GoslingOptions,
+} from "../components/gosling.js";
+
+export {
   createVolcano,
   defaultVolcanoOptions,
   type VolcanoOptions,

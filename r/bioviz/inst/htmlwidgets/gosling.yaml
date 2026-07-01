@@ -1,0 +1,5 @@
+dependencies:
+  - name: bioviz-gosling
+    version: 0.0.0
+    src: htmlwidgets/lib/bioviz
+    script: gosling.js
