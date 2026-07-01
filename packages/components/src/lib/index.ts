@@ -7,6 +7,12 @@ export { registerComponent } from "./umd.js";
 export { decodeModelData } from "./decode-model.js";
 
 export {
+  createTreemap,
+  defaultTreemapOptions,
+  type TreemapOptions,
+} from "../components/treemap.js";
+
+export {
   createVolcano,
   defaultVolcanoOptions,
   type VolcanoOptions,
