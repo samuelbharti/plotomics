@@ -7,10 +7,20 @@ export { registerComponent } from "./umd.js";
 export { decodeModelData } from "./decode-model.js";
 
 export {
+  createHic,
+  defaultHicOptions,
+  type HicOptions,
+  type HicColormap,
+  type HicTransform,
+} from "../components/hic.js";
+
+export {
   createIgv,
   defaultIgvOptions,
   type IgvOptions,
 } from "../components/igv.js";
+
+export {
   createTreemap,
   defaultTreemapOptions,
   type TreemapOptions,

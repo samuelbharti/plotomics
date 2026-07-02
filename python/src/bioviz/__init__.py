@@ -10,6 +10,7 @@ Add new components here, keeping the list sorted so parallel PRs append cleanly.
 from __future__ import annotations
 
 from ._base import BiovizWidget, pack_columns
+from .hic import HiC
 from .igv import IGV
 from .treemap import Treemap
 from .volcano import Volcano
@@ -17,6 +18,7 @@ from .volcano import Volcano
 __all__ = [
     "BiovizWidget",
     "pack_columns",
+    "HiC",
     "IGV",
     "Treemap",
     "Volcano",
