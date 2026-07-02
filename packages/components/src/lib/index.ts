@@ -19,6 +19,12 @@ export {
 } from "../components/gosling.js";
 
 export {
+  createHeatmap,
+  defaultHeatmapOptions,
+  type HeatmapOptions,
+} from "../components/heatmap.js";
+
+export {
   createHic,
   defaultHicOptions,
   type HicOptions,
