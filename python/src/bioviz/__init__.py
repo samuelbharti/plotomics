@@ -11,12 +11,24 @@ from __future__ import annotations
 
 from ._base import BiovizWidget, pack_columns
 from .heatmap import Heatmap
+from .gosling import Gosling
+from .network import Network
+from .clustermap import Clustermap
+from .hic import HiC
+from .igv import IGV
+from .treemap import Treemap
 from .volcano import Volcano
 
 __all__ = [
     "BiovizWidget",
     "pack_columns",
     "Heatmap",
+    "Gosling",
+    "Network",
+    "Clustermap",
+    "HiC",
+    "IGV",
+    "Treemap",
     "Volcano",
 ]
 

@@ -15,12 +15,23 @@
   "dependencies": {
     "@bioviz/core": "workspace:*",
     "d3-array": "^3.2.4",
+    "d3-hierarchy": "^3.1.2",
     "d3-scale": "^4.0.2",
+    "gosling.js": "^1.0.7",
+    "graphology": "^0.26.0",
+    "graphology-layout-forceatlas2": "^0.10.1",
+    "igv": "^3.8.3",
+    "ml-hclust": "^4.0.0",
+    "pixi.js": "^6.5.10",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "regl": "^2.1.1",
-    "regl-scatterplot": "^1.16.0"
+    "regl-scatterplot": "^1.16.0",
+    "sigma": "^3.0.3"
   },
   "devDependencies": {
     "@types/d3-array": "^3.2.2",
+    "@types/d3-hierarchy": "^3.1.7",
     "@types/d3-scale": "^4.0.9",
     "esbuild": "^0.24.0",
     "typescript": "^5.6.3",

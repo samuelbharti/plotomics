@@ -7,10 +7,48 @@ export { registerComponent } from "./umd.js";
 export { decodeModelData } from "./decode-model.js";
 
 export {
+  createClustermap,
+  defaultClustermapOptions,
+  type ClustermapOptions,
+} from "../components/clustermap.js";
+
+export {
+  createGosling,
+  defaultGoslingOptions,
+  type GoslingOptions,
+} from "../components/gosling.js";
+
+export {
   createHeatmap,
   defaultHeatmapOptions,
   type HeatmapOptions,
 } from "../components/heatmap.js";
+
+export {
+  createHic,
+  defaultHicOptions,
+  type HicOptions,
+  type HicColormap,
+  type HicTransform,
+} from "../components/hic.js";
+
+export {
+  createIgv,
+  defaultIgvOptions,
+  type IgvOptions,
+} from "../components/igv.js";
+
+export {
+  createNetwork,
+  defaultNetworkOptions,
+  type NetworkOptions,
+} from "../components/network.js";
+
+export {
+  createTreemap,
+  defaultTreemapOptions,
+  type TreemapOptions,
+} from "../components/treemap.js";
 
 export {
   createVolcano,
