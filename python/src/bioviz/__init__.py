@@ -11,12 +11,14 @@ from __future__ import annotations
 
 from ._base import BiovizWidget, pack_columns
 from .igv import IGV
+from .treemap import Treemap
 from .volcano import Volcano
 
 __all__ = [
     "BiovizWidget",
     "pack_columns",
     "IGV",
+    "Treemap",
     "Volcano",
 ]
 

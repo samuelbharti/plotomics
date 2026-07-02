@@ -4,10 +4,47 @@
  * factory against synthetic data, then pick it from the dropdown.
  */
 import { createIgv } from "../src/components/igv.js";
+import { createTreemap } from "../src/components/treemap.js";
 import { createVolcano } from "../src/components/volcano.js";
 import type { BiovizData } from "@bioviz/core";
 
 type Demo = (el: HTMLElement) => { destroy(): void };
+
+/**
+ * Synthetic gene/pathway hierarchy: `pathways` top-level sets, each with a
+ * random number of leaf genes (weighted values). Produces the flat
+ * id/parent/value columns the treemap consumes, at ~`leaves` genes total.
+ */
+function syntheticTree(pathways: number, leaves: number): BiovizData {
+  const id: string[] = ["root"];
+  const parent: string[] = [""];
+  const value: number[] = [0];
+  const labels: string[] = ["All pathways"];
+  const perPathway = Math.max(1, Math.floor(leaves / pathways));
+  let g = 0;
+  for (let p = 0; p < pathways; p += 1) {
+    const pid = `P${p}`;
+    id.push(pid);
+    parent.push("root");
+    value.push(0);
+    labels.push(`Pathway ${p}`);
+    // Vary set size so tiles differ in scale (some big, some tiny).
+    const count = Math.max(1, Math.round(perPathway * (0.3 + Math.random() * 1.4)));
+    for (let k = 0; k < count; k += 1) {
+      const gid = `g${g}`;
+      id.push(gid);
+      parent.push(pid);
+      // Log-normal-ish weights so a few genes dominate each pathway.
+      value.push(Math.round(1 + Math.pow(Math.random(), 3) * 500));
+      labels.push(`GENE${g}`);
+      g += 1;
+    }
+  }
+  return {
+    columns: { id, parent, value: new Float64Array(value) },
+    meta: { labels },
+  };
+}
 
 function syntheticVolcano(n: number): BiovizData {
   const x = new Float32Array(n);
@@ -40,6 +77,13 @@ const demos: Record<string, Demo> = {
         ],
       },
     }),
+  treemap: (el) => {
+    const inst = createTreemap(el, {
+      data: syntheticTree(12, 5000),
+      options: { tile: "squarify", colorBy: "parent", labelMinSize: 36 },
+    });
+    return inst;
+  },
   volcano: (el) => {
     const inst = createVolcano(el, {
       data: syntheticVolcano(200_000),
