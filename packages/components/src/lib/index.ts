@@ -27,6 +27,12 @@ export {
 } from "../components/igv.js";
 
 export {
+  createNetwork,
+  defaultNetworkOptions,
+  type NetworkOptions,
+} from "../components/network.js";
+
+export {
   createTreemap,
   defaultTreemapOptions,
   type TreemapOptions,
