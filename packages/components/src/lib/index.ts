@@ -13,6 +13,12 @@ export {
 } from "../components/clustermap.js";
 
 export {
+  createGosling,
+  defaultGoslingOptions,
+  type GoslingOptions,
+} from "../components/gosling.js";
+
+export {
   createHic,
   defaultHicOptions,
   type HicOptions,
