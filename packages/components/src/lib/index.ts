@@ -13,6 +13,26 @@ export {
 } from "../components/clustermap.js";
 
 export {
+  createHic,
+  defaultHicOptions,
+  type HicOptions,
+  type HicColormap,
+  type HicTransform,
+} from "../components/hic.js";
+
+export {
+  createIgv,
+  defaultIgvOptions,
+  type IgvOptions,
+} from "../components/igv.js";
+
+export {
+  createTreemap,
+  defaultTreemapOptions,
+  type TreemapOptions,
+} from "../components/treemap.js";
+
+export {
   createVolcano,
   defaultVolcanoOptions,
   type VolcanoOptions,

@@ -4,6 +4,9 @@
  * factory against synthetic data, then pick it from the dropdown.
  */
 import { createClustermap } from "../src/components/clustermap.js";
+import { createHic } from "../src/components/hic.js";
+import { createIgv } from "../src/components/igv.js";
+import { createTreemap } from "../src/components/treemap.js";
 import { createVolcano } from "../src/components/volcano.js";
 import type { BiovizData } from "@bioviz/core";
 
@@ -51,6 +54,78 @@ function shuffle(n: number): number[] {
   return a;
 }
 
+ * Synthetic Hi-C contact matrix: distance-decay background (contacts fall off
+ * away from the diagonal) plus a few TAD-like square domains and off-diagonal
+ * loop dots, so LOD/zoom/pan can be eyeballed at scale.
+ */
+function syntheticHic(n: number): BiovizData {
+  const values = new Float32Array(n * n);
+  const domains: [number, number][] = [];
+  let start = 0;
+  while (start < n) {
+    const len = 20 + Math.floor(Math.random() * 60);
+    domains.push([start, Math.min(n, start + len)]);
+    start += len;
+  }
+  const inDomain = (i: number, j: number) =>
+    domains.some(([a, b]) => i >= a && i < b && j >= a && j < b);
+  for (let i = 0; i < n; i += 1) {
+    for (let j = i; j < n; j += 1) {
+      const d = j - i;
+      // Power-law distance decay + noise.
+      let v = 1200 / Math.pow(d + 1, 1.15) + Math.random() * 4;
+      if (inDomain(i, j)) v *= 2.2; // enriched within TADs
+      values[i * n + j] = v;
+      values[j * n + i] = v; // symmetric
+    }
+  }
+  // A handful of bright loop dots off the diagonal.
+  for (let k = 0; k < 12; k += 1) {
+    const i = Math.floor(Math.random() * (n - 10));
+    const j = i + 10 + Math.floor(Math.random() * (n - i - 10));
+    if (j >= n) continue;
+    const peak = 300 + Math.random() * 400;
+    values[i * n + j] += peak;
+    values[j * n + i] += peak;
+  }
+  return {
+    columns: { values },
+    meta: { n, binSize: 10_000, chrom: "chr (synthetic)" },
+ * Synthetic gene/pathway hierarchy: `pathways` top-level sets, each with a
+ * random number of leaf genes (weighted values). Produces the flat
+ * id/parent/value columns the treemap consumes, at ~`leaves` genes total.
+ */
+function syntheticTree(pathways: number, leaves: number): BiovizData {
+  const id: string[] = ["root"];
+  const parent: string[] = [""];
+  const value: number[] = [0];
+  const labels: string[] = ["All pathways"];
+  const perPathway = Math.max(1, Math.floor(leaves / pathways));
+  let g = 0;
+  for (let p = 0; p < pathways; p += 1) {
+    const pid = `P${p}`;
+    id.push(pid);
+    parent.push("root");
+    value.push(0);
+    labels.push(`Pathway ${p}`);
+    // Vary set size so tiles differ in scale (some big, some tiny).
+    const count = Math.max(1, Math.round(perPathway * (0.3 + Math.random() * 1.4)));
+    for (let k = 0; k < count; k += 1) {
+      const gid = `g${g}`;
+      id.push(gid);
+      parent.push(pid);
+      // Log-normal-ish weights so a few genes dominate each pathway.
+      value.push(Math.round(1 + Math.pow(Math.random(), 3) * 500));
+      labels.push(`GENE${g}`);
+      g += 1;
+    }
+  }
+  return {
+    columns: { id, parent, value: new Float64Array(value) },
+    meta: { labels },
+  };
+}
+
 function syntheticVolcano(n: number): BiovizData {
   const x = new Float32Array(n);
   const y = new Float32Array(n);
@@ -71,6 +146,34 @@ const demos: Record<string, Demo> = {
       data: syntheticMatrix(120, 60, 4),
       options: { colormap: "rdbu", zScore: true, linkage: "average" },
     }),
+  hic: (el) => {
+    // 1024x1024 = ~1M cells; LOD keeps pan/zoom smooth.
+    const inst = createHic(el, {
+      data: syntheticHic(1024),
+      options: { transform: "log", label: "chr (synthetic)" },
+  // Genome viewer: hg38 with a small public bigWig track streamed by igv.js.
+  igv: (el) =>
+    createIgv(el, {
+      options: {
+        genome: "hg38",
+        locus: "chr8:127,736,588-127,739,371",
+        tracks: [
+          {
+            name: "CTCF ENCODE",
+            url: "https://www.encodeproject.org/files/ENCFF356YES/@@download/ENCFF356YES.bigWig",
+            format: "bigWig",
+            height: 100,
+          },
+        ],
+      },
+    }),
+  treemap: (el) => {
+    const inst = createTreemap(el, {
+      data: syntheticTree(12, 5000),
+      options: { tile: "squarify", colorBy: "parent", labelMinSize: 36 },
+    });
+    return inst;
+  },
   volcano: (el) => {
     const inst = createVolcano(el, {
       data: syntheticVolcano(200_000),
