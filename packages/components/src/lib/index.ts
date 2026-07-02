@@ -13,6 +13,14 @@ export {
   type HicColormap,
   type HicTransform,
 } from "../components/hic.js";
+  createIgv,
+  defaultIgvOptions,
+  type IgvOptions,
+} from "../components/igv.js";
+  createTreemap,
+  defaultTreemapOptions,
+  type TreemapOptions,
+} from "../components/treemap.js";
 
 export {
   createVolcano,
