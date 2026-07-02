@@ -1,0 +1,73 @@
+import numpy as np
+import pytest
+
+from bioviz import Network
+
+
+def test_network_builds_traits_from_dicts():
+    nodes = {
+        "id": ["a", "b", "c"],
+        "x": [0.0, 1.0, 2.0],
+        "y": [0.0, 1.0, 0.0],
+        "size": [4.0, 8.0, 6.0],
+        "group": ["G1", "G1", "G2"],
+        "label": ["Alpha", "Beta", "Gamma"],
+    }
+    edges = {"source": ["a", "b"], "target": ["b", "c"], "weight": [1.5, 2.0]}
+    w = Network(
+        nodes, edges, layout="precomputed", iterations=100, label_threshold=5
+    )
+
+    assert w.data["columns"]["id"] == ["a", "b", "c"]
+    assert w.data["columns"]["source"] == ["a", "b"]
+    assert w.data["columns"]["target"] == ["b", "c"]
+    assert w.data["meta"]["nodeGroup"] == ["G1", "G1", "G2"]
+    assert w.data["meta"]["nodeLabels"] == ["Alpha", "Beta", "Gamma"]
+    assert w.options["layout"] == "precomputed"
+    assert w.options["iterations"] == 100
+    assert w.options["labelThreshold"] == 5
+
+    # x, y, size (nodes) + weight (edges) packed as float32 columns.
+    names = {c["name"] for c in w.schema["columns"]}
+    assert names == {"x", "y", "size", "weight"}
+    # 3 node coords/sizes (3 cols x 3) + 2 weights, all float32 (4 bytes).
+    assert len(w.buffer) == (3 * 3 + 2) * 4
+
+
+def test_network_omits_optional_columns():
+    nodes = {"id": ["a", "b"]}
+    edges = {"source": ["a"], "target": ["b"]}
+    w = Network(nodes, edges)
+
+    assert "nodeGroup" not in w.data["meta"]
+    assert "nodeLabels" not in w.data["meta"]
+    assert w.schema["columns"] == []
+    assert w.buffer == b""
+    assert w.options["layout"] == "forceatlas2"
+
+
+def test_network_forwards_palette():
+    w = Network(
+        {"id": ["a", "b"]},
+        {"source": ["a"], "target": ["b"]},
+        palette=["#111111", "#222222"],
+    )
+    assert w.options["palette"] == ["#111111", "#222222"]
+
+
+def test_network_requires_id():
+    with pytest.raises(ValueError, match="`id`"):
+        Network({"x": [1, 2]}, {"source": ["a"], "target": ["b"]})
+
+
+def test_network_requires_source_and_target():
+    with pytest.raises(ValueError, match="source` and `target`"):
+        Network({"id": ["a", "b"]}, {"source": ["a"]})
+
+
+def test_network_accepts_numpy_id_arrays():
+    nodes = {"id": np.array(["a", "b"]), "size": np.array([3.0, 5.0])}
+    edges = {"source": np.array(["a"]), "target": np.array(["b"])}
+    w = Network(nodes, edges)
+    assert w.data["columns"]["id"] == ["a", "b"]
+    assert {c["name"] for c in w.schema["columns"]} == {"size"}
