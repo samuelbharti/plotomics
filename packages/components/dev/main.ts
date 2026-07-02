@@ -3,6 +3,7 @@
  * New components: add a `demos.<name> = (el) => { ... }` entry that mounts your
  * factory against synthetic data, then pick it from the dropdown.
  */
+import { createHeatmap } from "../src/components/heatmap.js";
 import { createVolcano } from "../src/components/volcano.js";
 import type { BiovizData } from "@bioviz/core";
 
@@ -22,7 +23,39 @@ function syntheticVolcano(n: number): BiovizData {
   return { columns: { x, y, label } };
 }
 
+// A large expression matrix with block structure so patterns are visible even
+// zoomed out. 1000 x 1000 = 1,000,000 cells uploaded as one luminance texture.
+function syntheticMatrix(nrows: number, ncols: number): BiovizData {
+  const values = new Float32Array(nrows * ncols);
+  const rowLabels: string[] = [];
+  const colLabels: string[] = [];
+  for (let c = 0; c < ncols; c += 1) colLabels.push(`S${c}`);
+  const blocks = 6;
+  for (let r = 0; r < nrows; r += 1) {
+    rowLabels.push(`GENE${r}`);
+    const rowBlock = Math.floor((r / nrows) * blocks);
+    for (let c = 0; c < ncols; c += 1) {
+      const colBlock = Math.floor((c / ncols) * blocks);
+      // On-diagonal blocks are up-regulated; add smooth gradient + noise.
+      const base = rowBlock === colBlock ? 3 : 0;
+      const wave = Math.sin((r / nrows) * 6.283) * Math.cos((c / ncols) * 6.283);
+      values[r * ncols + c] = base + wave + (Math.random() - 0.5) * 1.5;
+    }
+  }
+  return {
+    columns: { values },
+    meta: { nrows, ncols, rowLabels, colLabels },
+  };
+}
+
 const demos: Record<string, Demo> = {
+  heatmap: (el) => {
+    const inst = createHeatmap(el, {
+      data: syntheticMatrix(1000, 1000),
+      options: { colormap: "viridis", zScore: false },
+    });
+    return inst;
+  },
   volcano: (el) => {
     const inst = createVolcano(el, {
       data: syntheticVolcano(200_000),

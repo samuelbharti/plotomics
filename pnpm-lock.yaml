@@ -23,6 +23,9 @@ importers:
       d3-scale:
         specifier: ^4.0.2
         version: 4.0.2
+      regl:
+        specifier: ^2.1.1
+        version: 2.1.1
       regl-scatterplot:
         specifier: ^1.16.0
         version: 1.16.0(pub-sub-es@3.0.0)(regl@2.1.1)

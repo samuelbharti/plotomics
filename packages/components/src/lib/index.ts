@@ -7,6 +7,12 @@ export { registerComponent } from "./umd.js";
 export { decodeModelData } from "./decode-model.js";
 
 export {
+  createHeatmap,
+  defaultHeatmapOptions,
+  type HeatmapOptions,
+} from "../components/heatmap.js";
+
+export {
   createVolcano,
   defaultVolcanoOptions,
   type VolcanoOptions,
