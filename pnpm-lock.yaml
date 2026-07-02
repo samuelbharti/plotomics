@@ -26,6 +26,9 @@ importers:
       d3-scale:
         specifier: ^4.0.2
         version: 4.0.2
+      igv:
+        specifier: ^3.8.3
+        version: 3.8.3
       regl-scatterplot:
         specifier: ^1.16.0
         version: 1.16.0(pub-sub-es@3.0.0)(regl@2.1.1)
@@ -1017,6 +1020,9 @@ packages:
   gl-matrix@3.4.4:
     resolution: {integrity: sha512-latSnyDNt/8zYUB6VIJ6PCh2jBjJX6gnDsoCZ7LyW7GkqrD51EWwa9qCoGixj8YqBtETQK/xY7OmpTF8xz1DdQ==}
 
+  igv@3.8.3:
+    resolution: {integrity: sha512-/aIDZNQjmvRV7fgIiLHUnTmR0uzZ2b8+pT+lVNzM8Ol6c5r1StQDAn9pHVdnX/QH7j3V8Fc3qBW7dQC5T9YzNQ==}
+
   internmap@2.0.3:
     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
     engines: {node: '>=12'}
@@ -1987,6 +1993,8 @@ snapshots:
     optional: true
 
   gl-matrix@3.4.4: {}
+
+  igv@3.8.3: {}
 
   internmap@2.0.3: {}
 
