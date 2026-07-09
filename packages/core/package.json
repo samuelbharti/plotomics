@@ -1,8 +1,16 @@
 {
   "name": "@bioviz/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Shared contract, theming, color scales, binary transport and export helpers for bioviz components.",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/samuelbharti/visualization-components.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/samuelbharti/visualization-components#readme",
+  "bugs": "https://github.com/samuelbharti/visualization-components/issues",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -13,6 +21,9 @@
     }
   },
   "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
