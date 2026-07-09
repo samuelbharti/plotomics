@@ -1,0 +1,40 @@
+version: 2
+updates:
+  # JavaScript / TypeScript — pnpm workspace manifest at the repo root.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Collapse routine minor/patch bumps into a single PR to cut noise.
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions used by the workflows in .github/workflows.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Python package (anywidget wrapper).
+  - package-ecosystem: pip
+    directory: "/python"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      pip-minor-patch:
+        update-types:
+          - minor
+          - patch

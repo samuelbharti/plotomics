@@ -14,10 +14,12 @@
     "dist": "pnpm build && pnpm sync",
     "test": "pnpm -r --filter \"./packages/**\" test",
     "typecheck": "pnpm -r --filter \"./packages/**\" typecheck",
-    "lint": "pnpm -r --filter \"./packages/**\" lint",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
     "dev": "pnpm --filter @bioviz/components dev"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.3",
     "typescript": "^5.6.3"
   }
 }

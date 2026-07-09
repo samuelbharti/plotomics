@@ -1,0 +1,114 @@
+name: Bug report
+description: Report a defect in a bioviz component or one of its language wrappers.
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug! A minimal reproduction and an accurate dataset
+        size make performance issues far faster to diagnose. These components
+        target large data, so scale matters.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and this has not been reported yet.
+          required: true
+        - label: I reproduced this on the latest published version or on `main`.
+          required: false
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which visualization component is affected?
+      options:
+        - Volcano
+        - Heatmap
+        - Treemap
+        - Clustermap
+        - Hi-C
+        - IGV
+        - Gosling
+        - Network
+        - Embedding
+        - Not component-specific / core
+    validations:
+      required: true
+  - type: dropdown
+    id: wrapper
+    attributes:
+      label: Language wrapper
+      description: Where did you hit the bug?
+      options:
+        - JS / TypeScript (@bioviz/components)
+        - R (htmlwidgets)
+        - Python (anywidget)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: e.g. npm 0.1.0, R bioviz 0.1.0, PyPI bioviz 0.1.0, or a git commit SHA.
+      placeholder: "0.0.0 / commit sha"
+    validations:
+      required: false
+  - type: dropdown
+    id: dataset-size
+    attributes:
+      label: Dataset size
+      description: Approximate number of data points or rows x cols involved.
+      options:
+        - "< 1k"
+        - "1k - 100k"
+        - "100k - 1M"
+        - "1M - 10M"
+        - "> 10M"
+        - Not applicable
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Minimal steps or code to reproduce. Include the data shape and the options object if relevant.
+      placeholder: |
+        ```r
+        volcano(df, options = list(fcThreshold = 1))
+        ```
+        1. Render with the snippet above
+        2. Zoom in
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Paste any browser console, R, or Python errors verbatim.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        OS, browser (+ version), and the relevant runtime version:
+        Node, R (`R.version.string`), or Python. For Jupyter / Shiny / RStudio,
+        note the host and its version.
+      placeholder: |
+        - OS: macOS 14.5
+        - Browser: Chrome 126
+        - Node 22 / R 4.4.0 / Python 3.12
+        - Host: JupyterLab 4.2 / Shiny 1.8
+    validations:
+      required: true
