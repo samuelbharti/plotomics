@@ -1,0 +1,12 @@
+# Code owners for the bioviz monorepo.
+# Listed owners are automatically requested for review on matching PRs.
+# Reference: https://docs.github.com/articles/about-code-owners
+
+# Global fallback — everything is owned by the repo owner.
+*                @samuelbharti
+
+# Shared core: the contract every component depends on.
+/packages/core/  @samuelbharti
+
+# Repo governance, CI, and automation.
+/.github/        @samuelbharti
