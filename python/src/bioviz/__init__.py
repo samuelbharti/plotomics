@@ -18,6 +18,7 @@ from .hic import HiC
 from .igv import IGV
 from .treemap import Treemap
 from .volcano import Volcano
+from .embedding import Embedding
 
 __all__ = [
     "BiovizWidget",
@@ -30,6 +31,7 @@ __all__ = [
     "IGV",
     "Treemap",
     "Volcano",
+    "Embedding",
 ]
 
 __version__ = "0.0.0"
