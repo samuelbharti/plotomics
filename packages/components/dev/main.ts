@@ -11,6 +11,7 @@ import { createHic } from "../src/components/hic.js";
 import { createIgv } from "../src/components/igv.js";
 import { createTreemap } from "../src/components/treemap.js";
 import { createVolcano } from "../src/components/volcano.js";
+import { createEmbedding } from "../src/components/embedding.js";
 import type { BiovizData } from "@bioviz/core";
 
 type Demo = (el: HTMLElement) => { destroy(): void };
@@ -205,6 +206,46 @@ function syntheticVolcano(n: number): BiovizData {
   return { columns: { x, y, label } };
 }
 
+/**
+ * Synthetic 2-D embedding (UMAP/t-SNE-like): `clusters` gaussian blobs arranged
+ * on a ring. Each point carries a categorical `cluster` label and a continuous
+ * `value` gradient, so both coloring modes can be eyeballed. Pass
+ * `continuous = true` to expose the numeric column as `color`.
+ */
+function syntheticEmbedding(n: number, clusters = 8, continuous = false): BiovizData {
+  const x = new Float32Array(n);
+  const y = new Float32Array(n);
+  const value = new Float32Array(n);
+  const cluster: string[] = new Array(n);
+  const label: string[] = new Array(n);
+  const centers = Array.from({ length: clusters }, (_, k) => {
+    const a = (k / clusters) * Math.PI * 2;
+    return [Math.cos(a) * 10, Math.sin(a) * 10] as [number, number];
+  });
+  for (let i = 0; i < n; i += 1) {
+    const k = i % clusters;
+    const c = centers[k]!;
+    const gx = gaussian() * 1.7;
+    const gy = gaussian() * 1.7;
+    x[i] = c[0] + gx;
+    y[i] = c[1] + gy;
+    cluster[i] = `cluster ${k + 1}`;
+    // A smooth per-cluster gradient (e.g. pseudotime / marker expression).
+    value[i] = k + Math.hypot(gx, gy) * 0.35;
+    label[i] = `cell ${i}`;
+  }
+  return { columns: { x, y, color: continuous ? value : cluster, label } };
+}
+
+// Box–Muller standard-normal sample.
+function gaussian(): number {
+  let u = 0;
+  let v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
 // A large expression matrix with block structure so patterns are visible even
 // zoomed out. 1000 x 1000 = 1,000,000 cells uploaded as one luminance texture.
 function syntheticMatrix(nrows: number, ncols: number): BiovizData {
@@ -279,6 +320,26 @@ const demos: Record<string, Demo> = {
     const inst = createVolcano(el, {
       data: syntheticVolcano(200_000),
       options: { labelTopN: 8 },
+    });
+    return inst;
+  },
+  embedding: (el) => {
+    // 150k cells in 8 gaussian blobs, colored by a categorical cluster label
+    // (discrete legend). Try the lasso: drag from empty space to select points.
+    const inst = createEmbedding(el, {
+      data: syntheticEmbedding(150_000, 8),
+      options: {
+        colorMode: "categorical",
+        onSelect: (idx) => console.log(`selected ${idx.length} points`),
+      },
+    });
+    return inst;
+  },
+  embeddingContinuous: (el) => {
+    // Same layout, colored by a continuous value via the viridis ramp + colorbar.
+    const inst = createEmbedding(el, {
+      data: syntheticEmbedding(150_000, 8, true),
+      options: { colorMode: "continuous", colormap: "viridis" },
     });
     return inst;
   },
