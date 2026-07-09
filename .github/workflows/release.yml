@@ -1,0 +1,83 @@
+name: Release
+
+# Publishes the tri-language bioviz release on a version tag (e.g. v0.1.0).
+#
+# Both the Python wheel and the R htmlwidget embed the JavaScript component
+# bundles produced by `pnpm dist` (build + sync), so every job runs `pnpm dist`
+# first to populate python/src/bioviz/static and r/bioviz/inst/htmlwidgets/lib
+# (both git-ignored, rebuilt here) before packaging.
+#
+# R packaging: the R package (r/bioviz) is intentionally NOT published from this
+# workflow. It is released via r-universe, which builds the package directly
+# from this repository on each push/tag — no CI publish step or token is needed.
+# Enable it by adding this repo to an <owner>.r-universe.dev registry
+# (packages.json). See https://r-universe.dev. CRAN submission, if ever pursued,
+# remains a manual `R CMD check --as-cran` + one-off submission and is
+# deliberately not automated here to avoid a heavyweight CRAN workflow.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  pypi:
+    name: Build & publish Python package (PyPI)
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # OIDC token for PyPI trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm dist # populates python/src/bioviz/static with the JS bundles
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build wheel and sdist
+        working-directory: python
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+      - name: Publish to PyPI (trusted publishing / OIDC)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist
+
+  npm:
+    name: Build & publish @bioviz/components (npm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm dist # builds packages/*/dist consumed by the published packages
+      - name: Publish to npm
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # @bioviz/core is a runtime dependency of @bioviz/components (workspace:*
+        # is rewritten to the concrete version on publish), so it must be
+        # published too for consumers to resolve the dependency.
+        run: |
+          pnpm publish --filter @bioviz/core --no-git-checks --access public
+          pnpm publish --filter @bioviz/components --no-git-checks --access public
