@@ -1,0 +1,73 @@
+name: Feature request
+description: Suggest a new component, option, or capability.
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! Describe the problem first — it helps us find the
+        best solution, which may differ from the one you have in mind.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do that is hard or impossible today?
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What are you proposing?
+      options:
+        - A new component
+        - A new option / trait on an existing component
+        - A change to an existing component
+        - Core / tooling / docs
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Related component
+      description: Choose "New / none" for a brand-new component.
+      options:
+        - New / none
+        - Volcano
+        - Heatmap
+        - Treemap
+        - Clustermap
+        - Hi-C
+        - IGV
+        - Gosling
+        - Network
+        - Embedding
+    validations:
+      required: false
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed component / option
+      description: |
+        Sketch the API. For a new option, give the camelCase key, its type, and
+        default — it must be identical across JS options, the R `options` list,
+        and the Python `options` dict.
+      placeholder: |
+        Option `showGrid: boolean` (default: false) on Heatmap.
+        Same key in JS options, R options list, and Python options dict.
+    validations:
+      required: true
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: A concrete analysis scenario, ideally with the dataset scale involved.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you have tried or other approaches you weighed.
+    validations:
+      required: false
