@@ -1,10 +1,28 @@
 {
   "name": "@bioviz/components",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Headless, high-performance bioinformatics visualization components.",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/samuelbharti/visualization-components.git",
+    "directory": "packages/components"
+  },
+  "homepage": "https://github.com/samuelbharti/visualization-components#readme",
+  "bugs": "https://github.com/samuelbharti/visualization-components/issues",
   "main": "./dist/lib/index.js",
-  "types": "./dist/lib/index.d.ts",
+  "types": "./dist/lib/lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/lib/lib/index.d.ts",
+      "import": "./dist/lib/index.js"
+    }
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "node build.mjs && tsc -p tsconfig.build.json",
     "dev": "vite",
