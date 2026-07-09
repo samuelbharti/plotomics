@@ -1,37 +1,100 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
   margin: 0;
-  padding: 1.5rem;
 }
 
+/* Full-viewport column: compact header on top, the viewer fills the rest. */
 .app {
-  max-width: 900px;
-  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  box-sizing: border-box;
+  padding: 14px 18px;
+  gap: 10px;
+  background: #0b0f19;
+  color: #e5e7eb;
 }
 
-.app h1 {
-  font-size: 1.25rem;
-  margin: 0 0 0.25rem;
+.app-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.app-head h1 {
+  font-size: 1.1rem;
+  margin: 0 0 2px;
+}
+
+.titles {
+  min-width: 0;
 }
 
 .hint {
-  margin: 0 0 1rem;
-  opacity: 0.75;
-  font-size: 0.9rem;
+  margin: 0;
+  font-size: 0.85rem;
+  color: #9ca3af;
 }
 
 .hint code {
   font-size: 0.85em;
-  padding: 0.1em 0.3em;
+  padding: 0.1em 0.35em;
   border-radius: 4px;
-  background: color-mix(in srgb, currentColor 12%, transparent);
+  background: #1f2937;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tool {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid #30363d;
+  background: #161b22;
+  color: #e5e7eb;
+  cursor: pointer;
+}
+
+.tool:hover {
+  border-color: #4b5563;
+}
+
+.tool.on {
+  background: #1f6feb;
+  border-color: #1f6feb;
+  color: #fff;
 }
 
 .status {
-  margin-top: 0.75rem;
-  font-size: 0.9rem;
+  color: #9ca3af;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+/* The viewer panel grows to fill the viewport; min-height:0 lets the flex
+   child shrink so the embedding's height:100% resolves to real pixels. */
+.viz {
+  flex: 1 1 auto;
+  min-height: 0;
+  border: 1px solid #1f2937;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0b0f19;
 }

@@ -58,6 +58,10 @@ export interface EmbeddingOptions {
   showAxes: boolean;
   /** Draw the legend (discrete swatches, or a colorbar when continuous). */
   showLegend: boolean;
+  /** Primary drag gesture. `"panZoom"` (default) pans and zooms; `"lasso"`
+   * makes a plain drag draw a selection. Flip this to give users a lasso tool
+   * (the wheel still zooms in either mode). */
+  mouseMode: "panZoom" | "lasso";
   /** Called with the point indices after a lasso select / deselect. JS-only —
    * callbacks do not cross the R/Python bridge. */
   onSelect: ((indices: number[]) => void) | null;
@@ -73,6 +77,7 @@ export const defaultEmbeddingOptions: EmbeddingOptions = {
   yLabel: "UMAP 2",
   showAxes: false,
   showLegend: true,
+  mouseMode: "panZoom",
   onSelect: null,
   theme: {},
 };
@@ -249,7 +254,11 @@ export const createEmbedding: BiovizFactory<EmbeddingOptions> = (el, initial) =>
     pointSize: opts.pointSize,
     opacity: opts.opacity,
     backgroundColor: theme.background,
+    mouseMode: opts.mouseMode,
+    // Extra lasso affordances even in panZoom mode: click the handle that
+    // appears, or press-and-hold then drag (touch-friendly).
     lassoInitiator: true,
+    lassoOnLongPress: true,
   });
 
   scatterplot.subscribe("pointOver", (i: number) => showTip(i));
@@ -559,7 +568,10 @@ export const createEmbedding: BiovizFactory<EmbeddingOptions> = (el, initial) =>
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
-      scatterplot.set({ backgroundColor: theme.background });
+      scatterplot.set({
+        backgroundColor: theme.background,
+        mouseMode: opts.mouseMode,
+      });
       // Re-layout in case showAxes toggled (it changes the canvas inset), then
       // recolor/redraw with the merged options.
       doResize(width, height);

@@ -22,7 +22,7 @@ make_embedding <- function(n = 4000, k = 6) {
 }
 
 server <- function(input, output, session) {
-  emb <- make_embedding()
+  emb <- make_embedding(n = 10000, k = 7)
 
   # Data DOWN to React (column-major JSON -> bioviz `columns`).
   output$embedding_data <- render_json(emb)

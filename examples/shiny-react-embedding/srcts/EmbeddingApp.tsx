@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useShinyInput, useShinyOutput } from "@posit/shiny-react";
-import type { BiovizData } from "@bioviz/core";
+import { darkTheme, type BiovizData } from "@bioviz/core";
 import Embedding from "./Embedding";
 
 /**
@@ -23,6 +23,8 @@ export default function EmbeddingApp() {
   const [, setSelected] = useShinyInput<number[]>("embedding_selected", []);
   // Derived value DOWN: the server echoes how many points it received.
   const [nSelected] = useShinyOutput<number>("n_selected", 0);
+  // Toggle the scatterplot's primary drag gesture between pan and lasso.
+  const [lasso, setLasso] = useState(false);
 
   const data: BiovizData = useMemo(
     () => (cols ? { columns: cols } : { columns: { x: [], y: [] } }),
@@ -31,20 +33,40 @@ export default function EmbeddingApp() {
 
   return (
     <div className="app">
-      <h1>bioviz embedding · shiny-react</h1>
-      <p className="hint">
-        A UMAP/t-SNE-style viewer rendered by <code>@bioviz/components</code>,
-        driven entirely through Shiny hooks. Drag a lasso from empty space to
-        select cells — the indices are sent to the R server, which echoes the
-        count back.
-      </p>
-      <Embedding
-        data={data}
-        options={{ colorMode: "categorical", pointSize: 3 }}
-        onSelect={setSelected}
-      />
-      <div className="status">
-        Server received <b>{nSelected}</b> selected point(s).
+      <header className="app-head">
+        <div className="titles">
+          <h1>bioviz embedding · shiny-react</h1>
+          <p className="hint">
+            A UMAP/t-SNE viewer from <code>@bioviz/components</code>, driven
+            through Shiny hooks. Selection is sent to the R server.
+          </p>
+        </div>
+        <div className="toolbar">
+          <button
+            type="button"
+            className={`tool ${lasso ? "on" : ""}`}
+            onClick={() => setLasso((v) => !v)}
+            title="Toggle between panning and lasso selection"
+          >
+            {lasso ? "◈ Lasso ON — drag to select" : "⬚ Lasso OFF — drag pans"}
+          </button>
+          <span className="status">
+            <b>{nSelected}</b> selected
+          </span>
+        </div>
+      </header>
+      <div className="viz">
+        <Embedding
+          data={data}
+          options={{
+            colorMode: "categorical",
+            pointSize: 4,
+            opacity: 0.9,
+            theme: darkTheme,
+            mouseMode: lasso ? "lasso" : "panZoom",
+          }}
+          onSelect={setSelected}
+        />
       </div>
     </div>
   );
