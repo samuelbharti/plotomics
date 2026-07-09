@@ -11,7 +11,8 @@ export interface EmbeddingProps {
   data: BiovizData;
   options?: Partial<EmbeddingOptions>;
   onSelect?: (indices: number[]) => void;
-  height?: number;
+  /** CSS height. Defaults to "100%" so it fills a sized flex parent. */
+  height?: number | string;
 }
 
 /**
@@ -27,7 +28,7 @@ export default function Embedding({
   data,
   options,
   onSelect,
-  height = 520,
+  height = "100%",
 }: EmbeddingProps) {
   const elRef = useRef<HTMLDivElement>(null);
   const instRef = useRef<Instance | null>(null);
