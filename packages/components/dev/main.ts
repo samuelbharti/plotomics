@@ -78,12 +78,15 @@ function syntheticNetwork(nodes: number, communities: number): BiovizData {
   return {
     columns: { id, size, source, target },
     meta: { nodeGroup },
+  };
+}
+
 /**
  * Synthetic clusterable matrix: `groups` blocks of correlated rows/cols with a
  * raised block-diagonal signal + noise, so hierarchical clustering has clear
  * structure to recover.
  */
-function syntheticMatrix(nrows: number, ncols: number, groups = 4): BiovizData {
+function syntheticClusterMatrix(nrows: number, ncols: number, groups = 4): BiovizData {
   const values = new Float32Array(nrows * ncols);
   const rowGroup = (r: number) => Math.floor((r / nrows) * groups);
   const colGroup = (c: number) => Math.floor((c / ncols) * groups);
@@ -120,6 +123,7 @@ function shuffle(n: number): number[] {
   return a;
 }
 
+/**
  * Synthetic Hi-C contact matrix: distance-decay background (contacts fall off
  * away from the diagonal) plus a few TAD-like square domains and off-diagonal
  * loop dots, so LOD/zoom/pan can be eyeballed at scale.
@@ -157,6 +161,10 @@ function syntheticHic(n: number): BiovizData {
   return {
     columns: { values },
     meta: { n, binSize: 10_000, chrom: "chr (synthetic)" },
+  };
+}
+
+/**
  * Synthetic gene/pathway hierarchy: `pathways` top-level sets, each with a
  * random number of leaf genes (weighted values). Produces the flat
  * id/parent/value columns the treemap consumes, at ~`leaves` genes total.
@@ -276,16 +284,25 @@ const demos: Record<string, Demo> = {
     const inst = createHeatmap(el, {
       data: syntheticMatrix(1000, 1000),
       options: { colormap: "viridis", zScore: false },
+    });
+    return inst;
+  },
   gosling: (el) => {
     const inst = createGosling(el, {
       options: { spec: goslingSpec },
+    });
+    return inst;
+  },
   network: (el) => {
     const inst = createNetwork(el, {
       data: syntheticNetwork(5_000, 8),
       options: { iterations: 150, labelThreshold: 6 },
+    });
+    return inst;
+  },
   clustermap: (el) =>
     createClustermap(el, {
-      data: syntheticMatrix(120, 60, 4),
+      data: syntheticClusterMatrix(120, 60, 4),
       options: { colormap: "rdbu", zScore: true, linkage: "average" },
     }),
   hic: (el) => {
@@ -293,6 +310,9 @@ const demos: Record<string, Demo> = {
     const inst = createHic(el, {
       data: syntheticHic(1024),
       options: { transform: "log", label: "chr (synthetic)" },
+    });
+    return inst;
+  },
   // Genome viewer: hg38 with a small public bigWig track streamed by igv.js.
   igv: (el) =>
     createIgv(el, {

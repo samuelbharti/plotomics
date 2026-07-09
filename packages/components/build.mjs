@@ -10,8 +10,9 @@ import { build } from "esbuild";
 import { glob } from "node:fs/promises";
 import { rm } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = path.dirname(new URL(import.meta.url).pathname);
+const root = path.dirname(fileURLToPath(import.meta.url));
 
 async function collect(pattern) {
   const out = [];

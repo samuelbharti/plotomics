@@ -11,6 +11,7 @@
       "**",
       "!**/dist/**",
       "!**/node_modules/**",
+      "!**/.claude/**",
       "!**/*.tsbuildinfo",
       "!pnpm-lock.yaml",
       "!r/bioviz/inst/htmlwidgets/lib/bioviz/**",
