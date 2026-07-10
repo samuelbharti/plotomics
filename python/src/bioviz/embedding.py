@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
-from ._base import STATIC, BiovizWidget, _column, pack_columns
+from ._base import STATIC, BiovizWidget, _column, _to_float32, pack_columns
 
 
 class Embedding(BiovizWidget):
@@ -38,6 +38,11 @@ class Embedding(BiovizWidget):
         Draw the axis frame + ticks (embeddings usually hide axes).
     show_legend:
         Draw the legend (discrete swatches or a colorbar).
+    mouse_mode:
+        Primary drag gesture: ``"panZoom"`` (default) pans/zooms, ``"lasso"``
+        makes a plain drag draw a selection.
+    theme:
+        Optional theme overrides forwarded to the JS renderer.
     height:
         Initial widget height in CSS pixels.
 
@@ -68,6 +73,8 @@ class Embedding(BiovizWidget):
         y_label: str = "UMAP 2",
         show_axes: bool = False,
         show_legend: bool = True,
+        mouse_mode: Literal["panZoom", "lasso"] = "panZoom",
+        theme: dict | None = None,
         height: int = 480,
         **kwargs: Any,
     ) -> None:
@@ -75,11 +82,15 @@ class Embedding(BiovizWidget):
         y = _column(data, "y")
         if x is None or y is None:
             raise ValueError("`data` must provide `x` and `y` columns.")
+        if mouse_mode not in ("panZoom", "lasso"):
+            raise ValueError("`mouse_mode` must be 'panZoom' or 'lasso'.")
 
-        numeric: dict[str, Any] = {
-            "x": np.asarray(x, dtype=np.float32),
-            "y": np.asarray(y, dtype=np.float32),
-        }
+        x_arr = _to_float32(x, "x")
+        y_arr = _to_float32(y, "y")
+        if x_arr.size == 0:
+            raise ValueError("`data` must contain at least one row.")
+
+        numeric: dict[str, Any] = {"x": x_arr, "y": y_arr}
         json_columns: dict[str, list] = {}
 
         color = _column(data, "color")
@@ -98,20 +109,25 @@ class Embedding(BiovizWidget):
 
         buffer, schema = pack_columns(numeric)
 
+        options: dict[str, Any] = {
+            "pointSize": point_size,
+            "opacity": opacity,
+            "colorMode": color_mode,
+            "colormap": colormap,
+            "xLabel": x_label,
+            "yLabel": y_label,
+            "showAxes": show_axes,
+            "showLegend": show_legend,
+            "mouseMode": mouse_mode,
+        }
+        if theme is not None:
+            options["theme"] = theme
+
         super().__init__(
             buffer=buffer,
             schema=schema,
             data={"columns": json_columns, "meta": {}},
-            options={
-                "pointSize": point_size,
-                "opacity": opacity,
-                "colorMode": color_mode,
-                "colormap": colormap,
-                "xLabel": x_label,
-                "yLabel": y_label,
-                "showAxes": show_axes,
-                "showLegend": show_legend,
-            },
+            options=options,
             _height=height,
             **kwargs,
         )

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 
 from ._base import STATIC, BiovizWidget, pack_columns
+
+_METRICS = ("euclidean", "correlation")
+_LINKAGES = ("average", "complete", "ward")
+_COLORMAPS = ("viridis", "rdbu")
 
 
 class Clustermap(BiovizWidget):
@@ -56,6 +60,8 @@ class Clustermap(BiovizWidget):
         axis. Either a list of 0-based leaf indices, or a dict with ``order``
         (0-based) and ``merges`` (each ``{"left", "right", "height"}``; leaves
         are ``0..n-1`` and internal node ``k`` is ``n + k``).
+    theme:
+        Optional theme overrides forwarded to the JS renderer.
     height:
         Initial widget height in CSS pixels.
 
@@ -90,13 +96,32 @@ class Clustermap(BiovizWidget):
         col_labels: Any | None = None,
         row_linkage: Any | None = None,
         col_linkage: Any | None = None,
+        theme: dict | None = None,
         height: int = 480,
         **kwargs: Any,
     ) -> None:
+        if metric not in _METRICS:
+            raise ValueError(
+                "`metric` must be 'euclidean' or 'correlation'."
+            )
+        if linkage not in _LINKAGES:
+            raise ValueError(
+                "`linkage` must be 'average', 'complete' or 'ward'."
+            )
+        if colormap not in _COLORMAPS:
+            raise ValueError("`colormap` must be 'viridis' or 'rdbu'.")
+
         arr, inferred_rows, inferred_cols = _as_matrix(matrix)
         if arr.ndim != 2:
             raise ValueError("`matrix` must be 2-dimensional.")
         nrows, ncols = arr.shape
+        if nrows == 0 or ncols == 0:
+            raise ValueError("`matrix` must contain at least one row and one column.")
+
+        if row_linkage is not None:
+            _validate_linkage(row_linkage, int(nrows), "row_linkage")
+        if col_linkage is not None:
+            _validate_linkage(col_linkage, int(ncols), "col_linkage")
 
         # Row-major float32 buffer (C-contiguous flatten matches the JS layout).
         values = np.ascontiguousarray(arr, dtype=np.float32).reshape(-1)
@@ -114,25 +139,62 @@ class Clustermap(BiovizWidget):
         if col_linkage is not None:
             meta["colLinkage"] = col_linkage
 
+        options: dict[str, Any] = {
+            "metric": metric,
+            "linkage": linkage,
+            "colormap": colormap,
+            "zScore": z_score,
+            "clusterRows": cluster_rows,
+            "clusterCols": cluster_cols,
+            "showRowDendrogram": show_row_dendrogram,
+            "showColDendrogram": show_col_dendrogram,
+            "showLabels": show_labels,
+            "legendTitle": legend_title,
+        }
+        if theme is not None:
+            options["theme"] = theme
+
         super().__init__(
             buffer=buffer,
             schema=schema,
             data={"columns": {}, "meta": meta},
-            options={
-                "metric": metric,
-                "linkage": linkage,
-                "colormap": colormap,
-                "zScore": z_score,
-                "clusterRows": cluster_rows,
-                "clusterCols": cluster_cols,
-                "showRowDendrogram": show_row_dendrogram,
-                "showColDendrogram": show_col_dendrogram,
-                "showLabels": show_labels,
-                "legendTitle": legend_title,
-            },
+            options=options,
             _height=height,
             **kwargs,
         )
+
+
+def _validate_linkage(linkage: Any, n: int, name: str) -> None:
+    """Validate a precomputed leaf order / dendrogram against the axis size.
+
+    Accepts either a sequence of 0-based leaf indices, or a mapping with an
+    ``order`` key (and an optional list-like ``merges``). The order must be a
+    permutation of ``0..n-1``.
+    """
+    if isinstance(linkage, Mapping):
+        if "order" not in linkage:
+            raise ValueError(f"`{name}` dict must contain an 'order' key.")
+        order = list(linkage["order"])
+        merges = linkage.get("merges")
+        if merges is not None and not isinstance(merges, (list, tuple)):
+            raise ValueError(f"`{name}` 'merges' must be a list.")
+    else:
+        try:
+            order = list(linkage)
+        except TypeError:
+            raise ValueError(
+                f"`{name}` must be a sequence of leaf indices or a dict with an "
+                "'order' key."
+            ) from None
+
+    if len(order) != n:
+        raise ValueError(f"`{name}` order has {len(order)} entries; expected {n}.")
+    try:
+        idx = sorted(int(v) for v in order)
+    except (TypeError, ValueError):
+        raise ValueError(f"`{name}` order must contain integer leaf indices.") from None
+    if idx != list(range(n)):
+        raise ValueError(f"`{name}` order must be a permutation of 0..{n - 1}.")
 
 
 def _as_matrix(matrix: Any) -> tuple[np.ndarray, Any | None, Any | None]:

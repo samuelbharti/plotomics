@@ -40,12 +40,16 @@ class HiC(BiovizWidget):
         Intensity transform, ``"log"`` (default) or ``"linear"``.
     vmax:
         Upper clip of the intensity scale; ``None`` auto-picks a high percentile.
+    vmax_percentile:
+        Percentile (0-1) used for the auto ``vmax`` when ``vmax`` is ``None``.
     vmin:
         Lower clip of the intensity scale.
     symmetric:
         Mirror sparse ``i``/``j``/``v`` entries across the diagonal.
     label:
         Axis title (overrides ``chrom`` when set).
+    theme:
+        Optional theme overrides forwarded to the JS renderer.
     height:
         Initial widget height in CSS pixels.
 
@@ -77,12 +81,17 @@ class HiC(BiovizWidget):
         colormap: str = "viridis",
         transform: str = "log",
         vmax: float | None = None,
+        vmax_percentile: float | None = None,
         vmin: float = 0.0,
         symmetric: bool = True,
         label: str | None = None,
+        theme: dict | None = None,
         height: int = 480,
         **kwargs: Any,
     ) -> None:
+        if transform not in ("log", "linear"):
+            raise ValueError("`transform` must be 'log' or 'linear'.")
+
         columns: dict[str, Any] = {}
 
         # Resolve the sparse triplet from any of the accepted shapes.
@@ -93,14 +102,37 @@ class HiC(BiovizWidget):
             i_arr = np.asarray(i, dtype=np.int32)
             j_arr = np.asarray(j, dtype=np.int32)
             v_arr = np.asarray(v, dtype=np.float32)
+            # Empty triplet: fail clearly instead of building an n=0 matrix.
+            if i_arr.size == 0:
+                raise ValueError(
+                    "sparse `i`/`j`/`v` triplet is empty; provide at least one "
+                    "contact."
+                )
+            if not (i_arr.size == j_arr.size == v_arr.size):
+                raise ValueError(
+                    "`i`, `j` and `v` must have the same length; "
+                    f"got i={i_arr.size}, j={j_arr.size}, v={v_arr.size}"
+                )
             if n is None:
-                n = int(max(int(i_arr.max(initial=-1)), int(j_arr.max(initial=-1))) + 1)
+                n = int(max(int(i_arr.max()), int(j_arr.max())) + 1)
+            n = int(n)
+            if n <= 0:
+                raise ValueError("`n` must be a positive number of bins.")
+            if int(i_arr.min()) < 0 or int(j_arr.min()) < 0 or \
+                    int(i_arr.max()) >= n or int(j_arr.max()) >= n:
+                raise ValueError(
+                    f"sparse indices `i`/`j` must be in [0, {n}); got "
+                    f"i in [{int(i_arr.min())}, {int(i_arr.max())}], "
+                    f"j in [{int(j_arr.min())}, {int(j_arr.max())}]"
+                )
             columns = {"i": i_arr, "j": j_arr, "v": v_arr}
         elif matrix is not None:
             arr = np.asarray(matrix, dtype=np.float32)
             if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
                 raise ValueError("`matrix` must be a square 2-D array.")
             n = int(arr.shape[0])
+            if n == 0:
+                raise ValueError("`matrix` must contain at least one row and one column.")
             # Row-major (C order) flatten to match the JS `values` contract.
             columns = {"values": np.ascontiguousarray(arr).reshape(-1)}
         else:
@@ -125,8 +157,12 @@ class HiC(BiovizWidget):
         # `vmax=None` means auto; only send it when the user fixed it.
         if vmax is not None:
             options["vmax"] = float(vmax)
+        if vmax_percentile is not None:
+            options["vmaxPercentile"] = float(vmax_percentile)
         if label is not None:
             options["label"] = str(label)
+        if theme is not None:
+            options["theme"] = theme
 
         super().__init__(
             buffer=buffer,
@@ -143,6 +179,9 @@ def _extract_triplet(matrix: Any) -> tuple[Any, Any, Any] | tuple[None, None, No
     # tuple/list of three sequences
     if isinstance(matrix, (tuple, list)) and len(matrix) == 3:
         return matrix[0], matrix[1], matrix[2]
+    # A dense numpy matrix has no named columns; it is handled by the caller.
+    if isinstance(matrix, np.ndarray):
+        return None, None, None
     # mapping / DataFrame with i/j/v columns
     i = _column(matrix, "i")
     j = _column(matrix, "j")
