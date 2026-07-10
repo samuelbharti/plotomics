@@ -2,8 +2,10 @@
 //   dist/umd/*.js       -> r/bioviz/inst/htmlwidgets/lib/bioviz/   (htmlwidgets)
 //   dist/anywidget/*.js -> python/src/bioviz/static/               (anywidget)
 //
-// These targets are generated and git-ignored; run `pnpm dist` (build + sync)
-// before checking R/Python or packaging a release.
+// These targets are generated but git-tracked (committed into the wrappers so
+// source installs ship the JS); run `pnpm dist` (build + sync) to refresh them
+// before checking R/Python or packaging a release. CI's drift guard fails if a
+// committed bundle is stale.
 
 import { cp, mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
