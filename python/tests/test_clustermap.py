@@ -123,3 +123,21 @@ def test_clustermap_accepts_dict_linkage_with_order():
 def test_clustermap_rejects_empty_matrix():
     with pytest.raises(ValueError, match="at least one row"):
         Clustermap(np.zeros((0, 0)))
+
+
+def test_clustermap_rejects_non_numeric_matrix():
+    with pytest.raises(ValueError, match="must be numeric"):
+        Clustermap(np.array([["a", "b"], ["c", "d"]]))
+
+
+def test_clustermap_rejects_merges_missing_keys():
+    with pytest.raises(ValueError, match="merges"):
+        Clustermap(
+            np.random.randn(3, 3),
+            row_linkage={"order": [0, 1, 2], "merges": [{"left": 0}]},
+        )
+
+
+def test_clustermap_rejects_non_integer_order():
+    with pytest.raises(ValueError, match="integer leaf indices"):
+        Clustermap(np.random.randn(3, 3), row_linkage=[0.5, 1, 2])

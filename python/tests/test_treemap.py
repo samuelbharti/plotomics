@@ -83,6 +83,25 @@ def test_treemap_rejects_empty_data():
         Treemap({"id": [], "parent": []})
 
 
+def test_treemap_rejects_cycle():
+    # One valid root, but a and b point at each other: a cycle disjoint from the
+    # root that passes the one-root / orphan checks yet crashes d3.stratify.
+    with pytest.raises(ValueError, match="cycle"):
+        Treemap({"id": ["root", "a", "b"], "parent": [None, "b", "a"]})
+
+
+def test_treemap_rejects_self_parent():
+    with pytest.raises(ValueError, match="cycle"):
+        Treemap({"id": ["root", "a"], "parent": [None, "a"]})
+
+
+def test_treemap_rejects_non_numeric_value():
+    with pytest.raises(ValueError, match="must be numeric"):
+        Treemap(
+            {"id": ["root", "a"], "parent": [None, "root"], "value": ["x", "y"]}
+        )
+
+
 def test_treemap_requires_id_and_parent():
     with pytest.raises(ValueError, match="id` and `parent`"):
         Treemap({"id": ["a", "b"]})

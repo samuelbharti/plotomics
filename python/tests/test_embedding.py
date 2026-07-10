@@ -96,3 +96,12 @@ def test_embedding_export_rejects_bad_format():
     w = Embedding({"x": [1, 2], "y": [1, 2]})
     with pytest.raises(ValueError, match="fmt must be"):
         w.export("jpg")
+
+
+def test_embedding_export_sends_message():
+    from unittest.mock import patch
+
+    w = Embedding({"x": [1, 2], "y": [1, 2]})
+    with patch.object(w, "send") as send:
+        w.export("svg")
+    send.assert_called_once_with({"bioviz": "export", "format": "svg"})
