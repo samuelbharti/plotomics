@@ -1,5 +1,5 @@
 /** Visual theme shared across components for a consistent, publication-ready look. */
-export interface BiovizTheme {
+export interface PlotomicsTheme {
   background: string;
   foreground: string;
   muted: string;
@@ -23,7 +23,7 @@ export const OKABE_ITO = [
   "#999999", // grey
 ];
 
-export const defaultTheme: BiovizTheme = {
+export const defaultTheme: PlotomicsTheme = {
   background: "#ffffff",
   foreground: "#1a1a1a",
   muted: "#6b7280",
@@ -35,7 +35,7 @@ export const defaultTheme: BiovizTheme = {
   categorical: OKABE_ITO,
 };
 
-export const darkTheme: BiovizTheme = {
+export const darkTheme: PlotomicsTheme = {
   ...defaultTheme,
   background: "#0b0f19",
   foreground: "#e5e7eb",
@@ -46,9 +46,9 @@ export const darkTheme: BiovizTheme = {
 
 /** Merge a partial theme onto a base (defaults to {@link defaultTheme}). */
 export function resolveTheme(
-  partial?: Partial<BiovizTheme>,
-  base: BiovizTheme = defaultTheme,
-): BiovizTheme {
+  partial?: Partial<PlotomicsTheme>,
+  base: PlotomicsTheme = defaultTheme,
+): PlotomicsTheme {
   if (!partial) return { ...base };
   return { ...base, ...partial };
 }

@@ -9,13 +9,13 @@
  * Click a tile to drill into that node; click the breadcrumb to zoom back out.
  *
  * Mirrors the Volcano reference: exported pure helpers (unit-tested without a
- * GPU/DOM) plus a factory returning a BiovizInstance.
+ * GPU/DOM) plus a factory returning a PlotomicsInstance.
  */
 import {
-  type BiovizData,
-  type BiovizFactory,
-  type BiovizInstance,
-  type BiovizTheme,
+  type PlotomicsData,
+  type PlotomicsFactory,
+  type PlotomicsInstance,
+  type PlotomicsTheme,
   resolveTheme,
   createTooltip,
   type Tooltip,
@@ -26,7 +26,7 @@ import {
   categoricalScale,
   ramp,
   type RampName,
-} from "@bioviz/core";
+} from "@plotomics/core";
 import {
   stratify,
   treemap,
@@ -47,7 +47,7 @@ export interface TreemapOptions {
   colormap: RampName;
   /** Minimum tile side (px) required before a label is drawn. */
   labelMinSize: number;
-  theme: Partial<BiovizTheme>;
+  theme: Partial<PlotomicsTheme>;
 }
 
 export const defaultTreemapOptions: TreemapOptions = {
@@ -80,7 +80,7 @@ export interface TreeRow {
  * `"NA"` or missing parents mark the root. Values are coerced to non-negative
  * numbers so a stray NaN can never poison the layout's `sum`.
  */
-export function buildRows(data: BiovizData): TreeRow[] {
+export function buildRows(data: PlotomicsData): TreeRow[] {
   const cols = data.columns;
   const id = cols.id as string[] | undefined;
   const parent = cols.parent as string[] | undefined;
@@ -160,10 +160,10 @@ export function valueExtent(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createTreemap: BiovizFactory<TreemapOptions> = (el, initial) => {
+export const createTreemap: PlotomicsFactory<TreemapOptions> = (el, initial) => {
   let opts: TreemapOptions = mergeOptions(defaultTreemapOptions, initial.options);
   let theme = resolveTheme(opts.theme);
-  let data: BiovizData = initial.data ?? { columns: {} };
+  let data: PlotomicsData = initial.data ?? { columns: {} };
 
   let width = 0;
   let height = 0;
@@ -422,7 +422,7 @@ export const createTreemap: BiovizFactory<TreemapOptions> = (el, initial) => {
     rebuild();
   }
 
-  const instance: BiovizInstance<TreemapOptions> = {
+  const instance: PlotomicsInstance<TreemapOptions> = {
     setData(next) {
       data = next;
       focus = null; // reset zoom on a fresh dataset

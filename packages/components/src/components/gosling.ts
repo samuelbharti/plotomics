@@ -3,7 +3,7 @@
  *
  * A config-driven wrapper around Gosling.js (grammar of scalable, linked,
  * interactive nucleotide graphics). Unlike the other components, which consume
- * a columnar `BiovizData`, Gosling is entirely spec-driven: `options.spec` is a
+ * a columnar `PlotomicsData`, Gosling is entirely spec-driven: `options.spec` is a
  * Gosling JSON specification and *data flows through the spec's own `data`
  * blocks* (tileset URLs, indexed BAM/BED/VCF/BigWig, CSV/JSON URLs or inline
  * values). The `data` argument of the factory is therefore unused.
@@ -11,7 +11,7 @@
  * Gosling internally pulls in HiGlass + PixiJS + React and streams/tiles large
  * genomic datasets on the GPU, so this component adds no SVG overlay of its
  * own. `embed()` is asynchronous (it mounts a React tree), so the factory
- * returns a `BiovizInstance` synchronously and defers work until the embed
+ * returns a `PlotomicsInstance` synchronously and defers work until the embed
  * promise resolves. Because Gosling's API exposes no in-place spec update,
  * replacing the spec re-embeds from scratch.
  *
@@ -19,11 +19,11 @@
  * unit-tested without importing `gosling.js` (which is browser-only).
  */
 import type {
-  BiovizData,
-  BiovizFactory,
-  BiovizInstance,
-} from "@bioviz/core";
-import { canvasToPNG } from "@bioviz/core";
+  PlotomicsData,
+  PlotomicsFactory,
+  PlotomicsInstance,
+} from "@plotomics/core";
+import { canvasToPNG } from "@plotomics/core";
 import { embed } from "gosling.js";
 import type { GoslingSpec } from "gosling.js";
 import {
@@ -57,7 +57,7 @@ export interface GoslingApiLike {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createGosling: BiovizFactory<GoslingOptions> = (el, initial) => {
+export const createGosling: PlotomicsFactory<GoslingOptions> = (el, initial) => {
   let opts: GoslingOptions = mergeGoslingOptions(
     defaultGoslingOptions,
     initial.options,
@@ -98,17 +98,17 @@ export const createGosling: BiovizFactory<GoslingOptions> = (el, initial) => {
         if (destroyed || token !== embedToken) return;
         // Surface embed failures without throwing across the async boundary.
         // eslint-disable-next-line no-console
-        console.error("bioviz/gosling: embed failed", err);
+        console.error("plotomics/gosling: embed failed", err);
       });
   }
 
   // Initial render.
   doEmbed();
 
-  const instance: BiovizInstance<GoslingOptions> = {
+  const instance: PlotomicsInstance<GoslingOptions> = {
     // Gosling is spec-driven; columnar data is not used. Kept for contract
     // parity (the host adapters always call it).
-    setData(_next: BiovizData) {
+    setData(_next: PlotomicsData) {
       /* no-op: data flows through options.spec */
     },
     setOptions(next) {

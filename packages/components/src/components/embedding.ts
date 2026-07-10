@@ -9,7 +9,7 @@
  * legend) or continuous (numeric → sequential colormap + colorbar). Lasso
  * selection is enabled and the selected indices are exposed via the `onSelect`
  * option and the returned instance's `selectedIndices`. Mirrors the volcano
- * structure: exported pure helpers plus a factory returning a BiovizInstance.
+ * structure: exported pure helpers plus a factory returning a PlotomicsInstance.
  *
  * ## Data contract
  * - `columns.x`, `columns.y`  `number[]`             embedding coordinates (required)
@@ -18,10 +18,10 @@
  * - `columns.label`           `string[]`             optional per-point tooltip label
  */
 import {
-  type BiovizData,
-  type BiovizFactory,
-  type BiovizInstance,
-  type BiovizTheme,
+  type PlotomicsData,
+  type PlotomicsFactory,
+  type PlotomicsInstance,
+  type PlotomicsTheme,
   type Column,
   type RampName,
   resolveTheme,
@@ -35,7 +35,7 @@ import {
   OKABE_ITO,
   ramp,
   sampleRamp,
-} from "@bioviz/core";
+} from "@plotomics/core";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
@@ -65,7 +65,7 @@ export interface EmbeddingOptions {
   /** Called with the point indices after a lasso select / deselect. JS-only —
    * callbacks do not cross the R/Python bridge. */
   onSelect: ((indices: number[]) => void) | null;
-  theme: Partial<BiovizTheme>;
+  theme: Partial<PlotomicsTheme>;
 }
 
 export const defaultEmbeddingOptions: EmbeddingOptions = {
@@ -83,7 +83,7 @@ export const defaultEmbeddingOptions: EmbeddingOptions = {
 };
 
 /** Instance handle; extends the base contract with the current lasso selection. */
-export interface EmbeddingInstance extends BiovizInstance<EmbeddingOptions> {
+export interface EmbeddingInstance extends PlotomicsInstance<EmbeddingOptions> {
   /** Point indices currently selected via lasso (empty when none). */
   readonly selectedIndices: number[];
 }
@@ -225,10 +225,10 @@ type LegendState =
 // instance's gradient in document order (silent legend/point mismatch).
 let embeddingSeq = 0;
 
-export const createEmbedding: BiovizFactory<EmbeddingOptions> = (el, initial) => {
+export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial) => {
   let opts: EmbeddingOptions = mergeOptions(defaultEmbeddingOptions, initial.options);
   let theme = resolveTheme(opts.theme);
-  let data: BiovizData = initial.data ?? { columns: {} };
+  let data: PlotomicsData = initial.data ?? { columns: {} };
 
   // Layout / view state.
   let width = 0;
@@ -237,7 +237,7 @@ export const createEmbedding: BiovizFactory<EmbeddingOptions> = (el, initial) =>
   let yDomain: [number, number] = [0, 1];
   let legend: LegendState = null;
   let selected: number[] = [];
-  const uid = `bioviz-embedding-${embeddingSeq++}`;
+  const uid = `plotomics-embedding-${embeddingSeq++}`;
 
   const xScale = scaleLinear().domain(xDomain);
   const yScale = scaleLinear().domain(yDomain);

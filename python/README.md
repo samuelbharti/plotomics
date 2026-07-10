@@ -1,4 +1,4 @@
-# bioviz (Python)
+# plotomics (Python)
 
 High-performance bioinformatics visualization widgets backed by a shared
 JavaScript core, exposed to Python through [anywidget](https://anywidget.dev).
@@ -9,7 +9,7 @@ binary buffer (not JSON), so millions of points stay interactive.
 
 ```python
 import numpy as np, pandas as pd
-from bioviz import Volcano
+from plotomics import Volcano
 
 n = 200_000
 df = pd.DataFrame({
@@ -23,7 +23,7 @@ Volcano(df, fc_threshold=1.0, p_threshold=0.05)
 ## Install
 
 ```bash
-pip install bioviz
+pip install plotomics
 ```
 
 ### Shiny for Python
@@ -35,7 +35,7 @@ in the UI, `@render_widget` on the server:
 ```python
 from shiny import App, ui
 from shinywidgets import output_widget, render_widget
-from bioviz import Volcano
+from plotomics import Volcano
 import numpy as np, pandas as pd
 
 app_ui = ui.page_fluid(output_widget("plot"))
@@ -53,7 +53,7 @@ app = App(app_ui, server)
 ## Development
 
 The widget JS is built from the monorepo root and copied into
-`src/bioviz/static/`:
+`src/plotomics/static/`:
 
 ```bash
 pnpm dist          # build JS + sync bundles into this package

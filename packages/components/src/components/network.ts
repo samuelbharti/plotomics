@@ -5,12 +5,12 @@
  * so tens of thousands of nodes/edges stay interactive. When node coordinates
  * are not supplied, a bounded run of **graphology-layout-forceatlas2** lays the
  * graph out; otherwise the provided x/y are used verbatim. Categorical node
- * groups are colored from the shared `@bioviz/core` palette. Hovering a node
+ * groups are colored from the shared `@plotomics/core` palette. Hovering a node
  * highlights it and its neighbors and shows a tooltip; zoom/pan are sigma's
  * built-in camera controls.
  *
  * Mirrors the volcano reference: pure helpers (in `network-core.ts`, unit-tested
- * without a GPU) plus a factory returning a BiovizInstance. Sigma touches WebGL
+ * without a GPU) plus a factory returning a PlotomicsInstance. Sigma touches WebGL
  * globals at import time, so it is imported only here — never in the test path.
  *
  * ## Data contract
@@ -25,16 +25,16 @@
  * - `meta.edges`      `[src,tgt][]`      alternative edge form (pairs of ids)
  */
 import {
-  type BiovizData,
-  type BiovizFactory,
-  type BiovizInstance,
-  type BiovizTheme,
+  type PlotomicsData,
+  type PlotomicsFactory,
+  type PlotomicsInstance,
+  type PlotomicsTheme,
   resolveTheme,
   createTooltip,
   type Tooltip,
   measure,
   canvasToPNG,
-} from "@bioviz/core";
+} from "@plotomics/core";
 import Graph from "graphology";
 import Sigma from "sigma";
 import {
@@ -71,9 +71,9 @@ export interface NetworkOptions {
   labelThreshold: number;
   /** Default node radius (px) when `size` column is absent. */
   defaultNodeSize: number;
-  /** Optional categorical palette override (else `@bioviz/core` palette). */
+  /** Optional categorical palette override (else `@plotomics/core` palette). */
   palette: string[] | null;
-  theme: Partial<BiovizTheme>;
+  theme: Partial<PlotomicsTheme>;
 }
 
 export const defaultNetworkOptions: NetworkOptions = {
@@ -91,10 +91,10 @@ export const defaultNetworkOptions: NetworkOptions = {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createNetwork: BiovizFactory<NetworkOptions> = (el, initial) => {
+export const createNetwork: PlotomicsFactory<NetworkOptions> = (el, initial) => {
   let opts: NetworkOptions = mergeOptions(defaultNetworkOptions, initial.options);
   let theme = resolveTheme(opts.theme);
-  let data: BiovizData = initial.data ?? { columns: {} };
+  let data: PlotomicsData = initial.data ?? { columns: {} };
 
   el.style.position = el.style.position || "relative";
   el.style.background = theme.background;
@@ -197,7 +197,7 @@ export const createNetwork: BiovizFactory<NetworkOptions> = (el, initial) => {
     applyData();
   }
 
-  const instance: BiovizInstance<NetworkOptions> = {
+  const instance: PlotomicsInstance<NetworkOptions> = {
     setData(next) {
       data = next;
       applyData();

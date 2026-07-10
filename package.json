@@ -1,5 +1,5 @@
 {
-  "name": "bioviz-monorepo",
+  "name": "plotomics-monorepo",
   "version": "0.1.0",
   "private": true,
   "description": "Lightweight, high-performance bioinformatics visualization components with R and Python wrappers.",
@@ -16,7 +16,7 @@
     "typecheck": "pnpm -r --filter \"./packages/**\" typecheck",
     "lint": "biome lint .",
     "format": "biome format --write .",
-    "dev": "pnpm --filter @bioviz/components dev"
+    "dev": "pnpm --filter @plotomics/components dev"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.3",

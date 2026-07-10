@@ -1,8 +1,8 @@
-import { type BiovizFactory, downloadBlob } from "@bioviz/core";
+import { type PlotomicsFactory, downloadBlob } from "@plotomics/core";
 import { decodeModelData } from "./decode-model.js";
 
 /**
- * Wraps a headless component {@link BiovizFactory} into the object anywidget
+ * Wraps a headless component {@link PlotomicsFactory} into the object anywidget
  * expects (`{ render }`). Every Python component ships an entry that is one
  * line: `export default makeAnywidget(createX);`
  *
@@ -13,7 +13,7 @@ import { decodeModelData } from "./decode-model.js";
  *   - `options` Dict  : component options
  *   - `_height` Int   : initial height hint in CSS px
  */
-export function makeAnywidget<O>(factory: BiovizFactory<O>) {
+export function makeAnywidget<O>(factory: PlotomicsFactory<O>) {
   return {
     render({ model, el }: { model: AnyModel; el: HTMLElement }) {
       const host = document.createElement("div");
@@ -48,29 +48,29 @@ export function makeAnywidget<O>(factory: BiovizFactory<O>) {
 
       // Python -> JS: `widget.export("svg"|"png")` posts a custom message; we
       // render the current view and trigger a browser download (reusing the
-      // BiovizInstance export methods). Nothing returns to Python — the figure
+      // PlotomicsInstance export methods). Nothing returns to Python — the figure
       // is produced client-side.
       const onMsg = (msg: unknown) => {
-        const m = msg as { bioviz?: string; format?: string } | null;
-        if (!m || m.bioviz !== "export") return;
+        const m = msg as { plotomics?: string; format?: string } | null;
+        if (!m || m.plotomics !== "export") return;
         // One model can drive several views (e.g. the widget shown in two
         // notebook cells) and the custom message reaches every view. A shared
         // per-tick lock keeps exactly one view from firing N duplicate
         // downloads; the microtask clears it after this synchronous dispatch.
-        const lock = model as unknown as { __biovizExporting?: boolean };
-        if (lock.__biovizExporting) return;
-        lock.__biovizExporting = true;
+        const lock = model as unknown as { __plotomicsExporting?: boolean };
+        if (lock.__plotomicsExporting) return;
+        lock.__plotomicsExporting = true;
         queueMicrotask(() => {
-          lock.__biovizExporting = false;
+          lock.__plotomicsExporting = false;
         });
         if (m.format === "svg") {
           const svg = inst.exportSVG?.();
-          if (svg) downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "bioviz.svg");
-          else console.warn("bioviz: this component does not support SVG export");
+          if (svg) downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "plotomics.svg");
+          else console.warn("plotomics: this component does not support SVG export");
         } else {
           const png = inst.exportPNG?.(2);
-          if (png) png.then((blob) => blob && downloadBlob(blob, "bioviz.png")).catch(() => {});
-          else console.warn("bioviz: this component does not support PNG export");
+          if (png) png.then((blob) => blob && downloadBlob(blob, "plotomics.png")).catch(() => {});
+          else console.warn("plotomics: this component does not support PNG export");
         }
       };
       model.on("msg:custom", onMsg);

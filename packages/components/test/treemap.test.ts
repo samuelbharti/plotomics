@@ -8,13 +8,13 @@ import {
   type TreeRow,
 } from "../src/components/treemap.js";
 import type { HierarchyRectangularNode } from "d3-hierarchy";
-import type { BiovizData } from "@bioviz/core";
+import type { PlotomicsData } from "@plotomics/core";
 
 // A tiny two-pathway hierarchy:
 //   root
 //   ├── P1 ── g1 (3), g2 (5)
 //   └── P2 ── g3 (2)
-function sampleData(): BiovizData {
+function sampleData(): PlotomicsData {
   return {
     columns: {
       id: ["root", "P1", "P2", "g1", "g2", "g3"],

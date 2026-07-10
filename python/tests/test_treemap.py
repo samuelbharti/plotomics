@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from bioviz import Treemap
+from plotomics import Treemap
 
 
 def _sample():

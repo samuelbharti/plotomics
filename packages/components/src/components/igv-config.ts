@@ -32,7 +32,7 @@ export const defaultIgvOptions: IgvOptions = {
 };
 
 /**
- * Assemble an igv.js browser config from bioviz options.
+ * Assemble an igv.js browser config from plotomics options.
  *
  * If `options.config` is provided it wins outright (igv.js owns validation).
  * Otherwise a config is built from the convenience fields: `genome`, `locus`,
