@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
-import numpy as np
-
-from ._base import STATIC, BiovizWidget, _column, pack_columns
+from ._base import STATIC, BiovizWidget, _column, _to_float32, pack_columns
 
 
 class Network(BiovizWidget):
@@ -43,6 +42,8 @@ class Network(BiovizWidget):
         Node radius (px) used when ``size`` is absent.
     palette:
         Optional list of hex colors overriding the default categorical palette.
+    theme:
+        Optional theme overrides forwarded to the JS renderer.
     height:
         Initial widget height in CSS pixels.
 
@@ -72,6 +73,7 @@ class Network(BiovizWidget):
         label_threshold: float = 8.0,
         default_node_size: float = 4.0,
         palette: list[str] | None = None,
+        theme: dict | None = None,
         height: int = 480,
         **kwargs: Any,
     ) -> None:
@@ -82,30 +84,64 @@ class Network(BiovizWidget):
         target = _column(edges, "target")
         if source is None or target is None:
             raise ValueError("`edges` must provide `source` and `target` columns.")
+        if layout not in ("forceatlas2", "precomputed"):
+            raise ValueError("`layout` must be 'forceatlas2' or 'precomputed'.")
 
         # String columns go through the JSON side-channel.
+        id_list = [str(v) for v in node_id]
+        source_list = [str(v) for v in source]
+        target_list = [str(v) for v in target]
+        n_nodes = len(id_list)
+        n_edges = len(source_list)
+
+        # Structural integrity.
+        if n_nodes == 0:
+            raise ValueError("`nodes` must contain at least one row.")
+        if len(target_list) != n_edges:
+            raise ValueError(
+                "`source` and `target` must have the same length; "
+                f"got source={n_edges}, target={len(target_list)}"
+            )
+        dupes = sorted({i for i, c in Counter(id_list).items() if c > 1})
+        if dupes:
+            raise ValueError("duplicate node id(s): " + ", ".join(dupes))
+        id_set = set(id_list)
+        dangling = sorted({e for e in (*source_list, *target_list) if e not in id_set})
+        if dangling:
+            raise ValueError(
+                "edge source/target not found among node ids: " + ", ".join(dangling)
+            )
+
         json_columns: dict[str, list] = {
-            "id": [str(v) for v in node_id],
-            "source": [str(v) for v in source],
-            "target": [str(v) for v in target],
+            "id": id_list,
+            "source": source_list,
+            "target": target_list,
         }
 
-        # Numeric columns go through the packed binary buffer.
-        numeric: dict[str, np.ndarray] = {}
+        # Numeric columns go through the packed binary buffer. Node columns
+        # (x/y/size) and the per-edge weight legitimately differ in length, so
+        # equal-length checking is done per group here, not across the buffer.
+        numeric: dict[str, Any] = {}
         x = _column(nodes, "x")
         y = _column(nodes, "y")
+        if layout == "precomputed" and (x is None or y is None):
+            raise ValueError(
+                "layout='precomputed' requires `x` and `y` columns in `nodes`."
+            )
         if x is not None and y is not None:
-            numeric["x"] = np.asarray(x, dtype=np.float32)
-            numeric["y"] = np.asarray(y, dtype=np.float32)
+            numeric["x"] = _validate_len(_to_float32(x, "x"), n_nodes, "x")
+            numeric["y"] = _validate_len(_to_float32(y, "y"), n_nodes, "y")
         size = _column(nodes, "size")
         if size is not None:
-            numeric["size"] = np.asarray(size, dtype=np.float32)
+            numeric["size"] = _validate_len(_to_float32(size, "size"), n_nodes, "size")
         weight = _column(edges, "weight")
         if weight is not None:
-            numeric["weight"] = np.asarray(weight, dtype=np.float32)
+            numeric["weight"] = _validate_len(
+                _to_float32(weight, "weight"), n_edges, "weight"
+            )
 
         if numeric:
-            buffer, schema = pack_columns(numeric)
+            buffer, schema = pack_columns(numeric, equal_length=False)
         else:
             buffer, schema = b"", {"columns": []}
 
@@ -127,6 +163,8 @@ class Network(BiovizWidget):
         }
         if palette is not None:
             options["palette"] = list(palette)
+        if theme is not None:
+            options["theme"] = theme
 
         super().__init__(
             buffer=buffer,
@@ -136,3 +174,10 @@ class Network(BiovizWidget):
             _height=height,
             **kwargs,
         )
+
+
+def _validate_len(arr: Any, expected: int, name: str) -> Any:
+    """Raise if a packed column's length does not match its group size."""
+    if int(arr.size) != expected:
+        raise ValueError(f"`{name}` has {int(arr.size)} entries; expected {expected}.")
+    return arr

@@ -35,11 +35,13 @@ def test_treemap_builds_traits_from_dict():
     assert w.options["colormap"] == "rdbu"
     assert w.options["labelMinSize"] == 40
 
-    # value packed as one float64 column of length 6.
+    # value packed as one float32 column of length 6 (consistent with all
+    # other components' packed columns).
     names = {c["name"] for c in w.schema["columns"]}
     assert names == {"value"}
-    assert len(w.buffer) == 6 * 8
-    assert np.frombuffer(w.buffer, dtype=np.float64).tolist() == [0, 0, 0, 3, 5, 2]
+    assert w.schema["columns"][0]["dtype"] == "float32"
+    assert len(w.buffer) == 6 * 4
+    assert np.frombuffer(w.buffer, dtype=np.float32).tolist() == [0, 0, 0, 3, 5, 2]
 
 
 def test_treemap_defaults():
@@ -47,9 +49,38 @@ def test_treemap_defaults():
     assert w.options["tile"] == "squarify"
     assert w.options["colorBy"] == "parent"
     assert w.options["colormap"] == "viridis"
-    # value defaults to zeros when absent.
-    assert np.frombuffer(w.buffer, dtype=np.float64).tolist() == [0.0, 0.0]
+    # value defaults to zeros when absent (float32).
+    assert np.frombuffer(w.buffer, dtype=np.float32).tolist() == [0.0, 0.0]
     assert "labels" not in w.data["meta"]
+
+
+def test_treemap_theme_in_options():
+    w = Treemap({"id": ["a", "b"], "parent": [None, "a"]}, theme={"background": "#000"})
+    assert w.options["theme"] == {"background": "#000"}
+
+
+def test_treemap_rejects_duplicate_ids():
+    with pytest.raises(ValueError, match="duplicate node id"):
+        Treemap({"id": ["a", "a"], "parent": [None, "a"]})
+
+
+def test_treemap_requires_exactly_one_root():
+    # Two roots (two empty parents).
+    with pytest.raises(ValueError, match="exactly one root"):
+        Treemap({"id": ["a", "b"], "parent": [None, None]})
+    # Zero roots (every node has a parent).
+    with pytest.raises(ValueError, match="exactly one root"):
+        Treemap({"id": ["a", "b"], "parent": ["b", "a"]})
+
+
+def test_treemap_rejects_orphan_parent():
+    with pytest.raises(ValueError, match="not found among ids"):
+        Treemap({"id": ["root", "g1"], "parent": [None, "missing"]})
+
+
+def test_treemap_rejects_empty_data():
+    with pytest.raises(ValueError, match="at least one row"):
+        Treemap({"id": [], "parent": []})
 
 
 def test_treemap_requires_id_and_parent():

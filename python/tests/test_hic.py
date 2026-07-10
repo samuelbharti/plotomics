@@ -59,3 +59,40 @@ def test_hic_requires_square_dense_matrix():
 def test_hic_requires_some_input():
     with pytest.raises(ValueError, match="dense .* or a sparse"):
         HiC()
+
+
+def test_hic_rejects_empty_triplet():
+    with pytest.raises(ValueError, match="empty"):
+        HiC(i=[], j=[], v=[], n=4)
+
+
+def test_hic_rejects_mismatched_triplet_lengths():
+    with pytest.raises(ValueError, match="same length"):
+        HiC(i=[0, 1], j=[0], v=[1.0, 2.0], n=3)
+
+
+def test_hic_rejects_out_of_range_index():
+    # index 5 is outside [0, 3)
+    with pytest.raises(ValueError, match=r"in \[0, 3\)"):
+        HiC(i=[0, 5], j=[1, 2], v=[1.0, 2.0], n=3)
+
+
+def test_hic_rejects_negative_index():
+    with pytest.raises(ValueError, match=r"in \[0, 3\)"):
+        HiC(i=[0, -1], j=[1, 2], v=[1.0, 2.0], n=3)
+
+
+def test_hic_rejects_empty_dense_matrix():
+    with pytest.raises(ValueError, match="at least one row"):
+        HiC(np.zeros((0, 0)))
+
+
+def test_hic_vmax_percentile_in_options():
+    m = np.random.rand(4, 4).astype(np.float32)
+    assert "vmaxPercentile" not in HiC(m).options
+    assert HiC(m, vmax_percentile=0.95).options["vmaxPercentile"] == 0.95
+
+
+def test_hic_theme_in_options():
+    m = np.random.rand(3, 3).astype(np.float32)
+    assert HiC(m, theme={"background": "#000"}).options["theme"] == {"background": "#000"}

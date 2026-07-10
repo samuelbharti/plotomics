@@ -80,3 +80,46 @@ def test_clustermap_carries_precomputed_linkage():
 def test_clustermap_rejects_non_2d():
     with pytest.raises(ValueError, match="2-dimensional"):
         Clustermap(np.arange(5.0))
+
+
+def test_clustermap_theme_in_options():
+    w = Clustermap(np.random.randn(3, 3), theme={"background": "#000"})
+    assert w.options["theme"] == {"background": "#000"}
+
+
+def test_clustermap_rejects_invalid_metric():
+    with pytest.raises(ValueError, match="metric"):
+        Clustermap(np.random.randn(3, 3), metric="cosine")
+
+
+def test_clustermap_rejects_invalid_linkage():
+    with pytest.raises(ValueError, match="linkage"):
+        Clustermap(np.random.randn(3, 3), linkage="single")
+
+
+def test_clustermap_rejects_invalid_colormap():
+    with pytest.raises(ValueError, match="colormap"):
+        Clustermap(np.random.randn(3, 3), colormap="plasma")
+
+
+def test_clustermap_rejects_bad_precomputed_linkage_length():
+    with pytest.raises(ValueError, match="row_linkage"):
+        Clustermap(np.random.randn(3, 3), row_linkage=[0, 1])
+
+
+def test_clustermap_rejects_non_permutation_linkage():
+    with pytest.raises(ValueError, match="permutation"):
+        Clustermap(np.random.randn(3, 3), col_linkage=[0, 0, 1])
+
+
+def test_clustermap_accepts_dict_linkage_with_order():
+    w = Clustermap(
+        np.random.randn(3, 3),
+        row_linkage={"order": [2, 1, 0], "merges": []},
+    )
+    assert w.data["meta"]["rowLinkage"]["order"] == [2, 1, 0]
+
+
+def test_clustermap_rejects_empty_matrix():
+    with pytest.raises(ValueError, match="at least one row"):
+        Clustermap(np.zeros((0, 0)))
