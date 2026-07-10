@@ -96,3 +96,13 @@ def test_hic_vmax_percentile_in_options():
 def test_hic_theme_in_options():
     m = np.random.rand(3, 3).astype(np.float32)
     assert HiC(m, theme={"background": "#000"}).options["theme"] == {"background": "#000"}
+
+
+def test_hic_rejects_non_numeric_triplet():
+    with pytest.raises(ValueError, match="must be numeric"):
+        HiC(i=[0, 1], j=[1, 2], v=["a", "b"], n=3)
+
+
+def test_hic_rejects_non_numeric_matrix():
+    with pytest.raises(ValueError, match="must be numeric"):
+        HiC(np.array([["a", "b"], ["c", "d"]]))

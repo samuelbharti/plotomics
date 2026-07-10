@@ -124,7 +124,12 @@ class Clustermap(BiovizWidget):
             _validate_linkage(col_linkage, int(ncols), "col_linkage")
 
         # Row-major float32 buffer (C-contiguous flatten matches the JS layout).
-        values = np.ascontiguousarray(arr, dtype=np.float32).reshape(-1)
+        try:
+            values = np.ascontiguousarray(arr, dtype=np.float32).reshape(-1)
+        except (ValueError, TypeError):
+            raise ValueError(
+                f"`matrix` must be numeric; got dtype {arr.dtype.name}"
+            ) from None
         buffer, schema = pack_columns({"values": values})
 
         meta: dict[str, Any] = {"nrows": int(nrows), "ncols": int(ncols)}
@@ -176,8 +181,18 @@ def _validate_linkage(linkage: Any, n: int, name: str) -> None:
             raise ValueError(f"`{name}` dict must contain an 'order' key.")
         order = list(linkage["order"])
         merges = linkage.get("merges")
-        if merges is not None and not isinstance(merges, (list, tuple)):
-            raise ValueError(f"`{name}` 'merges' must be a list.")
+        if merges is not None:
+            if not isinstance(merges, (list, tuple)):
+                raise ValueError(f"`{name}` 'merges' must be a list.")
+            for m in merges:
+                if not (
+                    isinstance(m, Mapping)
+                    and all(k in m for k in ("left", "right", "height"))
+                ):
+                    raise ValueError(
+                        f"`{name}` 'merges' must each supply 'left', 'right' "
+                        "and 'height'."
+                    )
     else:
         try:
             order = list(linkage)
@@ -189,11 +204,20 @@ def _validate_linkage(linkage: Any, n: int, name: str) -> None:
 
     if len(order) != n:
         raise ValueError(f"`{name}` order has {len(order)} entries; expected {n}.")
-    try:
-        idx = sorted(int(v) for v in order)
-    except (TypeError, ValueError):
-        raise ValueError(f"`{name}` order must contain integer leaf indices.") from None
-    if idx != list(range(n)):
+    # Integer leaf indices only: accept ints and whole-valued floats (e.g. 2.0),
+    # reject fractional floats and strings — matching the R wrapper, so
+    # "0","1" or 0.5 are not silently coerced by int().
+    cleaned: list[int] = []
+    for v in order:
+        if isinstance(v, bool):
+            raise ValueError(f"`{name}` order must contain integer leaf indices.")
+        if isinstance(v, (int, np.integer)):
+            cleaned.append(int(v))
+        elif isinstance(v, (float, np.floating)) and float(v).is_integer():
+            cleaned.append(int(v))
+        else:
+            raise ValueError(f"`{name}` order must contain integer leaf indices.")
+    if sorted(cleaned) != list(range(n)):
         raise ValueError(f"`{name}` order must be a permutation of 0..{n - 1}.")
 
 
