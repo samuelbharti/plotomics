@@ -1,0 +1,44 @@
+url: https://samuelbharti.github.io/plotomics/r
+
+template:
+  bootstrap: 5
+  bslib:
+    primary: "#2761e3"
+    base_font: {google: "Source Sans 3"}
+    heading_font: {google: "Source Sans 3"}
+
+home:
+  title: plotomics for R
+  description: >
+    GPU-accelerated bioinformatics visualization widgets for R, built on
+    htmlwidgets and a shared JavaScript core.
+
+navbar:
+  structure:
+    left: [reference, articles]
+    right: [search, github]
+  components:
+    github:
+      icon: fa-github
+      href: https://github.com/samuelbharti/plotomics
+      aria-label: GitHub repository
+
+reference:
+- title: Visualization components
+  desc: One constructor per component. Each returns an htmlwidget.
+  contents:
+  - volcano
+  - embedding
+  - bioheatmap
+  - heatmap_plotomics
+  - clustermap
+  - treemap
+  - hic
+  - igv
+  - gosling
+  - network
+- title: Shiny bindings
+  desc: Output and render pairs for use in classic Shiny apps.
+  contents:
+  - ends_with("Output")
+  - starts_with("render")
