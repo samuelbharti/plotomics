@@ -112,10 +112,15 @@ ui <- navbarPage(
       side(
         radioButtons("e_by", "Color by",
           c("Cluster (categorical)" = "cluster", "Value (continuous)" = "value")),
+        radioButtons("e_mode", "Drag mode",
+          c("Pan / zoom" = "panZoom", "Lasso select" = "lasso")),
         sliderInput("e_ps", "Point size", 1, 8, 3, 0.5),
-        checkboxInput("e_leg", "Show legend", TRUE)
+        checkboxInput("e_leg", "Show legend", TRUE),
+        hr(),
+        strong("Lasso selection (server-side)"),
+        textOutput("emb_sel")
       ),
-      main(embeddingOutput("embedding", height = "640px"))
+      main(embeddingOutput("embedding", height = "600px"))
     )
   ),
   tabPanel(
@@ -161,7 +166,19 @@ server <- function(input, output, session) {
   output$embedding <- renderEmbedding({
     df <- embedding_df
     df$color <- if (input$e_by == "value") embedding_df$value else embedding_df$cluster
-    embedding(df, point_size = input$e_ps, show_legend = input$e_leg)
+    embedding(df,
+      point_size = input$e_ps, show_legend = input$e_leg,
+      mouse_mode = input$e_mode)
+  })
+
+  # Lasso selection travels back from the widget as input$<outputId>_selected.
+  output$emb_sel <- renderText({
+    idx <- input$embedding_selected
+    if (is.null(idx) || length(idx) == 0) {
+      "none yet - switch Drag mode to Lasso and drag across points"
+    } else {
+      sprintf("%d point(s) selected", length(idx))
+    }
   })
 
   output$heatmap <- renderBioheatmap(

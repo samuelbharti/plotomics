@@ -46,11 +46,12 @@ function ensureGlobal(): BiovizGlobal {
               renderValue(x: RenderPayload) {
                 const factory = g.components[name];
                 if (!factory) throw new Error(`bioviz: component "${name}" not registered`);
+                const options = withShinySelection(el, x.options ?? {});
                 if (!inst) {
-                  inst = factory(el, { data: x.data, options: x.options ?? {} });
+                  inst = factory(el, { data: x.data, options });
                 } else {
                   inst.setData(x.data);
-                  inst.setOptions(x.options ?? {});
+                  inst.setOptions(options);
                 }
               },
               resize(width: number, h: number) {
@@ -64,6 +65,31 @@ function ensureGlobal(): BiovizGlobal {
     w.bioviz = g;
   }
   return w.bioviz;
+}
+
+/**
+ * In a Shiny app (`HTMLWidgets.shinyMode`), inject an `onSelect` that pushes the
+ * component's lasso selection to `input$<outputId>_selected`. Outside Shiny this
+ * is a no-op, and components without selection ignore the extra option key.
+ */
+function withShinySelection(
+  el: HTMLElement,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  options: Record<string, any>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Record<string, any> {
+  const w = window as unknown as {
+    HTMLWidgets?: { shinyMode?: boolean };
+    Shiny?: { setInputValue?: (id: string, value: unknown, opts?: unknown) => void };
+  };
+  if (w.HTMLWidgets?.shinyMode && w.Shiny?.setInputValue && el.id) {
+    return {
+      ...options,
+      onSelect: (indices: number[]) =>
+        w.Shiny?.setInputValue?.(`${el.id}_selected`, indices, { priority: "event" }),
+    };
+  }
+  return options;
 }
 
 export function registerComponent(name: string, factory: AnyFactory): void {
