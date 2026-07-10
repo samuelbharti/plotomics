@@ -68,3 +68,12 @@ def test_embedding_theme_in_options():
 def test_embedding_rejects_empty_data():
     with pytest.raises(ValueError, match="at least one row"):
         Embedding({"x": [], "y": []})
+
+
+def test_embedding_selection_trait_and_export():
+    w = Embedding({"x": [1, 2], "y": [1, 2]}, mouse_mode="lasso")
+    # JS -> Python selection channel (front-end writes it on lasso select).
+    assert "selected" in w.traits()
+    assert w.selected == []
+    # Front-end-triggered figure download.
+    assert callable(w.export)
