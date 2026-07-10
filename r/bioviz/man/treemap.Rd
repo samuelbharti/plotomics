@@ -11,6 +11,7 @@ treemap(
   color_by = c("parent", "value"),
   colormap = c("viridis", "rdbu"),
   label_min_size = 32,
+  theme = NULL,
   width = NULL,
   height = NULL,
   element_id = NULL
@@ -34,6 +35,10 @@ or by \code{"value"} (a sequential/diverging ramp).}
 \item{colormap}{Ramp used when \code{color_by = "value"}: \code{"viridis"} or \code{"rdbu"}.}
 
 \item{label_min_size}{Minimum tile side (px) before a label is drawn.}
+
+\item{theme}{Optional named list of theme overrides (colors, fonts, ...)
+merged over the component defaults in the browser. \code{NULL} uses the default
+theme.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 

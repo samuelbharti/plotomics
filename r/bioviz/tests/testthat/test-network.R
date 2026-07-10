@@ -67,3 +67,52 @@ test_that("network() validates its input", {
     network(nodes, data.frame(a = 1, b = 2)), "must contain `source` and `target`"
   )
 })
+
+test_that("network() rejects duplicate node ids", {
+  nodes <- data.frame(id = c("a", "a"), stringsAsFactors = FALSE)
+  edges <- data.frame(source = "a", target = "a", stringsAsFactors = FALSE)
+  expect_error(network(nodes, edges), "duplicate node id\\(s\\): a")
+})
+
+test_that("network() rejects an edge referencing a missing node", {
+  nodes <- data.frame(id = c("a", "b"), stringsAsFactors = FALSE)
+  edges <- data.frame(source = "a", target = "z", stringsAsFactors = FALSE)
+  expect_error(
+    network(nodes, edges),
+    "edge endpoint\\(s\\) not found among node ids: z"
+  )
+})
+
+test_that("network() requires x/y when layout is precomputed", {
+  nodes <- data.frame(id = c("a", "b"), stringsAsFactors = FALSE)
+  edges <- data.frame(source = "a", target = "b", stringsAsFactors = FALSE)
+  expect_error(
+    network(nodes, edges, layout = "precomputed"),
+    "requires `x` and `y`"
+  )
+})
+
+test_that("network() rejects a factor coordinate column", {
+  nodes <- data.frame(
+    id = c("a", "b"), x = factor(c("0", "1")), y = c(0, 1),
+    stringsAsFactors = FALSE
+  )
+  edges <- data.frame(source = "a", target = "b", stringsAsFactors = FALSE)
+  expect_error(network(nodes, edges), "`x` must be numeric")
+})
+
+test_that("network() rejects empty nodes", {
+  nodes <- data.frame(id = character(0), stringsAsFactors = FALSE)
+  edges <- data.frame(
+    source = character(0), target = character(0), stringsAsFactors = FALSE
+  )
+  expect_error(network(nodes, edges), "`nodes` has no rows/cells")
+})
+
+test_that("network() forwards a theme override", {
+  nodes <- data.frame(id = c("a", "b"), stringsAsFactors = FALSE)
+  edges <- data.frame(source = "a", target = "b", stringsAsFactors = FALSE)
+  w <- network(nodes, edges, theme = list(background = "#333"))
+  expect_equal(w$x$options$theme$background, "#333")
+  expect_null(network(nodes, edges)$x$options$theme)
+})

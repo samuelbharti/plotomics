@@ -50,3 +50,52 @@ test_that("clustermap() defaults match the JS/Python option names", {
   expect_true(w$x$options$clusterRows)
   expect_true(w$x$options$clusterCols)
 })
+
+test_that("clustermap() rejects an invalid precomputed leaf order", {
+  mat <- matrix(rnorm(12), nrow = 3) # 3 rows
+  # Wrong length.
+  expect_error(
+    clustermap(mat, row_linkage = c(0L, 1L)),
+    "leaf order must be a length-3 permutation"
+  )
+  # Not a 0-based permutation (out of range / duplicated).
+  expect_error(
+    clustermap(mat, row_linkage = c(1L, 2L, 3L)),
+    "leaf order must be a length-3 permutation"
+  )
+})
+
+test_that("clustermap() rejects a malformed linkage list", {
+  mat <- matrix(rnorm(12), nrow = 3)
+  expect_error(
+    clustermap(mat, col_linkage = list(foo = 1)),
+    "must supply an `order`"
+  )
+})
+
+test_that("clustermap() accepts a valid dendrogram list", {
+  mat <- matrix(rnorm(12), nrow = 3)
+  lk <- list(
+    order = c(0L, 1L, 2L),
+    merges = list(
+      list(left = 0, right = 1, height = 0.5),
+      list(left = 2, right = 3, height = 1.0)
+    )
+  )
+  w <- clustermap(mat, row_linkage = lk)
+  expect_equal(w$x$data$meta$rowLinkage$order, c(0L, 1L, 2L))
+})
+
+test_that("clustermap() rejects an empty matrix", {
+  expect_error(
+    clustermap(matrix(numeric(0), nrow = 0, ncol = 0)),
+    "`mat` has no rows/cells"
+  )
+})
+
+test_that("clustermap() forwards a theme override", {
+  mat <- matrix(rnorm(6), nrow = 2)
+  w <- clustermap(mat, theme = list(background = "#444"))
+  expect_equal(w$x$options$theme$background, "#444")
+  expect_null(clustermap(mat)$x$options$theme)
+})

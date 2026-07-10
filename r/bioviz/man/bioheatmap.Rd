@@ -12,6 +12,7 @@ bioheatmap(
   vmin = NULL,
   vmax = NULL,
   show_colorbar = TRUE,
+  theme = NULL,
   width = NULL,
   height = NULL,
   element_id = NULL
@@ -24,6 +25,7 @@ heatmap_bioviz(
   vmin = NULL,
   vmax = NULL,
   show_colorbar = TRUE,
+  theme = NULL,
   width = NULL,
   height = NULL,
   element_id = NULL
@@ -43,6 +45,10 @@ auto-scales from the data; for \code{"rdbu"} the auto domain is symmetric about
 zero.}
 
 \item{show_colorbar}{Logical; draw the colorbar legend.}
+
+\item{theme}{Optional named list of theme overrides (colors, fonts, ...)
+merged over the component defaults in the browser. \code{NULL} uses the default
+theme.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 
