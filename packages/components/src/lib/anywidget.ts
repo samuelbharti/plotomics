@@ -1,4 +1,4 @@
-import type { BiovizFactory } from "@bioviz/core";
+import { type BiovizFactory, downloadBlob } from "@bioviz/core";
 import { decodeModelData } from "./decode-model.js";
 
 /**
@@ -28,17 +28,42 @@ export function makeAnywidget<O>(factory: BiovizFactory<O>) {
           data: model.get("data") as never,
         });
 
-      const inst = factory(host, {
-        data: readData(),
-        options: (model.get("options") as Partial<O>) ?? {},
-      });
+      // JS -> Python: report the current lasso selection into the `selected`
+      // trait. Merged into options; components without onSelect ignore the key.
+      const onSelect = (indices: number[]) => {
+        model.set("selected", indices);
+        model.save_changes();
+      };
+      const readOptions = () =>
+        ({ ...((model.get("options") as Partial<O>) ?? {}), onSelect }) as Partial<O>;
+
+      const inst = factory(host, { data: readData(), options: readOptions() });
 
       const onData = () => inst.setData(readData());
       const onBuffer = () => inst.setData(readData());
-      const onOptions = () => inst.setOptions((model.get("options") as Partial<O>) ?? {});
+      const onOptions = () => inst.setOptions(readOptions());
       model.on("change:data", onData);
       model.on("change:buffer", onBuffer);
       model.on("change:options", onOptions);
+
+      // Python -> JS: `widget.export("svg"|"png")` posts a custom message; we
+      // render the current view and trigger a browser download (reusing the
+      // BiovizInstance export methods). Nothing returns to Python — the figure
+      // is produced client-side.
+      const onMsg = (msg: unknown) => {
+        const m = msg as { bioviz?: string; format?: string } | null;
+        if (!m || m.bioviz !== "export") return;
+        if (m.format === "svg") {
+          const svg = inst.exportSVG?.();
+          if (svg) {
+            downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "bioviz.svg");
+          }
+        } else {
+          const png = inst.exportPNG?.(2);
+          if (png) png.then((blob) => blob && downloadBlob(blob, "bioviz.png"));
+        }
+      };
+      model.on("msg:custom", onMsg);
 
       const ro = new ResizeObserver((entries) => {
         const r = entries[0]?.contentRect;
@@ -52,6 +77,7 @@ export function makeAnywidget<O>(factory: BiovizFactory<O>) {
         model.off("change:data", onData);
         model.off("change:buffer", onBuffer);
         model.off("change:options", onOptions);
+        model.off("msg:custom", onMsg);
         inst.destroy();
       };
     },
@@ -63,6 +89,6 @@ export interface AnyModel {
   get(key: string): unknown;
   set(key: string, value: unknown): void;
   save_changes(): void;
-  on(event: string, cb: () => void): void;
-  off(event: string, cb: () => void): void;
+  on(event: string, cb: (...args: unknown[]) => void): void;
+  off(event: string, cb: (...args: unknown[]) => void): void;
 }
