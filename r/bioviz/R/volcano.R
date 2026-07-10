@@ -12,8 +12,15 @@
 #' @param p_threshold P-value cutoff (applied on the `-log10` scale).
 #' @param point_size Point radius in pixels.
 #' @param opacity Point opacity in `[0, 1]`.
+#' @param colors Optional named list of hex colors for the three point classes:
+#'   `up`, `down` and `ns` (not significant). `NULL` (the default) uses the
+#'   component's built-in palette.
 #' @param x_label,y_label Axis titles.
+#' @param show_threshold_lines Draw the fold-change / p-value threshold guides.
 #' @param label_top_n Number of top up- and down-regulated genes to label.
+#' @param theme Optional named list of theme overrides (colors, fonts, ...)
+#'   merged over the component defaults in the browser. `NULL` uses the default
+#'   theme.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.
@@ -31,9 +38,12 @@ volcano <- function(data,
                     p_threshold = 0.05,
                     point_size = 3,
                     opacity = 0.8,
+                    colors = NULL,
                     x_label = "log2 fold change",
                     y_label = "-log10 p-value",
+                    show_threshold_lines = TRUE,
                     label_top_n = 10,
+                    theme = NULL,
                     width = NULL,
                     height = NULL,
                     element_id = NULL) {
@@ -43,11 +53,14 @@ volcano <- function(data,
   if (!all(c("x", "y") %in% names(data))) {
     stop("`data` must contain columns `x` and `y`.", call. = FALSE)
   }
+  bv_require_nonempty(nrow(data), "data")
 
-  columns <- list(
-    x = as.numeric(data$x),
-    y = as.numeric(data$y)
-  )
+  x <- bv_require_numeric(data$x, "x")
+  bv_check_finite(x, "x")
+  y <- bv_require_numeric(data$y, "y")
+  bv_check_finite(y, "y")
+
+  columns <- list(x = x, y = y)
   if (!is.null(data$label)) {
     columns$label <- as.character(data$label)
   }
@@ -59,8 +72,11 @@ volcano <- function(data,
     opacity = opacity,
     xLabel = x_label,
     yLabel = y_label,
+    showThresholdLines = show_threshold_lines,
     labelTopN = label_top_n
   )
+  if (!is.null(colors)) options$colors <- colors
+  if (!is.null(theme)) options$theme <- theme
 
   bioviz_widget(
     "volcano", columns,

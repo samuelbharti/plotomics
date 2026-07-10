@@ -10,9 +10,12 @@ volcano(
   p_threshold = 0.05,
   point_size = 3,
   opacity = 0.8,
+  colors = NULL,
   x_label = "log2 fold change",
   y_label = "-log10 p-value",
+  show_threshold_lines = TRUE,
   label_top_n = 10,
+  theme = NULL,
   width = NULL,
   height = NULL,
   element_id = NULL
@@ -31,9 +34,19 @@ tooltips and top-hit labels.}
 
 \item{opacity}{Point opacity in \verb{[0, 1]}.}
 
+\item{colors}{Optional named list of hex colors for the three point classes:
+\code{up}, \code{down} and \code{ns} (not significant). \code{NULL} (the default) uses the
+component's built-in palette.}
+
 \item{x_label, y_label}{Axis titles.}
 
+\item{show_threshold_lines}{Draw the fold-change / p-value threshold guides.}
+
 \item{label_top_n}{Number of top up- and down-regulated genes to label.}
+
+\item{theme}{Optional named list of theme overrides (colors, fonts, ...)
+merged over the component defaults in the browser. \code{NULL} uses the default
+theme.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 

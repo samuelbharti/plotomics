@@ -10,10 +10,12 @@ embedding(
   opacity = 0.8,
   color_mode = c("auto", "categorical", "continuous"),
   colormap = c("viridis", "rdbu"),
+  mouse_mode = c("panZoom", "lasso"),
   x_label = "UMAP 1",
   y_label = "UMAP 2",
   show_axes = FALSE,
   show_legend = TRUE,
+  theme = NULL,
   width = NULL,
   height = NULL,
   element_id = NULL
@@ -36,11 +38,18 @@ its type, or force \code{"categorical"} / \code{"continuous"}.}
 \item{colormap}{Sequential color ramp for continuous coloring: \code{"viridis"}
 or \code{"rdbu"}.}
 
+\item{mouse_mode}{Primary drag gesture: \code{"panZoom"} (default) pans/zooms and
+\code{"lasso"} makes a plain drag draw a selection.}
+
 \item{x_label, y_label}{Axis titles (shown when \code{show_axes = TRUE}).}
 
 \item{show_axes}{Draw the axis frame + ticks (embeddings usually hide axes).}
 
 \item{show_legend}{Draw the legend (discrete swatches or a colorbar).}
+
+\item{theme}{Optional named list of theme overrides (colors, fonts, ...)
+merged over the component defaults in the browser. \code{NULL} uses the default
+theme.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 

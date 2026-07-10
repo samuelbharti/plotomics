@@ -34,3 +34,38 @@ test_that("embedding() omits optional columns when absent", {
   expect_null(w$x$data$columns$color)
   expect_null(w$x$data$columns$label)
 })
+
+test_that("embedding() rejects a factor/character coordinate column", {
+  df <- data.frame(x = factor(c("1", "2")), y = c(1, 2))
+  expect_error(embedding(df), "`x` must be numeric, not a factor/character")
+})
+
+test_that("embedding() still allows a categorical color column", {
+  df <- data.frame(x = 1:3, y = 1:3, color = factor(c("a", "b", "a")))
+  w <- embedding(df)
+  expect_equal(w$x$data$columns$color, c("a", "b", "a"))
+})
+
+test_that("embedding() warns on non-finite coordinates", {
+  df <- data.frame(x = c(1, Inf), y = c(1, 2))
+  expect_warning(embedding(df), "`x` has 1 non-finite value")
+})
+
+test_that("embedding() rejects empty input", {
+  expect_error(
+    embedding(data.frame(x = numeric(0), y = numeric(0))),
+    "`data` has no rows/cells"
+  )
+})
+
+test_that("embedding() forwards mouse_mode and theme options", {
+  df <- data.frame(x = 1:3, y = 1:3)
+  w <- embedding(df, mouse_mode = "lasso", theme = list(background = "#111"))
+  expect_equal(w$x$options$mouseMode, "lasso")
+  expect_equal(w$x$options$theme$background, "#111")
+
+  # Default mouse mode is panZoom; theme omitted when NULL.
+  d <- embedding(df)
+  expect_equal(d$x$options$mouseMode, "panZoom")
+  expect_null(d$x$options$theme)
+})

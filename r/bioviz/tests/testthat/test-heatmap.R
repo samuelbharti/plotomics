@@ -51,3 +51,22 @@ test_that("bioheatmap() omits labels when the matrix is unnamed", {
   expect_null(w$x$data$meta$rowLabels)
   expect_null(w$x$data$meta$colLabels)
 })
+
+test_that("bioheatmap() rejects an empty matrix", {
+  expect_error(
+    bioheatmap(matrix(numeric(0), nrow = 0, ncol = 0)),
+    "`mat` has no rows/cells"
+  )
+})
+
+test_that("bioheatmap() warns on non-finite cells", {
+  m <- matrix(c(1, NaN, 2, 3), nrow = 2)
+  expect_warning(bioheatmap(m), "`mat` has 1 non-finite value")
+})
+
+test_that("bioheatmap() forwards a theme override", {
+  m <- matrix(1:4, nrow = 2)
+  w <- bioheatmap(m, theme = list(fontFamily = "serif"))
+  expect_equal(w$x$options$theme$fontFamily, "serif")
+  expect_null(bioheatmap(m)$x$options$theme)
+})

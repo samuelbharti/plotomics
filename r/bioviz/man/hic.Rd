@@ -9,12 +9,14 @@ hic(
   n = NULL,
   bin_size = NULL,
   chrom = NULL,
-  colormap = "viridis",
+  colormap = c("viridis", "rdbu"),
   transform = c("log", "linear"),
   vmax = NULL,
+  vmax_percentile = NULL,
   vmin = 0,
   symmetric = TRUE,
   label = NULL,
+  theme = NULL,
   width = NULL,
   height = NULL,
   element_id = NULL
@@ -34,18 +36,25 @@ bp/kb/Mb. \code{NULL} labels axes by bin index.}
 
 \item{chrom}{Optional chromosome name shown as the axis title.}
 
-\item{colormap}{Sequential colormap for intensity (currently \code{"viridis"}).}
+\item{colormap}{Sequential colormap for intensity: \code{"viridis"} or \code{"rdbu"}.}
 
 \item{transform}{Intensity transform, \code{"log"} (default) or \code{"linear"}.}
 
 \item{vmax}{Upper clip of the intensity scale; \code{NULL} auto-picks a high
 percentile.}
 
+\item{vmax_percentile}{Percentile in \verb{(0, 1]} used to auto-pick \code{vmax} when
+\code{vmax} is \code{NULL}. \code{NULL} uses the component default.}
+
 \item{vmin}{Lower clip of the intensity scale.}
 
 \item{symmetric}{Mirror sparse \code{i}/\code{j}/\code{v} entries across the diagonal.}
 
 \item{label}{Axis title (overrides \code{chrom} when set).}
+
+\item{theme}{Optional named list of theme overrides (colors, fonts, ...)
+merged over the component defaults in the browser. \code{NULL} uses the default
+theme.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 

@@ -47,3 +47,37 @@ def test_embedding_omits_optional_columns_when_absent():
     assert "label" not in w.data["columns"]
     names = {c["name"] for c in w.schema["columns"]}
     assert names == {"x", "y"}
+
+
+def test_embedding_mouse_mode_defaults_and_override():
+    assert Embedding({"x": [1, 2], "y": [1, 2]}).options["mouseMode"] == "panZoom"
+    w = Embedding({"x": [1, 2], "y": [1, 2]}, mouse_mode="lasso")
+    assert w.options["mouseMode"] == "lasso"
+
+
+def test_embedding_rejects_invalid_mouse_mode():
+    with pytest.raises(ValueError, match="mouse_mode"):
+        Embedding({"x": [1, 2], "y": [1, 2]}, mouse_mode="spin")
+
+
+def test_embedding_theme_in_options():
+    w = Embedding({"x": [1, 2], "y": [1, 2]}, theme={"background": "#111"})
+    assert w.options["theme"] == {"background": "#111"}
+
+
+def test_embedding_rejects_empty_data():
+    with pytest.raises(ValueError, match="at least one row"):
+        Embedding({"x": [], "y": []})
+
+
+def test_embedding_accepts_pandas_nullable_dtypes():
+    pd = pytest.importorskip("pandas")
+    # Nullable extension dtypes (Int64/Float64) surface as object under
+    # np.asarray; a clean column (no missing values) must still build rather
+    # than being rejected as non-numeric.
+    df = pd.DataFrame({"x": [1, 2, 3], "y": [4.0, 5.0, 6.0]}).convert_dtypes()
+    assert str(df["x"].dtype) == "Int64"
+    w = Embedding(df)
+    names = {c["name"] for c in w.schema["columns"]}
+    assert names == {"x", "y"}
+    assert len(w.buffer) == 3 * 4 * 2
