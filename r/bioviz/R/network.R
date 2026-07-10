@@ -23,6 +23,9 @@
 #' @param default_node_size Node radius (px) used when `size` is absent.
 #' @param palette Optional character vector of hex colors overriding the default
 #'   categorical palette used for node groups.
+#' @param theme Optional named list of theme overrides (colors, fonts, ...)
+#'   merged over the component defaults in the browser. `NULL` uses the default
+#'   theme.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.
@@ -47,6 +50,7 @@ network <- function(nodes,
                     label_threshold = 8,
                     default_node_size = 4,
                     palette = NULL,
+                    theme = NULL,
                     width = NULL,
                     height = NULL,
                     element_id = NULL) {
@@ -63,21 +67,55 @@ network <- function(nodes,
     stop("`edges` must contain `source` and `target` columns.", call. = FALSE)
   }
   layout <- match.arg(layout)
+  bv_require_nonempty(nrow(nodes), "nodes")
+
+  id <- as.character(nodes$id)
+  source <- as.character(edges$source)
+  target <- as.character(edges$target)
+
+  # Structural integrity: unique node ids and edges that reference real nodes.
+  dup <- unique(id[duplicated(id)])
+  if (length(dup) > 0L) {
+    stop(sprintf("duplicate node id(s): %s", paste(dup, collapse = ", ")),
+      call. = FALSE
+    )
+  }
+  dangling <- unique(c(source[!(source %in% id)], target[!(target %in% id)]))
+  if (length(dangling) > 0L) {
+    stop(sprintf(
+      "edge endpoint(s) not found among node ids: %s",
+      paste(dangling, collapse = ", ")
+    ), call. = FALSE)
+  }
+  if (layout == "precomputed" && (is.null(nodes$x) || is.null(nodes$y))) {
+    stop(
+      "network layout \"precomputed\" requires `x` and `y` columns in `nodes`.",
+      call. = FALSE
+    )
+  }
 
   columns <- list(
-    id = as.character(nodes$id),
-    source = as.character(edges$source),
-    target = as.character(edges$target)
+    id = id,
+    source = source,
+    target = target
   )
   if (!is.null(nodes$x) && !is.null(nodes$y)) {
-    columns$x <- as.numeric(nodes$x)
-    columns$y <- as.numeric(nodes$y)
+    x <- bv_require_numeric(nodes$x, "x")
+    bv_check_finite(x, "x")
+    y <- bv_require_numeric(nodes$y, "y")
+    bv_check_finite(y, "y")
+    columns$x <- x
+    columns$y <- y
   }
   if (!is.null(nodes$size)) {
-    columns$size <- as.numeric(nodes$size)
+    size <- bv_require_numeric(nodes$size, "size")
+    bv_check_finite(size, "size")
+    columns$size <- size
   }
   if (!is.null(edges$weight)) {
-    columns$weight <- as.numeric(edges$weight)
+    weight <- bv_require_numeric(edges$weight, "weight")
+    bv_check_finite(weight, "weight")
+    columns$weight <- weight
   }
 
   meta <- list()
@@ -99,6 +137,7 @@ network <- function(nodes,
   if (!is.null(palette)) {
     options$palette <- as.character(palette)
   }
+  if (!is.null(theme)) options$theme <- theme
 
   bioviz_widget(
     "network", columns,

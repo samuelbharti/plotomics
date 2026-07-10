@@ -18,6 +18,7 @@ clustermap(
   legend_title = "value",
   row_linkage = NULL,
   col_linkage = NULL,
+  theme = NULL,
   width = NULL,
   height = NULL,
   element_id = NULL
@@ -52,6 +53,10 @@ to skip clustering that axis. Either an integer vector giving the 0-based
 leaf order, or a list with \code{order} (0-based) and \code{merges} (each a list with
 \code{left}, \code{right}, \code{height}; leaves are \verb{0..n-1}, internal node \code{k} is
 \code{n + k}).}
+
+\item{theme}{Optional named list of theme overrides (colors, fonts, ...)
+merged over the component defaults in the browser. \code{NULL} uses the default
+theme.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 
