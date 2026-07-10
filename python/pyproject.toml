@@ -26,6 +26,11 @@ dev = [
 Homepage = "https://github.com/samuelbharti/visualization-components"
 Issues = "https://github.com/samuelbharti/visualization-components/issues"
 
+# Ensure the git-tracked, built JS bundles ship in BOTH the sdist and the wheel
+# (belt-and-suspenders alongside the wheel force-include below).
+[tool.hatch.build]
+artifacts = ["src/bioviz/static/*.js"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/bioviz"]
 

@@ -20,6 +20,36 @@ df = pd.DataFrame({
 Volcano(df, fc_threshold=1.0, p_threshold=0.05)
 ```
 
+## Install
+
+```bash
+pip install bioviz
+```
+
+### Shiny for Python
+
+The widgets are anywidgets, so they render in Shiny for Python through
+[`shinywidgets`](https://github.com/posit-dev/py-shinywidgets) — `output_widget`
+in the UI, `@render_widget` on the server:
+
+```python
+from shiny import App, ui
+from shinywidgets import output_widget, render_widget
+from bioviz import Volcano
+import numpy as np, pandas as pd
+
+app_ui = ui.page_fluid(output_widget("plot"))
+
+def server(input, output, session):
+    @render_widget
+    def plot():
+        n = 100_000
+        df = pd.DataFrame({"x": np.random.randn(n), "y": np.abs(np.random.randn(n)) * 3})
+        return Volcano(df)
+
+app = App(app_ui, server)
+```
+
 ## Development
 
 The widget JS is built from the monorepo root and copied into

@@ -72,31 +72,43 @@
     "d3-array": "^3.2.4",
     "d3-hierarchy": "^3.1.2",
     "d3-scale": "^4.0.2",
-    "gosling.js": "^1.0.7",
-    "graphology": "^0.26.0",
-    "graphology-layout-forceatlas2": "^0.10.1",
-    "igv": "^3.8.3",
     "ml-hclust": "^4.0.0",
-    "pixi.js": "^6.5.10",
     "regl": "^2.1.1",
-    "regl-scatterplot": "^1.16.0",
-    "sigma": "^3.0.3"
+    "regl-scatterplot": "^1.16.0"
   },
   "peerDependencies": {
+    "gosling.js": "^1.0.0",
+    "graphology": "^0.26.0",
+    "graphology-layout-forceatlas2": "^0.10.0",
+    "igv": "^3.0.0",
+    "pixi.js": "^6.0.0",
     "react": "^18.3.1 || ^19.0.0",
-    "react-dom": "^18.3.1 || ^19.0.0"
+    "react-dom": "^18.3.1 || ^19.0.0",
+    "sigma": "^3.0.0"
   },
   "peerDependenciesMeta": {
+    "gosling.js": { "optional": true },
+    "graphology": { "optional": true },
+    "graphology-layout-forceatlas2": { "optional": true },
+    "igv": { "optional": true },
+    "pixi.js": { "optional": true },
     "react": { "optional": true },
-    "react-dom": { "optional": true }
+    "react-dom": { "optional": true },
+    "sigma": { "optional": true }
   },
   "devDependencies": {
     "@types/d3-array": "^3.2.2",
     "@types/d3-hierarchy": "^3.1.7",
     "@types/d3-scale": "^4.0.9",
     "esbuild": "^0.24.0",
+    "gosling.js": "^1.0.7",
+    "graphology": "^0.26.0",
+    "graphology-layout-forceatlas2": "^0.10.1",
+    "igv": "^3.8.3",
+    "pixi.js": "^6.5.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "sigma": "^3.0.3",
     "typescript": "^5.6.3",
     "vite": "^6.0.0",
     "vitest": "^2.1.8"
