@@ -99,9 +99,9 @@ class HiC(BiovizWidget):
             i, j, v = _extract_triplet(matrix)
 
         if i is not None and j is not None and v is not None:
-            i_arr = np.asarray(i, dtype=np.int32)
-            j_arr = np.asarray(j, dtype=np.int32)
-            v_arr = np.asarray(v, dtype=np.float32)
+            i_arr = _numeric(i, "i", np.int32)
+            j_arr = _numeric(j, "j", np.int32)
+            v_arr = _numeric(v, "v", np.float32)
             # Empty triplet: fail clearly instead of building an n=0 matrix.
             if i_arr.size == 0:
                 raise ValueError(
@@ -127,7 +127,7 @@ class HiC(BiovizWidget):
                 )
             columns = {"i": i_arr, "j": j_arr, "v": v_arr}
         elif matrix is not None:
-            arr = np.asarray(matrix, dtype=np.float32)
+            arr = _numeric(matrix, "matrix", np.float32)
             if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
                 raise ValueError("`matrix` must be a square 2-D array.")
             n = int(arr.shape[0])
@@ -172,6 +172,14 @@ class HiC(BiovizWidget):
             _height=height,
             **kwargs,
         )
+
+
+def _numeric(values: Any, name: str, dtype: Any) -> np.ndarray:
+    """Coerce to a numeric array, with a clear column-named error on bad data."""
+    try:
+        return np.asarray(values, dtype=dtype)
+    except (ValueError, TypeError):
+        raise ValueError(f"`{name}` must be numeric.") from None
 
 
 def _extract_triplet(matrix: Any) -> tuple[Any, Any, Any] | tuple[None, None, None]:

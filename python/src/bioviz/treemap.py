@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from ._base import STATIC, BiovizWidget, _column, pack_columns
+from ._base import STATIC, BiovizWidget, _column, _to_float32, pack_columns
 
 
 class Treemap(BiovizWidget):
@@ -101,6 +101,22 @@ class Treemap(BiovizWidget):
         missing = sorted({p for p in parent_list if p != "" and p not in id_set})
         if missing:
             raise ValueError("parent(s) not found among ids: " + ", ".join(missing))
+        # Every node must reach the root by following parents; a self-parent or a
+        # cycle disjoint from the root passes the checks above but crashes
+        # d3.stratify in the browser.
+        parent_of = dict(zip(id_list, parent_list))
+        good: set[str] = set()
+        for start in id_list:
+            seen: set[str] = set()
+            cur = start
+            while cur != "" and cur not in good:
+                if cur in seen:
+                    raise ValueError(
+                        f"treemap has a cycle in the parent chain (at '{cur}')"
+                    )
+                seen.add(cur)
+                cur = parent_of.get(cur, "")
+            good |= seen
 
         json_columns: dict[str, list] = {"id": id_list, "parent": parent_list}
 
@@ -108,7 +124,7 @@ class Treemap(BiovizWidget):
         # consistency with every other component's packed columns).
         value = _column(data, "value")
         if value is not None:
-            value_arr = np.asarray(value, dtype=np.float32)
+            value_arr = _to_float32(value, "value")
             if value_arr.size != n:
                 raise ValueError(
                     f"`value` has {value_arr.size} entries; expected {n}."
