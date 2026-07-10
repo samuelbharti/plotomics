@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from bioviz import Clustermap
+from plotomics import Clustermap
 
 
 def test_clustermap_builds_traits_from_ndarray():

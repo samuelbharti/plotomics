@@ -1,18 +1,18 @@
 import { useMemo, useState } from "react";
 import { useShinyInput, useShinyOutput } from "@posit/shiny-react";
-import { darkTheme, type BiovizData } from "@bioviz/core";
+import { darkTheme, type PlotomicsData } from "@plotomics/core";
 import Embedding from "./Embedding";
 
 /**
  * Column payload the R server sends via `render_json("embedding_data", ...)`.
  * shiny-react serializes an R data frame / named list column-major, which is
- * exactly the shape bioviz's `BiovizData.columns` expects — no reshaping beyond
+ * exactly the shape plotomics's `PlotomicsData.columns` expects — no reshaping beyond
  * wrapping it in `{ columns }`.
  */
 type Cols = {
   x: number[];
   y: number[];
-  // Categorical (labels) or continuous (values) — a bioviz `Column` is one or
+  // Categorical (labels) or continuous (values) — a plotomics `Column` is one or
   // the other, never a mixed `(string | number)[]`.
   color?: string[] | number[];
   label?: string[];
@@ -28,7 +28,7 @@ export default function EmbeddingApp() {
   // Toggle the scatterplot's primary drag gesture between pan and lasso.
   const [lasso, setLasso] = useState(false);
 
-  const data: BiovizData = useMemo(
+  const data: PlotomicsData = useMemo(
     () => (cols ? { columns: cols } : { columns: { x: [], y: [] } }),
     [cols],
   );
@@ -51,9 +51,9 @@ export default function EmbeddingApp() {
     <div className="app">
       <header className="app-head">
         <div className="titles">
-          <h1>bioviz embedding · shiny-react</h1>
+          <h1>plotomics embedding · shiny-react</h1>
           <p className="hint">
-            A UMAP/t-SNE viewer from <code>@bioviz/components</code>, driven
+            A UMAP/t-SNE viewer from <code>@plotomics/components</code>, driven
             through Shiny hooks. Selection is sent to the R server.
           </p>
         </div>

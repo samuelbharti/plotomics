@@ -1,16 +1,16 @@
 {
-  "name": "@bioviz/components",
+  "name": "@plotomics/components",
   "version": "0.1.0",
   "description": "Headless, high-performance bioinformatics visualization components.",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/samuelbharti/visualization-components.git",
+    "url": "git+https://github.com/samuelbharti/plotomics.git",
     "directory": "packages/components"
   },
-  "homepage": "https://github.com/samuelbharti/visualization-components#readme",
-  "bugs": "https://github.com/samuelbharti/visualization-components/issues",
+  "homepage": "https://github.com/samuelbharti/plotomics#readme",
+  "bugs": "https://github.com/samuelbharti/plotomics/issues",
   "main": "./dist/lib/lib/index.js",
   "types": "./dist/lib/lib/index.d.ts",
   "sideEffects": false,
@@ -68,7 +68,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@bioviz/core": "workspace:*",
+    "@plotomics/core": "workspace:*",
     "d3-array": "^3.2.4",
     "d3-hierarchy": "^3.1.2",
     "d3-scale": "^4.0.2",

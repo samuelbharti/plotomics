@@ -1,6 +1,6 @@
 import pytest
 
-from bioviz import Gosling
+from plotomics import Gosling
 
 
 def test_gosling_passes_spec_through_verbatim():

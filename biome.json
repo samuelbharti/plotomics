@@ -14,8 +14,8 @@
       "!**/.claude/**",
       "!**/*.tsbuildinfo",
       "!pnpm-lock.yaml",
-      "!r/bioviz/inst/htmlwidgets/lib/bioviz/**",
-      "!python/src/bioviz/static/**",
+      "!r/plotomics/inst/htmlwidgets/lib/plotomics/**",
+      "!python/src/plotomics/static/**",
       "!packages/*/dev/**"
     ]
   },

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from bioviz import Heatmap
+from plotomics import Heatmap
 
 
 def test_heatmap_packs_row_major_float32():

@@ -1,12 +1,12 @@
 export type {
   Column,
-  BiovizData,
-  BiovizInstance,
-  BiovizFactory,
+  PlotomicsData,
+  PlotomicsInstance,
+  PlotomicsFactory,
 } from "./types.js";
 
 export {
-  type BiovizTheme,
+  type PlotomicsTheme,
   defaultTheme,
   darkTheme,
   resolveTheme,

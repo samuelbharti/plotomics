@@ -6,9 +6,9 @@ import {
   needsLayout,
   runForceAtlas2,
 } from "../src/components/network-core.js";
-import type { BiovizData } from "@bioviz/core";
+import type { PlotomicsData } from "@plotomics/core";
 
-const build = (data: BiovizData) =>
+const build = (data: PlotomicsData) =>
   buildGraph(data, {
     defaultNodeColor: "#000",
     defaultEdgeColor: "#ccc",
@@ -52,8 +52,8 @@ describe("network helpers", () => {
   });
 
   it("decides when a layout is needed", () => {
-    const withCoords: BiovizData = { columns: { id: ["a"], x: [0], y: [0] } };
-    const noCoords: BiovizData = { columns: { id: ["a"] } };
+    const withCoords: PlotomicsData = { columns: { id: ["a"], x: [0], y: [0] } };
+    const noCoords: PlotomicsData = { columns: { id: ["a"] } };
     expect(needsLayout(noCoords, "forceatlas2")).toBe(true);
     expect(needsLayout(withCoords, "forceatlas2")).toBe(false);
     expect(needsLayout(noCoords, "precomputed")).toBe(false);

@@ -1,5 +1,0 @@
-dependencies:
-  - name: bioviz-clustermap
-    version: 0.0.0
-    src: htmlwidgets/lib/bioviz
-    script: clustermap.js

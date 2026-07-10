@@ -1,13 +1,13 @@
 name: Release
 
-# Publishes the tri-language bioviz release on a version tag (e.g. v0.1.0).
+# Publishes the tri-language plotomics release on a version tag (e.g. v0.1.0).
 #
 # Both the Python wheel and the R htmlwidget embed the JavaScript component
 # bundles produced by `pnpm dist` (build + sync), so every job runs `pnpm dist`
-# first to populate python/src/bioviz/static and r/bioviz/inst/htmlwidgets/lib
+# first to populate python/src/plotomics/static and r/plotomics/inst/htmlwidgets/lib
 # (both git-ignored, rebuilt here) before packaging.
 #
-# R packaging: the R package (r/bioviz) is intentionally NOT published from this
+# R packaging: the R package (r/plotomics) is intentionally NOT published from this
 # workflow. It is released via r-universe, which builds the package directly
 # from this repository on each push/tag — no CI publish step or token is needed.
 # Enable it by adding this repo to an <owner>.r-universe.dev registry
@@ -43,7 +43,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm dist # populates python/src/bioviz/static with the JS bundles
+      - run: pnpm dist # populates python/src/plotomics/static with the JS bundles
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -59,7 +59,7 @@ jobs:
           packages-dir: python/dist
 
   npm:
-    name: Build & publish @bioviz/components (npm)
+    name: Build & publish @plotomics/components (npm)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,9 +75,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        # @bioviz/core is a runtime dependency of @bioviz/components (workspace:*
+        # @plotomics/core is a runtime dependency of @plotomics/components (workspace:*
         # is rewritten to the concrete version on publish), so it must be
         # published too for consumers to resolve the dependency.
         run: |
-          pnpm publish --filter @bioviz/core --no-git-checks --access public
-          pnpm publish --filter @bioviz/components --no-git-checks --access public
+          pnpm publish --filter @plotomics/core --no-git-checks --access public
+          pnpm publish --filter @plotomics/components --no-git-checks --access public

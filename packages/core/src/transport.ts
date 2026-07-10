@@ -9,7 +9,7 @@
  *
  * The R/htmlwidgets path uses plain JSON arrays (jsonlite), which arrive as
  * `number[]` and are accepted everywhere a `Column` is. Both paths converge on
- * the same {@link BiovizData} shape.
+ * the same {@link PlotomicsData} shape.
  */
 
 export type Dtype =

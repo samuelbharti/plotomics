@@ -23,10 +23,10 @@
  * leaf order / dendrogram via `meta.rowLinkage` / `meta.colLinkage`.
  */
 import {
-  type BiovizData,
-  type BiovizFactory,
-  type BiovizInstance,
-  type BiovizTheme,
+  type PlotomicsData,
+  type PlotomicsFactory,
+  type PlotomicsInstance,
+  type PlotomicsTheme,
   type RampName,
   resolveTheme,
   ramp,
@@ -38,7 +38,7 @@ import {
   dpr,
   serializeSVG,
   canvasToPNG,
-} from "@bioviz/core";
+} from "@plotomics/core";
 import {
   type Dendrogram,
   type Linkage,
@@ -77,7 +77,7 @@ export interface ClustermapOptions {
   showLabels: boolean;
   /** Colorbar legend title. */
   legendTitle: string;
-  theme: Partial<BiovizTheme>;
+  theme: Partial<PlotomicsTheme>;
 }
 
 export const defaultClustermapOptions: ClustermapOptions = {
@@ -148,10 +148,10 @@ export function computeLayout(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createClustermap: BiovizFactory<ClustermapOptions> = (el, initial) => {
+export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initial) => {
   let opts: ClustermapOptions = mergeOptions(defaultClustermapOptions, initial.options);
   let theme = resolveTheme(opts.theme);
-  let data: BiovizData = initial.data ?? { columns: {} };
+  let data: PlotomicsData = initial.data ?? { columns: {} };
 
   let width = 0;
   let height = 0;
@@ -577,7 +577,7 @@ export const createClustermap: BiovizFactory<ClustermapOptions> = (el, initial) 
     else relayout();
   }
 
-  const instance: BiovizInstance<ClustermapOptions> = {
+  const instance: PlotomicsInstance<ClustermapOptions> = {
     setData(next) {
       data = next;
       applyData();

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from bioviz import Network
+from plotomics import Network
 
 
 def test_network_builds_traits_from_dicts():

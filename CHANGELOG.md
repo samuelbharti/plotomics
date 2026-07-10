@@ -5,9 +5,9 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Versions are shared across the JavaScript packages (`@bioviz/core`,
-`@bioviz/components`), the Python package (`bioviz`, PyPI) and the R package
-(`bioviz`, r-universe), which are released together from a single tag.
+Versions are shared across the JavaScript packages (`@plotomics/core`,
+`@plotomics/components`), the Python package (`plotomics`, PyPI) and the R package
+(`plotomics`, r-universe), which are released together from a single tag.
 
 ## [Unreleased]
 
@@ -17,15 +17,15 @@ First public release.
 
 ### Added
 
-- **Shared core (`@bioviz/core`).** A single TypeScript core defining the
+- **Shared core (`@plotomics/core`).** A single TypeScript core defining the
   component contract, theming, color scales, binary column transport and export
   helpers, consumed by every visualization so behavior stays consistent across
   languages.
 - **Tri-language wrapper architecture.** Each component ships from one source
-  bundle to three targets: an npm package (`@bioviz/components`), a Python
-  [anywidget](https://anywidget.dev) widget (`bioviz` on PyPI, for Jupyter,
+  bundle to three targets: an npm package (`@plotomics/components`), a Python
+  [anywidget](https://anywidget.dev) widget (`plotomics` on PyPI, for Jupyter,
   JupyterLab, marimo, Colab, VS Code, Shiny for Python and Streamlit) and an R
-  [htmlwidget](https://www.htmlwidgets.org) (`bioviz`, for the RStudio Viewer,
+  [htmlwidget](https://www.htmlwidgets.org) (`plotomics`, for the RStudio Viewer,
   R Markdown, Quarto and Shiny). Glob-discovered build entries let new
   components land without editing any central registry.
 - **Volcano plot** — GPU-accelerated differential-expression scatter with
@@ -44,5 +44,5 @@ First public release.
 - **Embedding (UMAP/t-SNE) viewer** — GPU-accelerated scatter for
   single-cell/dimensionality-reduction embeddings.
 
-[Unreleased]: https://github.com/samuelbharti/visualization-components/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/samuelbharti/visualization-components/releases/tag/v0.1.0
+[Unreleased]: https://github.com/samuelbharti/plotomics/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/samuelbharti/plotomics/releases/tag/v0.1.0

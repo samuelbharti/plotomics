@@ -23,7 +23,7 @@ dist-python/
 .RData
 .Ruserdata
 *.Rcheck/
-bioviz_*.tar.gz
+plotomics_*.tar.gz
 
 # Editors / OS
 .DS_Store

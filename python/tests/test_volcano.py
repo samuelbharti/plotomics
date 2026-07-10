@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from bioviz import Volcano, pack_columns
+from plotomics import Volcano, pack_columns
 
 
 def test_pack_columns_roundtrip_layout():
