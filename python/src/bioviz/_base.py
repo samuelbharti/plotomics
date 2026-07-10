@@ -52,7 +52,16 @@ def _to_float32(values: Any, name: str) -> np.ndarray:
     ``could not convert string to float`` error.
     """
     arr = np.asarray(values)
-    _ensure_numeric(arr, name)
+    if arr.dtype.kind in _NON_NUMERIC_KINDS:
+        # pandas nullable extension dtypes (Int64/Float64/boolean) and object
+        # columns of python numbers surface as kind 'O' under ``np.asarray``.
+        # Try an explicit float coercion first (a clean nullable column becomes
+        # float; NA/None become NaN) so these keep working on the happy path;
+        # only a genuinely non-numeric column falls through to the clear error.
+        try:
+            return np.asarray(values, dtype=np.float32)
+        except (ValueError, TypeError):
+            _ensure_numeric(arr, name)  # raises the friendly, column-named error
     return arr.astype(np.float32, copy=False)
 
 
