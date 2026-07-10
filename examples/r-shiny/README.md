@@ -15,10 +15,10 @@ driven by reactive controls on the server.
 ## Run
 
 The widget JS must be built and synced into the R package first (those bundles
-are git-ignored and regenerated on demand). From the repo root:
+are git-tracked and regenerated on demand). From the repo root:
 
 ```bash
-# build @plotomics/components and copy bundles into r/plotomics (and python)
+# build @plotomics/components and copy bundles into pkg-r (and pkg-py)
 pnpm --filter @plotomics/components build && node scripts/sync-assets.mjs
 # (equivalently `pnpm dist` where pnpm is on PATH)
 
@@ -28,7 +28,7 @@ Rscript -e "shiny::runApp('examples/r-shiny', port = 8001)"
 Then open <http://localhost:8001>.
 
 `app.R` uses `library(plotomics)` if the package is installed, otherwise
-`pkgload::load_all("r/plotomics")` from this repo — so no install step is needed for
+`pkgload::load_all("pkg-r")` from this repo — so no install step is needed for
 local development.
 
 ## How it works

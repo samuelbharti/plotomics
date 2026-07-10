@@ -27,8 +27,8 @@ jobs:
           # Stage first so a newly-added-but-uncommitted bundle (e.g. a brand
           # new component's JS) fails too — plain `git diff` only sees tracked
           # files, which would let a missing bundle ship silently.
-          git add -A r/plotomics/inst/htmlwidgets/lib/plotomics python/src/plotomics/static
-          git diff --cached --exit-code r/plotomics/inst/htmlwidgets/lib/plotomics python/src/plotomics/static
+          git add -A pkg-r/inst/htmlwidgets/lib/plotomics pkg-py/src/plotomics/static
+          git diff --cached --exit-code pkg-r/inst/htmlwidgets/lib/plotomics pkg-py/src/plotomics/static
       - run: pnpm -r --filter "./packages/**" typecheck
       - run: pnpm -r --filter "./packages/**" test
       - name: Upload built bundles
@@ -36,8 +36,8 @@ jobs:
         with:
           name: bundles
           path: |
-            r/plotomics/inst/htmlwidgets/lib/plotomics
-            python/src/plotomics/static
+            pkg-r/inst/htmlwidgets/lib/plotomics
+            pkg-py/src/plotomics/static
           if-no-files-found: error
 
   r:
@@ -58,13 +58,13 @@ jobs:
           use-public-rspm: true
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          working-directory: r/plotomics
+          working-directory: pkg-r
           extra-packages: |
             any::rcmdcheck
             any::testthat
       - uses: r-lib/actions/check-r-package@v2
         with:
-          working-directory: r/plotomics
+          working-directory: pkg-r
           args: 'c("--no-manual", "--as-cran")'
           error-on: '"warning"'
 
@@ -88,7 +88,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install and test
-        working-directory: python
+        working-directory: pkg-py
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"

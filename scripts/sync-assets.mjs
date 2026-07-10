@@ -1,6 +1,6 @@
 // Copies built component bundles into the language wrappers:
-//   dist/umd/*.js       -> r/plotomics/inst/htmlwidgets/lib/plotomics/   (htmlwidgets)
-//   dist/anywidget/*.js -> python/src/plotomics/static/               (anywidget)
+//   dist/umd/*.js       -> pkg-r/inst/htmlwidgets/lib/plotomics/   (htmlwidgets)
+//   dist/anywidget/*.js -> pkg-py/src/plotomics/static/               (anywidget)
 //
 // These targets are generated but git-tracked (committed into the wrappers so
 // source installs ship the JS); run `pnpm dist` (build + sync) to refresh them
@@ -14,8 +14,8 @@ import { fileURLToPath } from "node:url";
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const distUmd = path.join(repo, "packages/components/dist/umd");
 const distAny = path.join(repo, "packages/components/dist/anywidget");
-const rLib = path.join(repo, "r/plotomics/inst/htmlwidgets/lib/plotomics");
-const pyStatic = path.join(repo, "python/src/plotomics/static");
+const rLib = path.join(repo, "pkg-r/inst/htmlwidgets/lib/plotomics");
+const pyStatic = path.join(repo, "pkg-py/src/plotomics/static");
 
 async function syncDir(from, to) {
   let files;
