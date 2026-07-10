@@ -14,6 +14,7 @@ network(
   label_threshold = 8,
   default_node_size = 4,
   palette = NULL,
+  theme = NULL,
   width = NULL,
   height = NULL,
   element_id = NULL
@@ -43,6 +44,10 @@ missing) or \code{"precomputed"} (require and use \code{x}/\code{y} from \code{n
 
 \item{palette}{Optional character vector of hex colors overriding the default
 categorical palette used for node groups.}
+
+\item{theme}{Optional named list of theme overrides (colors, fonts, ...)
+merged over the component defaults in the browser. \code{NULL} uses the default
+theme.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 

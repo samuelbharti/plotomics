@@ -19,6 +19,9 @@
 #'   or by `"value"` (a sequential/diverging ramp).
 #' @param colormap Ramp used when `color_by = "value"`: `"viridis"` or `"rdbu"`.
 #' @param label_min_size Minimum tile side (px) before a label is drawn.
+#' @param theme Optional named list of theme overrides (colors, fonts, ...)
+#'   merged over the component defaults in the browser. `NULL` uses the default
+#'   theme.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.
@@ -37,6 +40,7 @@ treemap <- function(data,
                     color_by = c("parent", "value"),
                     colormap = c("viridis", "rdbu"),
                     label_min_size = 32,
+                    theme = NULL,
                     width = NULL,
                     height = NULL,
                     element_id = NULL) {
@@ -49,18 +53,41 @@ treemap <- function(data,
   tile <- match.arg(tile)
   color_by <- match.arg(color_by)
   colormap <- match.arg(colormap)
+  bv_require_nonempty(nrow(data), "data")
 
+  id <- as.character(data$id)
   # `parent` NAs mark the root; send them as empty strings so JSON encodes a
   # plain string column (jsonlite would otherwise emit nulls).
   parent <- as.character(data$parent)
   parent[is.na(parent)] <- ""
 
+  # Structural integrity: exactly one root, unique ids, resolvable parents.
+  dup <- unique(id[duplicated(id)])
+  if (length(dup) > 0L) {
+    stop(sprintf("duplicate node id(s): %s", paste(dup, collapse = ", ")),
+      call. = FALSE
+    )
+  }
+  if (sum(parent == "") != 1L) {
+    stop("treemap requires exactly one root", call. = FALSE)
+  }
+  nonroot <- parent[parent != ""]
+  missing_parents <- unique(nonroot[!(nonroot %in% id)])
+  if (length(missing_parents) > 0L) {
+    stop(sprintf(
+      "parent(s) not found among ids: %s",
+      paste(missing_parents, collapse = ", ")
+    ), call. = FALSE)
+  }
+
   columns <- list(
-    id = as.character(data$id),
+    id = id,
     parent = parent
   )
   if (!is.null(data$value)) {
-    columns$value <- as.numeric(data$value)
+    value <- bv_require_numeric(data$value, "value")
+    bv_check_finite(value, "value")
+    columns$value <- value
   } else {
     columns$value <- rep(0, nrow(data))
   }
@@ -77,6 +104,7 @@ treemap <- function(data,
     colormap = colormap,
     labelMinSize = label_min_size
   )
+  if (!is.null(theme)) options$theme <- theme
 
   bioviz_widget(
     "treemap", columns,

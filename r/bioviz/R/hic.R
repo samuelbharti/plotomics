@@ -17,13 +17,18 @@
 #' @param bin_size Genomic bin size in base pairs; used to label axes in
 #'   bp/kb/Mb. `NULL` labels axes by bin index.
 #' @param chrom Optional chromosome name shown as the axis title.
-#' @param colormap Sequential colormap for intensity (currently `"viridis"`).
+#' @param colormap Sequential colormap for intensity: `"viridis"` or `"rdbu"`.
 #' @param transform Intensity transform, `"log"` (default) or `"linear"`.
 #' @param vmax Upper clip of the intensity scale; `NULL` auto-picks a high
 #'   percentile.
+#' @param vmax_percentile Percentile in `(0, 1]` used to auto-pick `vmax` when
+#'   `vmax` is `NULL`. `NULL` uses the component default.
 #' @param vmin Lower clip of the intensity scale.
 #' @param symmetric Mirror sparse `i`/`j`/`v` entries across the diagonal.
 #' @param label Axis title (overrides `chrom` when set).
+#' @param theme Optional named list of theme overrides (colors, fonts, ...)
+#'   merged over the component defaults in the browser. `NULL` uses the default
+#'   theme.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.
@@ -40,15 +45,18 @@ hic <- function(mat,
                 n = NULL,
                 bin_size = NULL,
                 chrom = NULL,
-                colormap = "viridis",
+                colormap = c("viridis", "rdbu"),
                 transform = c("log", "linear"),
                 vmax = NULL,
+                vmax_percentile = NULL,
                 vmin = 0,
                 symmetric = TRUE,
                 label = NULL,
+                theme = NULL,
                 width = NULL,
                 height = NULL,
                 element_id = NULL) {
+  colormap <- match.arg(colormap)
   transform <- match.arg(transform)
 
   columns <- list()
@@ -57,8 +65,10 @@ hic <- function(mat,
       stop("`mat` must be a square matrix.", call. = FALSE)
     }
     n <- nrow(mat)
+    bv_require_nonempty(n, "mat")
     # Row-major (C order) flatten to match the JS `values` contract.
-    columns$values <- as.numeric(t(mat))
+    columns$values <- bv_require_numeric(as.vector(t(mat)), "mat")
+    bv_check_finite(columns$values, "mat")
   } else if (is.data.frame(mat) || is.list(mat)) {
     i <- mat[["i"]]
     j <- mat[["j"]]
@@ -69,11 +79,27 @@ hic <- function(mat,
         call. = FALSE
       )
     }
+    i <- bv_require_numeric(i, "i")
+    j <- bv_require_numeric(j, "j")
+    v <- bv_require_numeric(v, "v")
+    bv_require_len(list(i = i, j = j, v = v))
+    # Guard the empty-triplet trap: `max(integer(0))` is -Inf; require rows
+    # before inferring `n` from the indices.
+    bv_require_nonempty(length(i), "i/j/v")
+    bv_check_finite(v, "v")
+    i <- as.integer(i)
+    j <- as.integer(j)
     if (is.null(n)) {
-      n <- max(as.integer(i), as.integer(j)) + 1L
+      n <- max(i, j) + 1L
     }
-    columns$i <- as.integer(i)
-    columns$j <- as.integer(j)
+    n <- as.integer(n)
+    if (any(i < 0L) || any(i >= n) || any(j < 0L) || any(j >= n)) {
+      stop(sprintf(
+        "hi-c `i`/`j` indices must be in [0, n) = [0, %d).", n
+      ), call. = FALSE)
+    }
+    columns$i <- i
+    columns$j <- j
     columns$v <- as.numeric(v)
   } else {
     stop(
@@ -94,7 +120,9 @@ hic <- function(mat,
   )
   # `vmax = NULL` means auto; only send it when the user fixed it.
   if (!is.null(vmax)) options$vmax <- vmax
+  if (!is.null(vmax_percentile)) options$vmaxPercentile <- vmax_percentile
   if (!is.null(label)) options$label <- as.character(label)
+  if (!is.null(theme)) options$theme <- theme
 
   bioviz_widget(
     "hic", columns,
