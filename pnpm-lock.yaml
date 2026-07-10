@@ -29,33 +29,15 @@ importers:
       d3-scale:
         specifier: ^4.0.2
         version: 4.0.2
-      gosling.js:
-        specifier: ^1.0.7
-        version: 1.0.7(pixi.js@6.5.10)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      graphology:
-        specifier: ^0.26.0
-        version: 0.26.0(graphology-types@0.24.8)
-      graphology-layout-forceatlas2:
-        specifier: ^0.10.1
-        version: 0.10.1(graphology-types@0.24.8)
-      igv:
-        specifier: ^3.8.3
-        version: 3.8.3
       ml-hclust:
         specifier: ^4.0.0
         version: 4.0.0
-      pixi.js:
-        specifier: ^6.5.10
-        version: 6.5.10
       regl:
         specifier: ^2.1.1
         version: 2.1.1
       regl-scatterplot:
         specifier: ^1.16.0
         version: 1.16.0(pub-sub-es@3.0.0)(regl@2.1.1)
-      sigma:
-        specifier: ^3.0.3
-        version: 3.0.3(graphology-types@0.24.8)
     devDependencies:
       '@types/d3-array':
         specifier: ^3.2.2
@@ -69,12 +51,30 @@ importers:
       esbuild:
         specifier: ^0.24.0
         version: 0.24.2
+      gosling.js:
+        specifier: ^1.0.7
+        version: 1.0.7(pixi.js@6.5.10)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      graphology:
+        specifier: ^0.26.0
+        version: 0.26.0(graphology-types@0.24.8)
+      graphology-layout-forceatlas2:
+        specifier: ^0.10.1
+        version: 0.10.1(graphology-types@0.24.8)
+      igv:
+        specifier: ^3.8.3
+        version: 3.8.3
+      pixi.js:
+        specifier: ^6.5.10
+        version: 6.5.10
       react:
         specifier: ^18.3.1
         version: 18.3.1
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
+      sigma:
+        specifier: ^3.0.3
+        version: 3.0.3(graphology-types@0.24.8)
       typescript:
         specifier: ^5.6.3
         version: 5.9.3

@@ -26,11 +26,12 @@ dev = [
 Homepage = "https://github.com/samuelbharti/visualization-components"
 Issues = "https://github.com/samuelbharti/visualization-components/issues"
 
+# The built JS bundles live under src/bioviz/static/ and are git-tracked, so
+# hatchling includes them in both the sdist (VCS files) and the wheel (package
+# data) automatically — no force-include/artifacts needed (and adding them would
+# double-insert the files and fail the build).
 [tool.hatch.build.targets.wheel]
 packages = ["src/bioviz"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/bioviz/static" = "bioviz/static"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
