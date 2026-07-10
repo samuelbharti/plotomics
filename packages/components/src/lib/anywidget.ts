@@ -53,14 +53,24 @@ export function makeAnywidget<O>(factory: BiovizFactory<O>) {
       const onMsg = (msg: unknown) => {
         const m = msg as { bioviz?: string; format?: string } | null;
         if (!m || m.bioviz !== "export") return;
+        // One model can drive several views (e.g. the widget shown in two
+        // notebook cells) and the custom message reaches every view. A shared
+        // per-tick lock keeps exactly one view from firing N duplicate
+        // downloads; the microtask clears it after this synchronous dispatch.
+        const lock = model as unknown as { __biovizExporting?: boolean };
+        if (lock.__biovizExporting) return;
+        lock.__biovizExporting = true;
+        queueMicrotask(() => {
+          lock.__biovizExporting = false;
+        });
         if (m.format === "svg") {
           const svg = inst.exportSVG?.();
-          if (svg) {
-            downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "bioviz.svg");
-          }
+          if (svg) downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "bioviz.svg");
+          else console.warn("bioviz: this component does not support SVG export");
         } else {
           const png = inst.exportPNG?.(2);
-          if (png) png.then((blob) => blob && downloadBlob(blob, "bioviz.png"));
+          if (png) png.then((blob) => blob && downloadBlob(blob, "bioviz.png")).catch(() => {});
+          else console.warn("bioviz: this component does not support PNG export");
         }
       };
       model.on("msg:custom", onMsg);
