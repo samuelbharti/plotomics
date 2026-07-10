@@ -1,0 +1,27 @@
+{
+  "private": true,
+  "name": "bioviz-shiny-react-embedding",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Posit shiny-react example embedding the bioviz UMAP/t-SNE viewer",
+  "scripts": {
+    "build": "esbuild srcts/main.tsx --bundle --minify --outfile=r/www/main.js --format=esm --alias:react=react",
+    "watch": "esbuild srcts/main.tsx --bundle --minify --outfile=r/www/main.js --format=esm --alias:react=react --watch",
+    "typecheck": "tsc --noEmit",
+    "app": "Rscript -e \"shiny::runApp('r/app.R', port=8000)\"",
+    "dev": "concurrently -c auto \"npm run watch\" \"npm run app\""
+  },
+  "dependencies": {
+    "@bioviz/components": "^0.1.0",
+    "@posit/shiny-react": "^0.0.16",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "concurrently": "^9.0.1",
+    "esbuild": "^0.25.9",
+    "typescript": "^5.9.2"
+  }
+}

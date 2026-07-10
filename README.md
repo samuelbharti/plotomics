@@ -15,13 +15,14 @@ designed to be **publication-ready**, not toy demos.
 | Component | Status | Engine | Purpose |
 |---|---|---|---|
 | Volcano plot | ✅ reference | regl-scatterplot | Differential expression (effect vs. significance) |
-| Expression heatmap | 🚧 | WebGL | Large sample × gene matrices |
-| Gene treemap | 🚧 | D3 + canvas | Hierarchical gene-set / pathway composition |
-| Clustered heatmap | 🚧 | WebGL + dendrograms | Hierarchically-clustered expression |
-| Hi-C contact matrix | 🚧 | HiGlass tiling | Chromatin contact maps |
-| Genome viewer (igv.js) | 🚧 | igv.js | Track-based genome browser |
-| Genome viewer (Gosling) | 🚧 | Gosling/HiGlass | Declarative genomics figures |
-| Network graph | 🚧 | sigma v3 | Large biological networks |
+| Embedding (UMAP/t-SNE) | ✅ | regl-scatterplot | 2-D single-cell / dimensionality-reduction maps |
+| Expression heatmap | ✅ | WebGL | Large sample × gene matrices |
+| Gene treemap | ✅ | D3 + canvas | Hierarchical gene-set / pathway composition |
+| Clustered heatmap | ✅ | WebGL + dendrograms | Hierarchically-clustered expression |
+| Hi-C contact matrix | ✅ | WebGL tiling / LOD | Chromatin contact maps |
+| Genome viewer (igv.js) | ✅ | igv.js | Track-based genome browser |
+| Genome viewer (Gosling) | ✅ | Gosling.js | Declarative genomics figures |
+| Network graph | ✅ | sigma v3 | Large biological networks |
 
 ## Repository layout
 
@@ -63,6 +64,19 @@ n = 200_000
 df = pd.DataFrame({"x": np.random.randn(n), "y": np.abs(np.random.randn(n))*3,
                    "label": [f"GENE{i}" for i in range(n)]})
 Volcano(df)
+```
+
+Large single-cell embedding (UMAP/t-SNE) colored by cluster, with lasso selection:
+
+```python
+import numpy as np, pandas as pd
+from bioviz import Embedding
+
+n = 500_000
+k = np.random.randint(0, 8, n)                        # cluster per cell
+df = pd.DataFrame({"x": np.random.randn(n) + k*4, "y": np.random.randn(n) + k*4,
+                   "color": [f"cluster {i}" for i in k]})
+Embedding(df, color_mode="categorical")
 ```
 
 ## Contributing

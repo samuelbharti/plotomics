@@ -10,8 +10,9 @@ import { build } from "esbuild";
 import { glob } from "node:fs/promises";
 import { rm } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = path.dirname(new URL(import.meta.url).pathname);
+const root = path.dirname(fileURLToPath(import.meta.url));
 
 async function collect(pattern) {
   const out = [];
@@ -61,14 +62,9 @@ async function run() {
     });
   }
 
-  // Programmatic ESM entry for direct npm consumers (factories only).
-  await build({
-    ...shared,
-    minify: false,
-    entryPoints: ["src/lib/index.ts"],
-    outdir: "dist/lib",
-    format: "esm",
-  });
+  // The programmatic ESM entry for direct npm/bundler consumers (each component
+  // as its own tree-shakeable module, plus the barrel) is emitted unbundled by
+  // `tsc -p tsconfig.build.json` into dist/lib/ — see package.json `exports`.
 
   console.log(
     `Built ${anywidget.length} anywidget + ${umd.length} umd component bundles.`,

@@ -1,0 +1,5 @@
+dependencies:
+  - name: bioviz-embedding
+    version: 0.0.0
+    src: htmlwidgets/lib/bioviz
+    script: embedding.js

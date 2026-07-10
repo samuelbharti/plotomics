@@ -13,6 +13,12 @@ export {
 } from "../components/clustermap.js";
 
 export {
+  createEmbedding,
+  defaultEmbeddingOptions,
+  type EmbeddingOptions,
+} from "../components/embedding.js";
+
+export {
   createGosling,
   defaultGoslingOptions,
   type GoslingOptions,
