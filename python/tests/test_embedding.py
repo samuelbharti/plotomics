@@ -90,3 +90,9 @@ def test_embedding_accepts_pandas_nullable_dtypes():
     names = {c["name"] for c in w.schema["columns"]}
     assert names == {"x", "y"}
     assert len(w.buffer) == 3 * 4 * 2
+
+
+def test_embedding_export_rejects_bad_format():
+    w = Embedding({"x": [1, 2], "y": [1, 2]})
+    with pytest.raises(ValueError, match="fmt must be"):
+        w.export("jpg")

@@ -210,4 +210,6 @@ class BiovizWidget(anywidget.AnyWidget):
         The figure is rendered in the browser, so this posts a message to the
         front-end which performs the download; nothing is returned to Python.
         """
+        if fmt not in ("png", "svg"):
+            raise ValueError(f"fmt must be 'png' or 'svg', got {fmt!r}")
         self.send({"bioviz": "export", "format": fmt})
