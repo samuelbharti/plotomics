@@ -23,7 +23,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm dist
       - name: Verify committed bundles are up to date
-        run: git diff --exit-code r/bioviz/inst/htmlwidgets/lib/bioviz python/src/bioviz/static
+        run: |
+          # Stage first so a newly-added-but-uncommitted bundle (e.g. a brand
+          # new component's JS) fails too — plain `git diff` only sees tracked
+          # files, which would let a missing bundle ship silently.
+          git add -A r/bioviz/inst/htmlwidgets/lib/bioviz python/src/bioviz/static
+          git diff --cached --exit-code r/bioviz/inst/htmlwidgets/lib/bioviz python/src/bioviz/static
       - run: pnpm -r --filter "./packages/**" typecheck
       - run: pnpm -r --filter "./packages/**" test
       - name: Upload built bundles

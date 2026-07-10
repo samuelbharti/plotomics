@@ -218,6 +218,11 @@ type LegendState =
   | { mode: "continuous"; domain: [number, number] }
   | null;
 
+// Monotonic per-page counter so multiple embeddings get distinct SVG element
+// ids. A shared id would make every colorbar's `url(#…)` resolve to the first
+// instance's gradient in document order (silent legend/point mismatch).
+let embeddingSeq = 0;
+
 export const createEmbedding: BiovizFactory<EmbeddingOptions> = (el, initial) => {
   let opts: EmbeddingOptions = mergeOptions(defaultEmbeddingOptions, initial.options);
   let theme = resolveTheme(opts.theme);
@@ -230,6 +235,7 @@ export const createEmbedding: BiovizFactory<EmbeddingOptions> = (el, initial) =>
   let yDomain: [number, number] = [0, 1];
   let legend: LegendState = null;
   let selected: number[] = [];
+  const uid = `bioviz-embedding-${embeddingSeq++}`;
 
   const xScale = scaleLinear().domain(xDomain);
   const yScale = scaleLinear().domain(yDomain);
@@ -327,7 +333,10 @@ export const createEmbedding: BiovizFactory<EmbeddingOptions> = (el, initial) =>
     return Array.from({ length: Math.max(1, n) }, (_, i) => scale(String(i)));
   }
 
-  function applyData() {
+  // `fit` recomputes the view to frame the data (used on new data); pass false
+  // to recolor/redraw at the current pan/zoom (used on option changes) so a
+  // re-render — e.g. toggling the drag mode — never snaps the camera back.
+  function applyData(fit = true) {
     const cols = data.columns;
     const x = cols.x as ArrayLike<number> | undefined;
     const y = cols.y as ArrayLike<number> | undefined;
@@ -337,10 +346,12 @@ export const createEmbedding: BiovizFactory<EmbeddingOptions> = (el, initial) =>
       renderOverlay();
       return;
     }
-    xDomain = paddedExtent(x);
-    yDomain = paddedExtent(y);
-    xScale.domain(xDomain);
-    yScale.domain(yDomain);
+    if (fit) {
+      xDomain = paddedExtent(x);
+      yDomain = paddedExtent(y);
+      xScale.domain(xDomain);
+      yScale.domain(yDomain);
+    }
 
     const color = cols.color;
     const mode = color && color.length ? resolveColorMode(color, opts.colorMode) : null;
@@ -470,7 +481,7 @@ export const createEmbedding: BiovizFactory<EmbeddingOptions> = (el, initial) =>
     const x0 = width - m.right - cbW - 46;
     const y0 = m.top + 12;
     const fn = ramp(opts.colormap);
-    const gradId = "bioviz-embedding-cb";
+    const gradId = `${uid}-cb`;
     const defs = document.createElementNS(SVG_NS, "defs");
     const grad = document.createElementNS(SVG_NS, "linearGradient");
     grad.setAttribute("id", gradId);
@@ -573,9 +584,9 @@ export const createEmbedding: BiovizFactory<EmbeddingOptions> = (el, initial) =>
         mouseMode: opts.mouseMode,
       });
       // Re-layout in case showAxes toggled (it changes the canvas inset), then
-      // recolor/redraw with the merged options.
+      // recolor/redraw with the merged options — preserving the current view.
       doResize(width, height);
-      applyData();
+      applyData(false);
     },
     resize(w, h) {
       doResize(w, h);

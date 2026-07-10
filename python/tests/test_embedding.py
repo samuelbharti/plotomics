@@ -77,3 +77,16 @@ def test_embedding_selection_trait_and_export():
     assert w.selected == []
     # Front-end-triggered figure download.
     assert callable(w.export)
+
+
+def test_embedding_accepts_pandas_nullable_dtypes():
+    pd = pytest.importorskip("pandas")
+    # Nullable extension dtypes (Int64/Float64) surface as object under
+    # np.asarray; a clean column (no missing values) must still build rather
+    # than being rejected as non-numeric.
+    df = pd.DataFrame({"x": [1, 2, 3], "y": [4.0, 5.0, 6.0]}).convert_dtypes()
+    assert str(df["x"].dtype) == "Int64"
+    w = Embedding(df)
+    names = {c["name"] for c in w.schema["columns"]}
+    assert names == {"x", "y"}
+    assert len(w.buffer) == 3 * 4 * 2
