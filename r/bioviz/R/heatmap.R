@@ -18,6 +18,9 @@
 #'   auto-scales from the data; for `"rdbu"` the auto domain is symmetric about
 #'   zero.
 #' @param show_colorbar Logical; draw the colorbar legend.
+#' @param theme Optional named list of theme overrides (colors, fonts, ...)
+#'   merged over the component defaults in the browser. `NULL` uses the default
+#'   theme.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.
@@ -34,6 +37,7 @@ bioheatmap <- function(mat,
                        vmin = NULL,
                        vmax = NULL,
                        show_colorbar = TRUE,
+                       theme = NULL,
                        width = NULL,
                        height = NULL,
                        element_id = NULL) {
@@ -44,10 +48,12 @@ bioheatmap <- function(mat,
 
   nrows <- nrow(mat)
   ncols <- ncol(mat)
+  bv_require_nonempty(nrows * ncols, "mat")
 
   # Row-major numeric vector: element (r, c) at index (r - 1) * ncols + c.
   # R stores matrices column-major, so transpose before flattening.
-  values <- as.numeric(t(mat))
+  values <- bv_require_numeric(as.vector(t(mat)), "mat")
+  bv_check_finite(values, "mat")
 
   columns <- list(values = values)
 
@@ -68,6 +74,7 @@ bioheatmap <- function(mat,
   # "auto" from "unset". jsonlite serializes NULL inside a named list as null.
   options$vmin <- vmin
   options$vmax <- vmax
+  if (!is.null(theme)) options$theme <- theme
 
   bioviz_widget(
     "heatmap", columns,
