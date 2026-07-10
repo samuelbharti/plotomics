@@ -1,4 +1,4 @@
-# bioviz
+# plotomics
 
 **Lightweight, GPU-accelerated bioinformatics visualization components with R and Python wrappers.**
 
@@ -28,9 +28,9 @@ designed to be **publication-ready**, not toy demos.
 
 ```
 packages/
-  core/         @bioviz/core       — contract, theme, color, binary transport, export
-  components/   @bioviz/components  — the headless viz factories + adapters + dev harness
-r/bioviz/       R package (htmlwidgets)
+  core/         @plotomics/core       — contract, theme, color, binary transport, export
+  components/   @plotomics/components  — the headless viz factories + adapters + dev harness
+r/plotomics/       R package (htmlwidgets)
 python/         Python package (anywidget)
 scripts/        sync built bundles into the wrappers
 ```
@@ -42,14 +42,14 @@ pnpm install
 pnpm dist        # build all JS + copy bundles into r/ and python/
 
 # Visual dev harness (WebGL, synthetic data at scale)
-pnpm --filter @bioviz/components dev   # http://localhost:5180
+pnpm --filter @plotomics/components dev   # http://localhost:5180
 ```
 
 ### R
 
 ```r
 pnpm dist  # ensure bundles are synced (run once in the shell)
-devtools::load_all("r/bioviz")
+devtools::load_all("r/plotomics")
 df <- data.frame(x = rnorm(1e5), y = abs(rnorm(1e5)) * 3, label = paste0("GENE", 1:1e5))
 volcano(df, fc_threshold = 1, p_threshold = 0.05)
 ```
@@ -58,7 +58,7 @@ volcano(df, fc_threshold = 1, p_threshold = 0.05)
 
 ```python
 import numpy as np, pandas as pd
-from bioviz import Volcano
+from plotomics import Volcano
 
 n = 200_000
 df = pd.DataFrame({"x": np.random.randn(n), "y": np.abs(np.random.randn(n))*3,
@@ -70,7 +70,7 @@ Large single-cell embedding (UMAP/t-SNE) colored by cluster, with lasso selectio
 
 ```python
 import numpy as np, pandas as pd
-from bioviz import Embedding
+from plotomics import Embedding
 
 n = 500_000
 k = np.random.randint(0, 8, n)                        # cluster per cell

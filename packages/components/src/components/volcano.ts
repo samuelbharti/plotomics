@@ -6,13 +6,13 @@
  * labels on an SVG overlay that stays in sync with pan/zoom. This file is the
  * reference implementation for the whole component library — new components
  * should mirror its structure (pure helpers + a factory returning a
- * BiovizInstance).
+ * PlotomicsInstance).
  */
 import {
-  type BiovizData,
-  type BiovizFactory,
-  type BiovizInstance,
-  type BiovizTheme,
+  type PlotomicsData,
+  type PlotomicsFactory,
+  type PlotomicsInstance,
+  type PlotomicsTheme,
   type Column,
   resolveTheme,
   createTooltip,
@@ -21,7 +21,7 @@ import {
   dpr,
   serializeSVG,
   canvasToPNG,
-} from "@bioviz/core";
+} from "@plotomics/core";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
@@ -39,7 +39,7 @@ export interface VolcanoOptions {
   showThresholdLines: boolean;
   /** Label the N most significant up- and down-regulated genes. */
   labelTopN: number;
-  theme: Partial<BiovizTheme>;
+  theme: Partial<PlotomicsTheme>;
 }
 
 export const defaultVolcanoOptions: VolcanoOptions = {
@@ -109,10 +109,10 @@ export function niceTicks(domain: [number, number], count = 6): number[] {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createVolcano: BiovizFactory<VolcanoOptions> = (el, initial) => {
+export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => {
   let opts: VolcanoOptions = mergeOptions(defaultVolcanoOptions, initial.options);
   let theme = resolveTheme(opts.theme);
-  let data: BiovizData = initial.data ?? { columns: {} };
+  let data: PlotomicsData = initial.data ?? { columns: {} };
 
   // Layout state
   let width = 0;
@@ -356,7 +356,7 @@ export const createVolcano: BiovizFactory<VolcanoOptions> = (el, initial) => {
     if (data.columns.x) applyData();
   }
 
-  const instance: BiovizInstance<VolcanoOptions> = {
+  const instance: PlotomicsInstance<VolcanoOptions> = {
     setData(next) {
       data = next;
       applyData();

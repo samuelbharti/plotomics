@@ -1,7 +1,7 @@
-# bioviz embedding in a Posit `shiny-react` app
+# plotomics embedding in a Posit `shiny-react` app
 
 A minimal [shiny-react](https://github.com/wch/shiny-react) app that renders the
-bioviz **embedding** (UMAP/t-SNE) viewer with a React frontend talking to an R
+plotomics **embedding** (UMAP/t-SNE) viewer with a React frontend talking to an R
 Shiny backend. It demonstrates the full round trip:
 
 - **data down** — the R server sends a synthetic embedding as column-major JSON
@@ -11,13 +11,13 @@ Shiny backend. It demonstrates the full round trip:
 - **derived value down** — the server echoes the selected count
   (`useShinyOutput("n_selected")`).
 
-## What comes from bioviz
+## What comes from plotomics
 
 Exactly one thing: the npm package. There is **no htmlwidgets and no anywidget**
 on this path — you import the headless factory and drive it imperatively.
 
 ```tsx
-import { createEmbedding } from "@bioviz/components/embedding";
+import { createEmbedding } from "@plotomics/components/embedding";
 ```
 
 The `/embedding` subpath (plus `sideEffects:false`) means your esbuild bundle
@@ -43,14 +43,14 @@ npm run app        # Rscript shiny::runApp('r/app.R', port = 8000)
 
 Then open http://localhost:8000 and drag a lasso across the points.
 
-### Using the local (unpublished) bioviz build
+### Using the local (unpublished) plotomics build
 
-`package.json` pins `@bioviz/components: ^0.1.0` for when it is on npm. Until the
+`package.json` pins `@plotomics/components: ^0.1.0` for when it is on npm. Until the
 v0.1 release is published, link the workspace build instead — from the repo
 root:
 
 ```bash
-pnpm dist                                   # build @bioviz/components
+pnpm dist                                   # build @plotomics/components
 cd examples/shiny-react-embedding
 pnpm link ../../packages/components         # or: npm install ../../packages/components
 ```
@@ -61,16 +61,16 @@ shiny-react deps don't mix into the library's own React 18 build.)
 ## The large-data caveat
 
 Data here rides Shiny's websocket as JSON. That's fine for tens of thousands of
-points, but it forgoes bioviz's binary (anywidget) transport — so for very large
+points, but it forgoes plotomics's binary (anywidget) transport — so for very large
 embeddings, downsample server-side or serve a binary blob the client `fetch`es
-and decodes (you can reuse `decodeColumns` from `@bioviz/core`). This is the one
+and decodes (you can reuse `decodeColumns` from `@plotomics/core`). This is the one
 trade-off of the React-in-Shiny path versus the Python anywidget wrapper.
 
 ## Files
 
 | File | Role |
 |---|---|
-| [`srcts/Embedding.tsx`](srcts/Embedding.tsx) | Reusable React wrapper around the bioviz factory (the transferable bit) |
+| [`srcts/Embedding.tsx`](srcts/Embedding.tsx) | Reusable React wrapper around the plotomics factory (the transferable bit) |
 | [`srcts/EmbeddingApp.tsx`](srcts/EmbeddingApp.tsx) | Wires `useShinyOutput`/`useShinyInput` to the wrapper |
 | [`srcts/main.tsx`](srcts/main.tsx) | Mounts React into `#root` |
 | [`r/app.R`](r/app.R) | Shiny server: generates data, reads selection, echoes count |

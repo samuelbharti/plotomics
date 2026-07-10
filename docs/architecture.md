@@ -14,12 +14,12 @@
 
 ```
                     ┌───────────────────────────┐
-   R (htmlwidgets)  │  window.bioviz.htmlwidget  │  JSON columns
+   R (htmlwidgets)  │  window.plotomics.htmlwidget  │  JSON columns
                     └─────────────┬─────────────-┘
                                   │  registerComponent()
       ┌───────────────────────────▼───────────────────────────┐
-      │        @bioviz/components  (headless factories)         │
-      │   create<Name>(el, {data, options}) -> BiovizInstance   │
+      │        @plotomics/components  (headless factories)         │
+      │   create<Name>(el, {data, options}) -> PlotomicsInstance   │
       └───────────────────────────▲───────────────────────────┘
                                   │  makeAnywidget()
                     ┌─────────────┴─────────────┐
@@ -27,19 +27,19 @@
                     └───────────────────────────┘
                                   │
                     ┌─────────────▼─────────────┐
-                    │        @bioviz/core        │
+                    │        @plotomics/core        │
                     │ contract · theme · color · │
                     │ transport · dom · export   │
                     └───────────────────────────┘
 ```
 
-## The contract (`@bioviz/core`)
+## The contract (`@plotomics/core`)
 
 ```ts
-type BiovizData = { columns: Record<string, ArrayLike<number> | string[]>; meta?: object };
+type PlotomicsData = { columns: Record<string, ArrayLike<number> | string[]>; meta?: object };
 
-interface BiovizInstance<O> {
-  setData(d: BiovizData): void;
+interface PlotomicsInstance<O> {
+  setData(d: PlotomicsData): void;
   setOptions(o: Partial<O>): void;
   resize(w: number, h: number): void;
   exportSVG?(): string | null;
@@ -48,7 +48,7 @@ interface BiovizInstance<O> {
 }
 ```
 
-A factory is `(el, {data, options}) => BiovizInstance`. Nothing in a component
+A factory is `(el, {data, options}) => PlotomicsInstance`. Nothing in a component
 references a widget host — that is what makes the same code run in a Jupyter
 cell, a Shiny app, an RStudio viewer or a plain web page.
 
@@ -59,17 +59,17 @@ cell, a Shiny app, an RStudio viewer or a plain web page.
 | Python → JS | binary buffer + `schema` (`decodeColumns` → typed arrays, zero-copy) | `data.columns` / `data.meta` (JSON) |
 | R → JS | JSON arrays (`data.columns`) | `data.columns` / `data.meta` (JSON) |
 
-Both converge on the same `BiovizData`. The binary path exists because a
+Both converge on the same `PlotomicsData`. The binary path exists because a
 million floats as JSON is ~20 MB of text to parse; as a `Float32Array` buffer
 it is 4 MB delivered as a `DataView`. See `packages/core/src/transport.ts` and
-`python/src/bioviz/_base.py::pack_columns`.
+`python/src/plotomics/_base.py::pack_columns`.
 
 ## Build & sync
 
 `packages/components/build.mjs` (esbuild) globs `src/entries/{anywidget,umd}/*.ts`
 and emits one self-contained bundle per component per target. `scripts/sync-assets.mjs`
-copies them into `r/bioviz/inst/htmlwidgets/lib/bioviz/` and
-`python/src/bioviz/static/`. These synced dirs are git-ignored and regenerated
+copies them into `r/plotomics/inst/htmlwidgets/lib/plotomics/` and
+`python/src/plotomics/static/`. These synced dirs are git-ignored and regenerated
 by `pnpm dist` (and in CI).
 
 ## Rendering strategy per component

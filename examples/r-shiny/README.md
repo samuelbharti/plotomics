@@ -1,6 +1,6 @@
-# bioviz in classic R Shiny
+# plotomics in classic R Shiny
 
-A gallery Shiny app using the bioviz **htmlwidgets** — the classic Shiny path
+A gallery Shiny app using the plotomics **htmlwidgets** — the classic Shiny path
 (`<name>Output()` / `render<Name>()` bindings), one tab per component, each
 driven by reactive controls on the server.
 
@@ -18,8 +18,8 @@ The widget JS must be built and synced into the R package first (those bundles
 are git-ignored and regenerated on demand). From the repo root:
 
 ```bash
-# build @bioviz/components and copy bundles into r/bioviz (and python)
-pnpm --filter @bioviz/components build && node scripts/sync-assets.mjs
+# build @plotomics/components and copy bundles into r/plotomics (and python)
+pnpm --filter @plotomics/components build && node scripts/sync-assets.mjs
 # (equivalently `pnpm dist` where pnpm is on PATH)
 
 Rscript -e "shiny::runApp('examples/r-shiny', port = 8001)"
@@ -27,8 +27,8 @@ Rscript -e "shiny::runApp('examples/r-shiny', port = 8001)"
 
 Then open <http://localhost:8001>.
 
-`app.R` uses `library(bioviz)` if the package is installed, otherwise
-`pkgload::load_all("r/bioviz")` from this repo — so no install step is needed for
+`app.R` uses `library(plotomics)` if the package is installed, otherwise
+`pkgload::load_all("r/plotomics")` from this repo — so no install step is needed for
 local development.
 
 ## How it works

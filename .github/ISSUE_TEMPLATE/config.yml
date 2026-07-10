@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions & discussions
-    url: https://github.com/samuelbharti/visualization-components/discussions
+    url: https://github.com/samuelbharti/plotomics/discussions
     about: >-
       Have a usage question, an idea, or need help? Please start a Discussion
       instead of opening an issue.

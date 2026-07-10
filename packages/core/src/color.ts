@@ -1,5 +1,5 @@
 /**
- * Lightweight color utilities — no external dependencies so `@bioviz/core`
+ * Lightweight color utilities — no external dependencies so `@plotomics/core`
  * stays tiny and tree-shakeable. Provides perceptually-uniform sequential
  * (viridis) and diverging (RdBu) interpolators plus categorical mapping.
  */
