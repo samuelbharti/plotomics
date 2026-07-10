@@ -1,10 +1,65 @@
 {
   "name": "@bioviz/components",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Headless, high-performance bioinformatics visualization components.",
+  "license": "MIT",
   "type": "module",
-  "main": "./dist/lib/index.js",
-  "types": "./dist/lib/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/samuelbharti/visualization-components.git",
+    "directory": "packages/components"
+  },
+  "homepage": "https://github.com/samuelbharti/visualization-components#readme",
+  "bugs": "https://github.com/samuelbharti/visualization-components/issues",
+  "main": "./dist/lib/lib/index.js",
+  "types": "./dist/lib/lib/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/lib/lib/index.d.ts",
+      "import": "./dist/lib/lib/index.js"
+    },
+    "./clustermap": {
+      "types": "./dist/lib/components/clustermap.d.ts",
+      "import": "./dist/lib/components/clustermap.js"
+    },
+    "./embedding": {
+      "types": "./dist/lib/components/embedding.d.ts",
+      "import": "./dist/lib/components/embedding.js"
+    },
+    "./gosling": {
+      "types": "./dist/lib/components/gosling.d.ts",
+      "import": "./dist/lib/components/gosling.js"
+    },
+    "./heatmap": {
+      "types": "./dist/lib/components/heatmap.d.ts",
+      "import": "./dist/lib/components/heatmap.js"
+    },
+    "./hic": {
+      "types": "./dist/lib/components/hic.d.ts",
+      "import": "./dist/lib/components/hic.js"
+    },
+    "./igv": {
+      "types": "./dist/lib/components/igv.d.ts",
+      "import": "./dist/lib/components/igv.js"
+    },
+    "./network": {
+      "types": "./dist/lib/components/network.d.ts",
+      "import": "./dist/lib/components/network.js"
+    },
+    "./treemap": {
+      "types": "./dist/lib/components/treemap.d.ts",
+      "import": "./dist/lib/components/treemap.js"
+    },
+    "./volcano": {
+      "types": "./dist/lib/components/volcano.d.ts",
+      "import": "./dist/lib/components/volcano.js"
+    }
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "node build.mjs && tsc -p tsconfig.build.json",
     "dev": "vite",
@@ -23,17 +78,25 @@
     "igv": "^3.8.3",
     "ml-hclust": "^4.0.0",
     "pixi.js": "^6.5.10",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "regl": "^2.1.1",
     "regl-scatterplot": "^1.16.0",
     "sigma": "^3.0.3"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1 || ^19.0.0",
+    "react-dom": "^18.3.1 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true },
+    "react-dom": { "optional": true }
   },
   "devDependencies": {
     "@types/d3-array": "^3.2.2",
     "@types/d3-hierarchy": "^3.1.7",
     "@types/d3-scale": "^4.0.9",
     "esbuild": "^0.24.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "typescript": "^5.6.3",
     "vite": "^6.0.0",
     "vitest": "^2.1.8"
