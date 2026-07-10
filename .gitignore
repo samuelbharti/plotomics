@@ -6,10 +6,6 @@ dist/
 npm-debug.log*
 pnpm-debug.log*
 
-# Build outputs synced into wrappers (generated)
-r/bioviz/inst/htmlwidgets/lib/bioviz/
-python/src/bioviz/static/
-
 # Python
 __pycache__/
 *.py[cod]

@@ -22,6 +22,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm dist
+      - name: Verify committed bundles are up to date
+        run: git diff --exit-code r/bioviz/inst/htmlwidgets/lib/bioviz python/src/bioviz/static
       - run: pnpm -r --filter "./packages/**" typecheck
       - run: pnpm -r --filter "./packages/**" test
       - name: Upload built bundles
