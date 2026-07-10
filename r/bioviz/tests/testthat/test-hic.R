@@ -44,3 +44,38 @@ test_that("hic() validates its input", {
   expect_error(hic(data.frame(a = 1, b = 2)), "i`, `j` and `v`")
   expect_error(hic("nope"), "square matrix or a list")
 })
+
+test_that("hic() rejects an unknown colormap", {
+  expect_error(hic(matrix(1:4, nrow = 2), colormap = "plasma"))
+})
+
+test_that("hic() rejects out-of-range sparse indices", {
+  trip <- list(i = c(0L, 5L), j = c(0L, 1L), v = c(1, 2))
+  expect_error(hic(trip, n = 3), "indices must be in \\[0, n\\)")
+})
+
+test_that("hic() rejects mismatched i/j/v lengths", {
+  trip <- list(i = c(0L, 1L), j = c(0L), v = c(1, 2))
+  expect_error(hic(trip, n = 3), "must have equal length")
+})
+
+test_that("hic() rejects an empty triplet (guards the max() trap)", {
+  trip <- list(i = integer(0), j = integer(0), v = numeric(0))
+  expect_error(hic(trip, n = 3), "no rows/cells")
+})
+
+test_that("hic() rejects a factor sparse column", {
+  trip <- list(i = factor(c("0", "1")), j = c(0L, 1L), v = c(1, 2))
+  expect_error(hic(trip, n = 3), "`i` must be numeric")
+})
+
+test_that("hic() forwards vmax_percentile and theme when set", {
+  m <- matrix(runif(4), 2, 2)
+  w <- hic(m, vmax_percentile = 0.95, theme = list(background = "#000"))
+  expect_equal(w$x$options$vmaxPercentile, 0.95)
+  expect_equal(w$x$options$theme$background, "#000")
+
+  auto <- hic(m)
+  expect_null(auto$x$options$vmaxPercentile)
+  expect_null(auto$x$options$theme)
+})

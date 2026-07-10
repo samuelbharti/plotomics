@@ -17,9 +17,14 @@
 #'   its type, or force `"categorical"` / `"continuous"`.
 #' @param colormap Sequential color ramp for continuous coloring: `"viridis"`
 #'   or `"rdbu"`.
+#' @param mouse_mode Primary drag gesture: `"panZoom"` (default) pans/zooms and
+#'   `"lasso"` makes a plain drag draw a selection.
 #' @param x_label,y_label Axis titles (shown when `show_axes = TRUE`).
 #' @param show_axes Draw the axis frame + ticks (embeddings usually hide axes).
 #' @param show_legend Draw the legend (discrete swatches or a colorbar).
+#' @param theme Optional named list of theme overrides (colors, fonts, ...)
+#'   merged over the component defaults in the browser. `NULL` uses the default
+#'   theme.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.
@@ -40,10 +45,12 @@ embedding <- function(data,
                       opacity = 0.8,
                       color_mode = c("auto", "categorical", "continuous"),
                       colormap = c("viridis", "rdbu"),
+                      mouse_mode = c("panZoom", "lasso"),
                       x_label = "UMAP 1",
                       y_label = "UMAP 2",
                       show_axes = FALSE,
                       show_legend = TRUE,
+                      theme = NULL,
                       width = NULL,
                       height = NULL,
                       element_id = NULL) {
@@ -55,15 +62,21 @@ embedding <- function(data,
   }
   color_mode <- match.arg(color_mode)
   colormap <- match.arg(colormap)
+  mouse_mode <- match.arg(mouse_mode)
+  bv_require_nonempty(nrow(data), "data")
 
-  columns <- list(
-    x = as.numeric(data$x),
-    y = as.numeric(data$y)
-  )
+  x <- bv_require_numeric(data$x, "x")
+  bv_check_finite(x, "x")
+  y <- bv_require_numeric(data$y, "y")
+  bv_check_finite(y, "y")
+
+  columns <- list(x = x, y = y)
   if (!is.null(data$color)) {
     # Preserve type: numeric -> continuous, character/factor -> categorical.
     if (is.numeric(data$color)) {
-      columns$color <- as.numeric(data$color)
+      col <- bv_require_numeric(data$color, "color")
+      bv_check_finite(col, "color")
+      columns$color <- col
     } else {
       columns$color <- as.character(data$color)
     }
@@ -77,11 +90,13 @@ embedding <- function(data,
     opacity = opacity,
     colorMode = color_mode,
     colormap = colormap,
+    mouseMode = mouse_mode,
     xLabel = x_label,
     yLabel = y_label,
     showAxes = show_axes,
     showLegend = show_legend
   )
+  if (!is.null(theme)) options$theme <- theme
 
   bioviz_widget(
     "embedding", columns,

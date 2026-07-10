@@ -27,6 +27,9 @@
 #' @param show_labels Draw row/column tick labels (auto-hidden when cells get
 #'   too small to be legible).
 #' @param legend_title Colorbar legend title.
+#' @param theme Optional named list of theme overrides (colors, fonts, ...)
+#'   merged over the component defaults in the browser. `NULL` uses the default
+#'   theme.
 #' @param row_linkage,col_linkage Optional precomputed leaf order or dendrogram
 #'   to skip clustering that axis. Either an integer vector giving the 0-based
 #'   leaf order, or a list with `order` (0-based) and `merges` (each a list with
@@ -59,6 +62,7 @@ clustermap <- function(mat,
                        legend_title = "value",
                        row_linkage = NULL,
                        col_linkage = NULL,
+                       theme = NULL,
                        width = NULL,
                        height = NULL,
                        element_id = NULL) {
@@ -76,10 +80,15 @@ clustermap <- function(mat,
 
   nr <- nrow(mat)
   nc <- ncol(mat)
+  bv_require_nonempty(nr * nc, "mat")
 
   # Row-major flatten: t() then as.vector() walks columns of the transpose,
   # i.e. row 1 (all cols), row 2, ... which is the layout the JS core expects.
-  values <- as.numeric(t(mat))
+  values <- bv_require_numeric(as.vector(t(mat)), "mat")
+  bv_check_finite(values, "mat")
+
+  if (!is.null(row_linkage)) bv_check_linkage(row_linkage, nr, "row_linkage")
+  if (!is.null(col_linkage)) bv_check_linkage(col_linkage, nc, "col_linkage")
 
   meta <- list(nrows = nr, ncols = nc)
   rn <- rownames(mat)
@@ -101,6 +110,7 @@ clustermap <- function(mat,
     showLabels = show_labels,
     legendTitle = legend_title
   )
+  if (!is.null(theme)) options$theme <- theme
 
   bioviz_widget(
     "clustermap", list(values = values),

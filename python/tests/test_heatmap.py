@@ -72,3 +72,13 @@ def test_heatmap_omits_labels_when_absent():
     w = Heatmap(np.zeros((2, 2), dtype=np.float32))
     assert "rowLabels" not in w.data["meta"]
     assert "colLabels" not in w.data["meta"]
+
+
+def test_heatmap_theme_in_options():
+    w = Heatmap(np.zeros((2, 2), dtype=np.float32), theme={"background": "#000"})
+    assert w.options["theme"] == {"background": "#000"}
+
+
+def test_heatmap_rejects_empty_matrix():
+    with pytest.raises(ValueError, match="at least one row"):
+        Heatmap(np.zeros((0, 5), dtype=np.float32))
