@@ -12,7 +12,9 @@ import Embedding from "./Embedding";
 type Cols = {
   x: number[];
   y: number[];
-  color?: (string | number)[];
+  // Categorical (labels) or continuous (values) — a bioviz `Column` is one or
+  // the other, never a mixed `(string | number)[]`.
+  color?: string[] | number[];
   label?: string[];
 };
 
@@ -29,6 +31,20 @@ export default function EmbeddingApp() {
   const data: BiovizData = useMemo(
     () => (cols ? { columns: cols } : { columns: { x: [], y: [] } }),
     [cols],
+  );
+
+  // Stable identity so <Embedding>'s options effect only fires when the drag
+  // mode actually changes — a fresh literal each render would re-run setOptions
+  // on every re-render (e.g. each selection echo) and reset the user's zoom.
+  const options = useMemo(
+    () => ({
+      colorMode: "categorical" as const,
+      pointSize: 4,
+      opacity: 0.9,
+      theme: darkTheme,
+      mouseMode: lasso ? ("lasso" as const) : ("panZoom" as const),
+    }),
+    [lasso],
   );
 
   return (
@@ -56,17 +72,7 @@ export default function EmbeddingApp() {
         </div>
       </header>
       <div className="viz">
-        <Embedding
-          data={data}
-          options={{
-            colorMode: "categorical",
-            pointSize: 4,
-            opacity: 0.9,
-            theme: darkTheme,
-            mouseMode: lasso ? "lasso" : "panZoom",
-          }}
-          onSelect={setSelected}
-        />
+        <Embedding data={data} options={options} onSelect={setSelected} />
       </div>
     </div>
   );
