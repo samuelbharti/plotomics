@@ -35,6 +35,8 @@ class Heatmap(BiovizWidget):
         Draw the colorbar legend.
     row_labels, col_labels:
         Optional explicit labels; override any inferred from a DataFrame.
+    theme:
+        Optional theme overrides forwarded to the JS renderer.
     height:
         Initial widget height in CSS pixels.
 
@@ -58,6 +60,7 @@ class Heatmap(BiovizWidget):
         show_colorbar: bool = True,
         row_labels: list[str] | None = None,
         col_labels: list[str] | None = None,
+        theme: dict | None = None,
         height: int = 480,
         **kwargs: Any,
     ) -> None:
@@ -74,6 +77,8 @@ class Heatmap(BiovizWidget):
         if arr.ndim != 2:
             raise ValueError("`matrix` must be a 2-D array or DataFrame.")
         nrows, ncols = int(arr.shape[0]), int(arr.shape[1])
+        if nrows == 0 or ncols == 0:
+            raise ValueError("`matrix` must contain at least one row and one column.")
 
         # Row-major flatten: element (r, c) at index r * ncols + c.
         values = np.ascontiguousarray(arr).reshape(-1)
@@ -93,17 +98,21 @@ class Heatmap(BiovizWidget):
                 )
             meta["colLabels"] = [str(v) for v in col_labels]
 
+        options: dict[str, Any] = {
+            "colormap": colormap,
+            "zScore": z_score,
+            "vmin": vmin,
+            "vmax": vmax,
+            "showColorbar": show_colorbar,
+        }
+        if theme is not None:
+            options["theme"] = theme
+
         super().__init__(
             buffer=buffer,
             schema=schema,
             data={"columns": {}, "meta": meta},
-            options={
-                "colormap": colormap,
-                "zScore": z_score,
-                "vmin": vmin,
-                "vmax": vmax,
-                "showColorbar": show_colorbar,
-            },
+            options=options,
             _height=height,
             **kwargs,
         )

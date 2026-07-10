@@ -71,3 +71,36 @@ def test_network_accepts_numpy_id_arrays():
     w = Network(nodes, edges)
     assert w.data["columns"]["id"] == ["a", "b"]
     assert {c["name"] for c in w.schema["columns"]} == {"size"}
+
+
+def test_network_rejects_duplicate_node_id():
+    with pytest.raises(ValueError, match="duplicate node id"):
+        Network({"id": ["a", "a"]}, {"source": ["a"], "target": ["a"]})
+
+
+def test_network_rejects_dangling_edge():
+    with pytest.raises(ValueError, match="not found among node ids"):
+        Network({"id": ["a", "b"]}, {"source": ["a"], "target": ["z"]})
+
+
+def test_network_precomputed_requires_xy():
+    with pytest.raises(ValueError, match="precomputed"):
+        Network(
+            {"id": ["a", "b"]},
+            {"source": ["a"], "target": ["b"]},
+            layout="precomputed",
+        )
+
+
+def test_network_rejects_empty_nodes():
+    with pytest.raises(ValueError, match="at least one row"):
+        Network({"id": []}, {"source": [], "target": []})
+
+
+def test_network_theme_in_options():
+    w = Network(
+        {"id": ["a", "b"]},
+        {"source": ["a"], "target": ["b"]},
+        theme={"background": "#222"},
+    )
+    assert w.options["theme"] == {"background": "#222"}

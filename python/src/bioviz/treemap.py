@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 import numpy as np
@@ -38,6 +39,8 @@ class Treemap(BiovizWidget):
         Ramp used when ``color_by="value"``: ``"viridis"`` or ``"rdbu"``.
     label_min_size:
         Minimum tile side (px) before a label is drawn.
+    theme:
+        Optional theme overrides forwarded to the JS renderer.
     height:
         Initial widget height in CSS pixels.
 
@@ -64,6 +67,7 @@ class Treemap(BiovizWidget):
         color_by: str = "parent",
         colormap: str = "viridis",
         label_min_size: float = 32.0,
+        theme: dict | None = None,
         height: int = 480,
         **kwargs: Any,
     ) -> None:
@@ -71,22 +75,46 @@ class Treemap(BiovizWidget):
         parents = _column(data, "parent")
         if ids is None or parents is None:
             raise ValueError("`data` must provide `id` and `parent` columns.")
-
-        n = len(list(ids))
+        if tile not in ("squarify", "binary"):
+            raise ValueError("`tile` must be 'squarify' or 'binary'.")
+        if color_by not in ("parent", "value"):
+            raise ValueError("`color_by` must be 'parent' or 'value'.")
+        if colormap not in ("viridis", "rdbu"):
+            raise ValueError("`colormap` must be 'viridis' or 'rdbu'.")
 
         # String columns travel as JSON. Missing / NaN parents mark the root and
         # are normalized to empty strings (the JS side treats "" / "NA" as root).
-        json_columns: dict[str, list] = {
-            "id": [str(v) for v in ids],
-            "parent": [_parent_str(v) for v in parents],
-        }
+        id_list = [str(v) for v in ids]
+        parent_list = [_parent_str(v) for v in parents]
+        n = len(id_list)
 
-        # Numeric leaf weights travel via the binary transport (fast path).
+        # Structural integrity: exactly one root, unique ids, no orphan parents.
+        if n == 0:
+            raise ValueError("`data` must contain at least one row.")
+        dupes = sorted({i for i, c in Counter(id_list).items() if c > 1})
+        if dupes:
+            raise ValueError("duplicate node id(s): " + ", ".join(dupes))
+        roots = [i for i, p in zip(id_list, parent_list) if p == ""]
+        if len(roots) != 1:
+            raise ValueError("treemap requires exactly one root")
+        id_set = set(id_list)
+        missing = sorted({p for p in parent_list if p != "" and p not in id_set})
+        if missing:
+            raise ValueError("parent(s) not found among ids: " + ", ".join(missing))
+
+        json_columns: dict[str, list] = {"id": id_list, "parent": parent_list}
+
+        # Numeric leaf weights travel via the binary transport (float32 for
+        # consistency with every other component's packed columns).
         value = _column(data, "value")
         if value is not None:
-            value_arr = np.asarray(value, dtype=np.float64)
+            value_arr = np.asarray(value, dtype=np.float32)
+            if value_arr.size != n:
+                raise ValueError(
+                    f"`value` has {value_arr.size} entries; expected {n}."
+                )
         else:
-            value_arr = np.zeros(n, dtype=np.float64)
+            value_arr = np.zeros(n, dtype=np.float32)
         buffer, schema = pack_columns({"value": value_arr})
 
         meta: dict[str, Any] = {}
@@ -94,17 +122,21 @@ class Treemap(BiovizWidget):
         if label is not None:
             meta["labels"] = [str(v) for v in label]
 
+        options: dict[str, Any] = {
+            "tile": tile,
+            "paddingInner": padding_inner,
+            "colorBy": color_by,
+            "colormap": colormap,
+            "labelMinSize": label_min_size,
+        }
+        if theme is not None:
+            options["theme"] = theme
+
         super().__init__(
             buffer=buffer,
             schema=schema,
             data={"columns": json_columns, "meta": meta},
-            options={
-                "tile": tile,
-                "paddingInner": padding_inner,
-                "colorBy": color_by,
-                "colormap": colormap,
-                "labelMinSize": label_min_size,
-            },
+            options=options,
             _height=height,
             **kwargs,
         )
