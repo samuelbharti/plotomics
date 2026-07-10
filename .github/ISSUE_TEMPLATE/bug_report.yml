@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a defect in a bioviz component or one of its language wrappers.
+description: Report a defect in a plotomics component or one of its language wrappers.
 title: "[Bug]: "
 labels: ["bug", "triage"]
 body:
@@ -42,7 +42,7 @@ body:
       label: Language wrapper
       description: Where did you hit the bug?
       options:
-        - JS / TypeScript (@bioviz/components)
+        - JS / TypeScript (@plotomics/components)
         - R (htmlwidgets)
         - Python (anywidget)
     validations:
@@ -51,7 +51,7 @@ body:
     id: version
     attributes:
       label: Package version
-      description: e.g. npm 0.1.0, R bioviz 0.1.0, PyPI bioviz 0.1.0, or a git commit SHA.
+      description: e.g. npm 0.1.0, R plotomics 0.1.0, PyPI plotomics 0.1.0, or a git commit SHA.
       placeholder: "0.0.0 / commit sha"
     validations:
       required: false

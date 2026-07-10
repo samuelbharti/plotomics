@@ -1,16 +1,16 @@
 {
-  "name": "@bioviz/core",
+  "name": "@plotomics/core",
   "version": "0.1.0",
-  "description": "Shared contract, theming, color scales, binary transport and export helpers for bioviz components.",
+  "description": "Shared contract, theming, color scales, binary transport and export helpers for plotomics components.",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/samuelbharti/visualization-components.git",
+    "url": "git+https://github.com/samuelbharti/plotomics.git",
     "directory": "packages/core"
   },
-  "homepage": "https://github.com/samuelbharti/visualization-components#readme",
-  "bugs": "https://github.com/samuelbharti/visualization-components/issues",
+  "homepage": "https://github.com/samuelbharti/plotomics#readme",
+  "bugs": "https://github.com/samuelbharti/plotomics/issues",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

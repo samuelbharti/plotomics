@@ -4,20 +4,20 @@
  * The matrix is normalized to [0,1] on the CPU (one linear pass over the typed
  * array), uploaded as a single-channel `luminance` texture (1 byte/cell, so a
  * 1000x1000 matrix is ~1 MB of GPU memory) and colormapped in a fragment
- * shader via a 256x1 lookup texture baked from a `@bioviz/core` ramp. Pan/zoom
+ * shader via a 256x1 lookup texture baked from a `@plotomics/core` ramp. Pan/zoom
  * is a UV transform applied entirely on the GPU, so interaction stays at 60fps
  * regardless of matrix size — there is never one DOM node per cell.
  *
  * SVG is reserved for the low-cardinality overlay: the colorbar legend and the
  * row/column tick labels (only drawn when the count is small enough to be
  * legible). This mirrors the Volcano reference component's structure: exported
- * pure helpers plus a `BiovizFactory` returning a `BiovizInstance`.
+ * pure helpers plus a `PlotomicsFactory` returning a `PlotomicsInstance`.
  */
 import {
-  type BiovizData,
-  type BiovizFactory,
-  type BiovizInstance,
-  type BiovizTheme,
+  type PlotomicsData,
+  type PlotomicsFactory,
+  type PlotomicsInstance,
+  type PlotomicsTheme,
   type RampName,
   resolveTheme,
   createTooltip,
@@ -27,7 +27,7 @@ import {
   ramp,
   serializeSVG,
   canvasToPNG,
-} from "@bioviz/core";
+} from "@plotomics/core";
 import createREGL from "regl";
 import type { Regl, Texture2D, DrawCommand } from "regl";
 
@@ -42,7 +42,7 @@ export interface HeatmapOptions {
   vmax: number | null;
   /** Draw the colorbar legend on the SVG overlay. */
   showColorbar: boolean;
-  theme: Partial<BiovizTheme>;
+  theme: Partial<PlotomicsTheme>;
 }
 
 export const defaultHeatmapOptions: HeatmapOptions = {
@@ -191,7 +191,7 @@ export function normalizeToU8(
   return out;
 }
 
-/** Bake a `@bioviz/core` ramp into a 256x4 RGBA Uint8Array lookup table. */
+/** Bake a `@plotomics/core` ramp into a 256x4 RGBA Uint8Array lookup table. */
 export function buildRampLUT(name: RampName): Uint8Array {
   const fn = ramp(name);
   const lut = new Uint8Array(256 * 4);
@@ -219,10 +219,10 @@ export function tickIndices(n: number, max: number): number[] {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createHeatmap: BiovizFactory<HeatmapOptions> = (el, initial) => {
+export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (el, initial) => {
   let opts: HeatmapOptions = mergeOptions(defaultHeatmapOptions, initial.options);
   let theme = resolveTheme(opts.theme);
-  let data: BiovizData = initial.data ?? { columns: {} };
+  let data: PlotomicsData = initial.data ?? { columns: {} };
 
   // Layout / view state.
   let width = 0;
@@ -479,7 +479,7 @@ export const createHeatmap: BiovizFactory<HeatmapOptions> = (el, initial) => {
     const cbH = Math.min(h, 220);
     const cbY = y0 + (h - cbH) / 2;
     const fn = ramp(opts.colormap);
-    const gradId = "bioviz-heatmap-cb";
+    const gradId = "plotomics-heatmap-cb";
     const defs = document.createElementNS(SVG_NS, "defs");
     const grad = document.createElementNS(SVG_NS, "linearGradient");
     grad.setAttribute("id", gradId);
@@ -671,7 +671,7 @@ export const createHeatmap: BiovizFactory<HeatmapOptions> = (el, initial) => {
     if (data.columns.values) applyData();
   }
 
-  const instance: BiovizInstance<HeatmapOptions> = {
+  const instance: PlotomicsInstance<HeatmapOptions> = {
     setData(next) {
       data = next;
       applyData();

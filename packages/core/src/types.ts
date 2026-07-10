@@ -1,5 +1,5 @@
 /**
- * Core contract shared by every bioviz component.
+ * Core contract shared by every plotomics component.
  *
  * A component is a *headless, imperative factory*: it knows nothing about R,
  * Python, anywidget or htmlwidgets. It receives a DOM element plus initial
@@ -18,15 +18,15 @@ export type Column = ArrayLike<number> | string[];
 /** Columnar dataset. Every component consumes the same shape regardless of
  * which language produced it. `meta` carries small, non-columnar values
  * (labels, level names, thresholds, precomputed layouts, etc.). */
-export interface BiovizData {
+export interface PlotomicsData {
   columns: Record<string, Column>;
   meta?: Record<string, unknown>;
 }
 
 /** Lifecycle handle returned by a component factory. */
-export interface BiovizInstance<TOptions = Record<string, unknown>> {
+export interface PlotomicsInstance<TOptions = Record<string, unknown>> {
   /** Replace the rendered dataset. Must be cheap to call repeatedly. */
-  setData(data: BiovizData): void;
+  setData(data: PlotomicsData): void;
   /** Merge new options and re-render affected parts. */
   setOptions(options: Partial<TOptions>): void;
   /** React to a container size change (CSS pixels). */
@@ -40,7 +40,7 @@ export interface BiovizInstance<TOptions = Record<string, unknown>> {
 }
 
 /** Factory signature every component module must export as `create<Name>`. */
-export type BiovizFactory<TOptions = Record<string, unknown>> = (
+export type PlotomicsFactory<TOptions = Record<string, unknown>> = (
   el: HTMLElement,
-  initial: { data?: BiovizData; options?: Partial<TOptions> },
-) => BiovizInstance<TOptions>;
+  initial: { data?: PlotomicsData; options?: Partial<TOptions> },
+) => PlotomicsInstance<TOptions>;

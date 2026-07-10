@@ -18,10 +18,10 @@
  * symmetric into a dense buffer) and needs no tile server (no HiGlass).
  */
 import {
-  type BiovizData,
-  type BiovizFactory,
-  type BiovizInstance,
-  type BiovizTheme,
+  type PlotomicsData,
+  type PlotomicsFactory,
+  type PlotomicsInstance,
+  type PlotomicsTheme,
   resolveTheme,
   createTooltip,
   type Tooltip,
@@ -31,7 +31,7 @@ import {
   canvasToPNG,
   viridis,
   type RGB,
-} from "@bioviz/core";
+} from "@plotomics/core";
 import createREGL from "regl";
 import type { Regl, Texture2D, DrawCommand } from "regl";
 
@@ -53,7 +53,7 @@ export interface HicOptions {
   symmetric: boolean;
   /** Axis title / chromosome label. */
   label: string;
-  theme: Partial<BiovizTheme>;
+  theme: Partial<PlotomicsTheme>;
 }
 
 export const defaultHicOptions: HicOptions = {
@@ -297,10 +297,10 @@ interface Level {
   texture: Texture2D | null;
 }
 
-export const createHic: BiovizFactory<HicOptions> = (el, initial) => {
+export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   let opts: HicOptions = mergeOptions(defaultHicOptions, initial.options);
   let theme = resolveTheme(opts.theme);
-  let data: BiovizData = initial.data ?? { columns: {} };
+  let data: PlotomicsData = initial.data ?? { columns: {} };
 
   // Matrix state.
   let n = 0; // bins per axis
@@ -809,7 +809,7 @@ export const createHic: BiovizFactory<HicOptions> = (el, initial) => {
     if (dense == null && (data.columns.values || data.columns.v)) applyData();
   }
 
-  const instance: BiovizInstance<HicOptions> = {
+  const instance: PlotomicsInstance<HicOptions> = {
     setData(next) {
       data = next;
       applyData();

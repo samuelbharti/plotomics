@@ -12,7 +12,7 @@ import { createIgv } from "../src/components/igv.js";
 import { createTreemap } from "../src/components/treemap.js";
 import { createVolcano } from "../src/components/volcano.js";
 import { createEmbedding } from "../src/components/embedding.js";
-import type { BiovizData } from "@bioviz/core";
+import type { PlotomicsData } from "@plotomics/core";
 
 type Demo = (el: HTMLElement) => { destroy(): void };
 
@@ -44,7 +44,7 @@ const goslingSpec = {
 /** Synthetic clustered interaction network: `communities` blobs of nodes with
  * dense intra-community and sparse inter-community edges. No coordinates, so
  * the component runs ForceAtlas2 to lay it out. */
-function syntheticNetwork(nodes: number, communities: number): BiovizData {
+function syntheticNetwork(nodes: number, communities: number): PlotomicsData {
   const id: string[] = new Array(nodes);
   const nodeGroup: string[] = new Array(nodes);
   const size = new Float32Array(nodes);
@@ -86,7 +86,7 @@ function syntheticNetwork(nodes: number, communities: number): BiovizData {
  * raised block-diagonal signal + noise, so hierarchical clustering has clear
  * structure to recover.
  */
-function syntheticClusterMatrix(nrows: number, ncols: number, groups = 4): BiovizData {
+function syntheticClusterMatrix(nrows: number, ncols: number, groups = 4): PlotomicsData {
   const values = new Float32Array(nrows * ncols);
   const rowGroup = (r: number) => Math.floor((r / nrows) * groups);
   const colGroup = (c: number) => Math.floor((c / ncols) * groups);
@@ -128,7 +128,7 @@ function shuffle(n: number): number[] {
  * away from the diagonal) plus a few TAD-like square domains and off-diagonal
  * loop dots, so LOD/zoom/pan can be eyeballed at scale.
  */
-function syntheticHic(n: number): BiovizData {
+function syntheticHic(n: number): PlotomicsData {
   const values = new Float32Array(n * n);
   const domains: [number, number][] = [];
   let start = 0;
@@ -169,7 +169,7 @@ function syntheticHic(n: number): BiovizData {
  * random number of leaf genes (weighted values). Produces the flat
  * id/parent/value columns the treemap consumes, at ~`leaves` genes total.
  */
-function syntheticTree(pathways: number, leaves: number): BiovizData {
+function syntheticTree(pathways: number, leaves: number): PlotomicsData {
   const id: string[] = ["root"];
   const parent: string[] = [""];
   const value: number[] = [0];
@@ -200,7 +200,7 @@ function syntheticTree(pathways: number, leaves: number): BiovizData {
   };
 }
 
-function syntheticVolcano(n: number): BiovizData {
+function syntheticVolcano(n: number): PlotomicsData {
   const x = new Float32Array(n);
   const y = new Float32Array(n);
   const label: string[] = [];
@@ -220,7 +220,7 @@ function syntheticVolcano(n: number): BiovizData {
  * `value` gradient, so both coloring modes can be eyeballed. Pass
  * `continuous = true` to expose the numeric column as `color`.
  */
-function syntheticEmbedding(n: number, clusters = 8, continuous = false): BiovizData {
+function syntheticEmbedding(n: number, clusters = 8, continuous = false): PlotomicsData {
   const x = new Float32Array(n);
   const y = new Float32Array(n);
   const value = new Float32Array(n);
@@ -256,7 +256,7 @@ function gaussian(): number {
 
 // A large expression matrix with block structure so patterns are visible even
 // zoomed out. 1000 x 1000 = 1,000,000 cells uploaded as one luminance texture.
-function syntheticMatrix(nrows: number, ncols: number): BiovizData {
+function syntheticMatrix(nrows: number, ncols: number): PlotomicsData {
   const values = new Float32Array(nrows * ncols);
   const rowLabels: string[] = [];
   const colLabels: string[] = [];

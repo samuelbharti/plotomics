@@ -1,21 +1,21 @@
-# bioviz · classic R Shiny gallery
+# plotomics · classic R Shiny gallery
 #
-# Demonstrates the bioviz htmlwidgets in a plain Shiny app. Each tab wires a
+# Demonstrates the plotomics htmlwidgets in a plain Shiny app. Each tab wires a
 # component's `<name>Output()` / `render<Name>()` bindings to reactive controls
 # on the server. This is the *classic* htmlwidgets path — distinct from the
 # React-frontend example in ../shiny-react-embedding.
 #
 # Run (from the repo root, after building the JS once):
-#   pnpm dist                    # or: build @bioviz/components + node scripts/sync-assets.mjs
+#   pnpm dist                    # or: build @plotomics/components + node scripts/sync-assets.mjs
 #   Rscript -e "shiny::runApp('examples/r-shiny', port = 8001)"
 
 library(shiny)
 
-# Prefer an installed bioviz; otherwise load the source package in this repo.
-if (requireNamespace("bioviz", quietly = TRUE)) {
-  library(bioviz)
+# Prefer an installed plotomics; otherwise load the source package in this repo.
+if (requireNamespace("plotomics", quietly = TRUE)) {
+  library(plotomics)
 } else {
-  pkgload::load_all(file.path("..", "..", "r", "bioviz"), quiet = TRUE)
+  pkgload::load_all(file.path("..", "..", "r", "plotomics"), quiet = TRUE)
 }
 
 set.seed(1)
@@ -94,7 +94,7 @@ side <- function(...) sidebarPanel(width = 3, ...)
 main <- function(out) mainPanel(width = 9, out)
 
 ui <- navbarPage(
-  "bioviz · R Shiny gallery",
+  "plotomics · R Shiny gallery",
   tabPanel(
     "Volcano",
     sidebarLayout(

@@ -1,7 +1,7 @@
-import { decodeColumns, type BufferSchema, type BiovizData } from "@bioviz/core";
+import { decodeColumns, type BufferSchema, type PlotomicsData } from "@plotomics/core";
 
 /**
- * Normalizes whatever a host model carries into a single {@link BiovizData}.
+ * Normalizes whatever a host model carries into a single {@link PlotomicsData}.
  *
  * Two transports converge here:
  *  - Binary (Python/anywidget): a `buffer` (DataView) + `schema` describing
@@ -13,8 +13,8 @@ export function decodeModelData(input: {
   buffer?: ArrayBuffer | DataView | Uint8Array | null;
   schema?: BufferSchema | null;
   data?: { columns?: Record<string, unknown>; meta?: Record<string, unknown> } | null;
-}): BiovizData {
-  const columns: BiovizData["columns"] = {};
+}): PlotomicsData {
+  const columns: PlotomicsData["columns"] = {};
 
   if (input.buffer && input.schema && input.schema.columns?.length) {
     Object.assign(columns, decodeColumns(input.buffer, input.schema));

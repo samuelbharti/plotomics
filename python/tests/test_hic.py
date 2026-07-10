@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from bioviz import HiC
+from plotomics import HiC
 
 
 def test_hic_dense_matrix_packs_row_major():

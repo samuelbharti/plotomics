@@ -1,4 +1,4 @@
-<!-- Thanks for contributing to bioviz! Keep the sections that apply; delete the rest. -->
+<!-- Thanks for contributing to plotomics! Keep the sections that apply; delete the rest. -->
 
 ## Summary
 
@@ -8,7 +8,7 @@
 
 - [ ] New component
 - [ ] Fix / improvement to an existing component
-- [ ] Core (`@bioviz/core`) change
+- [ ] Core (`@plotomics/core`) change
 - [ ] Tooling / CI / docs
 
 ## New component checklist
@@ -20,8 +20,8 @@
 - [ ] **Programmatic export** — appended to `packages/components/src/lib/index.ts` (kept sorted)
 - [ ] **Unit test** — `packages/components/test/<name>.test.ts` covers the pure helpers
 - [ ] **Dev demo** — `demos.<name>` in `packages/components/dev/main.ts` with synthetic data at scale (>=100k where meaningful)
-- [ ] **R wrapper** — `r/bioviz/R/<name>.R` (+ `<name>Output()` / `render<Name>()` Shiny bindings), `inst/htmlwidgets/<name>.js` + `<name>.yaml`, `tests/testthat/test-<name>.R`; NAMESPACE + man/ regenerated via roxygen
-- [ ] **Python wrapper** — `python/src/bioviz/<name>.py`, class appended to `__init__.py` (`__all__`, sorted), `python/tests/test_<name>.py`
+- [ ] **R wrapper** — `r/plotomics/R/<name>.R` (+ `<name>Output()` / `render<Name>()` Shiny bindings), `inst/htmlwidgets/<name>.js` + `<name>.yaml`, `tests/testthat/test-<name>.R`; NAMESPACE + man/ regenerated via roxygen
+- [ ] **Python wrapper** — `python/src/plotomics/<name>.py`, class appended to `__init__.py` (`__all__`, sorted), `python/tests/test_<name>.py`
 - [ ] **Trait parity** — option keys are camelCase and identical across JS options, the R `options` list, and the Python `options` dict
 
 ## Verification
@@ -30,7 +30,7 @@
 - [ ] `pnpm -r test` passes
 - [ ] `pnpm -r typecheck` passes
 - [ ] `pnpm lint` passes (or surfaces only pre-existing findings)
-- [ ] R touched → `devtools::test("r/bioviz")` passes
+- [ ] R touched → `devtools::test("r/plotomics")` passes
 - [ ] Python touched → `pytest` passes
 
 ## Notes

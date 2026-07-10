@@ -2,13 +2,13 @@ import { useEffect, useRef } from "react";
 import {
   createEmbedding,
   type EmbeddingOptions,
-} from "@bioviz/components/embedding";
-import type { BiovizData } from "@bioviz/core";
+} from "@plotomics/components/embedding";
+import type { PlotomicsData } from "@plotomics/core";
 
 type Instance = ReturnType<typeof createEmbedding>;
 
 export interface EmbeddingProps {
-  data: BiovizData;
+  data: PlotomicsData;
   options?: Partial<EmbeddingOptions>;
   onSelect?: (indices: number[]) => void;
   /** CSS height. Defaults to "100%" so it fills a sized flex parent. */
@@ -16,12 +16,12 @@ export interface EmbeddingProps {
 }
 
 /**
- * Thin React wrapper around the headless `@bioviz/components` embedding factory.
+ * Thin React wrapper around the headless `@plotomics/components` embedding factory.
  *
  * The factory owns the GPU canvas (regl-scatterplot) + the SVG legend overlay;
  * React only manages the container lifecycle and forwards prop changes through
  * the imperative `setData` / `setOptions` API — no re-mount, no GPU realloc.
- * This is the entire bioviz integration surface; nothing here is Shiny-aware,
+ * This is the entire plotomics integration surface; nothing here is Shiny-aware,
  * which is why the same wrapper works in any React app.
  */
 export default function Embedding({

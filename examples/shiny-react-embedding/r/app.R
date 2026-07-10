@@ -8,7 +8,7 @@ source("shinyreact.R", local = TRUE)
 # result. NOTE: this travels to the browser as JSON over Shiny's websocket, so
 # for very large embeddings prefer sending fewer columns / downsampling, or a
 # URL the client fetches as a binary blob — the JSON channel is the one place
-# React-in-Shiny gives up bioviz's binary (anywidget) transport.
+# React-in-Shiny gives up plotomics's binary (anywidget) transport.
 make_embedding <- function(n = 4000, k = 6) {
   cl <- sample(k, n, replace = TRUE)
   cx <- cos(2 * pi * cl / k) * 6
@@ -24,7 +24,7 @@ make_embedding <- function(n = 4000, k = 6) {
 server <- function(input, output, session) {
   emb <- make_embedding(n = 10000, k = 7)
 
-  # Data DOWN to React (column-major JSON -> bioviz `columns`).
+  # Data DOWN to React (column-major JSON -> plotomics `columns`).
   output$embedding_data <- render_json(emb)
 
   # Selection UP from React: input$embedding_selected is an integer vector of
@@ -44,4 +44,4 @@ server <- function(input, output, session) {
 # page_react() emits <head> script/style tags for r/www/main.{js,css} and the
 # <div id="root"> that srcts/main.tsx mounts into. Shiny serves r/www/ as the
 # app's static root.
-shinyApp(ui = page_react(title = "bioviz x shiny-react"), server = server)
+shinyApp(ui = page_react(title = "plotomics x shiny-react"), server = server)

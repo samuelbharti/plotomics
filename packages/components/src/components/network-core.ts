@@ -6,8 +6,8 @@
  * Node environment — importing `sigma` (WebGL) at module load fails outside a
  * browser, so the factory keeps that import to itself.
  */
-import type { BiovizData } from "@bioviz/core";
-import { categoricalScale } from "@bioviz/core";
+import type { PlotomicsData } from "@plotomics/core";
+import { categoricalScale } from "@plotomics/core";
 import Graph from "graphology";
 import forceAtlas2 from "graphology-layout-forceatlas2";
 
@@ -24,8 +24,8 @@ export interface EdgeSpec {
   weight?: number;
 }
 
-/** Read edges from a {@link BiovizData} in whichever form was supplied. */
-export function extractEdges(data: BiovizData): EdgeSpec[] {
+/** Read edges from a {@link PlotomicsData} in whichever form was supplied. */
+export function extractEdges(data: PlotomicsData): EdgeSpec[] {
   const cols = data.columns;
   const src = cols.source as string[] | undefined;
   const tgt = cols.target as string[] | undefined;
@@ -63,7 +63,7 @@ export function groupColorResolver(
 
 /** Whether ForceAtlas2 should run: only in `"forceatlas2"` mode and only when
  * both x and y coordinate columns are absent (partial coords are ignored). */
-export function needsLayout(data: BiovizData, layout: NetworkLayout): boolean {
+export function needsLayout(data: PlotomicsData, layout: NetworkLayout): boolean {
   if (layout === "precomputed") return false;
   const { x, y } = data.columns;
   return !(x && y && x.length > 0);
@@ -79,7 +79,7 @@ export function needsLayout(data: BiovizData, layout: NetworkLayout): boolean {
  * assigned; otherwise nodes are seeded on a ring for a caller-run layout.
  */
 export function buildGraph(
-  data: BiovizData,
+  data: PlotomicsData,
   opts: {
     defaultNodeColor: string;
     defaultEdgeColor: string;

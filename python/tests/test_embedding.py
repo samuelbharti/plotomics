@@ -1,6 +1,6 @@
 import pytest
 
-from bioviz import Embedding
+from plotomics import Embedding
 
 
 def test_embedding_builds_traits_from_dict():
@@ -104,4 +104,4 @@ def test_embedding_export_sends_message():
     w = Embedding({"x": [1, 2], "y": [1, 2]})
     with patch.object(w, "send") as send:
         w.export("svg")
-    send.assert_called_once_with({"bioviz": "export", "format": "svg"})
+    send.assert_called_once_with({"plotomics": "export", "format": "svg"})

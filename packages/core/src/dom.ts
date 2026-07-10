@@ -1,6 +1,6 @@
 /** Small DOM helpers shared by components (tooltip, sizing, element reset). */
 
-import type { BiovizTheme } from "./theme.js";
+import type { PlotomicsTheme } from "./theme.js";
 
 export function clearElement(el: HTMLElement): void {
   while (el.firstChild) el.removeChild(el.firstChild);
@@ -13,7 +13,7 @@ export interface Tooltip {
 }
 
 /** A lightweight absolutely-positioned tooltip anchored to a container. */
-export function createTooltip(container: HTMLElement, theme: BiovizTheme): Tooltip {
+export function createTooltip(container: HTMLElement, theme: PlotomicsTheme): Tooltip {
   const tip = document.createElement("div");
   Object.assign(tip.style, {
     position: "absolute",

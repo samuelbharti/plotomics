@@ -2,5 +2,5 @@
 # Python packages. Force LF and treat them as text so the CI drift guard
 # (`git diff --exit-code` after a fresh `pnpm dist`) is stable regardless of the
 # platform that produced the commit (Windows esbuild may emit CRLF locally).
-r/bioviz/inst/htmlwidgets/lib/bioviz/*.js text eol=lf
-python/src/bioviz/static/*.js text eol=lf
+r/plotomics/inst/htmlwidgets/lib/plotomics/*.js text eol=lf
+python/src/plotomics/static/*.js text eol=lf

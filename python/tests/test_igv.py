@@ -1,4 +1,4 @@
-from bioviz import IGV
+from plotomics import IGV
 
 
 def test_igv_assembles_config_from_convenience_args():

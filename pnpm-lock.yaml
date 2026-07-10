@@ -17,7 +17,7 @@ importers:
 
   packages/components:
     dependencies:
-      '@bioviz/core':
+      '@plotomics/core':
         specifier: workspace:*
         version: link:../core
       d3-array:

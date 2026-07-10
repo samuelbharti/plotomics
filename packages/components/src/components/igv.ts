@@ -7,7 +7,7 @@
  * data flows entirely through the browser config as URLs.
  *
  * igv.createBrowser is asynchronous (returns a Promise<Browser>), but the
- * bioviz contract requires the factory to return a BiovizInstance
+ * plotomics contract requires the factory to return a PlotomicsInstance
  * *synchronously*. We therefore kick the browser off immediately and buffer any
  * setOptions()/resize() calls that arrive before the promise resolves,
  * replaying them once the browser is live. On destroy we remove the browser and
@@ -15,11 +15,11 @@
  * promise).
  */
 import {
-  type BiovizData,
-  type BiovizFactory,
-  type BiovizInstance,
+  type PlotomicsData,
+  type PlotomicsFactory,
+  type PlotomicsInstance,
   clearElement,
-} from "@bioviz/core";
+} from "@plotomics/core";
 // Import the runtime value from the ESM build explicitly: the package's `main`
 // field points at a UMD bundle (`module.exports = factory()`) with no `default`
 // export, which esbuild cannot import as `default`. The `module`/ESM build does
@@ -46,7 +46,7 @@ export {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createIgv: BiovizFactory<IgvOptions> = (el, initial) => {
+export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
   let opts: IgvOptions = mergeOptions(defaultIgvOptions, initial.options);
 
   el.style.position = el.style.position || "relative";
@@ -82,7 +82,7 @@ export const createIgv: BiovizFactory<IgvOptions> = (el, initial) => {
     })
     .catch((err) => {
       // Surface the failure without breaking the host page.
-      console.error("bioviz igv: failed to create browser", err);
+      console.error("plotomics igv: failed to create browser", err);
     });
 
   function applyOptions(next: Partial<IgvOptions>) {
@@ -106,16 +106,16 @@ export const createIgv: BiovizFactory<IgvOptions> = (el, initial) => {
       for (const track of opts.tracks) {
         if (!before.has(track)) {
           void browser.loadTrack(track as never).catch((err) => {
-            console.error("bioviz igv: failed to load track", err);
+            console.error("plotomics igv: failed to load track", err);
           });
         }
       }
     }
   }
 
-  const instance: BiovizInstance<IgvOptions> = {
+  const instance: PlotomicsInstance<IgvOptions> = {
     // Columnar data is unused: igv.js streams via config URLs.
-    setData(_next: BiovizData) {
+    setData(_next: PlotomicsData) {
       /* no-op — data flows through options.config (URLs). */
     },
     setOptions(next) {
