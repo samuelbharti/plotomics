@@ -79,3 +79,20 @@ test_that("treemap() forwards a theme override", {
   expect_equal(w$x$options$theme$background, "#222")
   expect_null(treemap(df)$x$options$theme)
 })
+
+test_that("treemap() rejects a cycle disjoint from the root", {
+  # One valid root, but a and b point at each other: passes the one-root and
+  # orphan checks yet crashes d3.stratify in the browser.
+  df <- data.frame(id = c("root", "a", "b"), parent = c(NA, "b", "a"))
+  expect_error(treemap(df), "cycle")
+})
+
+test_that("treemap() treats a literal \"NA\" parent as the root", {
+  # Matches the JS/Python contract: both "" and "NA" mark the root.
+  df <- data.frame(
+    id = c("root", "g1"), parent = c("NA", "root"),
+    stringsAsFactors = FALSE
+  )
+  w <- treemap(df)
+  expect_equal(w$x$data$columns$parent[1], "")
+})

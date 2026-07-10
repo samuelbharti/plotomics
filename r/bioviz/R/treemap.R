@@ -56,10 +56,11 @@ treemap <- function(data,
   bv_require_nonempty(nrow(data), "data")
 
   id <- as.character(data$id)
-  # `parent` NAs mark the root; send them as empty strings so JSON encodes a
-  # plain string column (jsonlite would otherwise emit nulls).
+  # `parent` NAs (and the literal "NA") mark the root; send them as empty
+  # strings so JSON encodes a plain string column and the R wrapper agrees with
+  # the JS side and Python, which both treat "" / "NA" as the root.
   parent <- as.character(data$parent)
-  parent[is.na(parent)] <- ""
+  parent[is.na(parent) | parent == "NA"] <- ""
 
   # Structural integrity: exactly one root, unique ids, resolvable parents.
   dup <- unique(id[duplicated(id)])
@@ -78,6 +79,26 @@ treemap <- function(data,
       "parent(s) not found among ids: %s",
       paste(missing_parents, collapse = ", ")
     ), call. = FALSE)
+  }
+
+  # Every node must reach the root by following parents; a self-parent or a
+  # cycle disjoint from the root passes the checks above but crashes d3.stratify.
+  parent_of <- parent
+  names(parent_of) <- id
+  good <- character(0)
+  for (start in id) {
+    seen <- character(0)
+    cur <- start
+    while (nzchar(cur) && !(cur %in% good)) {
+      if (cur %in% seen) {
+        stop(sprintf(
+          "treemap has a cycle in the parent chain (at '%s')", cur
+        ), call. = FALSE)
+      }
+      seen <- c(seen, cur)
+      cur <- parent_of[[cur]]
+    }
+    good <- c(good, seen)
   }
 
   columns <- list(

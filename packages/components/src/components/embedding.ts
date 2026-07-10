@@ -147,7 +147,9 @@ export function categoryToIndex(labels: string[]): {
   const categories: string[] = [];
   const indices = new Int32Array(labels.length);
   for (let i = 0; i < labels.length; i += 1) {
-    const key = labels[i] as string;
+    // Stringify: a numeric column forced to categorical arrives here as numbers,
+    // and a number has no `.length`, which would make the legend box width NaN.
+    const key = String(labels[i]);
     let idx = lookup.get(key);
     if (idx === undefined) {
       idx = categories.length;
