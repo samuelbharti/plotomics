@@ -237,6 +237,11 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
   let yDomain: [number, number] = [0, 1];
   let legend: LegendState = null;
   let selected: number[] = [];
+  // The construction-time draw happens at `measure()`'s 640×480 fallback when
+  // the container hasn't been laid out yet (e.g. the dev harness). Re-fit once
+  // when the first real size arrives so the camera frames the data instead of
+  // staying zoomed into the fallback viewport.
+  let needsInitialFit = true;
   const uid = `plotomics-embedding-${embeddingSeq++}`;
 
   const xScale = scaleLinear().domain(xDomain);
@@ -592,6 +597,10 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     },
     resize(w, h) {
       doResize(w, h);
+      if (needsInitialFit && w > 0 && h > 0 && data.columns.x) {
+        needsInitialFit = false;
+        applyData(true);
+      }
     },
     get selectedIndices() {
       return selected.slice();
