@@ -58,6 +58,9 @@ export interface EmbeddingOptions {
   showAxes: boolean;
   /** Draw the legend (discrete swatches, or a colorbar when continuous). */
   showLegend: boolean;
+  /** Fraction of the data range to pad around the fitted view (larger = more
+   * zoomed out). Defaults to 0.04. */
+  padding: number;
   /** Primary drag gesture. `"panZoom"` (default) pans and zooms; `"lasso"`
    * makes a plain drag draw a selection. Flip this to give users a lasso tool
    * (the wheel still zooms in either mode). */
@@ -77,6 +80,7 @@ export const defaultEmbeddingOptions: EmbeddingOptions = {
   yLabel: "UMAP 2",
   showAxes: false,
   showLegend: true,
+  padding: 0.04,
   mouseMode: "panZoom",
   onSelect: null,
   theme: {},
@@ -354,8 +358,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
       return;
     }
     if (fit) {
-      xDomain = paddedExtent(x);
-      yDomain = paddedExtent(y);
+      xDomain = paddedExtent(x, opts.padding);
+      yDomain = paddedExtent(y, opts.padding);
       xScale.domain(xDomain);
       yScale.domain(yDomain);
     }
