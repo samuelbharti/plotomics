@@ -101,6 +101,13 @@ export {
 } from "../components/treemap.js";
 
 export {
+  createUpset,
+  defaultUpsetOptions,
+  type UpsetOptions,
+  type UpsetLayout,
+} from "../components/upset.js";
+
+export {
   createVolcano,
   defaultVolcanoOptions,
   type VolcanoOptions,
