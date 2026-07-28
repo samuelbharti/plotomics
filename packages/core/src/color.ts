@@ -58,6 +58,27 @@ const RDBU: RGB[] = [
   [178, 24, 43],
 ];
 
+// LTC sequential ("heatmap0" from loukesio/ltc-color-palettes): an earthy,
+// perceptual teal -> sand -> rust ramp.
+const LTC: RGB[] = [
+  [1, 61, 90],
+  [10, 147, 150],
+  [148, 210, 189],
+  [233, 216, 166],
+  [238, 155, 0],
+  [202, 103, 2],
+  [174, 32, 18],
+];
+
+// LTC diverging (teal <-> cream <-> red), matching the app's z-score palette.
+const LTCDIV: RGB[] = [
+  [14, 113, 117],
+  [139, 200, 203],
+  [244, 238, 224],
+  [244, 165, 130],
+  [198, 63, 62],
+];
+
 /** Sequential viridis color for t in [0,1]. */
 export function viridis(t: number): RGB {
   return lerpRamp(VIRIDIS, t);
@@ -68,7 +89,17 @@ export function rdbu(t: number): RGB {
   return lerpRamp(RDBU, t);
 }
 
-export const RAMPS = { viridis, rdbu } as const;
+/** LTC sequential ("heatmap0") color for t in [0,1]. */
+export function ltc(t: number): RGB {
+  return lerpRamp(LTC, t);
+}
+
+/** LTC diverging color for t in [0,1] (0.5 is the neutral cream midpoint). */
+export function ltcdiv(t: number): RGB {
+  return lerpRamp(LTCDIV, t);
+}
+
+export const RAMPS = { viridis, rdbu, ltc, ltcdiv } as const;
 export type RampName = keyof typeof RAMPS;
 
 /** Build a [0,1] -> hex function from a named ramp. */
