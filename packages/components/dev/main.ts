@@ -13,6 +13,7 @@ import { createTreemap } from "../src/components/treemap.js";
 import { createVolcano } from "../src/components/volcano.js";
 import { createEmbedding } from "../src/components/embedding.js";
 import { createOncoplot } from "../src/components/oncoplot.js";
+import { createLollipop } from "../src/components/lollipop.js";
 import type { PlotomicsData } from "@plotomics/core";
 
 type Demo = (el: HTMLElement) => { destroy(): void; resize?(w: number, h: number): void };
@@ -327,7 +328,62 @@ function syntheticCohort(ngenes: number, nsamples: number): PlotomicsData {
   };
 }
 
+// A TP53-shaped protein: 393 residues, real domain bounds, a hotspot pile-up in
+// the DNA-binding domain and a long tail of one-off variants elsewhere.
+function syntheticProtein(nVariants: number): PlotomicsData {
+  const LEN = 393;
+  const classes = ["Missense", "Truncating", "Frameshift", "Splice"];
+  const position = new Float32Array(nVariants);
+  const count = new Float32Array(nVariants);
+  const cls: string[] = [];
+  const label: string[] = [];
+  const hotspots = [175, 245, 248, 273, 282];
+  const aa = "ACDEFGHIKLMNPQRSTVWY";
+  for (let i = 0; i < nVariants; i += 1) {
+    // Two thirds land in the DNA-binding domain, a fifth of those on hotspots.
+    let p: number;
+    if (i % 5 === 0) p = hotspots[i % hotspots.length] as number;
+    else if (i % 3 !== 0) p = 100 + Math.floor(Math.random() * 189);
+    else p = 1 + Math.floor(Math.random() * LEN);
+    position[i] = p;
+    count[i] = hotspots.includes(p)
+      ? 8 + Math.floor(Math.random() * 20)
+      : 1 + Math.floor(Math.random() * 3);
+    cls.push(classes[Math.floor(Math.random() * classes.length)] as string);
+    const ref = aa[Math.floor(Math.random() * aa.length)];
+    const alt = aa[Math.floor(Math.random() * aa.length)];
+    label.push(`${ref}${p}${alt}`);
+  }
+  const order = Array.from({ length: nVariants }, (_, i) => i)
+    .sort((a, b) => (count[b] as number) - (count[a] as number))
+    .slice(0, 12)
+    .sort((a, b) => a - b);
+  return {
+    columns: { position, count, class: cls, label },
+    meta: {
+      length: LEN,
+      gene: "TP53",
+      uniprot: "P04637",
+      classes,
+      classColors: ["#0E7175", "#233038", "#C63F3E", "#ED773C"],
+      domains: [
+        { name: "P53 transactivation motif", start: 6, end: 30 },
+        { name: "Transactivation domain 2", start: 35, end: 59 },
+        { name: "P53 DNA-binding domain", start: 100, end: 288 },
+        { name: "P53 tetramerisation motif", start: 319, end: 357 },
+      ],
+      ptms: [15, 20, 37, 46, 315, 370, 373, 382, 392].map((p) => ({
+        position: p,
+        type: "phospho",
+      })),
+      labelIndex: order,
+    },
+  };
+}
+
 const demos: Record<string, Demo> = {
+  lollipop: (el) =>
+    createLollipop(el, { data: syntheticProtein(600) }),
   oncoplot: (el) =>
     createOncoplot(el, {
       data: syntheticCohort(60, 1200),

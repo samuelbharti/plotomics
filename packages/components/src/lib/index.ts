@@ -45,6 +45,14 @@ export {
 } from "../components/igv.js";
 
 export {
+  createLollipop,
+  defaultLollipopOptions,
+  type LollipopOptions,
+  type LollipopDomain,
+  type LollipopPtm,
+} from "../components/lollipop.js";
+
+export {
   createNetwork,
   defaultNetworkOptions,
   type NetworkOptions,
