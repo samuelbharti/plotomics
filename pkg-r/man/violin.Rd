@@ -8,6 +8,7 @@ violin(
   data,
   grid,
   density,
+  grids = NULL,
   median = NULL,
   features = NULL,
   groups = NULL,
@@ -29,6 +30,10 @@ violin, in the order to draw them.}
 \item{grid}{Numeric vector, the shared evaluation grid, ascending.}
 
 \item{density}{Numeric matrix, violins x \code{grid}, of density values.}
+
+\item{grids}{Optional numeric matrix, features x \code{grid}, giving each feature
+its own y range. Without it every row shares \code{grid}, which lets one highly
+expressed feature compress the rest into flat lines.}
 
 \item{median}{Optional numeric vector, one median per violin, drawn as a tick.}
 

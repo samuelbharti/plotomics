@@ -30,6 +30,10 @@ class Violin(PlotomicsWidget):
         columns, one row per violin, in the order to draw them.
     grid:
         The shared evaluation grid, ascending.
+    grids:
+        Optional array shaped (features, len(grid)) giving each feature its own
+        y range. Without it every row shares ``grid``, which lets one highly
+        expressed feature compress the rest into flat lines.
     density:
         Array shaped (violins, len(grid)) of density values.
     median:
@@ -60,6 +64,7 @@ class Violin(PlotomicsWidget):
         *,
         grid: Any,
         density: Any,
+        grids: Any = None,
         median: Any = None,
         features: list[str] | None = None,
         groups: list[str] | None = None,
@@ -133,6 +138,14 @@ class Violin(PlotomicsWidget):
             if groups is None or len(group_colors) != len(groups):
                 raise ValueError("`group_colors` must have one entry per group.")
             meta["groupColors"] = [str(c) for c in group_colors]
+        if grids is not None:
+            gm = np.atleast_2d(np.asarray(grids, dtype=np.float32))
+            if gm.shape[1] != g.size:
+                raise ValueError("`grids` must have one column per `grid` entry.")
+            n_feat = len(features) if features is not None else len(set(json_columns["feature"]))
+            if gm.shape[0] != n_feat:
+                raise ValueError("`grids` must have one row per feature.")
+            meta["grids"] = [float(v) for v in gm.reshape(-1)]
         if median is not None:
             med = np.asarray(median).reshape(-1)
             if med.size != n_violins:

@@ -85,3 +85,18 @@ test_that("violin_density() handles a constant column without dividing by zero",
   expect_false(any(is.na(d$grid)))
   expect_gt(d$grid[8], d$grid[1])
 })
+
+test_that("violin() carries per-feature grids", {
+  a <- make_args()
+  gm <- rbind(seq(0, 3, length.out = 64), seq(0, 9, length.out = 64))
+  w <- violin(a$data, grid = a$grid, density = a$density, grids = gm)
+  expect_equal(length(as.numeric(w$x$data$meta$grids)), 2L * 64L)
+  # Row-major, so the second feature's range follows the first's.
+  expect_equal(as.numeric(w$x$data$meta$grids)[65], 0)
+  expect_equal(as.numeric(w$x$data$meta$grids)[128], 9)
+
+  expect_error(violin(a$data, a$grid, a$density, grids = gm[, 1:10]),
+               "one column per `grid` entry")
+  expect_error(violin(a$data, a$grid, a$density, grids = gm[1, , drop = FALSE]),
+               "one row per feature")
+})
