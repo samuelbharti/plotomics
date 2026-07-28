@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   categoryToIndex,
+  equalAspectDomains,
   isStringColumn,
   niceTicks,
   normalizeToUnit,
@@ -94,5 +95,54 @@ describe("embedding helpers", () => {
     expect(t[0]).toBeGreaterThanOrEqual(0);
     expect(t[t.length - 1]).toBeLessThanOrEqual(10);
     expect(t.length).toBeGreaterThan(2);
+  });
+});
+
+describe("equalAspectDomains", () => {
+  const unitsPerPx = (d: [number, number], px: number) => (d[1] - d[0]) / px;
+
+  it("gives both axes the same units per pixel", () => {
+    const [x, y] = equalAspectDomains([0, 100], [0, 10], 400, 400);
+    expect(unitsPerPx(x, 400)).toBeCloseTo(unitsPerPx(y, 400), 10);
+  });
+
+  it("only ever zooms out, so nothing that fitted before is cropped", () => {
+    const [x, y] = equalAspectDomains([0, 100], [0, 10], 400, 400);
+    expect(x[0]).toBeLessThanOrEqual(0);
+    expect(x[1]).toBeGreaterThanOrEqual(100);
+    expect(y[0]).toBeLessThanOrEqual(0);
+    expect(y[1]).toBeGreaterThanOrEqual(10);
+  });
+
+  it("expands around the midpoint, leaving the centre put", () => {
+    const [, y] = equalAspectDomains([0, 100], [4, 6], 400, 400);
+    expect((y[0] + y[1]) / 2).toBeCloseTo(5, 10);
+  });
+
+  it("leaves an already-square pairing alone", () => {
+    const [x, y] = equalAspectDomains([0, 100], [0, 50], 400, 200);
+    expect(x).toEqual([0, 100]);
+    expect(y).toEqual([0, 50]);
+  });
+
+  it("accounts for a non-square plot area", () => {
+    // Twice as wide as tall, so x may span twice the data range.
+    const [x, y] = equalAspectDomains([0, 100], [0, 100], 800, 400);
+    expect(unitsPerPx(x, 800)).toBeCloseTo(unitsPerPx(y, 400), 10);
+    expect(x[1] - x[0]).toBeCloseTo(2 * (y[1] - y[0]), 10);
+  });
+
+  it("is idempotent, so repeated application cannot creep outward", () => {
+    const once = equalAspectDomains([0, 100], [0, 10], 640, 480);
+    const twice = equalAspectDomains(once[0], once[1], 640, 480);
+    expect(twice[0][0]).toBeCloseTo(once[0][0], 10);
+    expect(twice[0][1]).toBeCloseTo(once[0][1], 10);
+    expect(twice[1][0]).toBeCloseTo(once[1][0], 10);
+    expect(twice[1][1]).toBeCloseTo(once[1][1], 10);
+  });
+
+  it("returns the inputs untouched while the box is still degenerate", () => {
+    expect(equalAspectDomains([0, 1], [0, 1], 0, 0)).toEqual([[0, 1], [0, 1]]);
+    expect(equalAspectDomains([0, 0], [0, 1], 100, 100)).toEqual([[0, 0], [0, 1]]);
   });
 });

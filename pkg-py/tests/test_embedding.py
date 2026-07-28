@@ -105,3 +105,18 @@ def test_embedding_export_sends_message():
     with patch.object(w, "send") as send:
         w.export("svg")
     send.assert_called_once_with({"plotomics": "export", "format": "svg"})
+
+
+def test_embedding_carries_the_aspect_option():
+    d = {"x": [1.0, 2.0, 3.0], "y": [1.0, 2.0, 3.0]}
+    # Default suits a UMAP; "equal" is for axes that share units, like PCA.
+    assert Embedding(d).options["aspect"] == "fill"
+    assert Embedding(d, aspect="equal").options["aspect"] == "equal"
+
+
+def test_embedding_carries_the_point_scale_mode():
+    d = {"x": [1.0, 2.0, 3.0], "y": [1.0, 2.0, 3.0]}
+    # Under the zoom-scaled default, point_size floors at one pixel on a
+    # widely-scaled plot; "constant" is what makes it literal.
+    assert Embedding(d).options["pointScaleMode"] == "asinh"
+    assert Embedding(d, point_scale_mode="constant").options["pointScaleMode"] == "constant"
