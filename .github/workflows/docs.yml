@@ -32,7 +32,7 @@ jobs:
     name: Build docs sites
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The R and Python packages embed the JS bundles, so build them first.
       - uses: pnpm/action-setup@v4
