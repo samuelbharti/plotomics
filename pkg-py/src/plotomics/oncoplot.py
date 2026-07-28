@@ -176,7 +176,12 @@ class Oncoplot(PlotomicsWidget):
             if tmb.size != ncols:
                 raise ValueError("`burden` must have one value per sample.")
 
-        buffer, schema = pack_columns({"codes": codes, "tmb": tmb, "freq": freq})
+        # Three different lengths on purpose: the grid is nrows * ncols, the
+        # burden is one per sample and the frequency one per gene. The schema
+        # carries each column's own length and offset, so they share a buffer.
+        buffer, schema = pack_columns(
+            {"codes": codes, "tmb": tmb, "freq": freq}, equal_length=False
+        )
 
         meta: dict[str, Any] = {
             "nrows": nrows,
