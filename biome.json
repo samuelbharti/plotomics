@@ -14,8 +14,8 @@
       "!**/.claude/**",
       "!**/*.tsbuildinfo",
       "!pnpm-lock.yaml",
-      "!r/plotomics/inst/htmlwidgets/lib/plotomics/**",
-      "!python/src/plotomics/static/**",
+      "!pkg-r/inst/htmlwidgets/lib/plotomics/**",
+      "!pkg-py/src/plotomics/static/**",
       "!packages/*/dev/**"
     ]
   },
