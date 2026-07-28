@@ -14,8 +14,10 @@ from .heatmap import Heatmap
 from .gosling import Gosling
 from .network import Network
 from .clustermap import Clustermap
+from .dotplot import Dotplot
 from .hic import HiC
 from .igv import IGV
+from .km import Km
 from .lollipop import Lollipop
 from .oncoplot import Oncoplot
 from .profile import Profile
@@ -31,8 +33,10 @@ __all__ = [
     "Gosling",
     "Network",
     "Clustermap",
+    "Dotplot",
     "HiC",
     "IGV",
+    "Km",
     "Lollipop",
     "Oncoplot",
     "Profile",

@@ -16,6 +16,8 @@ import { createOncoplot } from "../src/components/oncoplot.js";
 import { createLollipop } from "../src/components/lollipop.js";
 import { createProfile } from "../src/components/profile.js";
 import { createSpatial } from "../src/components/spatial.js";
+import { createKm } from "../src/components/km.js";
+import { createDotplot } from "../src/components/dotplot.js";
 import type { PlotomicsData } from "@plotomics/core";
 
 type Demo = (el: HTMLElement) => { destroy(): void; resize?(w: number, h: number): void };
@@ -441,7 +443,114 @@ function syntheticSbs96(): PlotomicsData {
   };
 }
 
+/**
+ * Three arms with different hazards, each estimated the way a real KM is: walk
+ * the risk set down, drop the survival probability at events, tick at censors.
+ * Doing it properly here rather than drawing smooth curves is what exercises
+ * the step path and the risk table together.
+ */
+function syntheticSurvival(): PlotomicsData {
+  const arms = [
+    { name: "high risk", n: 90, hazard: 0.055 },
+    { name: "intermediate", n: 140, hazard: 0.03 },
+    { name: "low risk", n: 170, hazard: 0.012 },
+  ];
+  const time: number[] = [], surv: number[] = [];
+  const lower: number[] = [], upper: number[] = [], group: string[] = [];
+  const censorTime: number[] = [], censorSurv: number[] = [], censorGroup: string[] = [];
+  const riskTimes = [0, 20, 40, 60, 80, 100];
+  const riskCounts: number[] = [];
+
+  for (const arm of arms) {
+    let atRisk = arm.n;
+    let s = 1;
+    let varSum = 0;
+    time.push(0); surv.push(1); lower.push(1); upper.push(1); group.push(arm.name);
+    const counts = riskTimes.map(() => 0);
+    counts[0] = arm.n;
+    let next = 1;
+    for (let t = 2; t <= 100 && atRisk > 1; t += 2) {
+      const events = Math.min(atRisk, Math.round(atRisk * arm.hazard * Math.random() * 2));
+      const censored = Math.min(atRisk - events, Math.round(atRisk * 0.012 * Math.random() * 2));
+      if (events > 0) {
+        s *= 1 - events / atRisk;
+        // Greenwood's variance, the standard pointwise band.
+        varSum += events / (atRisk * (atRisk - events));
+        const se = s * Math.sqrt(varSum);
+        time.push(t); surv.push(s); group.push(arm.name);
+        lower.push(Math.max(0, s - 1.96 * se));
+        upper.push(Math.min(1, s + 1.96 * se));
+      }
+      if (censored > 0) {
+        censorTime.push(t); censorSurv.push(s); censorGroup.push(arm.name);
+      }
+      atRisk -= events + censored;
+      while (next < riskTimes.length && t >= (riskTimes[next] as number)) {
+        counts[next] = Math.max(0, atRisk);
+        next += 1;
+      }
+    }
+    while (next < riskTimes.length) counts[next++] = Math.max(0, atRisk);
+    riskCounts.push(...counts);
+  }
+
+  return {
+    columns: { time, surv, lower, upper, group },
+    meta: {
+      groups: arms.map((a) => a.name),
+      groupColors: ["#C63F3E", "#E4A25B", "#0E7175"],
+      censorTime, censorSurv, censorGroup,
+      riskTimes, riskCounts,
+      pLabel: "log-rank p < 0.001",
+    },
+  };
+}
+
+/**
+ * A marker panel with a planted diagonal: each block of genes is specific to
+ * one cluster, plus a few ubiquitous housekeepers so the size channel has
+ * something to distinguish that colour alone would not.
+ */
+function syntheticMarkers(): PlotomicsData {
+  const clusters = ["T cell", "B cell", "Myeloid", "Fibroblast", "Endothelial", "Tumour"];
+  const gene: string[] = [], cluster: string[] = [];
+  const pct: number[] = [], value: number[] = [];
+  const genes: string[] = [];
+  for (let c = 0; c < clusters.length; c += 1) {
+    for (let k = 0; k < 5; k += 1) genes.push(`MARK${c + 1}${k + 1}`);
+  }
+  genes.push("ACTB", "GAPDH");
+  for (let g = 0; g < genes.length; g += 1) {
+    const owner = g < clusters.length * 5 ? Math.floor(g / 5) : -1;
+    for (let c = 0; c < clusters.length; c += 1) {
+      gene.push(genes[g] as string);
+      cluster.push(clusters[c] as string);
+      if (owner === -1) {
+        // Housekeeping: expressed everywhere, in nearly every cell.
+        pct.push(88 + Math.random() * 10);
+        value.push(2.6 + Math.random() * 0.5);
+      } else if (owner === c) {
+        pct.push(60 + Math.random() * 38);
+        value.push(2 + Math.random());
+      } else {
+        pct.push(Math.random() * 18);
+        value.push(Math.random() * 0.5);
+      }
+    }
+  }
+  return {
+    columns: { gene, cluster, pct, value },
+    meta: {
+      genes, clusters,
+      valueLabel: "mean expression",
+      sizeLabel: "% expressing",
+    },
+  };
+}
+
 const demos: Record<string, Demo> = {
+  dotplot: (el) => createDotplot(el, { data: syntheticMarkers() }),
+  km: (el) => createKm(el, { data: syntheticSurvival() }),
   spatial: (el) => createSpatial(el, { data: syntheticSlide() }),
   profile: (el) => createProfile(el, { data: syntheticSbs96() }),
   lollipop: (el) =>
