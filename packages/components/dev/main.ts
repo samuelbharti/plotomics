@@ -19,6 +19,7 @@ import { createSpatial } from "../src/components/spatial.js";
 import { createKm } from "../src/components/km.js";
 import { createDotplot } from "../src/components/dotplot.js";
 import { createUpset } from "../src/components/upset.js";
+import { createViolin } from "../src/components/violin.js";
 import type { PlotomicsData } from "@plotomics/core";
 
 type Demo = (el: HTMLElement) => { destroy(): void; resize?(w: number, h: number): void };
@@ -581,7 +582,59 @@ function syntheticSets(): PlotomicsData {
   };
 }
 
+/**
+ * Marker genes across clusters, with a deliberately bimodal one: MARK_BIMODAL
+ * is silent in half of every cluster and high in the other half. Its median
+ * matches a uniformly moderate gene, which is exactly the case a box plot
+ * cannot distinguish and a violin can.
+ */
+function syntheticViolins(): PlotomicsData {
+  const groups = ["T cell", "B cell", "Myeloid", "Fibroblast", "Tumour"];
+  const featureNames = ["CD3D", "MS4A1", "LYZ", "COL1A1", "EPCAM", "MARK_BIMODAL"];
+  const N = 64;
+  const lo = 0, hi = 6;
+  const gridArr = Array.from({ length: N }, (_, i) => lo + ((hi - lo) * i) / (N - 1));
+  const feature: string[] = [], group: string[] = [];
+  const density: number[] = [], median: number[] = [];
+
+  const bump = (centre: number, width: number, amp: number) =>
+    gridArr.map((g) => amp * Math.exp(-((g - centre) ** 2) / (2 * width ** 2)));
+
+  for (let f = 0; f < featureNames.length; f += 1) {
+    for (let c = 0; c < groups.length; c += 1) {
+      feature.push(featureNames[f] as string);
+      group.push(groups[c] as string);
+      let row: number[];
+      let med: number;
+      if (featureNames[f] === "MARK_BIMODAL") {
+        // Two modes, one silent and one high, in every cluster.
+        const a = bump(0.4, 0.35, 1);
+        const b = bump(4.4, 0.5, 0.9);
+        row = a.map((v, i) => v + (b[i] as number));
+        med = 2.4;
+      } else if (f === c) {
+        row = bump(4.2, 0.6, 1);
+        med = 4.2;
+      } else {
+        row = bump(0.3, 0.3, 1);
+        med = 0.3;
+      }
+      density.push(...row);
+      median.push(med);
+    }
+  }
+  return {
+    columns: { feature, group },
+    meta: {
+      grid: gridArr, density, median,
+      features: featureNames, groups,
+      groupColors: ["#0E7175", "#ED773C", "#708C69", "#C63F3E", "#808BC5"],
+    },
+  };
+}
+
 const demos: Record<string, Demo> = {
+  violin: (el) => createViolin(el, { data: syntheticViolins() }),
   upset: (el) => createUpset(el, { data: syntheticSets() }),
   dotplot: (el) => createDotplot(el, { data: syntheticMarkers() }),
   km: (el) => createKm(el, { data: syntheticSurvival() }),
