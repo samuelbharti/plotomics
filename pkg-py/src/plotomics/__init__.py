@@ -18,6 +18,7 @@ from .hic import HiC
 from .igv import IGV
 from .lollipop import Lollipop
 from .oncoplot import Oncoplot
+from .profile import Profile
 from .treemap import Treemap
 from .volcano import Volcano
 from .embedding import Embedding
@@ -33,6 +34,7 @@ __all__ = [
     "IGV",
     "Lollipop",
     "Oncoplot",
+    "Profile",
     "Treemap",
     "Volcano",
     "Embedding",

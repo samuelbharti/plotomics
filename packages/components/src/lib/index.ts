@@ -66,6 +66,13 @@ export {
 } from "../components/oncoplot.js";
 
 export {
+  createProfile,
+  defaultProfileOptions,
+  type ProfileOptions,
+  type GroupRun,
+} from "../components/profile.js";
+
+export {
   createTreemap,
   defaultTreemapOptions,
   type TreemapOptions,
