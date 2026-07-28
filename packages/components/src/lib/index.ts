@@ -108,6 +108,13 @@ export {
 } from "../components/upset.js";
 
 export {
+  createViolin,
+  defaultViolinOptions,
+  type ViolinOptions,
+  type ViolinLayout,
+} from "../components/violin.js";
+
+export {
   createVolcano,
   defaultVolcanoOptions,
   type VolcanoOptions,

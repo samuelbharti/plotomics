@@ -79,6 +79,10 @@
       "types": "./dist/lib/components/upset.d.ts",
       "import": "./dist/lib/components/upset.js"
     },
+    "./violin": {
+      "types": "./dist/lib/components/violin.d.ts",
+      "import": "./dist/lib/components/violin.js"
+    },
     "./volcano": {
       "types": "./dist/lib/components/volcano.d.ts",
       "import": "./dist/lib/components/volcano.js"
