@@ -24,6 +24,7 @@ from .profile import Profile
 from .spatial import Spatial
 from .treemap import Treemap
 from .upset import Upset
+from .violin import Violin
 from .volcano import Volcano
 from .embedding import Embedding
 
@@ -44,6 +45,7 @@ __all__ = [
     "Spatial",
     "Treemap",
     "Upset",
+    "Violin",
     "Volcano",
     "Embedding",
 ]
