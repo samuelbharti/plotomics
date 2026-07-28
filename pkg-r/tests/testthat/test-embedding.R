@@ -24,6 +24,24 @@ test_that("embedding() preserves a numeric color column for continuous mode", {
   expect_equal(w$x$options$colorMode, "auto")
 })
 
+test_that("embedding() sends factor levels as the category order", {
+  df <- data.frame(
+    x = 1:3, y = 1:3,
+    color = factor(c("B", "A", "B"), levels = c("A", "B", "C"))
+  )
+  w <- embedding(df)
+  # Levels, not first-appearance order, and the unused "C" survives so the
+  # colours stay put when the data changes underneath.
+  expect_equal(unlist(w$x$options$categories), c("A", "B", "C"))
+  expect_equal(w$x$data$columns$color, c("B", "A", "B"))
+})
+
+test_that("embedding() leaves the category order unset for a character column", {
+  df <- data.frame(x = 1:3, y = 1:3, color = c("B", "A", "B"),
+                   stringsAsFactors = FALSE)
+  expect_null(embedding(df)$x$options$categories)
+})
+
 test_that("embedding() validates its input", {
   expect_error(embedding(list(x = 1, y = 2)), "must be a data frame")
   expect_error(embedding(data.frame(a = 1, b = 2)), "must contain columns")

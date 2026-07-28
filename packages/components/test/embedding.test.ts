@@ -42,6 +42,38 @@ describe("embedding helpers", () => {
     expect(indices).toBeInstanceOf(Int32Array);
   });
 
+  it("honors an explicit category order", () => {
+    const { indices, categories } = categoryToIndex(
+      ["b", "a", "b", "c", "a"], ["a", "b", "c"]);
+    expect(categories).toEqual(["a", "b", "c"]);
+    expect(Array.from(indices)).toEqual([1, 0, 1, 2, 0]);
+  });
+
+  it("keeps ordered categories that no point carries", () => {
+    // The whole point of pinning an order: a category can vanish from the data
+    // (filtered out, or a facet with none of it) without the colors shuffling.
+    const { indices, categories } = categoryToIndex(["c", "a"], ["a", "b", "c"]);
+    expect(categories).toEqual(["a", "b", "c"]);
+    expect(Array.from(indices)).toEqual([2, 0]);
+  });
+
+  it("appends categories missing from the explicit order", () => {
+    const { indices, categories } = categoryToIndex(
+      ["a", "z", "y", "z"], ["a", "b"]);
+    expect(categories).toEqual(["a", "b", "z", "y"]);
+    expect(Array.from(indices)).toEqual([0, 2, 3, 2]);
+  });
+
+  it("ignores duplicates in the explicit order", () => {
+    expect(categoryToIndex(["a"], ["a", "a", "b"]).categories)
+      .toEqual(["a", "b"]);
+  });
+
+  it("falls back to first-appearance order for a null/empty order", () => {
+    expect(categoryToIndex(["b", "a"], null).categories).toEqual(["b", "a"]);
+    expect(categoryToIndex(["b", "a"], []).categories).toEqual(["b", "a"]);
+  });
+
   it("normalizes a column to [0,1] over its own extent", () => {
     const out = normalizeToUnit([0, 5, 10]);
     expect(Array.from(out)).toEqual([0, 0.5, 1]);
