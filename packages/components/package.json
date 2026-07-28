@@ -75,6 +75,10 @@
       "types": "./dist/lib/components/treemap.d.ts",
       "import": "./dist/lib/components/treemap.js"
     },
+    "./upset": {
+      "types": "./dist/lib/components/upset.d.ts",
+      "import": "./dist/lib/components/upset.js"
+    },
     "./volcano": {
       "types": "./dist/lib/components/volcano.d.ts",
       "import": "./dist/lib/components/volcano.js"

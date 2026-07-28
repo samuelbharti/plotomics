@@ -23,6 +23,7 @@ from .oncoplot import Oncoplot
 from .profile import Profile
 from .spatial import Spatial
 from .treemap import Treemap
+from .upset import Upset
 from .volcano import Volcano
 from .embedding import Embedding
 
@@ -42,6 +43,7 @@ __all__ = [
     "Profile",
     "Spatial",
     "Treemap",
+    "Upset",
     "Volcano",
     "Embedding",
 ]

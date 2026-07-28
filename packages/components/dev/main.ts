@@ -18,6 +18,7 @@ import { createProfile } from "../src/components/profile.js";
 import { createSpatial } from "../src/components/spatial.js";
 import { createKm } from "../src/components/km.js";
 import { createDotplot } from "../src/components/dotplot.js";
+import { createUpset } from "../src/components/upset.js";
 import type { PlotomicsData } from "@plotomics/core";
 
 type Demo = (el: HTMLElement) => { destroy(): void; resize?(w: number, h: number): void };
@@ -548,7 +549,40 @@ function syntheticMarkers(): PlotomicsData {
   };
 }
 
+/**
+ * Six sets with a deliberately suppressed pair, so the figure shows the thing
+ * UpSet is for: A and B are both large, but A+B is far smaller than
+ * independence would predict.
+ */
+function syntheticSets(): PlotomicsData {
+  const sets = ["TP53", "PIK3CA", "GATA3", "CDH1", "MYC", "PTEN"];
+  const n = sets.length;
+  const rows: { m: boolean[]; size: number }[] = [];
+  for (let mask = 1; mask < 1 << n; mask += 1) {
+    const m = Array.from({ length: n }, (_, k) => (mask & (1 << k)) !== 0);
+    const degree = m.filter(Boolean).length;
+    if (degree > 3) continue;
+    let size = Math.round(180 / 2 ** (degree - 1) + Math.random() * 30);
+    if (m[0] && m[1]) size = Math.round(size * 0.18); // mutual exclusivity
+    rows.push({ m, size });
+  }
+  rows.sort((a, b) => b.size - a.size);
+  const top = rows.slice(0, 22);
+  const setSizes = sets.map((_, k) =>
+    top.reduce((acc, r) => acc + (r.m[k] ? r.size : 0), 0));
+  return {
+    columns: { size: top.map((r) => r.size) },
+    meta: {
+      sets,
+      setSizes,
+      membership: top.flatMap((r) => r.m.map((v) => (v ? 1 : 0))),
+      total: top.reduce((acc, r) => acc + r.size, 0),
+    },
+  };
+}
+
 const demos: Record<string, Demo> = {
+  upset: (el) => createUpset(el, { data: syntheticSets() }),
   dotplot: (el) => createDotplot(el, { data: syntheticMarkers() }),
   km: (el) => createKm(el, { data: syntheticSurvival() }),
   spatial: (el) => createSpatial(el, { data: syntheticSlide() }),
