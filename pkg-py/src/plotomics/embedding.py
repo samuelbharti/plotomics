@@ -26,6 +26,11 @@ class Embedding(PlotomicsWidget):
         column fixes the legend order and the color assignment to its
         categories, and keeps unused ones in the legend. An optional ``label``
         column supplies per-point tooltip text.
+    point_scale_mode:
+        How ``point_size`` responds to zoom. ``"asinh"`` and ``"linear"``
+        shrink points as you zoom out, which keeps a dense embedding readable,
+        but both floor at one pixel once the camera scale drops below
+        ``1 / point_size``. ``"constant"`` sizes points in literal pixels.
     point_size, opacity:
         Point radius (px) and opacity in ``[0, 1]``.
     color_mode:
@@ -36,6 +41,12 @@ class Embedding(PlotomicsWidget):
         ``"rdbu"``).
     x_label, y_label:
         Axis titles (shown when ``show_axes=True``).
+    aspect:
+        How the fitted view maps data units onto pixels. ``"fill"`` stretches
+        each axis to fill the canvas, which suits a UMAP, whose axes carry no
+        units. ``"equal"`` gives both axes the same units per pixel; use it
+        when the axes share units and their relative spread is part of the
+        claim, as in PCA scores.
     show_axes:
         Draw the axis frame + ticks (embeddings usually hide axes).
     show_legend:
@@ -68,11 +79,13 @@ class Embedding(PlotomicsWidget):
         data: Any,
         *,
         point_size: float = 3.0,
+        point_scale_mode: str = "asinh",
         opacity: float = 0.8,
         color_mode: str = "auto",
         colormap: str = "viridis",
         x_label: str = "UMAP 1",
         y_label: str = "UMAP 2",
+        aspect: str = "fill",
         show_axes: bool = False,
         show_legend: bool = True,
         mouse_mode: Literal["panZoom", "lasso"] = "panZoom",
@@ -119,11 +132,13 @@ class Embedding(PlotomicsWidget):
 
         options: dict[str, Any] = {
             "pointSize": point_size,
+            "pointScaleMode": point_scale_mode,
             "opacity": opacity,
             "colorMode": color_mode,
             "colormap": colormap,
             "xLabel": x_label,
             "yLabel": y_label,
+            "aspect": aspect,
             "showAxes": show_axes,
             "showLegend": show_legend,
             "mouseMode": mouse_mode,
