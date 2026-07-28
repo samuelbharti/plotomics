@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # The R and Python packages embed the JS bundles, so build them first.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 22
