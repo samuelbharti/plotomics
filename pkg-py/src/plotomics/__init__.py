@@ -16,6 +16,7 @@ from .network import Network
 from .clustermap import Clustermap
 from .hic import HiC
 from .igv import IGV
+from .km import Km
 from .lollipop import Lollipop
 from .oncoplot import Oncoplot
 from .profile import Profile
@@ -33,6 +34,7 @@ __all__ = [
     "Clustermap",
     "HiC",
     "IGV",
+    "Km",
     "Lollipop",
     "Oncoplot",
     "Profile",

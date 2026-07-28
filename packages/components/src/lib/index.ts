@@ -53,6 +53,13 @@ export {
 } from "../components/lollipop.js";
 
 export {
+  createKm,
+  defaultKmOptions,
+  type KmOptions,
+  type KmLayout,
+} from "../components/km.js";
+
+export {
   createNetwork,
   defaultNetworkOptions,
   type NetworkOptions,
