@@ -53,6 +53,13 @@ export {
 } from "../components/lollipop.js";
 
 export {
+  createDotplot,
+  defaultDotplotOptions,
+  type DotplotOptions,
+  type DotplotLayout,
+} from "../components/dotplot.js";
+
+export {
   createKm,
   defaultKmOptions,
   type KmOptions,
