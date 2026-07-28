@@ -74,6 +74,9 @@ export interface NetworkOptions {
   /** Optional categorical palette override (else `@plotomics/core` palette). */
   palette: string[] | null;
   theme: Partial<PlotomicsTheme>;
+  /** Called with a node id when a node is clicked. In a Shiny app the runtime
+   * injects a handler that pushes the id to `input$<outputId>_selected`. */
+  onSelect: ((node: string) => void) | null;
 }
 
 export const defaultNetworkOptions: NetworkOptions = {
@@ -85,6 +88,7 @@ export const defaultNetworkOptions: NetworkOptions = {
   defaultNodeSize: 4,
   palette: null,
   theme: {},
+  onSelect: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -169,6 +173,12 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (el, initial) => 
       neighborSet = new Set();
       renderer?.refresh({ skipIndexation: true });
       tooltip.hide();
+    });
+    // Clicking a node reports its id through onSelect. In Shiny the runtime
+    // injects a handler that pushes the id to input$<outputId>_selected, so a
+    // host app can react to the selection; outside Shiny this is a no-op.
+    renderer.on("clickNode", ({ node }) => {
+      opts.onSelect?.(node);
     });
   }
 

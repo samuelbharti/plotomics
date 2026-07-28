@@ -70,7 +70,7 @@ const LTC: RGB[] = [
   [174, 32, 18],
 ];
 
-// LTC diverging (teal <-> cream <-> red).
+// LTC diverging (teal <-> cream <-> red), matching the app's z-score palette.
 const LTCDIV: RGB[] = [
   [14, 113, 117],
   [139, 200, 203],
