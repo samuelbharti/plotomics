@@ -9,8 +9,10 @@
 #' @param data A data frame with numeric columns `x` and `y` (the embedding
 #'   coordinates). An optional `color` column drives coloring: a character or
 #'   factor column is treated as categorical (discrete legend), a numeric column
-#'   as continuous (sequential colormap + colorbar). An optional `label` column
-#'   supplies per-point tooltip text.
+#'   as continuous (sequential colormap + colorbar). A **factor** `color` fixes
+#'   the legend order and the color assignment to its levels, and keeps unused
+#'   levels in the legend, the way `drop = FALSE` does in ggplot2. An optional
+#'   `label` column supplies per-point tooltip text.
 #' @param point_size Point radius in pixels.
 #' @param opacity Point opacity in `[0, 1]`.
 #' @param color_mode How to interpret the `color` column: `"auto"` detects from
@@ -71,6 +73,7 @@ embedding <- function(data,
   bv_check_finite(y, "y")
 
   columns <- list(x = x, y = y)
+  categories <- NULL
   if (!is.null(data$color)) {
     # Preserve type: numeric -> continuous, character/factor -> categorical.
     if (is.numeric(data$color)) {
@@ -78,6 +81,10 @@ embedding <- function(data,
       bv_check_finite(col, "color")
       columns$color <- col
     } else {
+      # A factor is someone stating the order they want. Send the levels along
+      # so the browser assigns colors by level rather than by whichever
+      # category the first row happens to hold.
+      if (is.factor(data$color)) categories <- levels(data$color)
       columns$color <- as.character(data$color)
     }
   }
@@ -96,6 +103,7 @@ embedding <- function(data,
     showAxes = show_axes,
     showLegend = show_legend
   )
+  if (!is.null(categories)) options$categories <- as.list(categories)
   if (!is.null(theme)) options$theme <- theme
 
   plotomics_widget(

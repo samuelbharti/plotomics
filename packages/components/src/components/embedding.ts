@@ -52,6 +52,12 @@ export interface EmbeddingOptions {
   colorMode: EmbeddingColorMode;
   /** Sequential ramp used for continuous coloring. */
   colormap: RampName;
+  /** Explicit category order for categorical coloring. Categories are assigned
+   * palette entries by their position here, and every one of them gets a legend
+   * row even if no point carries it, so the colors stay put as the data
+   * changes. `null` (default) falls back to first-appearance order. Categories
+   * found in the data but missing from this list are appended after it. */
+  categories: string[] | null;
   xLabel: string;
   yLabel: string;
   /** Draw the axis frame + ticks (embeddings usually hide axes). */
@@ -76,6 +82,7 @@ export const defaultEmbeddingOptions: EmbeddingOptions = {
   opacity: 0.8,
   colorMode: "auto",
   colormap: "viridis",
+  categories: null,
   xLabel: "UMAP 1",
   yLabel: "UMAP 2",
   showAxes: false,
@@ -142,14 +149,30 @@ export function resolveColorMode(
 /**
  * Map categorical labels to dense integer indices plus the ordered category
  * list (first-appearance order, which is also the palette-assignment order).
+ *
+ * Pass `order` to fix that order yourself. Its entries come first and keep
+ * their index whether or not any point carries them, which is what lets a
+ * caller pin a specific color to a specific category; labels outside it are
+ * appended in first-appearance order behind them.
  */
-export function categoryToIndex(labels: string[]): {
+export function categoryToIndex(
+  labels: string[],
+  order?: readonly string[] | null,
+): {
   indices: Int32Array;
   categories: string[];
 } {
   const lookup = new Map<string, number>();
   const categories: string[] = [];
   const indices = new Int32Array(labels.length);
+  if (order) {
+    for (const name of order) {
+      const key = String(name);
+      if (lookup.has(key)) continue;
+      lookup.set(key, categories.length);
+      categories.push(key);
+    }
+  }
   for (let i = 0; i < labels.length; i += 1) {
     // Stringify: a numeric column forced to categorical arrives here as numbers,
     // and a number has no `.length`, which would make the legend box width NaN.
@@ -368,7 +391,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     const mode = color && color.length ? resolveColorMode(color, opts.colorMode) : null;
 
     if (mode === "categorical") {
-      const { indices, categories } = categoryToIndex(color as string[]);
+      const { indices, categories } = categoryToIndex(
+        color as string[], opts.categories);
       const palette = categoricalPalette(categories.length);
       legend = { mode, categories, palette };
       scatterplot.set({

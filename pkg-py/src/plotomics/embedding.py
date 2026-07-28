@@ -22,8 +22,10 @@ class Embedding(PlotomicsWidget):
         A pandas ``DataFrame`` or a mapping of arrays. Must provide numeric
         ``x`` and ``y`` embedding coordinates. An optional ``color`` column
         drives coloring: a string/categorical column becomes a discrete legend,
-        a numeric column a continuous colormap. An optional ``label`` column
-        supplies per-point tooltip text.
+        a numeric column a continuous colormap. A pandas ``Categorical`` color
+        column fixes the legend order and the color assignment to its
+        categories, and keeps unused ones in the legend. An optional ``label``
+        column supplies per-point tooltip text.
     point_size, opacity:
         Point radius (px) and opacity in ``[0, 1]``.
     color_mode:
@@ -94,9 +96,15 @@ class Embedding(PlotomicsWidget):
         json_columns: dict[str, list] = {}
 
         color = _column(data, "color")
+        categories: list[str] | None = None
         if color is not None:
+            # A pandas Categorical is the user stating the order they want, so
+            # read it before np.asarray() flattens it to plain values.
+            cat_dtype = getattr(getattr(color, "dtype", None), "categories", None)
+            if cat_dtype is not None:
+                categories = [str(v) for v in cat_dtype]
             arr = np.asarray(color)
-            if np.issubdtype(arr.dtype, np.number):
+            if categories is None and np.issubdtype(arr.dtype, np.number):
                 # Continuous: transport as a packed numeric column.
                 numeric["color"] = arr.astype(np.float32)
             else:
@@ -120,6 +128,8 @@ class Embedding(PlotomicsWidget):
             "showLegend": show_legend,
             "mouseMode": mouse_mode,
         }
+        if categories is not None:
+            options["categories"] = categories
         if theme is not None:
             options["theme"] = theme
 
