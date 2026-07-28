@@ -73,6 +73,14 @@ export {
 } from "../components/profile.js";
 
 export {
+  createSpatial,
+  defaultSpatialOptions,
+  type SpatialOptions,
+  type SpatialColorMode,
+  type FitTransform,
+} from "../components/spatial.js";
+
+export {
   createTreemap,
   defaultTreemapOptions,
   type TreemapOptions,

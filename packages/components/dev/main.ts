@@ -14,6 +14,8 @@ import { createVolcano } from "../src/components/volcano.js";
 import { createEmbedding } from "../src/components/embedding.js";
 import { createOncoplot } from "../src/components/oncoplot.js";
 import { createLollipop } from "../src/components/lollipop.js";
+import { createProfile } from "../src/components/profile.js";
+import { createSpatial } from "../src/components/spatial.js";
 import type { PlotomicsData } from "@plotomics/core";
 
 type Demo = (el: HTMLElement) => { destroy(): void; resize?(w: number, h: number): void };
@@ -381,7 +383,67 @@ function syntheticProtein(nVariants: number): PlotomicsData {
   };
 }
 
+// A Visium-shaped slide: a hex grid of capture spots over a tissue mask, with
+// spatial domains rather than random labels so the clusters form regions.
+function syntheticSlide(): PlotomicsData {
+  const W = 600, H = 600;
+  const x: number[] = [], y: number[] = [], color: string[] = [];
+  const domains = ["Tumour", "Stroma", "Immune", "Necrotic", "Normal"];
+  for (let row = 0; row < 64; row += 1) {
+    for (let col = 0; col < 64; col += 1) {
+      const px = 60 + col * 7.5 + (row % 2) * 3.75;
+      const py = 60 + row * 6.9;
+      // Ragged tissue boundary so the slide is not a perfect disc.
+      const dx = px - W / 2, dy = py - H / 2;
+      const r = Math.hypot(dx, dy);
+      const wobble = 30 * Math.sin(Math.atan2(dy, dx) * 3);
+      if (r > 230 + wobble) continue;
+      x.push(px); y.push(py);
+      const d = r < 80 ? 3 : r < 150 ? 0 : r < 200 ? 1 : 2;
+      color.push(domains[Math.random() < 0.15 ? 4 : d] as string);
+    }
+  }
+  return {
+    columns: { x, y, color },
+    meta: {
+      // No image URL: the component falls back to a neutral panel, which also
+      // exercises the still-loading path.
+      imgWidth: W, imgHeight: H, spotDiameter: 6,
+      levels: domains,
+      colors: ["#C63F3E", "#708C69", "#0E7175", "#233038", "#E4A25B"],
+    },
+  };
+}
+
+function syntheticSbs96(): PlotomicsData {
+  const subs = ["C>A", "C>G", "C>T", "T>A", "T>C", "T>G"];
+  const bases = ["A", "C", "G", "T"];
+  const value: number[] = [], group: string[] = [], label: string[] = [];
+  for (const s of subs) {
+    for (const five of bases) {
+      for (const three of bases) {
+        // APOBEC-ish: spike C>T and C>G at T[C]A / T[C]T.
+        const apobec = (s === "C>T" || s === "C>G") && five === "T"
+          && (three === "A" || three === "T");
+        value.push(apobec ? 60 + Math.random() * 40 : Math.random() * 8);
+        group.push(s);
+        label.push(`${five}${s[0]}${three}`);
+      }
+    }
+  }
+  return {
+    columns: { value, group, label },
+    meta: {
+      groups: subs,
+      groupColors: ["#03BCEE", "#010101", "#E32926", "#CAC9C9", "#A1CE63", "#EBC6C4"],
+      title: "Synthetic APOBEC-like profile",
+    },
+  };
+}
+
 const demos: Record<string, Demo> = {
+  spatial: (el) => createSpatial(el, { data: syntheticSlide() }),
+  profile: (el) => createProfile(el, { data: syntheticSbs96() }),
   lollipop: (el) =>
     createLollipop(el, { data: syntheticProtein(600) }),
   oncoplot: (el) =>
