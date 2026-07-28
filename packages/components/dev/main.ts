@@ -17,6 +17,7 @@ import { createLollipop } from "../src/components/lollipop.js";
 import { createProfile } from "../src/components/profile.js";
 import { createSpatial } from "../src/components/spatial.js";
 import { createKm } from "../src/components/km.js";
+import { createDotplot } from "../src/components/dotplot.js";
 import type { PlotomicsData } from "@plotomics/core";
 
 type Demo = (el: HTMLElement) => { destroy(): void; resize?(w: number, h: number): void };
@@ -505,7 +506,50 @@ function syntheticSurvival(): PlotomicsData {
   };
 }
 
+/**
+ * A marker panel with a planted diagonal: each block of genes is specific to
+ * one cluster, plus a few ubiquitous housekeepers so the size channel has
+ * something to distinguish that colour alone would not.
+ */
+function syntheticMarkers(): PlotomicsData {
+  const clusters = ["T cell", "B cell", "Myeloid", "Fibroblast", "Endothelial", "Tumour"];
+  const gene: string[] = [], cluster: string[] = [];
+  const pct: number[] = [], value: number[] = [];
+  const genes: string[] = [];
+  for (let c = 0; c < clusters.length; c += 1) {
+    for (let k = 0; k < 5; k += 1) genes.push(`MARK${c + 1}${k + 1}`);
+  }
+  genes.push("ACTB", "GAPDH");
+  for (let g = 0; g < genes.length; g += 1) {
+    const owner = g < clusters.length * 5 ? Math.floor(g / 5) : -1;
+    for (let c = 0; c < clusters.length; c += 1) {
+      gene.push(genes[g] as string);
+      cluster.push(clusters[c] as string);
+      if (owner === -1) {
+        // Housekeeping: expressed everywhere, in nearly every cell.
+        pct.push(88 + Math.random() * 10);
+        value.push(2.6 + Math.random() * 0.5);
+      } else if (owner === c) {
+        pct.push(60 + Math.random() * 38);
+        value.push(2 + Math.random());
+      } else {
+        pct.push(Math.random() * 18);
+        value.push(Math.random() * 0.5);
+      }
+    }
+  }
+  return {
+    columns: { gene, cluster, pct, value },
+    meta: {
+      genes, clusters,
+      valueLabel: "mean expression",
+      sizeLabel: "% expressing",
+    },
+  };
+}
+
 const demos: Record<string, Demo> = {
+  dotplot: (el) => createDotplot(el, { data: syntheticMarkers() }),
   km: (el) => createKm(el, { data: syntheticSurvival() }),
   spatial: (el) => createSpatial(el, { data: syntheticSlide() }),
   profile: (el) => createProfile(el, { data: syntheticSbs96() }),

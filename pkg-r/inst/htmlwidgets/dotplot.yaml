@@ -1,0 +1,5 @@
+dependencies:
+  - name: plotomics-dotplot
+    version: 0.0.0
+    src: htmlwidgets/lib/plotomics
+    script: dotplot.js

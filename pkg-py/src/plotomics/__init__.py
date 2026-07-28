@@ -14,6 +14,7 @@ from .heatmap import Heatmap
 from .gosling import Gosling
 from .network import Network
 from .clustermap import Clustermap
+from .dotplot import Dotplot
 from .hic import HiC
 from .igv import IGV
 from .km import Km
@@ -32,6 +33,7 @@ __all__ = [
     "Gosling",
     "Network",
     "Clustermap",
+    "Dotplot",
     "HiC",
     "IGV",
     "Km",
