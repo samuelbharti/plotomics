@@ -12,6 +12,10 @@ import { createIgv } from "../src/components/igv.js";
 import { createTreemap } from "../src/components/treemap.js";
 import { createVolcano } from "../src/components/volcano.js";
 import { createEmbedding } from "../src/components/embedding.js";
+import { createOncoplot } from "../src/components/oncoplot.js";
+import { createLollipop } from "../src/components/lollipop.js";
+import { createProfile } from "../src/components/profile.js";
+import { createSpatial } from "../src/components/spatial.js";
 import type { PlotomicsData } from "@plotomics/core";
 
 type Demo = (el: HTMLElement) => { destroy(): void; resize?(w: number, h: number): void };
@@ -279,7 +283,174 @@ function syntheticMatrix(nrows: number, ncols: number): PlotomicsData {
   };
 }
 
+// Cohort-scale oncoplot: 60 genes x 1,200 samples is 72,000 cells, which is
+// where per-cell DOM would fall over and canvas does not notice.
+function syntheticCohort(ngenes: number, nsamples: number): PlotomicsData {
+  const classes = ["Missense", "Truncating", "Frameshift", "Splice",
+    "In-frame indel", "Amplification", "Deep deletion", "Multi-hit"];
+  const codes = new Int16Array(ngenes * nsamples);
+  const tmb = new Float32Array(nsamples);
+  const freq = new Float32Array(ngenes);
+  for (let r = 0; r < ngenes; r += 1) {
+    // Decaying prevalence, so the plot has the usual top-heavy shape.
+    const p = 0.42 * Math.exp(-0.06 * r) + 0.02;
+    let hits = 0;
+    for (let c = 0; c < nsamples; c += 1) {
+      if (Math.random() < p) {
+        codes[r * nsamples + c] = 1 + Math.floor(Math.random() * classes.length);
+        tmb[c] += 1;
+        hits += 1;
+      }
+    }
+    freq[r] = (100 * hits) / nsamples;
+  }
+  const subtypes = ["LumA", "LumB", "Basal", "Her2", "Normal"];
+  const stages = ["I", "II", "III", "IV"];
+  const subCodes = new Int16Array(nsamples);
+  const stageCodes = new Int16Array(nsamples);
+  for (let c = 0; c < nsamples; c += 1) {
+    subCodes[c] = Math.floor(Math.random() * subtypes.length);
+    stageCodes[c] = Math.floor(Math.random() * stages.length);
+  }
+  return {
+    columns: { codes, tmb, freq },
+    meta: {
+      nrows: ngenes,
+      ncols: nsamples,
+      genes: Array.from({ length: ngenes }, (_, i) => `GENE${i + 1}`),
+      samples: Array.from({ length: nsamples }, (_, i) => `TCGA-${i}`),
+      classes,
+      classColors: ["#0E7175", "#233038", "#C63F3E", "#ED773C", "#E4A25B",
+        "#9E3F71", "#808BC5", "#245E55"],
+      annotations: [
+        { name: "Subtype", levels: subtypes, codes: subCodes },
+        { name: "Stage", levels: stages, codes: stageCodes },
+      ],
+    },
+  };
+}
+
+// A TP53-shaped protein: 393 residues, real domain bounds, a hotspot pile-up in
+// the DNA-binding domain and a long tail of one-off variants elsewhere.
+function syntheticProtein(nVariants: number): PlotomicsData {
+  const LEN = 393;
+  const classes = ["Missense", "Truncating", "Frameshift", "Splice"];
+  const position = new Float32Array(nVariants);
+  const count = new Float32Array(nVariants);
+  const cls: string[] = [];
+  const label: string[] = [];
+  const hotspots = [175, 245, 248, 273, 282];
+  const aa = "ACDEFGHIKLMNPQRSTVWY";
+  for (let i = 0; i < nVariants; i += 1) {
+    // Two thirds land in the DNA-binding domain, a fifth of those on hotspots.
+    let p: number;
+    if (i % 5 === 0) p = hotspots[i % hotspots.length] as number;
+    else if (i % 3 !== 0) p = 100 + Math.floor(Math.random() * 189);
+    else p = 1 + Math.floor(Math.random() * LEN);
+    position[i] = p;
+    count[i] = hotspots.includes(p)
+      ? 8 + Math.floor(Math.random() * 20)
+      : 1 + Math.floor(Math.random() * 3);
+    cls.push(classes[Math.floor(Math.random() * classes.length)] as string);
+    const ref = aa[Math.floor(Math.random() * aa.length)];
+    const alt = aa[Math.floor(Math.random() * aa.length)];
+    label.push(`${ref}${p}${alt}`);
+  }
+  const order = Array.from({ length: nVariants }, (_, i) => i)
+    .sort((a, b) => (count[b] as number) - (count[a] as number))
+    .slice(0, 12)
+    .sort((a, b) => a - b);
+  return {
+    columns: { position, count, class: cls, label },
+    meta: {
+      length: LEN,
+      gene: "TP53",
+      uniprot: "P04637",
+      classes,
+      classColors: ["#0E7175", "#233038", "#C63F3E", "#ED773C"],
+      domains: [
+        { name: "P53 transactivation motif", start: 6, end: 30 },
+        { name: "Transactivation domain 2", start: 35, end: 59 },
+        { name: "P53 DNA-binding domain", start: 100, end: 288 },
+        { name: "P53 tetramerisation motif", start: 319, end: 357 },
+      ],
+      ptms: [15, 20, 37, 46, 315, 370, 373, 382, 392].map((p) => ({
+        position: p,
+        type: "phospho",
+      })),
+      labelIndex: order,
+    },
+  };
+}
+
+// A Visium-shaped slide: a hex grid of capture spots over a tissue mask, with
+// spatial domains rather than random labels so the clusters form regions.
+function syntheticSlide(): PlotomicsData {
+  const W = 600, H = 600;
+  const x: number[] = [], y: number[] = [], color: string[] = [];
+  const domains = ["Tumour", "Stroma", "Immune", "Necrotic", "Normal"];
+  for (let row = 0; row < 64; row += 1) {
+    for (let col = 0; col < 64; col += 1) {
+      const px = 60 + col * 7.5 + (row % 2) * 3.75;
+      const py = 60 + row * 6.9;
+      // Ragged tissue boundary so the slide is not a perfect disc.
+      const dx = px - W / 2, dy = py - H / 2;
+      const r = Math.hypot(dx, dy);
+      const wobble = 30 * Math.sin(Math.atan2(dy, dx) * 3);
+      if (r > 230 + wobble) continue;
+      x.push(px); y.push(py);
+      const d = r < 80 ? 3 : r < 150 ? 0 : r < 200 ? 1 : 2;
+      color.push(domains[Math.random() < 0.15 ? 4 : d] as string);
+    }
+  }
+  return {
+    columns: { x, y, color },
+    meta: {
+      // No image URL: the component falls back to a neutral panel, which also
+      // exercises the still-loading path.
+      imgWidth: W, imgHeight: H, spotDiameter: 6,
+      levels: domains,
+      colors: ["#C63F3E", "#708C69", "#0E7175", "#233038", "#E4A25B"],
+    },
+  };
+}
+
+function syntheticSbs96(): PlotomicsData {
+  const subs = ["C>A", "C>G", "C>T", "T>A", "T>C", "T>G"];
+  const bases = ["A", "C", "G", "T"];
+  const value: number[] = [], group: string[] = [], label: string[] = [];
+  for (const s of subs) {
+    for (const five of bases) {
+      for (const three of bases) {
+        // APOBEC-ish: spike C>T and C>G at T[C]A / T[C]T.
+        const apobec = (s === "C>T" || s === "C>G") && five === "T"
+          && (three === "A" || three === "T");
+        value.push(apobec ? 60 + Math.random() * 40 : Math.random() * 8);
+        group.push(s);
+        label.push(`${five}${s[0]}${three}`);
+      }
+    }
+  }
+  return {
+    columns: { value, group, label },
+    meta: {
+      groups: subs,
+      groupColors: ["#03BCEE", "#010101", "#E32926", "#CAC9C9", "#A1CE63", "#EBC6C4"],
+      title: "Synthetic APOBEC-like profile",
+    },
+  };
+}
+
 const demos: Record<string, Demo> = {
+  spatial: (el) => createSpatial(el, { data: syntheticSlide() }),
+  profile: (el) => createProfile(el, { data: syntheticSbs96() }),
+  lollipop: (el) =>
+    createLollipop(el, { data: syntheticProtein(600) }),
+  oncoplot: (el) =>
+    createOncoplot(el, {
+      data: syntheticCohort(60, 1200),
+      options: { xLabel: "samples" },
+    }),
   heatmap: (el) => {
     const inst = createHeatmap(el, {
       data: syntheticMatrix(1000, 1000),

@@ -45,10 +45,40 @@ export {
 } from "../components/igv.js";
 
 export {
+  createLollipop,
+  defaultLollipopOptions,
+  type LollipopOptions,
+  type LollipopDomain,
+  type LollipopPtm,
+} from "../components/lollipop.js";
+
+export {
   createNetwork,
   defaultNetworkOptions,
   type NetworkOptions,
 } from "../components/network.js";
+
+export {
+  createOncoplot,
+  defaultOncoplotOptions,
+  type OncoplotOptions,
+  type OncoplotAnnotation,
+} from "../components/oncoplot.js";
+
+export {
+  createProfile,
+  defaultProfileOptions,
+  type ProfileOptions,
+  type GroupRun,
+} from "../components/profile.js";
+
+export {
+  createSpatial,
+  defaultSpatialOptions,
+  type SpatialOptions,
+  type SpatialColorMode,
+  type FitTransform,
+} from "../components/spatial.js";
 
 export {
   createTreemap,
