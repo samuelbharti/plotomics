@@ -15,7 +15,7 @@ library(shiny)
 if (requireNamespace("plotomics", quietly = TRUE)) {
   library(plotomics)
 } else {
-  pkgload::load_all(file.path("..", "..", "r", "plotomics"), quiet = TRUE)
+  pkgload::load_all(file.path("..", "..", "pkg-r"), quiet = TRUE)
 }
 
 set.seed(1)

@@ -20,17 +20,17 @@
 - [ ] **Programmatic export** — appended to `packages/components/src/lib/index.ts` (kept sorted)
 - [ ] **Unit test** — `packages/components/test/<name>.test.ts` covers the pure helpers
 - [ ] **Dev demo** — `demos.<name>` in `packages/components/dev/main.ts` with synthetic data at scale (>=100k where meaningful)
-- [ ] **R wrapper** — `r/plotomics/R/<name>.R` (+ `<name>Output()` / `render<Name>()` Shiny bindings), `inst/htmlwidgets/<name>.js` + `<name>.yaml`, `tests/testthat/test-<name>.R`; NAMESPACE + man/ regenerated via roxygen
-- [ ] **Python wrapper** — `python/src/plotomics/<name>.py`, class appended to `__init__.py` (`__all__`, sorted), `python/tests/test_<name>.py`
+- [ ] **R wrapper** — `pkg-r/R/<name>.R` (+ `<name>Output()` / `render<Name>()` Shiny bindings), `inst/htmlwidgets/<name>.js` + `<name>.yaml`, `tests/testthat/test-<name>.R`; NAMESPACE + man/ regenerated via roxygen
+- [ ] **Python wrapper** — `pkg-py/src/plotomics/<name>.py`, class appended to `__init__.py` (`__all__`, sorted), `pkg-py/tests/test_<name>.py`
 - [ ] **Trait parity** — option keys are camelCase and identical across JS options, the R `options` list, and the Python `options` dict
 
 ## Verification
 
-- [ ] `pnpm dist` (build + sync bundles into `r/` and `python/`) passes
+- [ ] `pnpm dist` (build + sync bundles into `pkg-r/` and `pkg-py/`) passes
 - [ ] `pnpm -r test` passes
 - [ ] `pnpm -r typecheck` passes
 - [ ] `pnpm lint` passes (or surfaces only pre-existing findings)
-- [ ] R touched → `devtools::test("r/plotomics")` passes
+- [ ] R touched → `devtools::test("pkg-r")` passes
 - [ ] Python touched → `pytest` passes
 
 ## Notes
