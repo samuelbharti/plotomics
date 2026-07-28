@@ -12,6 +12,7 @@ import { createIgv } from "../src/components/igv.js";
 import { createTreemap } from "../src/components/treemap.js";
 import { createVolcano } from "../src/components/volcano.js";
 import { createEmbedding } from "../src/components/embedding.js";
+import { createOncoplot } from "../src/components/oncoplot.js";
 import type { PlotomicsData } from "@plotomics/core";
 
 type Demo = (el: HTMLElement) => { destroy(): void; resize?(w: number, h: number): void };
@@ -279,7 +280,59 @@ function syntheticMatrix(nrows: number, ncols: number): PlotomicsData {
   };
 }
 
+// Cohort-scale oncoplot: 60 genes x 1,200 samples is 72,000 cells, which is
+// where per-cell DOM would fall over and canvas does not notice.
+function syntheticCohort(ngenes: number, nsamples: number): PlotomicsData {
+  const classes = ["Missense", "Truncating", "Frameshift", "Splice",
+    "In-frame indel", "Amplification", "Deep deletion", "Multi-hit"];
+  const codes = new Int16Array(ngenes * nsamples);
+  const tmb = new Float32Array(nsamples);
+  const freq = new Float32Array(ngenes);
+  for (let r = 0; r < ngenes; r += 1) {
+    // Decaying prevalence, so the plot has the usual top-heavy shape.
+    const p = 0.42 * Math.exp(-0.06 * r) + 0.02;
+    let hits = 0;
+    for (let c = 0; c < nsamples; c += 1) {
+      if (Math.random() < p) {
+        codes[r * nsamples + c] = 1 + Math.floor(Math.random() * classes.length);
+        tmb[c] += 1;
+        hits += 1;
+      }
+    }
+    freq[r] = (100 * hits) / nsamples;
+  }
+  const subtypes = ["LumA", "LumB", "Basal", "Her2", "Normal"];
+  const stages = ["I", "II", "III", "IV"];
+  const subCodes = new Int16Array(nsamples);
+  const stageCodes = new Int16Array(nsamples);
+  for (let c = 0; c < nsamples; c += 1) {
+    subCodes[c] = Math.floor(Math.random() * subtypes.length);
+    stageCodes[c] = Math.floor(Math.random() * stages.length);
+  }
+  return {
+    columns: { codes, tmb, freq },
+    meta: {
+      nrows: ngenes,
+      ncols: nsamples,
+      genes: Array.from({ length: ngenes }, (_, i) => `GENE${i + 1}`),
+      samples: Array.from({ length: nsamples }, (_, i) => `TCGA-${i}`),
+      classes,
+      classColors: ["#0E7175", "#233038", "#C63F3E", "#ED773C", "#E4A25B",
+        "#9E3F71", "#808BC5", "#245E55"],
+      annotations: [
+        { name: "Subtype", levels: subtypes, codes: subCodes },
+        { name: "Stage", levels: stages, codes: stageCodes },
+      ],
+    },
+  };
+}
+
 const demos: Record<string, Demo> = {
+  oncoplot: (el) =>
+    createOncoplot(el, {
+      data: syntheticCohort(60, 1200),
+      options: { xLabel: "samples" },
+    }),
   heatmap: (el) => {
     const inst = createHeatmap(el, {
       data: syntheticMatrix(1000, 1000),

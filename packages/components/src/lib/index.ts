@@ -51,6 +51,13 @@ export {
 } from "../components/network.js";
 
 export {
+  createOncoplot,
+  defaultOncoplotOptions,
+  type OncoplotOptions,
+  type OncoplotAnnotation,
+} from "../components/oncoplot.js";
+
+export {
   createTreemap,
   defaultTreemapOptions,
   type TreemapOptions,

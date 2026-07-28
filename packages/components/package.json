@@ -47,6 +47,10 @@
       "types": "./dist/lib/components/network.d.ts",
       "import": "./dist/lib/components/network.js"
     },
+    "./oncoplot": {
+      "types": "./dist/lib/components/oncoplot.d.ts",
+      "import": "./dist/lib/components/oncoplot.js"
+    },
     "./treemap": {
       "types": "./dist/lib/components/treemap.d.ts",
       "import": "./dist/lib/components/treemap.js"
