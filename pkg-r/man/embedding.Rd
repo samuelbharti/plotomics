@@ -25,8 +25,10 @@ embedding(
 \item{data}{A data frame with numeric columns \code{x} and \code{y} (the embedding
 coordinates). An optional \code{color} column drives coloring: a character or
 factor column is treated as categorical (discrete legend), a numeric column
-as continuous (sequential colormap + colorbar). An optional \code{label} column
-supplies per-point tooltip text.}
+as continuous (sequential colormap + colorbar). A \strong{factor} \code{color} fixes
+the legend order and the color assignment to its levels, and keeps unused
+levels in the legend, the way \code{drop = FALSE} does in ggplot2. An optional
+\code{label} column supplies per-point tooltip text.}
 
 \item{point_size}{Point radius in pixels.}
 
