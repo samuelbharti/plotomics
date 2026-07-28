@@ -16,6 +16,10 @@ from .network import Network
 from .clustermap import Clustermap
 from .hic import HiC
 from .igv import IGV
+from .lollipop import Lollipop
+from .oncoplot import Oncoplot
+from .profile import Profile
+from .spatial import Spatial
 from .treemap import Treemap
 from .volcano import Volcano
 from .embedding import Embedding
@@ -29,6 +33,10 @@ __all__ = [
     "Clustermap",
     "HiC",
     "IGV",
+    "Lollipop",
+    "Oncoplot",
+    "Profile",
+    "Spatial",
     "Treemap",
     "Volcano",
     "Embedding",

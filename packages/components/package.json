@@ -43,9 +43,25 @@
       "types": "./dist/lib/components/igv.d.ts",
       "import": "./dist/lib/components/igv.js"
     },
+    "./lollipop": {
+      "types": "./dist/lib/components/lollipop.d.ts",
+      "import": "./dist/lib/components/lollipop.js"
+    },
     "./network": {
       "types": "./dist/lib/components/network.d.ts",
       "import": "./dist/lib/components/network.js"
+    },
+    "./oncoplot": {
+      "types": "./dist/lib/components/oncoplot.d.ts",
+      "import": "./dist/lib/components/oncoplot.js"
+    },
+    "./profile": {
+      "types": "./dist/lib/components/profile.d.ts",
+      "import": "./dist/lib/components/profile.js"
+    },
+    "./spatial": {
+      "types": "./dist/lib/components/spatial.d.ts",
+      "import": "./dist/lib/components/spatial.js"
     },
     "./treemap": {
       "types": "./dist/lib/components/treemap.d.ts",
