@@ -12,11 +12,11 @@ Every component is a **headless, imperative factory** in
 Python. It implements the `PlotomicsFactory` / `PlotomicsInstance` contract from
 `@plotomics/core`. Two tiny generated adapters expose it: an **anywidget** ESM
 entry (Python) and a **UMD/IIFE** entry (R/htmlwidgets). Build artifacts are
-synced into the `r/` and `python/` packages, which are thin wrappers.
+synced into the `pkg-r/` and `pkg-py/` packages, which are thin wrappers.
 
 ```
-JS factory (createX)  ──► entries/anywidget/x.ts ──► dist/anywidget/x.js ──► python/src/plotomics/static/x.js
-                      └─► entries/umd/x.ts       ──► dist/umd/x.js       ──► r/plotomics/inst/htmlwidgets/lib/plotomics/x.js
+JS factory (createX)  ──► entries/anywidget/x.ts ──► dist/anywidget/x.js ──► pkg-py/src/plotomics/static/x.js
+                      └─► entries/umd/x.ts       ──► dist/umd/x.js       ──► pkg-r/inst/htmlwidgets/lib/plotomics/x.js
 ```
 
 ## Performance rules (non-negotiable)
@@ -55,21 +55,21 @@ per-datum SVG/DOM for the data layer:
    via `pnpm --filter @plotomics/components dev`.
 
 6. **R wrapper**
-   - `r/plotomics/R/<name>.R`: exported `<name>()` constructor calling
+   - `pkg-r/R/<name>.R`: exported `<name>()` constructor calling
      `plotomics_widget("<name>", columns, options=..., ...)`, plus
      `<name>Output()` / `render<Name>()` Shiny bindings. Use roxygen comments.
-   - `r/plotomics/inst/htmlwidgets/<name>.js`:
+   - `pkg-r/inst/htmlwidgets/<name>.js`:
      `HTMLWidgets.widget(window.plotomics.htmlwidget("<name>"));`
-   - `r/plotomics/inst/htmlwidgets/<name>.yaml`: dependency on
+   - `pkg-r/inst/htmlwidgets/<name>.yaml`: dependency on
      `htmlwidgets/lib/plotomics/<name>.js`.
-   - `r/plotomics/tests/testthat/test-<name>.R`.
+   - `pkg-r/tests/testthat/test-<name>.R`.
 
 7. **Python wrapper**
-   - `python/src/plotomics/<name>.py`: a `class <Name>(PlotomicsWidget)` with
+   - `pkg-py/src/plotomics/<name>.py`: a `class <Name>(PlotomicsWidget)` with
      `_esm = STATIC / "<name>.js"`; pack numeric columns via `pack_columns`,
      put string columns in `data["columns"]`, scalars in `data["meta"]`.
-   - Append the class to `python/src/plotomics/__init__.py` (`__all__`, sorted).
-   - `python/tests/test_<name>.py`.
+   - Append the class to `pkg-py/src/plotomics/__init__.py` (`__all__`, sorted).
+   - `pkg-py/tests/test_<name>.py`.
 
 8. **Trait/payload contract** — keep option keys **camelCase** and identical
    across JS options, the R `options` list, and the Python `options` dict.
@@ -78,20 +78,20 @@ per-datum SVG/DOM for the data layer:
 
 ```bash
 pnpm install
-pnpm dist            # build all JS + sync bundles into r/ and python/
+pnpm dist            # build all JS + sync bundles into pkg-r/ and pkg-py/
 pnpm -r test         # JS unit tests
 pnpm -r typecheck
 
-Rscript -e 'roxygen2::roxygenise("r/plotomics")'   # regenerate NAMESPACE + man/
-Rscript -e 'devtools::test("r/plotomics")'
+Rscript -e 'roxygen2::roxygenise("pkg-r")'   # regenerate NAMESPACE + man/
+Rscript -e 'devtools::test("pkg-r")'
 
-cd python && pip install -e ".[dev]" && pytest && cd ..
+cd pkg-py && pip install -e ".[dev]" && pytest && cd ..
 ```
 
 ## The only shared files (append, don't rewrite — keep sorted)
 
 - `packages/components/src/lib/index.ts`
-- `python/src/plotomics/__init__.py`
+- `pkg-py/src/plotomics/__init__.py`
 - `packages/components/dev/main.ts`
 
 Everything else your component adds is brand-new files. If you find yourself

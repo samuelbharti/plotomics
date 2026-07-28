@@ -25,6 +25,10 @@ dist-python/
 *.Rcheck/
 plotomics_*.tar.gz
 
+# Docs build output
+pkg-r/docs/
+site/
+
 # Editors / OS
 .DS_Store
 .vscode/

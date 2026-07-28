@@ -4,10 +4,10 @@ name: Release
 #
 # Both the Python wheel and the R htmlwidget embed the JavaScript component
 # bundles produced by `pnpm dist` (build + sync), so every job runs `pnpm dist`
-# first to populate python/src/plotomics/static and r/plotomics/inst/htmlwidgets/lib
-# (both git-ignored, rebuilt here) before packaging.
+# first to populate pkg-py/src/plotomics/static and pkg-r/inst/htmlwidgets/lib
+# (both git-tracked, rebuilt here) before packaging.
 #
-# R packaging: the R package (r/plotomics) is intentionally NOT published from this
+# R packaging: the R package (pkg-r) is intentionally NOT published from this
 # workflow. It is released via r-universe, which builds the package directly
 # from this repository on each push/tag — no CI publish step or token is needed.
 # Enable it by adding this repo to an <owner>.r-universe.dev registry
@@ -43,12 +43,12 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm dist # populates python/src/plotomics/static with the JS bundles
+      - run: pnpm dist # populates pkg-py/src/plotomics/static with the JS bundles
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Build wheel and sdist
-        working-directory: python
+        working-directory: pkg-py
         run: |
           python -m pip install --upgrade pip build
           python -m build
@@ -56,7 +56,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: python/dist
+          packages-dir: pkg-py/dist
 
   npm:
     name: Build & publish @plotomics/components (npm)
