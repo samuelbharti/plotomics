@@ -59,6 +59,10 @@
       "types": "./dist/lib/components/profile.d.ts",
       "import": "./dist/lib/components/profile.js"
     },
+    "./spatial": {
+      "types": "./dist/lib/components/spatial.d.ts",
+      "import": "./dist/lib/components/spatial.js"
+    },
     "./treemap": {
       "types": "./dist/lib/components/treemap.d.ts",
       "import": "./dist/lib/components/treemap.js"
