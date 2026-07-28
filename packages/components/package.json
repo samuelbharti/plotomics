@@ -55,6 +55,10 @@
       "types": "./dist/lib/components/oncoplot.d.ts",
       "import": "./dist/lib/components/oncoplot.js"
     },
+    "./profile": {
+      "types": "./dist/lib/components/profile.d.ts",
+      "import": "./dist/lib/components/profile.js"
+    },
     "./treemap": {
       "types": "./dist/lib/components/treemap.d.ts",
       "import": "./dist/lib/components/treemap.js"
