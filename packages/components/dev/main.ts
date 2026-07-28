@@ -14,7 +14,7 @@ import { createVolcano } from "../src/components/volcano.js";
 import { createEmbedding } from "../src/components/embedding.js";
 import type { PlotomicsData } from "@plotomics/core";
 
-type Demo = (el: HTMLElement) => { destroy(): void };
+type Demo = (el: HTMLElement) => { destroy(): void; resize?(w: number, h: number): void };
 
 // A minimal valid Gosling spec: one bar track over a public multivec tileset
 // hosted by the Gosling team (data streams/tiles from the server).
@@ -368,9 +368,11 @@ const demos: Record<string, Demo> = {
 const stage = document.getElementById("stage") as HTMLElement;
 const picker = document.getElementById("picker") as HTMLSelectElement;
 const status = document.getElementById("status") as HTMLElement;
-let current: { destroy(): void } | null = null;
+let current: { destroy(): void; resize?(w: number, h: number): void } | null = null;
+let ro: ResizeObserver | null = null;
 
 function mount(name: string) {
+  ro?.disconnect();
   current?.destroy();
   stage.innerHTML = "";
   const host = document.createElement("div");
@@ -378,6 +380,14 @@ function mount(name: string) {
   stage.appendChild(host);
   const t0 = performance.now();
   current = demos[name]!(host);
+  // Drive resize() the way the real hosts do (the anywidget adapter and the
+  // htmlwidgets binding both call it). Components that size on resize() rather
+  // than at construction — e.g. embedding — stay blank without this.
+  ro = new ResizeObserver((entries) => {
+    const r = entries[0]?.contentRect;
+    if (r && r.width > 0) current?.resize?.(r.width, r.height || 480);
+  });
+  ro.observe(host);
   status.textContent = ` — ${name} rendered in ${(performance.now() - t0).toFixed(0)}ms`;
 }
 
