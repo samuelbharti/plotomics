@@ -43,6 +43,10 @@
       "types": "./dist/lib/components/igv.d.ts",
       "import": "./dist/lib/components/igv.js"
     },
+    "./lollipop": {
+      "types": "./dist/lib/components/lollipop.d.ts",
+      "import": "./dist/lib/components/lollipop.js"
+    },
     "./network": {
       "types": "./dist/lib/components/network.d.ts",
       "import": "./dist/lib/components/network.js"
