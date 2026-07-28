@@ -19,6 +19,11 @@
  * - `columns.feature`  `string[]`  row key per violin (required)
  * - `columns.group`    `string[]`  column key per violin (required)
  * - `meta.grid`      `number[]`  shared evaluation grid, ascending (required)
+ * - `meta.grids`     `number[]`  optional per-feature grids, features x grid,
+ *                                row-major. Present means each row gets its own
+ *                                y range, which is what a marker panel usually
+ *                                wants: one highly expressed gene otherwise
+ *                                compresses every other row into a line.
  * - `meta.density`   `number[]`  violins x grid, row-major (required)
  * - `meta.features`  `string[]`  row order; defaults to order of appearance
  * - `meta.groups`    `string[]`  column order; defaults to order of appearance
@@ -124,6 +129,24 @@ export function densityRow(
 }
 
 /**
+ * The grid for one feature row. With `grids` supplied, each row gets its own
+ * slice; otherwise every row shares `grid`. Falls back to the shared grid when
+ * the slice would run past the end, so a short `grids` cannot blank a row.
+ */
+export function gridForRow(
+  grid: ArrayLike<number>,
+  grids: ArrayLike<number> | undefined,
+  row: number,
+): number[] {
+  const n = grid.length;
+  const shared = Array.from({ length: n }, (_, i) => grid[i] as number);
+  if (!grids || n === 0 || row < 0) return shared;
+  const base = row * n;
+  if (base + n > grids.length) return shared;
+  return Array.from({ length: n }, (_, i) => grids[base + i] as number);
+}
+
+/**
  * Largest density in a set of rows, used to put every violin in a row on one
  * scale. Returns 1 for empty or degenerate input so nothing divides by zero.
  */
@@ -183,6 +206,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
   const featureCol = () => (data.columns.feature as string[]) ?? [];
   const groupCol = () => (data.columns.group as string[]) ?? [];
   const grid = () => (data.meta?.grid as ArrayLike<number>) ?? [];
+  const grids = () => data.meta?.grids as ArrayLike<number> | undefined;
   const density = () => data.meta?.density as ArrayLike<number> | undefined;
   const medians = () => data.meta?.median as ArrayLike<number> | undefined;
   function features(): string[] {
@@ -278,9 +302,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     const dens = density();
     const cols = groupColors();
     const med = medians();
-    const gmin = gr[0] as number;
-    const gmax = gr[gr.length - 1] as number;
-    const span = gmax - gmin || 1;
+    const grs = grids();
     const halfW = (layout.cellW * opts.violinWidth) / 2;
 
     for (let r = 0; r < f.length; r += 1) {
@@ -294,6 +316,12 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       }
       const rowMax = maxDensity(rows);
 
+      // Each row is framed on its own grid when one is supplied, so a highly
+      // expressed feature cannot compress the rest into flat lines.
+      const rowGrid = gridForRow(gr, grs, r);
+      const gmin = rowGrid[0] as number;
+      const gmax = rowGrid[rowGrid.length - 1] as number;
+      const span = gmax - gmin || 1;
       const yTop = layout.top + r * layout.rowH + 2;
       const yBot = layout.top + (r + 1) * layout.rowH - 2;
       const toY = (v: number) => yBot - ((v - gmin) / span) * (yBot - yTop);
@@ -301,7 +329,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       for (let c = 0; c < g.length; c += 1) {
         const row = rows[c] as number[];
         const scale = opts.scalePerViolin ? maxDensity([row]) : rowMax;
-        const poly = violinPolygon(gr, row, scale);
+        const poly = violinPolygon(rowGrid, row, scale);
         if (!poly.length) continue;
         const cx = layout.left + (c + 0.5) * layout.cellW;
         ctx.beginPath();

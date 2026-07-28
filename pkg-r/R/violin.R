@@ -14,6 +14,9 @@
 #' @param data A data frame with `feature` and `group` key columns, one row per
 #'   violin, in the order to draw them.
 #' @param grid Numeric vector, the shared evaluation grid, ascending.
+#' @param grids Optional numeric matrix, features x `grid`, giving each feature
+#'   its own y range. Without it every row shares `grid`, which lets one highly
+#'   expressed feature compress the rest into flat lines.
 #' @param density Numeric matrix, violins x `grid`, of density values.
 #' @param median Optional numeric vector, one median per violin, drawn as a tick.
 #' @param features,groups Character vectors fixing the row and column order.
@@ -35,6 +38,7 @@
 violin <- function(data,
                    grid,
                    density,
+                   grids = NULL,
                    median = NULL,
                    features = NULL,
                    groups = NULL,
@@ -86,6 +90,17 @@ violin <- function(data,
     # Row-major: the component indexes it as violin * gridLen + k.
     density = I(as.numeric(t(dm)))
   )
+  if (!is.null(grids)) {
+    gm <- as.matrix(grids)
+    if (ncol(gm) != length(grid)) {
+      stop("`grids` must have one column per `grid` entry.", call. = FALSE)
+    }
+    n_feat <- if (is.null(features)) length(unique(columns$feature)) else length(features)
+    if (nrow(gm) != n_feat) {
+      stop("`grids` must have one row per feature.", call. = FALSE)
+    }
+    meta$grids <- I(as.numeric(t(gm)))
+  }
   if (!is.null(features)) {
     features <- as.character(features)
     unknown <- setdiff(unique(columns$feature), features)

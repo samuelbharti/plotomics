@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   densityRow,
+  gridForRow,
   layoutViolin,
   maxDensity,
   violinPolygon,
@@ -81,5 +82,33 @@ describe("violin helpers", () => {
     const l = layoutViolin(400, 300, 0, 0, { showFeatureLabels: true });
     expect(l.cellW).toBeGreaterThan(0);
     expect(l.rowH).toBeGreaterThan(0);
+  });
+});
+
+describe("violin per-row grids", () => {
+  it("gives each row its own grid when grids is supplied", () => {
+    const grid = [0, 1, 2];
+    const grids = [0, 1, 2, 10, 20, 30];
+    expect(gridForRow(grid, grids, 0)).toEqual([0, 1, 2]);
+    expect(gridForRow(grid, grids, 1)).toEqual([10, 20, 30]);
+  });
+
+  it("shares one grid when grids is absent", () => {
+    const grid = [0, 5, 10];
+    expect(gridForRow(grid, undefined, 0)).toEqual([0, 5, 10]);
+    expect(gridForRow(grid, undefined, 7)).toEqual([0, 5, 10]);
+  });
+
+  it("falls back to the shared grid rather than blanking a row", () => {
+    const grid = [0, 1, 2];
+    // grids too short for row 1: better a shared-scale row than an empty one.
+    expect(gridForRow(grid, [0, 1, 2], 1)).toEqual([0, 1, 2]);
+    expect(gridForRow(grid, [0, 1, 2, 3], 1)).toEqual([0, 1, 2]);
+    expect(gridForRow(grid, [9, 9, 9], -1)).toEqual([0, 1, 2]);
+  });
+
+  it("returns an empty grid when there is no shared grid either", () => {
+    expect(gridForRow([], undefined, 0)).toEqual([]);
+    expect(gridForRow([], [1, 2, 3], 0)).toEqual([]);
   });
 });
