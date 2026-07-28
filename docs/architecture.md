@@ -62,14 +62,14 @@ cell, a Shiny app, an RStudio viewer or a plain web page.
 Both converge on the same `PlotomicsData`. The binary path exists because a
 million floats as JSON is ~20 MB of text to parse; as a `Float32Array` buffer
 it is 4 MB delivered as a `DataView`. See `packages/core/src/transport.ts` and
-`python/src/plotomics/_base.py::pack_columns`.
+`pkg-py/src/plotomics/_base.py::pack_columns`.
 
 ## Build & sync
 
 `packages/components/build.mjs` (esbuild) globs `src/entries/{anywidget,umd}/*.ts`
 and emits one self-contained bundle per component per target. `scripts/sync-assets.mjs`
-copies them into `r/plotomics/inst/htmlwidgets/lib/plotomics/` and
-`python/src/plotomics/static/`. These synced dirs are git-ignored and regenerated
+copies them into `pkg-r/inst/htmlwidgets/lib/plotomics/` and
+`pkg-py/src/plotomics/static/`. These synced dirs are git-tracked and regenerated
 by `pnpm dist` (and in CI).
 
 ## Rendering strategy per component

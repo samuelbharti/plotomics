@@ -30,8 +30,8 @@ designed to be **publication-ready**, not toy demos.
 packages/
   core/         @plotomics/core       — contract, theme, color, binary transport, export
   components/   @plotomics/components  — the headless viz factories + adapters + dev harness
-r/plotomics/       R package (htmlwidgets)
-python/         Python package (anywidget)
+pkg-r/          R package (htmlwidgets)
+pkg-py/         Python package (anywidget)
 scripts/        sync built bundles into the wrappers
 ```
 
@@ -39,7 +39,7 @@ scripts/        sync built bundles into the wrappers
 
 ```bash
 pnpm install
-pnpm dist        # build all JS + copy bundles into r/ and python/
+pnpm dist        # build all JS + copy bundles into pkg-r/ and pkg-py/
 
 # Visual dev harness (WebGL, synthetic data at scale)
 pnpm --filter @plotomics/components dev   # http://localhost:5180
@@ -49,7 +49,7 @@ pnpm --filter @plotomics/components dev   # http://localhost:5180
 
 ```r
 pnpm dist  # ensure bundles are synced (run once in the shell)
-devtools::load_all("r/plotomics")
+devtools::load_all("pkg-r")
 df <- data.frame(x = rnorm(1e5), y = abs(rnorm(1e5)) * 3, label = paste0("GENE", 1:1e5))
 volcano(df, fc_threshold = 1, p_threshold = 0.05)
 ```
