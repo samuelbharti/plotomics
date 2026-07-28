@@ -44,7 +44,7 @@ jobs:
       - run: pnpm dist
 
       # Python API reference (pdoc, from NumPy-style docstrings).
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Build Python docs (pdoc)
