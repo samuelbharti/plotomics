@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>plotomics: bioinformatics visualization for R, Python and the web</title>
-<meta name="description" content="Visualization widgets built on one TypeScript core, wrapped for R (htmlwidgets) and Python (anywidget): volcano plots, embeddings, heatmaps, Hi-C, genome browsers and networks that stay interactive at millions of points." />
+<meta name="description" content="Seventeen visualization widgets built on one TypeScript core, wrapped for R (htmlwidgets) and Python (anywidget): volcano plots, heatmaps, dot plots, violins, embeddings, spatial tissue maps, oncoprints, lollipops, Kaplan-Meier curves, signature profiles, UpSet plots, treemaps, networks, Hi-C and genome browsers that stay interactive at millions of points." />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232761e3'/%3E%3Ccircle cx='10' cy='22' r='2.6' fill='%23ffffff'/%3E%3Ccircle cx='16' cy='16' r='2.6' fill='%23ffffff'/%3E%3Ccircle cx='22' cy='10' r='2.6' fill='%23ffffff'/%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -158,6 +158,7 @@
   <div class="navbar-inner">
     <a class="navbar-brand" href="#top">plotomics</a>
     <div class="navbar-links">
+      <a class="opt" href="#why">Why</a>
       <a class="opt" href="#components">Components</a>
       <a class="opt" href="#installation">Install</a>
       <a href="https://samuelbharti.github.io/plotomics/r/">R docs</a>
@@ -186,6 +187,23 @@
     Jupyter notebook, a Shiny app, the RStudio Viewer, or a plain web page.
   </p>
 
+  <h2 id="why">Why</h2>
+  <p>
+    Omics data outgrew the plotting stack. A 500k-cell embedding or a 20k-gene volcano is
+    routine now, but the tools most of these figures are drawn with were designed for a few
+    thousand marks, and past that the figure stops being readable before the data stops
+    being interesting. Separately, labs run on both R and Python, so the same figure gets
+    implemented twice and the two drift apart.
+  </p>
+  <p>
+    plotomics writes each component once and wraps it thinly for both languages, so the
+    notebook and the paper agree. It is deliberately not a general plotting library, and for
+    a small static figure there are better tools.
+    <a href="https://github.com/samuelbharti/plotomics/blob/main/docs/motivation.md">Read the
+    motivation</a> for the goals, the non-goals, how it compares with ComplexHeatmap,
+    maftools, survminer, Seurat and scanpy, and when to use one of those instead.
+  </p>
+
   <hr />
 
   <h2 id="components">Components</h2>
@@ -199,14 +217,22 @@
       </thead>
       <tbody>
         <tr><td><strong>Volcano plot</strong></td><td><span class="eng">regl-scatterplot</span></td><td>Differential expression: effect size against significance.</td></tr>
-        <tr><td><strong>Embedding</strong></td><td><span class="eng">regl-scatterplot</span></td><td>UMAP and t-SNE maps for single-cell data, with lasso selection.</td></tr>
         <tr><td><strong>Expression heatmap</strong></td><td><span class="eng">WebGL</span></td><td>Large sample by gene matrices.</td></tr>
         <tr><td><strong>Clustered heatmap</strong></td><td><span class="eng">WebGL + dendrograms</span></td><td>Hierarchically clustered expression.</td></tr>
+        <tr><td><strong>Marker gene dot plot</strong></td><td><span class="eng">canvas + SVG</span></td><td>Features by groups: dot size is the fraction expressing, colour the level.</td></tr>
+        <tr><td><strong>Stacked violin</strong></td><td><span class="eng">canvas + SVG</span></td><td>One row per feature, one violin per group, for marker panels.</td></tr>
+        <tr><td><strong>Embedding</strong></td><td><span class="eng">regl-scatterplot</span></td><td>UMAP and t-SNE maps for single-cell data, with lasso selection.</td></tr>
+        <tr><td><strong>Spatial tissue map</strong></td><td><span class="eng">canvas + SVG</span></td><td>Measurements at their real coordinates, over the histology image.</td></tr>
+        <tr><td><strong>Oncoplot (OncoPrint)</strong></td><td><span class="eng">canvas + SVG</span></td><td>Cohort alteration landscape: a gene by sample grid of alteration classes.</td></tr>
+        <tr><td><strong>Protein domain lollipop</strong></td><td><span class="eng">canvas + SVG</span></td><td>Variants along a protein, drawn over its domain architecture.</td></tr>
+        <tr><td><strong>Kaplan-Meier curve</strong></td><td><span class="eng">canvas + SVG</span></td><td>Survival curves with a number-at-risk table.</td></tr>
+        <tr><td><strong>Categorical profile</strong></td><td><span class="eng">canvas + SVG</span></td><td>Grouped bar profile, built for 96-context mutational signatures.</td></tr>
+        <tr><td><strong>UpSet plot</strong></td><td><span class="eng">canvas + SVG</span></td><td>Set intersections as a bar chart over a membership matrix.</td></tr>
         <tr><td><strong>Gene treemap</strong></td><td><span class="eng">D3 + canvas</span></td><td>Hierarchical gene-set and pathway composition.</td></tr>
-        <tr><td><strong>Hi-C contact matrix</strong></td><td><span class="eng">WebGL tiling / LOD</span></td><td>Chromatin contact maps.</td></tr>
+        <tr><td><strong>Network graph</strong></td><td><span class="eng">sigma v3</span></td><td>Large biological networks.</td></tr>
+        <tr><td><strong>Hi-C contact matrix</strong></td><td><span class="eng">regl / WebGL LOD</span></td><td>Chromatin contact maps.</td></tr>
         <tr><td><strong>Genome viewer</strong></td><td><span class="eng">igv.js</span></td><td>Track-based genome browser.</td></tr>
         <tr><td><strong>Genomics figures</strong></td><td><span class="eng">Gosling.js</span></td><td>Declarative, publication-grade genomics figures.</td></tr>
-        <tr><td><strong>Network graph</strong></td><td><span class="eng">sigma v3</span></td><td>Large biological networks.</td></tr>
       </tbody>
     </table>
   </div>
@@ -259,7 +285,8 @@
       columns travel as a binary buffer, so a million floats arrive as about 4&nbsp;MB instead
       of about 20&nbsp;MB of JSON.</li>
     <li><strong>Made for figures.</strong> Axes, legends, and labels are drawn as vectors, and
-      every component can export to SVG or PNG.</li>
+      components export to SVG and PNG. Two are limited by their upstream engine: the Gosling
+      viewer exports PNG only, and the igv.js viewer SVG only.</li>
     <li><strong>Runs anywhere.</strong> Jupyter, Shiny, the RStudio Viewer, Quarto, or a static
       page. A lasso selection is sent back to your R or Python session.</li>
   </ul>

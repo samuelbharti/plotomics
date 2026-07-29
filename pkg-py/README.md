@@ -29,7 +29,7 @@ pip install plotomics
 ### Shiny for Python
 
 The widgets are anywidgets, so they render in Shiny for Python through
-[`shinywidgets`](https://github.com/posit-dev/py-shinywidgets) — `output_widget`
+[`shinywidgets`](https://github.com/posit-dev/py-shinywidgets): `output_widget`
 in the UI, `@render_widget` on the server:
 
 ```python

@@ -1,6 +1,8 @@
 // Bundles each component into two self-contained artifacts:
 //   dist/anywidget/<name>.js  — ESM with `export default { render }` for anywidget (Python)
-//   dist/umd/<name>.js        — IIFE registering window.plotomics.<name> for htmlwidgets (R)
+//   dist/umd/<name>.js        — IIFE registering window.plotomics.components[<name>]
+//                               for htmlwidgets (R), read back via
+//                               window.plotomics.htmlwidget(<name>)
 //
 // Entries are discovered by glob, so adding a component never requires editing
 // this file or any central registry — that is what keeps parallel PRs

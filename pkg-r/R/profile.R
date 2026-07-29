@@ -13,6 +13,12 @@
 #' Bars are drawn in the order given. For SBS96 that order is part of the
 #' convention, so the component does not sort.
 #'
+#' Note that `profile()` masks the [stats::profile()] generic once the package
+#' is attached. Unlike [bioheatmap()], which is aliased to keep clear of
+#' [stats::heatmap()], this one keeps the obvious name: `stats::profile()`
+#' profiles a fitted model's likelihood, which no caller of this package is
+#' reaching for by accident. Call `stats::profile()` explicitly if you need it.
+#'
 #' @param data A data frame with a numeric `value` column. Optional `group`
 #'   (category per bar, whose contiguous runs become the header blocks) and
 #'   `label` (per-bar tick label) columns.

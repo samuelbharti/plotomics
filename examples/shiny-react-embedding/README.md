@@ -4,27 +4,27 @@ A minimal [shiny-react](https://github.com/wch/shiny-react) app that renders the
 plotomics **embedding** (UMAP/t-SNE) viewer with a React frontend talking to an R
 Shiny backend. It demonstrates the full round trip:
 
-- **data down** — the R server sends a synthetic embedding as column-major JSON
+- **data down**: the R server sends a synthetic embedding as column-major JSON
   (`render_json` → `useShinyOutput("embedding_data")`),
-- **selection up** — the lasso sends selected point indices back
+- **selection up**: the lasso sends selected point indices back
   (`onSelect` → `useShinyInput("embedding_selected")`),
-- **derived value down** — the server echoes the selected count
+- **derived value down**: the server echoes the selected count
   (`useShinyOutput("n_selected")`).
 
 ## What comes from plotomics
 
 Exactly one thing: the npm package. There is **no htmlwidgets and no anywidget**
-on this path — you import the headless factory and drive it imperatively.
+on this path. You import the headless factory and drive it imperatively.
 
 ```tsx
 import { createEmbedding } from "@plotomics/components/embedding";
 ```
 
 The `/embedding` subpath (plus `sideEffects:false`) means your esbuild bundle
-pulls only the embedding + `regl-scatterplot` (~255 KB), not the other eight
-components' engines (gosling/igv/pixi/sigma). The ~40-line
-[`srcts/Embedding.tsx`](srcts/Embedding.tsx) wrapper — a `useRef` container plus
-`useEffect`s calling `setData`/`setOptions`/`destroy` — is the entire
+pulls only the embedding + `regl-scatterplot` (~255 KB), not the other sixteen
+components' engines (gosling/igv/pixi/sigma). The ~60-line
+[`srcts/Embedding.tsx`](srcts/Embedding.tsx) wrapper, a `useRef` container plus
+`useEffect`s calling `setData`/`setOptions`/`destroy`, is the entire
 integration, and it is not Shiny-aware. Everything else here
 ([`EmbeddingApp.tsx`](srcts/EmbeddingApp.tsx), [`r/app.R`](r/app.R)) is ordinary
 shiny-react glue you own.
@@ -46,7 +46,7 @@ Then open http://localhost:8000 and drag a lasso across the points.
 ### Using the local (unpublished) plotomics build
 
 `package.json` pins `@plotomics/components: ^0.1.0` for when it is on npm. Until the
-v0.1 release is published, link the workspace build instead — from the repo
+v0.1 release is published, link the workspace build instead, from the repo
 root:
 
 ```bash
@@ -61,7 +61,7 @@ shiny-react deps don't mix into the library's own React 18 build.)
 ## The large-data caveat
 
 Data here rides Shiny's websocket as JSON. That's fine for tens of thousands of
-points, but it forgoes plotomics's binary (anywidget) transport — so for very large
+points, but it forgoes plotomics's binary (anywidget) transport, so for very large
 embeddings, downsample server-side or serve a binary blob the client `fetch`es
 and decodes (you can reuse `decodeColumns` from `@plotomics/core`). This is the one
 trade-off of the React-in-Shiny path versus the Python anywidget wrapper.

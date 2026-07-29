@@ -152,6 +152,10 @@ network <- function(nodes,
 #' Output and render functions for using [network()] within Shiny applications
 #' and interactive R Markdown / Quarto documents.
 #'
+#' In a Shiny app, clicking a node pushes its **id** (a character scalar, not a
+#' row index) to `input$<output_id>_selected`, so `networkOutput("graph")`
+#' populates `input$graph_selected`. It is `NULL` until the first click.
+#'
 #' @param output_id Output variable to read from.
 #' @param width,height Element size, passed to
 #'   [htmlwidgets::shinyWidgetOutput()].

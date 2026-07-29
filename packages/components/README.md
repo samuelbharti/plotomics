@@ -1,10 +1,10 @@
 # @plotomics/components
 
 Headless, framework-agnostic bioinformatics visualization components. Each
-component is a factory — `createX(element, { data, options })` → an instance with
-`setData` / `setOptions` / `resize` / `destroy` (and `exportSVG` / `exportPNG`
-where supported). The same factories power the R (htmlwidgets) and Python
-(anywidget) wrappers.
+component is a factory: `createX(element, { data, options })` returns an
+instance with `setData` / `setOptions` / `resize` / `destroy` (and `exportSVG` /
+`exportPNG` where supported). The same factories power the R (htmlwidgets) and
+Python (anywidget) wrappers.
 
 ## Install
 
@@ -15,7 +15,7 @@ npm install @plotomics/components
 ## Tree-shakeable subpath imports
 
 Import a single component from its subpath so your bundle only pulls in that
-component and its engine — not every visualization:
+component and its engine, not every visualization:
 
 ```js
 import { createEmbedding } from "@plotomics/components/embedding";
@@ -32,13 +32,14 @@ barrel import (`@plotomics/components`) down to what you use.
 ## Optional engine peer dependencies
 
 The heavy rendering engines are declared as **optional `peerDependencies`**, so
-`npm install @plotomics/components` does not drag all of them in. Most components
-render on `regl` / `d3` (bundled as regular dependencies — nothing extra to
-install). Three components need an engine installed alongside them:
+`npm install @plotomics/components` does not drag all of them in. Fourteen of
+the seventeen components render on `regl`, the canvas 2-D context, or `d3`, all
+bundled as regular dependencies, so nothing extra is needed. Three do need an
+engine alongside them:
 
 | Import | Install alongside |
 | --- | --- |
-| `@plotomics/components/embedding`, `/volcano`, `/heatmap`, `/hic`, `/treemap`, `/clustermap` | *(nothing extra)* |
+| `/volcano`, `/embedding`, `/heatmap`, `/clustermap`, `/hic`, `/treemap`, `/dotplot`, `/violin`, `/spatial`, `/oncoplot`, `/lollipop`, `/km`, `/profile`, `/upset` | *(nothing extra)* |
 | `@plotomics/components/gosling` | `gosling.js pixi.js` |
 | `@plotomics/components/igv` | `igv` |
 | `@plotomics/components/network` | `sigma graphology graphology-layout-forceatlas2` |
