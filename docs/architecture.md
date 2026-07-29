@@ -103,18 +103,34 @@ The data layer is always GPU/canvas; SVG is reserved for the low-cardinality
 overlay (axes, guides, labels, legends). This split keeps interaction at 60fps
 on large data while preserving crisp vector output for figures. Concretely:
 
-| Family | Engine | Components |
+| Component | Data layer | External engine |
 |---|---|---|
-| Large scatter | regl-scatterplot | volcano, embedding |
-| Matrices | WebGL/regl, with a LOD pyramid for Hi-C | heatmap, clustermap, hic |
-| Networks | sigma v3 + graphology | network |
-| Genome tracks | igv.js, Gosling (they stream and tile internally) | igv, gosling |
-| Hierarchies | D3 layout + canvas | treemap |
-| Structured 2-D figures | canvas 2-D with an SVG overlay | oncoplot, lollipop, km, profile, upset, violin, dotplot, spatial |
+| volcano, embedding | WebGL point sprites | `regl-scatterplot`, `d3-scale`, `d3-array` |
+| heatmap | WebGL: the matrix is a float texture sampled in a shader | `regl` |
+| hic | WebGL plus a level-of-detail pyramid, no tile server | `regl` |
+| network | WebGL graph rendering | `sigma` v3, `graphology`, `graphology-layout-forceatlas2` |
+| gosling | WebGL via PIXI | `gosling.js` |
+| igv | streams and tiles internally | `igv.js` |
+| clustermap | canvas 2-D `ImageData`, one pixel per cell, then scaled | `ml-hclust` for the linkage only |
+| treemap | canvas 2-D | `d3-hierarchy` for the squarified layout |
+| oncoplot, lollipop, km, profile, upset, violin, dotplot, spatial | canvas 2-D | none |
 
-The last row is the newer omics gallery. These are bounded in one dimension (a
-gene panel, a set count, a protein length) but unbounded in the other, so a
-plain canvas is the right tool: it draws a cohort-wide oncoplot or a
-thousand-variant lollipop without a GPU context, and the vector overlay still
-carries the labels. Hi-C uses regl with its own level-of-detail pyramid and
-needs no tile server, so there is no HiGlass dependency anywhere in the tree.
+Two things in that table surprise people.
+
+**Not every large figure needs WebGL.** The last row is the omics gallery. These
+figures are bounded in one dimension (a gene panel, a set count, 96 contexts, a
+protein length) and only grow in the other, so a plain 2-D canvas is the right
+tool: it draws a 60 by 1,200 oncoplot, 72,000 cells, without ever creating a GPU
+context. What matters is that nothing is per-datum DOM, not that it is
+specifically a shader.
+
+**`clustermap` is canvas, not WebGL.** It writes one pixel per cell into an
+`ImageData` at the matrix's native size and lets the browser scale that up, which
+is a cheap way to get a correct large heatmap without a shader. `heatmap` does use
+`regl` and a float texture. The two look alike and are built differently, so do
+not assume one from the other.
+
+The per-spot cost in the last row is real, though, and it bounds `spatial`: one
+canvas arc per spot suits Visium-scale slides of a few thousand spots. It is not
+the path for Xenium-scale single cells. Those go through `embedding`, which is
+`regl-scatterplot`, at the cost of losing the image underlay.

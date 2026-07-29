@@ -77,6 +77,17 @@ and overlay cannot drift apart on resize, full-screen, or a high-DPI display.
 (continuous, sequential ramp with a colourbar), which is what lets one view
 toggle between colouring by cluster and by a gene's expression.
 }
+\section{Scale}{
+
+Spots are drawn one at a time on a 2-D canvas, which suits a Visium-scale
+slide of a few thousand spots. This is \strong{not} a renderer for Xenium or
+CosMx-scale single-cell output: a million cells will not stay interactive
+here. For that many points use \code{\link[=embedding]{embedding()}}, which draws on the GPU via
+regl-scatterplot, and accept that it has no image underlay. Plotting both a
+histology image and a million single cells is not something this package
+currently does.
+}
+
 \examples{
 df <- data.frame(
   x = c(100, 150, 200), y = c(120, 160, 90),

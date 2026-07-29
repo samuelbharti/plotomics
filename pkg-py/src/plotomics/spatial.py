@@ -25,6 +25,16 @@ class Spatial(PlotomicsWidget):
     (continuous, sequential ramp with a colourbar), which is what lets one view
     toggle between colouring by cluster and by a gene's expression.
 
+    Scale
+    -----
+    Spots are drawn one at a time on a 2-D canvas, which suits a Visium-scale
+    slide of a few thousand spots. This is **not** a renderer for Xenium or
+    CosMx-scale single-cell output: a million cells will not stay interactive
+    here. For that many points use :class:`~plotomics.Embedding`, which draws on
+    the GPU via regl-scatterplot, and accept that it has no image underlay.
+    Plotting both a histology image and a million single cells is not something
+    this package currently does.
+
     Parameters
     ----------
     data:

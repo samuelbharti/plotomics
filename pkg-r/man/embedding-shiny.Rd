@@ -30,3 +30,9 @@ renderEmbedding(expr, env = parent.frame(), quoted = FALSE)
 Output and render functions for using \code{\link[=embedding]{embedding()}} within Shiny applications
 and interactive R Markdown / Quarto documents.
 }
+\details{
+In a Shiny app the lasso selection is pushed back to the server as
+\verb{input$<output_id>_selected}, a 0-based integer vector of the selected rows
+(so \code{embeddingOutput("umap")} populates \code{input$umap_selected}). It updates on
+every completed selection and is \code{NULL} until the first one.
+}

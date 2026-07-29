@@ -64,6 +64,12 @@ a coverage track) work as well as 96 contexts.
 
 Bars are drawn in the order given. For SBS96 that order is part of the
 convention, so the component does not sort.
+
+Note that \code{profile()} masks the \code{\link[stats:profile]{stats::profile()}} generic once the package
+is attached. Unlike \code{\link[=bioheatmap]{bioheatmap()}}, which is aliased to keep clear of
+\code{\link[stats:heatmap]{stats::heatmap()}}, this one keeps the obvious name: \code{stats::profile()}
+profiles a fitted model's likelihood, which no caller of this package is
+reaching for by accident. Call \code{stats::profile()} explicitly if you need it.
 }
 \examples{
 df <- data.frame(

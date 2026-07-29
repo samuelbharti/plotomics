@@ -99,13 +99,78 @@ documented, and its defaults encode more accumulated taste.
 | Set intersections | `UpSetR`, `UpSetPlot` | Similar figure. plotomics computes exclusive intersections in R via `upset_intersections()` so the columns sum to the union. |
 | Violin, dot plot | `Seurat`, `scanpy` plotting | Those are integrated with their own object models, which is a real advantage. plotomics takes plain data frames and works from either language. |
 | Embeddings | `Seurat`/`scanpy`, `cellxgene`, `Vitessce` | `cellxgene` and `Vitessce` are full browsers with far more functionality. plotomics is an embeddable widget. |
-| Generic interactive charts | `plotly`, `bokeh`, `altair`/Vega | Vastly more general. All have a practical point budget that plotomics is built to exceed. |
+| Generic interactive charts | `plotly`, `bokeh`, `altair`/Vega | Vastly more general. `plotly.js` reaches similar scatter scale through its `scattergl` trace; the differences are transport and prebuilt domain figures, not raw capability. See below. |
 | Genome tracks | `igv.js`, `Gosling` | Not a comparison; plotomics wraps them. |
 | Hi-C | `HiGlass`, `cooltools` | `HiGlass` is the serious tiled-server solution. plotomics builds a level-of-detail pyramid in the browser and needs no tile server, which is simpler but bounded by memory. |
 
 The claims above are architectural, not benchmarked. No formal performance
 comparison against these packages has been run, and this document does not
 assert specific frame rates.
+
+## Worked example: how does a 1M-cell Xenium run get drawn?
+
+This is the question that actually gets asked, so here is the specific answer
+rather than the general one.
+
+**The cell centroids go through `embedding`.** That component is
+`regl-scatterplot`: points become WebGL sprites drawn from GPU buffers, never one
+DOM node per cell. The coordinates leave Python as a `Float32Array` through
+`pack_columns` and arrive as a typed array, so nothing is parsed on the way in.
+The x and y for a million cells is two million float32s, which is 8 MB of binary
+against roughly 40 MB of equivalent JSON text. Colour by cluster or by a gene,
+lasso a region, and read the indices back in Shiny through
+`input$<outputId>_selected`.
+
+Calibration, so this is not a marketing number: the dev harness drives the
+embedding at 150,000 points and the README example at 500,000. A million is the
+design target and the transport is built for it, but the largest figure exercised
+in this repository is 500k.
+
+**What that path does not give you is the tissue image.** `spatial` is the
+component that puts measurements on the H&E, and it draws one canvas 2-D arc per
+spot. That suits a Visium slide, a few thousand spots, which is what its dev demo
+uses. It is not a million-cell renderer, and pointing it at Xenium single-cell
+output is not something it does today. If you need both the image underlay and
+1M cells, plotomics does not currently have that component. That is a real gap,
+and better to know it before you plan a figure around it.
+
+**For the cohort figures the scale question is different.** An oncoplot at 60
+genes by 1,200 samples is 72,000 cells, and it is a plain 2-D canvas, because the
+figure is bounded in one dimension and only grows in the other. Nothing there
+needs a shader. What matters is that it is not 72,000 DOM nodes.
+
+## Could plotly not do this?
+
+For the scatter, largely yes, and pretending otherwise would not survive a
+five-minute conversation with anyone who knows plotly.
+
+`plotly.js` has a WebGL scatter trace, `scattergl`, and it will draw a million
+points. The claim that plotly cannot handle large scatter describes its *default*
+`scatter` trace, which emits one SVG node per point and falls over in the low tens
+of thousands. That is a footgun, not a ceiling. So the honest differences are
+narrower and less exciting than "it is faster":
+
+1. **Transport.** plotly's R and Python bindings serialise coordinates into the
+   figure as JSON. plotomics ships numeric columns as a binary buffer through
+   anywidget and reads them as typed arrays. This is the 8 MB against 40 MB above.
+2. **The domain figure already exists.** `scattergl` gives you a fast scatter. It
+   does not give you an oncoprint with burden and frequency margins and memo
+   sorting, a Kaplan-Meier with a number-at-risk table aligned to the same time
+   grid, an UpSet matrix with exclusive intersections, or an SBS96 profile with its
+   six-block banner. Each of those is a serious custom build in plotly and one
+   function call here. That, not raw point throughput, is most of the value.
+3. **One implementation across two languages.** plotly's R and Python APIs are
+   separate surfaces maintained separately, and they drift. Here both wrappers pack
+   the same payload for the same renderer, so an R figure and a Python figure of
+   the same data cannot disagree.
+4. **Vector export of the overlay.** Axes, guides, legends and labels are SVG and
+   come out as SVG, with the data layer rasterised. That is the right split for a
+   figure going into a manuscript.
+
+And the other direction, which matters just as much: plotly is far more general,
+much more mature, far better documented, and has a vastly larger community. If
+your figure is not one of the seventeen here, plotly is the correct answer and
+plotomics has nothing to offer you.
 
 ## When to use something else
 

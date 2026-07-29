@@ -213,29 +213,81 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Component</th><th>Engine</th><th>Purpose</th></tr>
+        <tr><th>Component</th><th>Figure it produces</th><th>Rendering engine</th><th>Data scale</th></tr>
       </thead>
       <tbody>
-        <tr><td><strong>Volcano plot</strong></td><td><span class="eng">regl-scatterplot</span></td><td>Differential expression: effect size against significance.</td></tr>
-        <tr><td><strong>Expression heatmap</strong></td><td><span class="eng">WebGL</span></td><td>Large sample by gene matrices.</td></tr>
-        <tr><td><strong>Clustered heatmap</strong></td><td><span class="eng">WebGL + dendrograms</span></td><td>Hierarchically clustered expression.</td></tr>
-        <tr><td><strong>Marker gene dot plot</strong></td><td><span class="eng">canvas + SVG</span></td><td>Features by groups: dot size is the fraction expressing, colour the level.</td></tr>
-        <tr><td><strong>Stacked violin</strong></td><td><span class="eng">canvas + SVG</span></td><td>One row per feature, one violin per group, for marker panels.</td></tr>
-        <tr><td><strong>Embedding</strong></td><td><span class="eng">regl-scatterplot</span></td><td>UMAP and t-SNE maps for single-cell data, with lasso selection.</td></tr>
-        <tr><td><strong>Spatial tissue map</strong></td><td><span class="eng">canvas + SVG</span></td><td>Measurements at their real coordinates, over the histology image.</td></tr>
-        <tr><td><strong>Oncoplot (OncoPrint)</strong></td><td><span class="eng">canvas + SVG</span></td><td>Cohort alteration landscape: a gene by sample grid of alteration classes.</td></tr>
-        <tr><td><strong>Protein domain lollipop</strong></td><td><span class="eng">canvas + SVG</span></td><td>Variants along a protein, drawn over its domain architecture.</td></tr>
-        <tr><td><strong>Kaplan-Meier curve</strong></td><td><span class="eng">canvas + SVG</span></td><td>Survival curves with a number-at-risk table.</td></tr>
-        <tr><td><strong>Categorical profile</strong></td><td><span class="eng">canvas + SVG</span></td><td>Grouped bar profile, built for 96-context mutational signatures.</td></tr>
-        <tr><td><strong>UpSet plot</strong></td><td><span class="eng">canvas + SVG</span></td><td>Set intersections as a bar chart over a membership matrix.</td></tr>
-        <tr><td><strong>Gene treemap</strong></td><td><span class="eng">D3 + canvas</span></td><td>Hierarchical gene-set and pathway composition.</td></tr>
-        <tr><td><strong>Network graph</strong></td><td><span class="eng">sigma v3</span></td><td>Large biological networks.</td></tr>
-        <tr><td><strong>Hi-C contact matrix</strong></td><td><span class="eng">regl / WebGL LOD</span></td><td>Chromatin contact maps.</td></tr>
-        <tr><td><strong>Genome viewer</strong></td><td><span class="eng">igv.js</span></td><td>Track-based genome browser.</td></tr>
-        <tr><td><strong>Genomics figures</strong></td><td><span class="eng">Gosling.js</span></td><td>Declarative, publication-grade genomics figures.</td></tr>
+        <tr><td><strong>Volcano plot</strong></td><td>Volcano: log<sub>2</sub> fold change against &minus;log<sub>10</sub> p, with threshold guides and top-N gene labels.</td><td><span class="eng">regl-scatterplot</span> (WebGL point sprites), <span class="eng">d3-scale</span>, <span class="eng">d3-array</span></td><td>200k points in the dev harness</td></tr>
+        <tr><td><strong>Expression heatmap</strong></td><td>Sample by gene expression matrix, optional row z-score, colorbar.</td><td><span class="eng">regl</span> (WebGL; the matrix is uploaded as a float texture and sampled in a shader)</td><td>1000 &times; 1000 = 1M cells</td></tr>
+        <tr><td><strong>Clustered heatmap</strong></td><td>Clustered heatmap with row and column dendrograms. The <span class="eng">seaborn.clustermap</span> / Morpheus layout.</td><td>Canvas 2-D <span class="eng">ImageData</span>, one pixel per cell then scaled; <span class="eng">ml-hclust</span> for the linkage; dendrograms in SVG</td><td>120 &times; 60 in the dev harness</td></tr>
+        <tr><td><strong>Marker gene dot plot</strong></td><td>Marker gene dot plot. The equivalent of <span class="eng">scanpy sc.pl.dotplot</span> or Seurat <span class="eng">DotPlot()</span>.</td><td>Canvas 2-D, SVG overlay</td><td>Panel scale: features &times; groups</td></tr>
+        <tr><td><strong>Stacked violin</strong></td><td>Stacked violin panel. The equivalent of <span class="eng">scanpy sc.pl.stacked_violin</span> or Seurat <span class="eng">VlnPlot()</span>.</td><td>Canvas 2-D, SVG overlay. Densities are estimated upstream, in R or Python</td><td>Payload scales with the density grid, not the cell count</td></tr>
+        <tr><td><strong>Embedding</strong></td><td>UMAP, t-SNE and PCA score plots, coloured categorically or continuously, with lasso selection.</td><td><span class="eng">regl-scatterplot</span> (WebGL point sprites, one draw call), <span class="eng">d3-scale</span></td><td>150k in the dev harness, 500k in the README example</td></tr>
+        <tr><td><strong>Spatial tissue map</strong></td><td>Visium-style spot map drawn over the H&amp;E section, coloured by cluster or by a gene.</td><td>Canvas 2-D, one arc per spot; image and spots share a single computed fit</td><td>Visium scale, ~4k spots in the dev harness. <strong>Not the path for Xenium-scale single cells</strong>, see the note below</td></tr>
+        <tr><td><strong>Oncoplot (OncoPrint)</strong></td><td>OncoPrint / oncoplot: gene by sample alteration classes, burden and frequency margins, clinical strips. The <span class="eng">maftools</span> / cBioPortal figure.</td><td>Canvas 2-D for the whole grid, SVG for labels and legend</td><td>60 genes &times; 1,200 samples = 72k cells</td></tr>
+        <tr><td><strong>Protein domain lollipop</strong></td><td>Protein domain lollipop, also called a mutation needle plot, over Pfam/InterPro domain rectangles.</td><td>Canvas 2-D, SVG overlay</td><td>Hundreds to a few thousand variants</td></tr>
+        <tr><td><strong>Kaplan-Meier curve</strong></td><td>Kaplan-Meier survival curves with censoring ticks, confidence bands and a number-at-risk table.</td><td>Canvas 2-D, SVG overlay. The fit comes from <span class="eng">survival</span> or <span class="eng">lifelines</span></td><td>A handful of strata</td></tr>
+        <tr><td><strong>Categorical profile</strong></td><td>SBS96 mutational signature profile: 96 trinucleotide contexts under six substitution-class header blocks.</td><td>Canvas 2-D, SVG overlay</td><td>96 contexts, generalises to a few thousand bins</td></tr>
+        <tr><td><strong>UpSet plot</strong></td><td>UpSet plot: intersection sizes as bars over a set-membership matrix, for where a Venn diagram is no longer drawable.</td><td>Canvas 2-D, SVG overlay. Exclusive intersections are computed in R</td><td>Dozens of sets</td></tr>
+        <tr><td><strong>Gene treemap</strong></td><td>Treemap of gene sets and pathway composition, coloured by parent or by value.</td><td>Canvas 2-D + <span class="eng">d3-hierarchy</span> (squarified treemap layout)</td><td>60k leaves in the dev harness</td></tr>
+        <tr><td><strong>Network graph</strong></td><td>Force-directed biological networks: protein interaction, co-expression, regulatory graphs.</td><td><span class="eng">sigma</span> v3 (WebGL) + <span class="eng">graphology</span> + <span class="eng">graphology-layout-forceatlas2</span></td><td>5k nodes in the dev harness</td></tr>
+        <tr><td><strong>Hi-C contact matrix</strong></td><td>Hi-C and Micro-C contact maps, log or linear intensity, symmetric fill.</td><td><span class="eng">regl</span> (WebGL) with its own level-of-detail pyramid. No tile server, and no HiGlass</td><td>1024 &times; 1024 &asymp; 1M bins</td></tr>
+        <tr><td><strong>Genome viewer</strong></td><td>Track-based genome browser: BAM alignments, BigWig coverage, VCF, BED, refGene.</td><td><span class="eng">igv.js</span>, which streams and tiles internally</td><td>Whole genome, streamed from the server</td></tr>
+        <tr><td><strong>Genomics figures</strong></td><td>Declarative genomics figures from a Gosling spec: circos, ideograms, linked and stacked views.</td><td><span class="eng">gosling.js</span> on <span class="eng">PIXI.js</span> (WebGL)</td><td>Whole genome, per the spec</td></tr>
       </tbody>
     </table>
   </div>
+
+  <p class="note">
+    <strong>On &ldquo;data scale&rdquo;.</strong> These are the synthetic sizes the dev harness
+    actually drives, not benchmark results. They say what each component is built and
+    exercised for, not where it stops.
+  </p>
+
+  <h3>Worked example: a million cells</h3>
+  <p>
+    Take a 1M-cell Xenium run. The cell centroids go through the <strong>embedding</strong>
+    component, which is <code>regl-scatterplot</code>: points become WebGL sprites drawn from
+    GPU buffers rather than one node per point, and the coordinates arrive from Python as a
+    <code>Float32Array</code> buffer rather than JSON. The x and y for a million cells is two
+    million float32s, so 8 MB of binary the browser hands straight to the GPU, against
+    roughly 40 MB of JSON text it would otherwise parse first. Colour by cluster, lasso a region, and read the selected indices back in
+    Shiny.
+  </p>
+  <p>
+    What you do <em>not</em> get on that path is the H&amp;E underlay. The
+    <strong>spatial</strong> component is the one that puts measurements on the histology
+    image, and it draws one canvas arc per spot, which is sized for Visium-scale slides of a
+    few thousand spots. Registering a million single cells to the image is not something it
+    does today. That is a real limitation and worth knowing before you plan a figure around
+    it.
+  </p>
+
+  <h3>Could plotly not do this?</h3>
+  <p>
+    For the scatter, largely yes, and it is worth being straight about that.
+    <code>plotly.js</code> has a WebGL trace, <code>scattergl</code>, and it will draw a
+    million points. Anyone who tells you plotly cannot handle large scatter is describing
+    the default SVG <code>scatter</code> trace, which emits one DOM node per point and dies
+    in the low tens of thousands. The real differences are narrower and more boring:
+  </p>
+  <ul>
+    <li><strong>How the data gets there.</strong> plotly's R and Python bindings serialise
+      coordinates as JSON. plotomics ships numeric columns as a binary buffer through
+      anywidget and reads them as typed arrays, so nothing is parsed on arrival.</li>
+    <li><strong>The domain figure is already built.</strong> An oncoprint with burden and
+      frequency margins, a Kaplan-Meier with an aligned number-at-risk table, an UpSet
+      matrix, an SBS96 profile with its six header blocks: each is a substantial custom
+      build in plotly, and one function call here.</li>
+    <li><strong>One implementation, two languages.</strong> plotly's R and Python APIs are
+      separate surfaces that drift. Here both wrappers pack the same payload for the same
+      renderer, so an R figure and a Python figure cannot disagree.</li>
+  </ul>
+  <p>
+    Against that, plotly is far more general, much more mature, and better documented. If
+    you need a chart that is not one of the seventeen above, it is the better tool, and the
+    <a href="https://github.com/samuelbharti/plotomics/blob/main/docs/motivation.md">motivation
+    doc</a> is explicit about the other cases where an established package should win.
+  </p>
 
   <h2 id="installation">Installation</h2>
 

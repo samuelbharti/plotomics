@@ -30,3 +30,8 @@ renderNetwork(expr, env = parent.frame(), quoted = FALSE)
 Output and render functions for using \code{\link[=network]{network()}} within Shiny applications
 and interactive R Markdown / Quarto documents.
 }
+\details{
+In a Shiny app, clicking a node pushes its \strong{id} (a character scalar, not a
+row index) to \verb{input$<output_id>_selected}, so \code{networkOutput("graph")}
+populates \code{input$graph_selected}. It is \code{NULL} until the first click.
+}
