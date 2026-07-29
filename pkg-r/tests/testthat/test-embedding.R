@@ -87,3 +87,18 @@ test_that("embedding() forwards mouse_mode and theme options", {
   expect_equal(d$x$options$mouseMode, "panZoom")
   expect_null(d$x$options$theme)
 })
+
+test_that("embedding() carries the aspect option", {
+  d <- data.frame(x = c(1, 2, 3), y = c(1, 2, 3))
+  expect_equal(embedding(d)$x$options$aspect, "fill")
+  expect_equal(embedding(d, aspect = "equal")$x$options$aspect, "equal")
+  expect_error(embedding(d, aspect = "square"), "should be one of")
+})
+
+test_that("embedding() carries the point scale mode", {
+  d <- data.frame(x = c(1, 2, 3), y = c(1, 2, 3))
+  expect_equal(embedding(d)$x$options$pointScaleMode, "asinh")
+  expect_equal(embedding(d, point_scale_mode = "constant")$x$options$pointScaleMode,
+               "constant")
+  expect_error(embedding(d, point_scale_mode = "log"), "should be one of")
+})

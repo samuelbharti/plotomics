@@ -13,7 +13,14 @@
 #'   the legend order and the color assignment to its levels, and keeps unused
 #'   levels in the legend, the way `drop = FALSE` does in ggplot2. An optional
 #'   `label` column supplies per-point tooltip text.
-#' @param point_size Point radius in pixels.
+#' @param point_size Point radius in pixels. Under the default
+#'   `point_scale_mode` the renderer scales this by the camera and clamps it to
+#'   one pixel on a widely-scaled plot, so set `point_scale_mode = "constant"`
+#'   if you want it honoured literally.
+#' @param point_scale_mode How `point_size` responds to zoom. `"asinh"` and
+#'   `"linear"` shrink points as you zoom out, which keeps a dense embedding
+#'   readable, but both floor at one pixel once the camera scale drops below
+#'   `1 / point_size`. `"constant"` sizes points in literal pixels.
 #' @param opacity Point opacity in `[0, 1]`.
 #' @param color_mode How to interpret the `color` column: `"auto"` detects from
 #'   its type, or force `"categorical"` / `"continuous"`.
@@ -22,6 +29,11 @@
 #' @param mouse_mode Primary drag gesture: `"panZoom"` (default) pans/zooms and
 #'   `"lasso"` makes a plain drag draw a selection.
 #' @param x_label,y_label Axis titles (shown when `show_axes = TRUE`).
+#' @param aspect How the fitted view maps data units onto pixels. `"fill"`
+#'   stretches each axis to fill the canvas, which suits a UMAP, whose axes
+#'   carry no units. `"equal"` gives both axes the same units per pixel; use it
+#'   when the axes share units and their relative spread is part of the claim,
+#'   as in PCA scores.
 #' @param show_axes Draw the axis frame + ticks (embeddings usually hide axes).
 #' @param show_legend Draw the legend (discrete swatches or a colorbar).
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
@@ -44,10 +56,12 @@
 #' @export
 embedding <- function(data,
                       point_size = 3,
+                      point_scale_mode = c("asinh", "linear", "constant"),
                       opacity = 0.8,
                       color_mode = c("auto", "categorical", "continuous"),
                       colormap = c("viridis", "rdbu"),
                       mouse_mode = c("panZoom", "lasso"),
+                      aspect = c("fill", "equal"),
                       x_label = "UMAP 1",
                       y_label = "UMAP 2",
                       show_axes = FALSE,
@@ -65,6 +79,8 @@ embedding <- function(data,
   color_mode <- match.arg(color_mode)
   colormap <- match.arg(colormap)
   mouse_mode <- match.arg(mouse_mode)
+  aspect <- match.arg(aspect)
+  point_scale_mode <- match.arg(point_scale_mode)
   bv_require_nonempty(nrow(data), "data")
 
   x <- bv_require_numeric(data$x, "x")
@@ -94,10 +110,12 @@ embedding <- function(data,
 
   options <- list(
     pointSize = point_size,
+    pointScaleMode = point_scale_mode,
     opacity = opacity,
     colorMode = color_mode,
     colormap = colormap,
     mouseMode = mouse_mode,
+    aspect = aspect,
     xLabel = x_label,
     yLabel = y_label,
     showAxes = show_axes,
