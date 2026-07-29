@@ -43,8 +43,18 @@ import { ticks as d3ticks } from "d3-array";
 export type EmbeddingColorMode = "auto" | "categorical" | "continuous";
 
 export interface EmbeddingOptions {
-  /** Point radius in pixels. */
+  /** Point radius in pixels. See `pointScaleMode`: under the default the
+   * renderer scales this by the camera, and on a view zoomed far out it clamps
+   * to a single pixel no matter what you pass here. */
   pointSize: number;
+  /** How `pointSize` responds to zoom. `"asinh"` (default) and `"linear"`
+   * shrink points as you zoom out, which is what keeps a dense embedding
+   * readable. Both floor at one pixel once the camera scale drops below
+   * `1 / pointSize`, so on a widely-scaled plot — anything whose data range is
+   * far from unit size, such as PCA scores — `pointSize` stops having any
+   * visible effect. `"constant"` sizes points in literal pixels regardless of
+   * zoom, which is what a small cohort scatter wants. */
+  pointScaleMode: "asinh" | "linear" | "constant";
   /** Point opacity in `[0, 1]`. */
   opacity: number;
   /** How to interpret the `color` column. `"auto"` detects from its type
@@ -67,6 +77,15 @@ export interface EmbeddingOptions {
   /** Fraction of the data range to pad around the fitted view (larger = more
    * zoomed out). Defaults to 0.04. */
   padding: number;
+  /** How the fitted view maps data units onto pixels. `"fill"` (default)
+   * stretches each axis independently so the cloud fills the canvas, which is
+   * what a UMAP wants: its axes carry no units and the shape is arbitrary.
+   * `"equal"` gives both axes the same units per pixel, so a distance means
+   * the same thing in x as in y. Use it whenever the axes share units and
+   * their relative spread is part of the claim, such as PCA or PCoA scores,
+   * where stretching draws a component explaining 4% as though it were worth
+   * as much as one explaining 34%. */
+  aspect: "fill" | "equal";
   /** Primary drag gesture. `"panZoom"` (default) pans and zooms; `"lasso"`
    * makes a plain drag draw a selection. Flip this to give users a lasso tool
    * (the wheel still zooms in either mode). */
@@ -79,6 +98,7 @@ export interface EmbeddingOptions {
 
 export const defaultEmbeddingOptions: EmbeddingOptions = {
   pointSize: 3,
+  pointScaleMode: "asinh",
   opacity: 0.8,
   colorMode: "auto",
   colormap: "viridis",
@@ -88,6 +108,7 @@ export const defaultEmbeddingOptions: EmbeddingOptions = {
   showAxes: false,
   showLegend: true,
   padding: 0.04,
+  aspect: "fill",
   mouseMode: "panZoom",
   onSelect: null,
   theme: {},
@@ -126,6 +147,34 @@ export function paddedExtent(col: ArrayLike<number>, pad = 0.04): [number, numbe
   if (min === max) return [min - 1, max + 1];
   const d = (max - min) * pad;
   return [min - d, max + d];
+}
+
+/** Widen the two domains so both axes carry the same data units per pixel.
+ *
+ * The axis that is already coarser wins and the other is expanded around its
+ * midpoint, so this only ever zooms out: every point that fitted before still
+ * fits. Returns the inputs unchanged when the plot area is degenerate, which
+ * happens while a container is still being laid out. */
+export function equalAspectDomains(
+  xDomain: [number, number],
+  yDomain: [number, number],
+  width: number,
+  height: number,
+): [[number, number], [number, number]] {
+  const xr = xDomain[1] - xDomain[0];
+  const yr = yDomain[1] - yDomain[0];
+  if (!(width > 0) || !(height > 0) || !(xr > 0) || !(yr > 0)) {
+    return [xDomain, yDomain];
+  }
+  const unitsPerPx = Math.max(xr / width, yr / height);
+  const halfX = (unitsPerPx * width) / 2;
+  const halfY = (unitsPerPx * height) / 2;
+  const cx = (xDomain[0] + xDomain[1]) / 2;
+  const cy = (yDomain[0] + yDomain[1]) / 2;
+  return [
+    [cx - halfX, cx + halfX],
+    [cy - halfY, cy + halfY],
+  ];
 }
 
 /** True when a column holds strings (categorical) rather than numbers. */
@@ -292,6 +341,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     xScale,
     yScale,
     pointSize: opts.pointSize,
+    pointScaleMode: opts.pointScaleMode,
     opacity: opts.opacity,
     backgroundColor: theme.background,
     mouseMode: opts.mouseMode,
@@ -383,6 +433,10 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     if (fit) {
       xDomain = paddedExtent(x, opts.padding);
       yDomain = paddedExtent(y, opts.padding);
+      if (opts.aspect === "equal") {
+        [xDomain, yDomain] = equalAspectDomains(
+          xDomain, yDomain, innerW(), innerH());
+      }
       xScale.domain(xDomain);
       yScale.domain(yDomain);
     }
@@ -399,6 +453,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
         colorBy: "category",
         pointColor: palette,
         pointSize: opts.pointSize,
+        pointScaleMode: opts.pointScaleMode,
         opacity: opts.opacity,
       });
       // Integer category indices in the z channel; pointColor[z] selects the hue.
@@ -413,6 +468,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
         colorBy: "valueA",
         pointColor: palette,
         pointSize: opts.pointSize,
+        pointScaleMode: opts.pointScaleMode,
         opacity: opts.opacity,
       });
       // Normalized [0,1] values interpolate across the sampled ramp.
@@ -424,6 +480,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
         colorBy: "category",
         pointColor: [theme.categorical[0] ?? OKABE_ITO[0] ?? "#0072B2"],
         pointSize: opts.pointSize,
+        pointScaleMode: opts.pointScaleMode,
         opacity: opts.opacity,
       });
       scatterplot.draw({ x, y, z: new Float32Array(x.length) }, { zDataType: "categorical" });
@@ -592,9 +649,27 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
   }
 
   function doResize(w: number, h: number) {
+    // Under equal aspect, carry the current units-per-pixel across the resize
+    // rather than re-deriving it from the new box. Both axes share it here, so
+    // reusing it keeps the zoom level exactly and keeps the two axes matched.
+    // Re-deriving would only ever widen the finer axis, which creeps outward a
+    // little on every resize.
+    const unitsPerPx = opts.aspect === "equal" && innerW() > 0
+      ? (xDomain[1] - xDomain[0]) / innerW()
+      : 0;
     width = w;
     height = h;
     layoutCanvas();
+    if (unitsPerPx > 0) {
+      const cx = (xDomain[0] + xDomain[1]) / 2;
+      const cy = (yDomain[0] + yDomain[1]) / 2;
+      const halfX = (unitsPerPx * innerW()) / 2;
+      const halfY = (unitsPerPx * innerH()) / 2;
+      xDomain = [cx - halfX, cx + halfX];
+      yDomain = [cy - halfY, cy + halfY];
+      xScale.domain(xDomain);
+      yScale.domain(yDomain);
+    }
     scatterplot.set({ width: innerW(), height: innerH() });
     renderOverlay();
   }
@@ -617,6 +692,12 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
       scatterplot.set({
         backgroundColor: theme.background,
         mouseMode: opts.mouseMode,
+        // pointSize and opacity were previously only honoured at construction,
+        // so setOptions({pointSize}) silently did nothing and a size control
+        // could never work.
+        pointSize: opts.pointSize,
+        pointScaleMode: opts.pointScaleMode,
+        opacity: opts.opacity,
       });
       // Re-layout in case showAxes toggled (it changes the canvas inset), then
       // recolor/redraw with the merged options — preserving the current view.
