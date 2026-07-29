@@ -1,7 +1,7 @@
-# Contributing — adding a component
+# Contributing: adding a component
 
 This is the canonical recipe. **The Volcano plot is the reference
-implementation** — mirror its structure exactly. Following this pattern is what
+implementation**, so mirror its structure exactly. Following this pattern is what
 keeps parallel work conflict-free: adding a component almost never edits a
 shared file.
 
@@ -30,11 +30,11 @@ per-datum SVG/DOM for the data layer:
 - Genome tracks → `igv.js` / `gosling.js` (they stream + tile internally).
 - SVG is for **axes, legends, labels, guides only** (the low-cardinality overlay).
 - Prefer typed arrays end to end; read numeric data from `data.columns` as
-  `ArrayLike<number>` (may be a `TypedArray` or plain array — support both).
+  `ArrayLike<number>` (may be a `TypedArray` or plain array, so support both).
 
 ## Step-by-step
 
-1. **Factory** — `packages/components/src/components/<name>.ts`
+1. **Factory**: `packages/components/src/components/<name>.ts`
    - Export `create<Name>: PlotomicsFactory<<Name>Options>` and a
      `default<Name>Options`.
    - Extract pure logic (scales, classification, layout math) into exported
@@ -46,11 +46,11 @@ per-datum SVG/DOM for the data layer:
    - `src/entries/anywidget/<name>.ts`: `export default makeAnywidget(create<Name>);`
    - `src/entries/umd/<name>.ts`: `registerComponent("<name>", create<Name>);`
 
-3. **Programmatic export** — append to `src/lib/index.ts` (sorted).
+3. **Programmatic export**: append to `src/lib/index.ts` (sorted).
 
-4. **Unit test** — `packages/components/test/<name>.test.ts` for the pure helpers.
+4. **Unit test**: `packages/components/test/<name>.test.ts` for the pure helpers.
 
-5. **Dev demo** — add a `demos.<name>` entry in `packages/components/dev/main.ts`
+5. **Dev demo**: add a `demos.<name>` entry in `packages/components/dev/main.ts`
    with synthetic data at scale (≥100k where meaningful) so it can be eyeballed
    via `pnpm --filter @plotomics/components dev`.
 
@@ -71,8 +71,25 @@ per-datum SVG/DOM for the data layer:
    - Append the class to `pkg-py/src/plotomics/__init__.py` (`__all__`, sorted).
    - `pkg-py/tests/test_<name>.py`.
 
-8. **Trait/payload contract** — keep option keys **camelCase** and identical
+8. **Trait/payload contract**: keep option keys **camelCase** and identical
    across JS options, the R `options` list, and the Python `options` dict.
+   Every option in `default<Name>Options` must be reachable from both wrappers.
+   The one legitimate exception is a JS callback such as `onSelect`, which each
+   host supplies itself (see "Option parity" in
+   [docs/architecture.md](docs/architecture.md)).
+
+9. **Docs**: the step that gets forgotten. A component that is not in these
+   files is invisible, and the pkgdown one is a hard build failure, not an
+   omission.
+   - `README.md` component table.
+   - `docs/index.html` component table, and the `<meta name="description">` list.
+   - `pkg-r/_pkgdown.yml` `reference:` index. **pkgdown errors out** on a topic
+     that is documented but not indexed, including helpers like
+     `violin_density()`.
+   - `CHANGELOG.md` under `## [Unreleased]`.
+   - `packages/components/README.md` engine table, only if it needs a peer
+     engine. If it does not, add its subpath to the "nothing extra" row.
+   - `docs/architecture.md` rendering-strategy table.
 
 ## Verify locally before opening a PR
 
@@ -84,15 +101,26 @@ pnpm -r typecheck
 
 Rscript -e 'roxygen2::roxygenise("pkg-r")'   # regenerate NAMESPACE + man/
 Rscript -e 'devtools::test("pkg-r")'
+Rscript -e 'devtools::check("pkg-r", args = c("--no-manual", "--as-cran"))'
+
+# Catches an unindexed topic in _pkgdown.yml, which CI will not (the docs
+# workflow is manual-dispatch only). Needs pandoc on PATH.
+Rscript -e 'pkgdown::build_site("pkg-r", install = FALSE, new_process = FALSE)'
 
 cd pkg-py && pip install -e ".[dev]" && pytest && cd ..
 ```
 
-## The only shared files (append, don't rewrite — keep sorted)
+## The only shared files (append, don't rewrite, and keep sorted)
 
 - `packages/components/src/lib/index.ts`
 - `pkg-py/src/plotomics/__init__.py`
 - `packages/components/dev/main.ts`
+- `pkg-r/_pkgdown.yml`
+
+The last one is easy to miss because nothing local fails without it: the docs
+site is built by a manually-triggered workflow, so an unindexed topic goes
+unnoticed until someone publishes. Run the pkgdown build yourself if you are
+adding an exported function.
 
 Everything else your component adds is brand-new files. If you find yourself
 editing `@plotomics/core`, prefer adding a new util over changing an existing

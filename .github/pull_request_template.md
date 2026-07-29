@@ -15,14 +15,15 @@
 
 <!-- Mirrors CONTRIBUTING.md. Delete this section for non-component PRs. -->
 
-- [ ] **Factory** — `packages/components/src/components/<name>.ts` exports `create<Name>` + `default<Name>Options`, with pure logic (scales/layout/classification) extracted as testable functions
-- [ ] **Entries** — `src/entries/anywidget/<name>.ts` and `src/entries/umd/<name>.ts` (one line each)
-- [ ] **Programmatic export** — appended to `packages/components/src/lib/index.ts` (kept sorted)
-- [ ] **Unit test** — `packages/components/test/<name>.test.ts` covers the pure helpers
-- [ ] **Dev demo** — `demos.<name>` in `packages/components/dev/main.ts` with synthetic data at scale (>=100k where meaningful)
-- [ ] **R wrapper** — `pkg-r/R/<name>.R` (+ `<name>Output()` / `render<Name>()` Shiny bindings), `inst/htmlwidgets/<name>.js` + `<name>.yaml`, `tests/testthat/test-<name>.R`; NAMESPACE + man/ regenerated via roxygen
-- [ ] **Python wrapper** — `pkg-py/src/plotomics/<name>.py`, class appended to `__init__.py` (`__all__`, sorted), `pkg-py/tests/test_<name>.py`
-- [ ] **Trait parity** — option keys are camelCase and identical across JS options, the R `options` list, and the Python `options` dict
+- [ ] **Factory**: `packages/components/src/components/<name>.ts` exports `create<Name>` + `default<Name>Options`, with pure logic (scales/layout/classification) extracted as testable functions
+- [ ] **Entries**: `src/entries/anywidget/<name>.ts` and `src/entries/umd/<name>.ts` (one line each)
+- [ ] **Programmatic export**: appended to `packages/components/src/lib/index.ts` (kept sorted)
+- [ ] **Unit test**: `packages/components/test/<name>.test.ts` covers the pure helpers
+- [ ] **Dev demo**: `demos.<name>` in `packages/components/dev/main.ts` with synthetic data at scale (>=100k where meaningful)
+- [ ] **R wrapper**: `pkg-r/R/<name>.R` (+ `<name>Output()` / `render<Name>()` Shiny bindings), `inst/htmlwidgets/<name>.js` + `<name>.yaml`, `tests/testthat/test-<name>.R`; NAMESPACE + man/ regenerated via roxygen
+- [ ] **Python wrapper**: `pkg-py/src/plotomics/<name>.py`, class appended to `__init__.py` (`__all__`, sorted), `pkg-py/tests/test_<name>.py`
+- [ ] **Trait parity**: option keys are camelCase and identical across JS options, the R `options` list, and the Python `options` dict, and every key in `default<Name>Options` is reachable from both wrappers
+- [ ] **Docs**: added to the `README.md` and `docs/index.html` component tables, the `pkg-r/_pkgdown.yml` reference index, `CHANGELOG.md` under `[Unreleased]`, the `docs/architecture.md` rendering table, and (only if it needs a peer engine) the `packages/components/README.md` engine table
 
 ## Verification
 
@@ -30,7 +31,8 @@
 - [ ] `pnpm -r test` passes
 - [ ] `pnpm -r typecheck` passes
 - [ ] `pnpm lint` passes (or surfaces only pre-existing findings)
-- [ ] R touched → `devtools::test("pkg-r")` passes
+- [ ] R touched → `devtools::test("pkg-r")` and `devtools::check("pkg-r", args = c("--no-manual", "--as-cran"))` pass
+- [ ] Exported an R function → `pkgdown::build_site("pkg-r", install = FALSE, new_process = FALSE)` builds (CI does not check this)
 - [ ] Python touched → `pytest` passes
 
 ## Notes
