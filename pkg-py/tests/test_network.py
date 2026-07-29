@@ -104,3 +104,41 @@ def test_network_theme_in_options():
         theme={"background": "#222"},
     )
     assert w.options["theme"] == {"background": "#222"}
+
+
+def test_network_forwards_directed():
+    w = Network({"id": ["a", "b"]}, {"source": ["a"], "target": ["b"]})
+    assert w.options["directed"] is False
+    w2 = Network(
+        {"id": ["a", "b"]}, {"source": ["a"], "target": ["b"]}, directed=True
+    )
+    assert w2.options["directed"] is True
+
+
+def test_network_per_edge_color_column():
+    w = Network(
+        {"id": ["a", "b", "c"]},
+        {"source": ["a", "b"], "target": ["b", "c"], "color": ["#f00", "#0f0"]},
+    )
+    assert w.data["columns"]["color"] == ["#f00", "#0f0"]
+
+    w2 = Network({"id": ["a", "b"]}, {"source": ["a"], "target": ["b"]})
+    assert "color" not in w2.data["columns"]
+
+
+def test_network_rejects_mismatched_color_length():
+    with pytest.raises(ValueError, match="`color` must match"):
+        Network(
+            {"id": ["a", "b", "c"]},
+            {"source": ["a", "b"], "target": ["b", "c"], "color": ["#f00"]},
+        )
+
+
+def test_network_selected_trait_accepts_node_id_and_none():
+    # The `selected` trait now holds a clicked node id (str) or None, not only a
+    # list of point indices, so a network node click can populate it.
+    w = Network({"id": ["a", "b"]}, {"source": ["a"], "target": ["b"]})
+    w.selected = "a"
+    assert w.selected == "a"
+    w.selected = None
+    assert w.selected is None

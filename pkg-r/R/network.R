@@ -6,14 +6,17 @@
 #' node coordinates are not supplied, a bounded ForceAtlas2 layout positions the
 #' nodes in the browser; otherwise the supplied `x`/`y` are used. Categorical
 #' node groups are colored from a colorblind-safe palette. Hovering a node
-#' highlights it and its neighbors; zoom and pan use sigma's camera.
+#' highlights it and its neighbors; zoom and pan use sigma's camera. In a Shiny
+#' app, clicking a node sets `input$<id>_selected` to the clicked node id, and
+#' clicking the empty canvas clears it.
 #'
 #' @param nodes A data frame of nodes. Must contain an `id` column (coerced to
 #'   character). Optional columns: `x`, `y` (precomputed coordinates), `size`
 #'   (node radius in px), `group` (categorical, mapped to a palette color) and
 #'   `label` (display name; defaults to `id`).
 #' @param edges A data frame of edges with columns `source` and `target` holding
-#'   node ids, and an optional numeric `weight` column.
+#'   node ids, an optional numeric `weight` column (mapped to edge width), and an
+#'   optional `color` column giving a per-edge color (else `default_edge_color`).
 #' @param layout Either `"forceatlas2"` (run a layout when coordinates are
 #'   missing) or `"precomputed"` (require and use `x`/`y` from `nodes`).
 #' @param iterations Number of ForceAtlas2 iterations (bounded internally).
@@ -21,6 +24,9 @@
 #' @param default_edge_color Edge color.
 #' @param label_threshold Minimum node size (px) for its label to render.
 #' @param default_node_size Node radius (px) used when `size` is absent.
+#' @param directed Draw the graph as directed, with arrowheads. When `TRUE`,
+#'   `A -> B` and `B -> A` are kept as distinct edges; when `FALSE` (the default)
+#'   the graph is undirected and a reciprocal pair collapses to one line.
 #' @param palette Optional character vector of hex colors overriding the default
 #'   categorical palette used for node groups.
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
@@ -49,6 +55,7 @@ network <- function(nodes,
                     default_edge_color = "#d6dae1",
                     label_threshold = 8,
                     default_node_size = 4,
+                    directed = FALSE,
                     palette = NULL,
                     theme = NULL,
                     width = NULL,
@@ -117,6 +124,9 @@ network <- function(nodes,
     bv_check_finite(weight, "weight")
     columns$weight <- weight
   }
+  if (!is.null(edges$color)) {
+    columns$color <- as.character(edges$color)
+  }
 
   meta <- list()
   if (!is.null(nodes$label)) {
@@ -132,7 +142,8 @@ network <- function(nodes,
     defaultNodeColor = default_node_color,
     defaultEdgeColor = default_edge_color,
     labelThreshold = label_threshold,
-    defaultNodeSize = default_node_size
+    defaultNodeSize = default_node_size,
+    directed = directed
   )
   if (!is.null(palette)) {
     options$palette <- as.character(palette)

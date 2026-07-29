@@ -8,13 +8,15 @@ import {
 } from "../src/components/network-core.js";
 import type { PlotomicsData } from "@plotomics/core";
 
-const build = (data: PlotomicsData) =>
+const buildFull = (data: PlotomicsData, directed = false) =>
   buildGraph(data, {
     defaultNodeColor: "#000",
     defaultEdgeColor: "#ccc",
     defaultNodeSize: 4,
+    directed,
     colorFor: groupColorResolver(["#a", "#b", "#c"], "#000"),
   });
+const build = (data: PlotomicsData) => buildFull(data).graph;
 
 describe("network helpers", () => {
   it("extracts edges from source/target columns with optional weight", () => {
@@ -131,5 +133,60 @@ describe("network helpers", () => {
 
     const single = build({ columns: { id: ["only"] } });
     expect(() => runForceAtlas2(single, 50)).not.toThrow();
+  });
+
+  it("reports the edges it drops: unknown endpoint, self-loop and duplicate", () => {
+    const { graph, dropped } = buildFull({
+      columns: {
+        id: ["a", "b"],
+        source: ["a", "a", "a", "b"],
+        target: ["b", "missing", "a", "a"],
+      },
+    });
+    // a-b kept; a-missing (unknown endpoint), a-a (self-loop), b-a (duplicate).
+    expect(graph.size).toBe(1);
+    expect(dropped).toEqual({ missingEndpoint: 1, selfLoop: 1, duplicate: 1 });
+  });
+
+  it("reads a per-edge color column and applies it to the edge", () => {
+    const parsed = extractEdges({
+      columns: {
+        source: ["a", "b"],
+        target: ["b", "c"],
+        color: ["#f00", "#0f0"],
+      },
+    });
+    expect(parsed).toEqual([
+      { source: "a", target: "b", color: "#f00" },
+      { source: "b", target: "c", color: "#0f0" },
+    ]);
+
+    const { graph } = buildFull({
+      columns: {
+        id: ["a", "b", "c"],
+        source: ["a", "b"],
+        target: ["b", "c"],
+        color: ["#f00", "#0f0"],
+      },
+    });
+    expect(graph.getEdgeAttribute("a", "b", "color")).toBe("#f00");
+    expect(graph.getEdgeAttribute("b", "c", "color")).toBe("#0f0");
+  });
+
+  it("falls back to the builder default when no color column is present", () => {
+    const { graph } = buildFull({
+      columns: { id: ["a", "b"], source: ["a"], target: ["b"] },
+    });
+    expect(graph.getEdgeAttribute("a", "b", "color")).toBe("#ccc");
+  });
+
+  it("keeps reciprocal edges distinct when directed", () => {
+    const { graph, dropped } = buildFull(
+      { columns: { id: ["a", "b"], source: ["a", "b"], target: ["b", "a"] } },
+      true,
+    );
+    expect(graph.type).toBe("directed");
+    expect(graph.size).toBe(2); // a->b and b->a both survive
+    expect(dropped.duplicate).toBe(0);
   });
 });

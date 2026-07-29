@@ -26,7 +26,9 @@ class Network(PlotomicsWidget):
         mapped to a palette color) and ``label`` (display name; defaults to id).
     edges:
         A ``DataFrame`` or mapping with ``source`` and ``target`` columns of node
-        ids and an optional numeric ``weight`` column.
+        ids, an optional numeric ``weight`` column (mapped to edge width) and an
+        optional ``color`` column giving a per-edge color (else
+        ``default_edge_color``).
     layout:
         ``"forceatlas2"`` (run a layout when coordinates are missing) or
         ``"precomputed"`` (require and use ``x``/``y`` from ``nodes``).
@@ -40,12 +42,22 @@ class Network(PlotomicsWidget):
         Minimum node size (px) for its label to render.
     default_node_size:
         Node radius (px) used when ``size`` is absent.
+    directed:
+        Draw the graph as directed, with arrowheads. When ``True``, ``A -> B``
+        and ``B -> A`` are kept as distinct edges; when ``False`` (the default)
+        the graph is undirected and a reciprocal pair collapses to one line.
     palette:
         Optional list of hex colors overriding the default categorical palette.
     theme:
         Optional theme overrides forwarded to the JS renderer.
     height:
         Initial widget height in CSS pixels.
+
+    Notes
+    -----
+    Clicking a node sets the ``selected`` trait to the clicked node id (a
+    string); clicking the empty canvas sets it to ``None``. Observe it with
+    ``widget.observe(fn, names="selected")``.
 
     Examples
     --------
@@ -72,6 +84,7 @@ class Network(PlotomicsWidget):
         default_edge_color: str = "#d6dae1",
         label_threshold: float = 8.0,
         default_node_size: float = 4.0,
+        directed: bool = False,
         palette: list[str] | None = None,
         theme: dict | None = None,
         height: int = 480,
@@ -117,6 +130,15 @@ class Network(PlotomicsWidget):
             "source": source_list,
             "target": target_list,
         }
+        edge_color = _column(edges, "color")
+        if edge_color is not None:
+            color_list = [str(v) for v in edge_color]
+            if len(color_list) != n_edges:
+                raise ValueError(
+                    "`color` must match the number of edges; "
+                    f"got color={len(color_list)}, edges={n_edges}"
+                )
+            json_columns["color"] = color_list
 
         # Numeric columns go through the packed binary buffer. Node columns
         # (x/y/size) and the per-edge weight legitimately differ in length, so
@@ -160,6 +182,7 @@ class Network(PlotomicsWidget):
             "defaultEdgeColor": default_edge_color,
             "labelThreshold": label_threshold,
             "defaultNodeSize": default_node_size,
+            "directed": directed,
         }
         if palette is not None:
             options["palette"] = list(palette)

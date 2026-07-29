@@ -20,6 +20,7 @@
  * - `columns.source`  `string[]`         edge source ids (index-aligned with target)
  * - `columns.target`  `string[]`         edge target ids
  * - `columns.weight`  `number[]`         optional per-edge weight
+ * - `columns.color`   `string[]`         optional per-edge color (else defaultEdgeColor)
  * - `meta.nodeLabels` `string[]`         optional labels (default: id)
  * - `meta.nodeGroup`  `string[]`         optional categorical group -> palette color
  * - `meta.edges`      `[src,tgt][]`      alternative edge form (pairs of ids)
@@ -37,8 +38,10 @@ import {
 } from "@plotomics/core";
 import Graph from "graphology";
 import Sigma from "sigma";
+import { EdgeArrowProgram } from "sigma/rendering";
 import {
   type NetworkLayout,
+  type EdgeDrops,
   buildGraph,
   groupColorResolver,
   needsLayout,
@@ -49,6 +52,7 @@ import {
 // component surface from this module.
 export {
   type EdgeSpec,
+  type EdgeDrops,
   type NetworkLayout,
   buildGraph,
   extractEdges,
@@ -73,10 +77,15 @@ export interface NetworkOptions {
   defaultNodeSize: number;
   /** Optional categorical palette override (else `@plotomics/core` palette). */
   palette: string[] | null;
+  /** Draw the graph as directed, with arrowheads. When true, `A -> B` and
+   * `B -> A` are kept as distinct edges; when false (default) the graph is
+   * undirected and a reciprocal pair collapses to one line. */
+  directed: boolean;
   theme: Partial<PlotomicsTheme>;
-  /** Called with a node id when a node is clicked. In a Shiny app the runtime
-   * injects a handler that pushes the id to `input$<outputId>_selected`. */
-  onSelect: ((node: string) => void) | null;
+  /** Called with a node id when a node is clicked, or `null` when the empty
+   * canvas is clicked. In a Shiny app the runtime injects a handler that pushes
+   * the value to `input$<outputId>_selected`. */
+  onSelect: ((node: string | null) => void) | null;
 }
 
 export const defaultNetworkOptions: NetworkOptions = {
@@ -87,6 +96,7 @@ export const defaultNetworkOptions: NetworkOptions = {
   labelThreshold: 8,
   defaultNodeSize: 4,
   palette: null,
+  directed: false,
   theme: {},
   onSelect: null,
 };
@@ -123,16 +133,31 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (el, initial) => 
     return opts.palette && opts.palette.length ? opts.palette : theme.categorical;
   }
 
-  function buildAndLayout(): Graph {
+  function buildAndLayout(): { graph: Graph; dropped: EdgeDrops } {
     const colorFor = groupColorResolver(paletteColors(), opts.defaultNodeColor);
-    const g = buildGraph(data, {
+    const { graph: g, dropped } = buildGraph(data, {
       defaultNodeColor: opts.defaultNodeColor,
       defaultEdgeColor: opts.defaultEdgeColor,
       defaultNodeSize: opts.defaultNodeSize,
+      directed: opts.directed,
       colorFor,
     });
     if (needsLayout(data, opts.layout)) runForceAtlas2(g, opts.iterations);
-    return g;
+    return { graph: g, dropped };
+  }
+
+  /** Warn once per render when edges were left out, so a caller is not shown an
+   * incomplete graph without notice (unknown endpoint, self-loop, parallel). */
+  function reportDropped(dropped: EdgeDrops) {
+    const total =
+      dropped.missingEndpoint + dropped.selfLoop + dropped.duplicate;
+    if (total === 0) return;
+    console.warn(
+      `plotomics network: dropped ${total} edge(s): ` +
+        `${dropped.missingEndpoint} with an unknown endpoint, ` +
+        `${dropped.selfLoop} self-loop(s), ` +
+        `${dropped.duplicate} parallel or duplicate.`,
+    );
   }
 
   function makeRenderer() {
@@ -144,6 +169,13 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (el, initial) => 
       labelFont: theme.fontFamily,
       labelRenderedSizeThreshold: opts.labelThreshold,
       renderLabels: true,
+      // Directed graphs draw arrowheads via sigma's arrow edge program.
+      ...(opts.directed
+        ? {
+            defaultEdgeType: "arrow",
+            edgeProgramClasses: { arrow: EdgeArrowProgram },
+          }
+        : {}),
       // Dim non-neighbors on hover; leave everything at full color otherwise.
       nodeReducer: (node, attrs) => {
         if (!hovered) return attrs;
@@ -180,6 +212,10 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (el, initial) => 
     renderer.on("clickNode", ({ node }) => {
       opts.onSelect?.(node);
     });
+    // Clicking the empty canvas clears the selection.
+    renderer.on("clickStage", () => {
+      opts.onSelect?.(null);
+    });
   }
 
   function showTip(node: string) {
@@ -195,7 +231,9 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (el, initial) => 
   function applyData() {
     hovered = null;
     neighborSet = new Set();
-    graph = buildAndLayout();
+    const built = buildAndLayout();
+    graph = built.graph;
+    reportDropped(built.dropped);
     makeRenderer();
   }
 

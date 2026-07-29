@@ -13,6 +13,7 @@ network(
   default_edge_color = "#d6dae1",
   label_threshold = 8,
   default_node_size = 4,
+  directed = FALSE,
   palette = NULL,
   theme = NULL,
   width = NULL,
@@ -27,7 +28,8 @@ character). Optional columns: \code{x}, \code{y} (precomputed coordinates), \cod
 \code{label} (display name; defaults to \code{id}).}
 
 \item{edges}{A data frame of edges with columns \code{source} and \code{target} holding
-node ids, and an optional numeric \code{weight} column.}
+node ids, an optional numeric \code{weight} column (mapped to edge width), and an
+optional \code{color} column giving a per-edge color (else \code{default_edge_color}).}
 
 \item{layout}{Either \code{"forceatlas2"} (run a layout when coordinates are
 missing) or \code{"precomputed"} (require and use \code{x}/\code{y} from \code{nodes}).}
@@ -41,6 +43,10 @@ missing) or \code{"precomputed"} (require and use \code{x}/\code{y} from \code{n
 \item{label_threshold}{Minimum node size (px) for its label to render.}
 
 \item{default_node_size}{Node radius (px) used when \code{size} is absent.}
+
+\item{directed}{Draw the graph as directed, with arrowheads. When \code{TRUE},
+\code{A -> B} and \code{B -> A} are kept as distinct edges; when \code{FALSE} (the default)
+the graph is undirected and a reciprocal pair collapses to one line.}
 
 \item{palette}{Optional character vector of hex colors overriding the default
 categorical palette used for node groups.}
@@ -63,7 +69,9 @@ graphology graph) so tens of thousands of elements stay interactive. When
 node coordinates are not supplied, a bounded ForceAtlas2 layout positions the
 nodes in the browser; otherwise the supplied \code{x}/\code{y} are used. Categorical
 node groups are colored from a colorblind-safe palette. Hovering a node
-highlights it and its neighbors; zoom and pan use sigma's camera.
+highlights it and its neighbors; zoom and pan use sigma's camera. In a Shiny
+app, clicking a node sets \verb{input$<id>_selected} to the clicked node id, and
+clicking the empty canvas clears it.
 }
 \examples{
 set.seed(1)

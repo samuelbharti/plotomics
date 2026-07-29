@@ -199,10 +199,11 @@ class PlotomicsWidget(anywidget.AnyWidget):
     # Component options (camelCase keys, matching the TS options interface).
     options = traitlets.Dict({}).tag(sync=True)
     _height = traitlets.Int(480).tag(sync=True)
-    # JS -> Python: point indices from the latest lasso selection. Components
-    # that support selection (e.g. Embedding with ``mouse_mode="lasso"``)
-    # populate this; observe it with ``widget.observe(fn, names="selected")``.
-    selected = traitlets.List(traitlets.Int(), default_value=[]).tag(sync=True)
+    # JS -> Python: the latest selection from the component. Its shape depends on
+    # the component: a list of point indices for a lasso selection (Embedding),
+    # or a single clicked node id (a string) or None for a click selection
+    # (Network). Observe it with ``widget.observe(fn, names="selected")``.
+    selected = traitlets.Any(default_value=[]).tag(sync=True)
 
     def export(self, fmt: str = "png") -> None:
         """Download the current on-screen view as ``"png"`` or ``"svg"``.

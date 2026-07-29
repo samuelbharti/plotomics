@@ -116,3 +116,23 @@ test_that("network() forwards a theme override", {
   expect_equal(w$x$options$theme$background, "#333")
   expect_null(network(nodes, edges)$x$options$theme)
 })
+
+test_that("network() forwards the directed option (default FALSE)", {
+  nodes <- data.frame(id = c("a", "b"), stringsAsFactors = FALSE)
+  edges <- data.frame(source = "a", target = "b", stringsAsFactors = FALSE)
+  expect_false(network(nodes, edges)$x$options$directed)
+  expect_true(network(nodes, edges, directed = TRUE)$x$options$directed)
+})
+
+test_that("network() passes a per-edge color column when present", {
+  nodes <- data.frame(id = c("a", "b", "c"), stringsAsFactors = FALSE)
+  edges <- data.frame(
+    source = c("a", "b"), target = c("b", "c"),
+    color = c("#ff0000", "#00ff00"), stringsAsFactors = FALSE
+  )
+  w <- network(nodes, edges)
+  expect_equal(w$x$data$columns$color, c("#ff0000", "#00ff00"))
+
+  edges_plain <- data.frame(source = "a", target = "b", stringsAsFactors = FALSE)
+  expect_null(network(nodes, edges_plain)$x$data$columns$color)
+})

@@ -22,6 +22,18 @@ export interface EdgeSpec {
   source: string;
   target: string;
   weight?: number;
+  color?: string;
+}
+
+/** Counts of edges that {@link buildGraph} left out of the graph, so a caller
+ * can report them rather than silently showing an incomplete picture. */
+export interface EdgeDrops {
+  /** An endpoint id that is not in the node table. */
+  missingEndpoint: number;
+  /** A self-loop (source === target); the WebGL renderer does not draw these. */
+  selfLoop: number;
+  /** A parallel edge in the simple graph (the pair was already connected). */
+  duplicate: number;
 }
 
 /** Read edges from a {@link PlotomicsData} in whichever form was supplied. */
@@ -31,6 +43,7 @@ export function extractEdges(data: PlotomicsData): EdgeSpec[] {
   const tgt = cols.target as string[] | undefined;
   if (src && tgt) {
     const w = cols.weight as ArrayLike<number> | undefined;
+    const c = cols.color as string[] | undefined;
     const n = Math.min(src.length, tgt.length);
     const out: EdgeSpec[] = new Array(n);
     for (let i = 0; i < n; i += 1) {
@@ -38,6 +51,7 @@ export function extractEdges(data: PlotomicsData): EdgeSpec[] {
         source: String(src[i]),
         target: String(tgt[i]),
         ...(w ? { weight: Number(w[i]) } : {}),
+        ...(c ? { color: String(c[i]) } : {}),
       };
     }
     return out;
@@ -77,6 +91,11 @@ export function needsLayout(data: PlotomicsData, layout: NetworkLayout): boolean
  *
  * `colorFor` maps a group key to a hex color. When `x`/`y` are present they are
  * assigned; otherwise nodes are seeded on a ring for a caller-run layout.
+ *
+ * Returns the graph plus an {@link EdgeDrops} tally of the edges that were left
+ * out (unknown endpoint, self-loop, or a parallel edge in the simple graph).
+ * When `directed` is true the graph is built directed, so `A -> B` and `B -> A`
+ * are kept as distinct edges and drawn with arrowheads by the renderer.
  */
 export function buildGraph(
   data: PlotomicsData,
@@ -85,9 +104,13 @@ export function buildGraph(
     defaultEdgeColor: string;
     defaultNodeSize: number;
     colorFor: (group: string | undefined) => string;
+    directed?: boolean;
   },
-): Graph {
-  const graph = new Graph({ multi: false, type: "undirected" });
+): { graph: Graph; dropped: EdgeDrops } {
+  const graph = new Graph({
+    multi: false,
+    type: opts.directed ? "directed" : "undirected",
+  });
   const cols = data.columns;
   const ids = (cols.id as string[] | undefined) ?? [];
   const meta = data.meta ?? {};
@@ -113,12 +136,22 @@ export function buildGraph(
     });
   }
 
+  const dropped: EdgeDrops = { missingEndpoint: 0, selfLoop: 0, duplicate: 0 };
   for (const e of extractEdges(data)) {
-    if (!graph.hasNode(e.source) || !graph.hasNode(e.target)) continue;
-    if (e.source === e.target) continue;
-    if (graph.hasEdge(e.source, e.target)) continue;
+    if (!graph.hasNode(e.source) || !graph.hasNode(e.target)) {
+      dropped.missingEndpoint += 1;
+      continue;
+    }
+    if (e.source === e.target) {
+      dropped.selfLoop += 1;
+      continue;
+    }
+    if (graph.hasEdge(e.source, e.target)) {
+      dropped.duplicate += 1;
+      continue;
+    }
     graph.addEdge(e.source, e.target, {
-      color: opts.defaultEdgeColor,
+      color: e.color ?? opts.defaultEdgeColor,
       ...(e.weight !== undefined ? { weight: e.weight, size: e.weight } : {}),
     });
   }
@@ -135,7 +168,7 @@ export function buildGraph(
     });
   }
 
-  return graph;
+  return { graph, dropped };
 }
 
 /** Run a bounded ForceAtlas2 layout in place. No-op for empty/edgeless graphs.
