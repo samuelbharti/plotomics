@@ -20,7 +20,9 @@
 #'   supplies it from its levels. Defaults to order of appearance.
 #' @param clusters Character vector fixing the column order, likewise.
 #' @param value_label,size_label Legend titles.
-#' @param colormap Sequential ramp for the colour channel.
+#' @param colormap Sequential ramp for the colour channel: `"viridis"`,
+#'   `"rdbu"`, `"ltc"` (an earthy teal to sand to rust sequential ramp) or
+#'   `"ltcdiv"` (its diverging counterpart, neutral cream at the midpoint).
 #' @param max_radius Radius in pixels of a dot at 100 percent.
 #' @param value_domain Length-2 numeric fixing the colour scale. `NULL` uses the
 #'   data range. Set it when comparing two dot plots side by side.

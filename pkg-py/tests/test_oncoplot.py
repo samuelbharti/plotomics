@@ -138,3 +138,24 @@ def test_oncoplot_validates_its_input():
                  annotations=[{"name": "stage", "values": ["II"]}])
     with pytest.raises(ValueError, match="`name` and `values`"):
         Oncoplot(d, annotations=[{"name": "stage"}])
+
+
+def test_oncoplot_forwards_bar_colour_label_and_cell_gap_options():
+    d = Oncoplot(make_data())
+    assert d.options["burdenColor"] == "#0E7175"
+    assert d.options["frequencyColor"] == "#ED773C"
+    assert d.options["xLabel"] == "samples"
+    assert d.options["burdenLabel"] == "alterations"
+    assert d.options["cellGapX"] == 0.12
+    assert d.options["cellGapY"] == 0.16
+
+    w = Oncoplot(make_data(), burden_color="#111111",
+                 frequency_color="#222222", x_label="patients",
+                 burden_label="mutations", cell_gap_x=0, cell_gap_y=0)
+    assert w.options["burdenColor"] == "#111111"
+    assert w.options["frequencyColor"] == "#222222"
+    assert w.options["xLabel"] == "patients"
+    assert w.options["burdenLabel"] == "mutations"
+    # A zero gap draws a solid block, so it must survive the payload.
+    assert w.options["cellGapX"] == 0
+    assert w.options["cellGapY"] == 0

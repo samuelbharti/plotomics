@@ -100,3 +100,24 @@ test_that("oncoplot() validates its input", {
     "one value per sample"
   )
 })
+
+test_that("oncoplot() forwards the bar colour, label and cell-gap options", {
+  d <- oncoplot(alt_fixture())
+  expect_equal(d$x$options$burdenColor, "#0E7175")
+  expect_equal(d$x$options$frequencyColor, "#ED773C")
+  expect_equal(d$x$options$xLabel, "samples")
+  expect_equal(d$x$options$burdenLabel, "alterations")
+  expect_equal(d$x$options$cellGapX, 0.12)
+  expect_equal(d$x$options$cellGapY, 0.16)
+
+  w <- oncoplot(alt_fixture(), burden_color = "#111111",
+                frequency_color = "#222222", x_label = "patients",
+                burden_label = "mutations", cell_gap_x = 0, cell_gap_y = 0)
+  expect_equal(w$x$options$burdenColor, "#111111")
+  expect_equal(w$x$options$frequencyColor, "#222222")
+  expect_equal(w$x$options$xLabel, "patients")
+  expect_equal(w$x$options$burdenLabel, "mutations")
+  # A zero gap draws a solid block, so it must survive the payload.
+  expect_equal(w$x$options$cellGapX, 0)
+  expect_equal(w$x$options$cellGapY, 0)
+})

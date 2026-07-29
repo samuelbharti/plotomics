@@ -33,7 +33,9 @@ supplies it from its levels. Defaults to order of appearance.}
 
 \item{value_label, size_label}{Legend titles.}
 
-\item{colormap}{Sequential ramp for the colour channel.}
+\item{colormap}{Sequential ramp for the colour channel: \code{"viridis"},
+\code{"rdbu"}, \code{"ltc"} (an earthy teal to sand to rust sequential ramp) or
+\code{"ltcdiv"} (its diverging counterpart, neutral cream at the midpoint).}
 
 \item{max_radius}{Radius in pixels of a dot at 100 percent.}
 

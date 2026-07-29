@@ -80,6 +80,15 @@ class Oncoplot(PlotomicsWidget):
         Toggle the surrounding panels.
     empty_color:
         Fill for a gene x sample cell with no alteration.
+    burden_color, frequency_color:
+        Hex fills for the per-sample burden bars above the grid and the per-gene
+        frequency bars to its right.
+    x_label, burden_label:
+        Axis titles for the sample axis and the burden barplot.
+    cell_gap_x, cell_gap_y:
+        Gap between cells as a fraction of cell size. Set both to ``0`` for a
+        solid block, which is what you want once a cohort is wide enough that
+        the gaps eat more pixels than the cells.
     theme:
         Optional theme overrides forwarded to the JS renderer.
     height:
@@ -114,6 +123,12 @@ class Oncoplot(PlotomicsWidget):
         show_annotations: bool = True,
         show_legend: bool = True,
         empty_color: str = "#EFE9DC",
+        burden_color: str = "#0E7175",
+        frequency_color: str = "#ED773C",
+        x_label: str = "samples",
+        burden_label: str = "alterations",
+        cell_gap_x: float = 0.12,
+        cell_gap_y: float = 0.16,
         theme: dict | None = None,
         height: int = 560,
         **kwargs: Any,
@@ -203,6 +218,12 @@ class Oncoplot(PlotomicsWidget):
             "showAnnotations": show_annotations,
             "showLegend": show_legend,
             "emptyColor": empty_color,
+            "burdenColor": burden_color,
+            "frequencyColor": frequency_color,
+            "xLabel": x_label,
+            "burdenLabel": burden_label,
+            "cellGapX": cell_gap_x,
+            "cellGapY": cell_gap_y,
         }
         if theme is not None:
             options["theme"] = theme

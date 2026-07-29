@@ -23,7 +23,9 @@
 #'   colours. `NULL` derives them from the data and the theme palette.
 #' @param color_mode `"auto"` (detect from the column type), `"categorical"` or
 #'   `"continuous"`.
-#' @param colormap Sequential ramp for continuous colouring.
+#' @param colormap Sequential ramp for continuous colouring: `"viridis"`,
+#'   `"rdbu"`, `"ltc"` (an earthy teal to sand to rust sequential ramp) or
+#'   `"ltcdiv"` (its diverging counterpart, neutral cream at the midpoint).
 #' @param spot_scale Multiplier on `spot_diameter`; 1 draws true size.
 #' @param spot_opacity,image_opacity Opacities in `[0, 1]`. Lower the spot
 #'   opacity to read the histology underneath.

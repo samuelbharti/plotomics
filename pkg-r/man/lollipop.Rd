@@ -18,6 +18,11 @@ lollipop(
   show_ptms = TRUE,
   show_domains = TRUE,
   show_legend = TRUE,
+  min_head_radius = 3,
+  max_head_radius = 11,
+  y_label = "samples",
+  backbone_color = "#E6DCC8",
+  stem_color = "#93a1b8",
   theme = NULL,
   width = NULL,
   height = NULL,
@@ -50,6 +55,16 @@ label is resolved here and sent to the browser, so a redraw, an export and
 any static counterpart all label the same ones.}
 
 \item{show_ptms, show_domains, show_legend}{Toggle the surrounding tracks.}
+
+\item{min_head_radius, max_head_radius}{Stem head radius range in pixels. Head
+\emph{area} is proportional to recurrence, so these bound the mapping rather
+than setting a size: raise \code{max_head_radius} when one hotspot dwarfs the
+rest and you want the difference to read at a glance.}
+
+\item{y_label}{Axis title for the recurrence axis.}
+
+\item{backbone_color, stem_color}{Hex colours for the protein backbone
+rectangle and the mutation stems.}
 
 \item{theme}{Optional named list of theme overrides.}
 

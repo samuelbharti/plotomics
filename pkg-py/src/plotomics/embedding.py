@@ -47,6 +47,10 @@ class Embedding(PlotomicsWidget):
         units. ``"equal"`` gives both axes the same units per pixel; use it
         when the axes share units and their relative spread is part of the
         claim, as in PCA scores.
+    padding:
+        Fraction of the data range to pad around the fitted view. Larger values
+        zoom out, leaving more empty space at the edges, which stops the
+        outermost points being clipped by the canvas border.
     show_axes:
         Draw the axis frame + ticks (embeddings usually hide axes).
     show_legend:
@@ -86,6 +90,7 @@ class Embedding(PlotomicsWidget):
         x_label: str = "UMAP 1",
         y_label: str = "UMAP 2",
         aspect: str = "fill",
+        padding: float = 0.04,
         show_axes: bool = False,
         show_legend: bool = True,
         mouse_mode: Literal["panZoom", "lasso"] = "panZoom",
@@ -139,6 +144,7 @@ class Embedding(PlotomicsWidget):
             "xLabel": x_label,
             "yLabel": y_label,
             "aspect": aspect,
+            "padding": padding,
             "showAxes": show_axes,
             "showLegend": show_legend,
             "mouseMode": mouse_mode,

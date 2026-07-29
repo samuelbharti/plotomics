@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -37,7 +37,9 @@ class Dotplot(PlotomicsWidget):
     value_label, size_label:
         Legend titles.
     colormap:
-        Sequential ramp for the colour channel.
+        Sequential ramp for the colour channel: ``"viridis"``, ``"rdbu"``,
+        ``"ltc"`` (an earthy teal to sand to rust sequential ramp) or
+        ``"ltcdiv"`` (its diverging counterpart, neutral cream at the midpoint).
     max_radius:
         Radius in pixels of a dot at 100 percent.
     value_domain:
@@ -72,7 +74,7 @@ class Dotplot(PlotomicsWidget):
         clusters: list[str] | None = None,
         value_label: str = "mean expression",
         size_label: str = "% expressing",
-        colormap: str = "viridis",
+        colormap: Literal["viridis", "rdbu", "ltc", "ltcdiv"] = "viridis",
         max_radius: float = 9.0,
         value_domain: tuple[float, float] | None = None,
         show_grid: bool = True,

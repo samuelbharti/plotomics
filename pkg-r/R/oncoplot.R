@@ -32,6 +32,13 @@
 #' @param show_burden,show_frequency,show_annotations,show_legend Toggle the
 #'   surrounding panels.
 #' @param empty_color Fill for a gene x sample cell with no alteration.
+#' @param burden_color,frequency_color Hex fills for the per-sample burden bars
+#'   above the grid and the per-gene frequency bars to its right.
+#' @param x_label,burden_label Axis titles for the sample axis and the burden
+#'   barplot.
+#' @param cell_gap_x,cell_gap_y Gap between cells as a fraction of cell size.
+#'   Set both to `0` for a solid block, which is what you want once a cohort is
+#'   wide enough that the gaps eat more pixels than the cells.
 #' @param theme Optional named list of theme overrides merged over the
 #'   component defaults in the browser.
 #' @param width,height Widget dimensions (any valid CSS size).
@@ -57,6 +64,12 @@ oncoplot <- function(alterations,
                      show_annotations = TRUE,
                      show_legend = TRUE,
                      empty_color = "#EFE9DC",
+                     burden_color = "#0E7175",
+                     frequency_color = "#ED773C",
+                     x_label = "samples",
+                     burden_label = "alterations",
+                     cell_gap_x = 0.12,
+                     cell_gap_y = 0.16,
                      theme = NULL,
                      width = NULL,
                      height = NULL,
@@ -158,7 +171,13 @@ oncoplot <- function(alterations,
     showFrequency = show_frequency,
     showAnnotations = show_annotations,
     showLegend = show_legend,
-    emptyColor = empty_color
+    emptyColor = empty_color,
+    burdenColor = burden_color,
+    frequencyColor = frequency_color,
+    xLabel = x_label,
+    burdenLabel = burden_label,
+    cellGapX = cell_gap_x,
+    cellGapY = cell_gap_y
   )
   if (!is.null(theme)) options$theme <- theme
 

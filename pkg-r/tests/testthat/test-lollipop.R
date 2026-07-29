@@ -85,3 +85,22 @@ test_that("lollipop() validates its input", {
     "must contain columns"
   )
 })
+
+test_that("lollipop() forwards the head-size, label and colour options", {
+  v <- variants_fixture()
+  d <- lollipop(v, length = 393)
+  expect_equal(d$x$options$minHeadRadius, 3)
+  expect_equal(d$x$options$maxHeadRadius, 11)
+  expect_equal(d$x$options$yLabel, "samples")
+  expect_equal(d$x$options$backboneColor, "#E6DCC8")
+  expect_equal(d$x$options$stemColor, "#93a1b8")
+
+  w <- lollipop(v, length = 393, min_head_radius = 1, max_head_radius = 30,
+                y_label = "patients", backbone_color = "#111111",
+                stem_color = "#222222")
+  expect_equal(w$x$options$minHeadRadius, 1)
+  expect_equal(w$x$options$maxHeadRadius, 30)
+  expect_equal(w$x$options$yLabel, "patients")
+  expect_equal(w$x$options$backboneColor, "#111111")
+  expect_equal(w$x$options$stemColor, "#222222")
+})

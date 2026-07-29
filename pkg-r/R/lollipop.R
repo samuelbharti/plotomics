@@ -27,6 +27,13 @@
 #'   label is resolved here and sent to the browser, so a redraw, an export and
 #'   any static counterpart all label the same ones.
 #' @param show_ptms,show_domains,show_legend Toggle the surrounding tracks.
+#' @param min_head_radius,max_head_radius Stem head radius range in pixels. Head
+#'   *area* is proportional to recurrence, so these bound the mapping rather
+#'   than setting a size: raise `max_head_radius` when one hotspot dwarfs the
+#'   rest and you want the difference to read at a glance.
+#' @param y_label Axis title for the recurrence axis.
+#' @param backbone_color,stem_color Hex colours for the protein backbone
+#'   rectangle and the mutation stems.
 #' @param theme Optional named list of theme overrides.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
@@ -54,6 +61,11 @@ lollipop <- function(variants,
                      show_ptms = TRUE,
                      show_domains = TRUE,
                      show_legend = TRUE,
+                     min_head_radius = 3,
+                     max_head_radius = 11,
+                     y_label = "samples",
+                     backbone_color = "#E6DCC8",
+                     stem_color = "#93a1b8",
                      theme = NULL,
                      width = NULL,
                      height = NULL,
@@ -147,7 +159,12 @@ lollipop <- function(variants,
   options <- list(
     showPtms = show_ptms,
     showDomains = show_domains,
-    showLegend = show_legend
+    showLegend = show_legend,
+    minHeadRadius = min_head_radius,
+    maxHeadRadius = max_head_radius,
+    yLabel = y_label,
+    backboneColor = backbone_color,
+    stemColor = stem_color
   )
   if (!is.null(theme)) options$theme <- theme
 

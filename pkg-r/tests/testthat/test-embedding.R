@@ -95,6 +95,15 @@ test_that("embedding() carries the aspect option", {
   expect_error(embedding(d, aspect = "square"), "should be one of")
 })
 
+test_that("embedding() carries the fit padding", {
+  d <- data.frame(x = c(1, 2, 3), y = c(1, 2, 3))
+  expect_equal(embedding(d)$x$options$padding, 0.04)
+  expect_equal(embedding(d, padding = 0.25)$x$options$padding, 0.25)
+  # Zero is meaningful (fit tight to the data), so it must survive rather than
+  # being dropped as a falsy value.
+  expect_equal(embedding(d, padding = 0)$x$options$padding, 0)
+})
+
 test_that("embedding() carries the point scale mode", {
   d <- data.frame(x = c(1, 2, 3), y = c(1, 2, 3))
   expect_equal(embedding(d)$x$options$pointScaleMode, "asinh")

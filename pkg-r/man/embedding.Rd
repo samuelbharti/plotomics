@@ -7,10 +7,13 @@
 embedding(
   data,
   point_size = 3,
+  point_scale_mode = c("asinh", "linear", "constant"),
   opacity = 0.8,
   color_mode = c("auto", "categorical", "continuous"),
   colormap = c("viridis", "rdbu"),
   mouse_mode = c("panZoom", "lasso"),
+  aspect = c("fill", "equal"),
+  padding = 0.04,
   x_label = "UMAP 1",
   y_label = "UMAP 2",
   show_axes = FALSE,
@@ -30,7 +33,15 @@ the legend order and the color assignment to its levels, and keeps unused
 levels in the legend, the way \code{drop = FALSE} does in ggplot2. An optional
 \code{label} column supplies per-point tooltip text.}
 
-\item{point_size}{Point radius in pixels.}
+\item{point_size}{Point radius in pixels. Under the default
+\code{point_scale_mode} the renderer scales this by the camera and clamps it to
+one pixel on a widely-scaled plot, so set \code{point_scale_mode = "constant"}
+if you want it honoured literally.}
+
+\item{point_scale_mode}{How \code{point_size} responds to zoom. \code{"asinh"} and
+\code{"linear"} shrink points as you zoom out, which keeps a dense embedding
+readable, but both floor at one pixel once the camera scale drops below
+\code{1 / point_size}. \code{"constant"} sizes points in literal pixels.}
 
 \item{opacity}{Point opacity in \verb{[0, 1]}.}
 
@@ -42,6 +53,16 @@ or \code{"rdbu"}.}
 
 \item{mouse_mode}{Primary drag gesture: \code{"panZoom"} (default) pans/zooms and
 \code{"lasso"} makes a plain drag draw a selection.}
+
+\item{aspect}{How the fitted view maps data units onto pixels. \code{"fill"}
+stretches each axis to fill the canvas, which suits a UMAP, whose axes
+carry no units. \code{"equal"} gives both axes the same units per pixel; use it
+when the axes share units and their relative spread is part of the claim,
+as in PCA scores.}
+
+\item{padding}{Fraction of the data range to pad around the fitted view.
+Larger values zoom out, leaving more empty space at the edges, which stops
+the outermost points being clipped by the canvas border.}
 
 \item{x_label, y_label}{Axis titles (shown when \code{show_axes = TRUE}).}
 

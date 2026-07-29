@@ -47,6 +47,15 @@ class Lollipop(PlotomicsWidget):
         static counterpart all label the same ones.
     show_ptms, show_domains, show_legend:
         Toggle the surrounding tracks.
+    min_head_radius, max_head_radius:
+        Stem head radius range in pixels. Head *area* is proportional to
+        recurrence, so these bound the mapping rather than setting a size:
+        raise ``max_head_radius`` when one hotspot dwarfs the rest and you want
+        the difference to read at a glance.
+    y_label:
+        Axis title for the recurrence axis.
+    backbone_color, stem_color:
+        Hex colors for the protein backbone rectangle and the mutation stems.
     theme:
         Optional theme overrides forwarded to the JS renderer.
     height:
@@ -82,6 +91,11 @@ class Lollipop(PlotomicsWidget):
         show_ptms: bool = True,
         show_domains: bool = True,
         show_legend: bool = True,
+        min_head_radius: float = 3,
+        max_head_radius: float = 11,
+        y_label: str = "samples",
+        backbone_color: str = "#E6DCC8",
+        stem_color: str = "#93a1b8",
         theme: dict | None = None,
         height: int = 440,
         **kwargs: Any,
@@ -163,6 +177,11 @@ class Lollipop(PlotomicsWidget):
             "showPtms": show_ptms,
             "showDomains": show_domains,
             "showLegend": show_legend,
+            "minHeadRadius": min_head_radius,
+            "maxHeadRadius": max_head_radius,
+            "yLabel": y_label,
+            "backboneColor": backbone_color,
+            "stemColor": stem_color,
         }
         if theme is not None:
             options["theme"] = theme

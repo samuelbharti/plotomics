@@ -102,3 +102,21 @@ def test_lollipop_validates_its_input():
     with pytest.raises(ValueError, match="one entry per class"):
         Lollipop(d, length=393, classes=["Missense", "Truncating"],
                  class_colors=["#f00"])
+
+
+def test_lollipop_forwards_head_size_label_and_colour_options():
+    d = Lollipop(make_data(), length=393)
+    assert d.options["minHeadRadius"] == 3
+    assert d.options["maxHeadRadius"] == 11
+    assert d.options["yLabel"] == "samples"
+    assert d.options["backboneColor"] == "#E6DCC8"
+    assert d.options["stemColor"] == "#93a1b8"
+
+    w = Lollipop(make_data(), length=393, min_head_radius=1, max_head_radius=30,
+                 y_label="patients", backbone_color="#111111",
+                 stem_color="#222222")
+    assert w.options["minHeadRadius"] == 1
+    assert w.options["maxHeadRadius"] == 30
+    assert w.options["yLabel"] == "patients"
+    assert w.options["backboneColor"] == "#111111"
+    assert w.options["stemColor"] == "#222222"

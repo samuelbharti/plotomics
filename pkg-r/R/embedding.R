@@ -34,6 +34,9 @@
 #'   carry no units. `"equal"` gives both axes the same units per pixel; use it
 #'   when the axes share units and their relative spread is part of the claim,
 #'   as in PCA scores.
+#' @param padding Fraction of the data range to pad around the fitted view.
+#'   Larger values zoom out, leaving more empty space at the edges, which stops
+#'   the outermost points being clipped by the canvas border.
 #' @param show_axes Draw the axis frame + ticks (embeddings usually hide axes).
 #' @param show_legend Draw the legend (discrete swatches or a colorbar).
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
@@ -62,6 +65,7 @@ embedding <- function(data,
                       colormap = c("viridis", "rdbu"),
                       mouse_mode = c("panZoom", "lasso"),
                       aspect = c("fill", "equal"),
+                      padding = 0.04,
                       x_label = "UMAP 1",
                       y_label = "UMAP 2",
                       show_axes = FALSE,
@@ -116,6 +120,7 @@ embedding <- function(data,
     colormap = colormap,
     mouseMode = mouse_mode,
     aspect = aspect,
+    padding = padding,
     xLabel = x_label,
     yLabel = y_label,
     showAxes = show_axes,
@@ -135,6 +140,11 @@ embedding <- function(data,
 #'
 #' Output and render functions for using [embedding()] within Shiny applications
 #' and interactive R Markdown / Quarto documents.
+#'
+#' In a Shiny app the lasso selection is pushed back to the server as
+#' `input$<output_id>_selected`, a 0-based integer vector of the selected rows
+#' (so `embeddingOutput("umap")` populates `input$umap_selected`). It updates on
+#' every completed selection and is `NULL` until the first one.
 #'
 #' @param output_id Output variable to read from.
 #' @param width,height Element size, passed to

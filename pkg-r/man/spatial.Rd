@@ -42,7 +42,9 @@ colours. \code{NULL} derives them from the data and the theme palette.}
 \item{color_mode}{\code{"auto"} (detect from the column type), \code{"categorical"} or
 \code{"continuous"}.}
 
-\item{colormap}{Sequential ramp for continuous colouring.}
+\item{colormap}{Sequential ramp for continuous colouring: \code{"viridis"},
+\code{"rdbu"}, \code{"ltc"} (an earthy teal to sand to rust sequential ramp) or
+\code{"ltcdiv"} (its diverging counterpart, neutral cream at the midpoint).}
 
 \item{spot_scale}{Multiplier on \code{spot_diameter}; 1 draws true size.}
 

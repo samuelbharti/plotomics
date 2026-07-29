@@ -17,6 +17,12 @@ oncoplot(
   show_annotations = TRUE,
   show_legend = TRUE,
   empty_color = "#EFE9DC",
+  burden_color = "#0E7175",
+  frequency_color = "#ED773C",
+  x_label = "samples",
+  burden_label = "alterations",
+  cell_gap_x = 0.12,
+  cell_gap_y = 0.16,
   theme = NULL,
   width = NULL,
   height = NULL,
@@ -51,6 +57,16 @@ optional \code{colors}.}
 surrounding panels.}
 
 \item{empty_color}{Fill for a gene x sample cell with no alteration.}
+
+\item{burden_color, frequency_color}{Hex fills for the per-sample burden bars
+above the grid and the per-gene frequency bars to its right.}
+
+\item{x_label, burden_label}{Axis titles for the sample axis and the burden
+barplot.}
+
+\item{cell_gap_x, cell_gap_y}{Gap between cells as a fraction of cell size.
+Set both to \code{0} for a solid block, which is what you want once a cohort is
+wide enough that the gaps eat more pixels than the cells.}
 
 \item{theme}{Optional named list of theme overrides merged over the
 component defaults in the browser.}

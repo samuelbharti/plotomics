@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -43,7 +43,9 @@ class Spatial(PlotomicsWidget):
     color_mode:
         ``"auto"``, ``"categorical"`` or ``"continuous"``.
     colormap:
-        Sequential ramp for continuous colouring.
+        Sequential ramp for continuous colouring: ``"viridis"``, ``"rdbu"``,
+        ``"ltc"`` (an earthy teal to sand to rust sequential ramp) or
+        ``"ltcdiv"`` (its diverging counterpart, neutral cream at the midpoint).
     spot_scale:
         Multiplier on ``spot_diameter``; 1 draws true size.
     spot_opacity, image_opacity:
@@ -80,7 +82,7 @@ class Spatial(PlotomicsWidget):
         levels: list[str] | None = None,
         colors: list[str] | None = None,
         color_mode: str = "auto",
-        colormap: str = "viridis",
+        colormap: Literal["viridis", "rdbu", "ltc", "ltcdiv"] = "viridis",
         spot_scale: float = 1.0,
         spot_opacity: float = 0.85,
         image_opacity: float = 1.0,

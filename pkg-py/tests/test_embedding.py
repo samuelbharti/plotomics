@@ -120,3 +120,12 @@ def test_embedding_carries_the_point_scale_mode():
     # widely-scaled plot; "constant" is what makes it literal.
     assert Embedding(d).options["pointScaleMode"] == "asinh"
     assert Embedding(d, point_scale_mode="constant").options["pointScaleMode"] == "constant"
+
+
+def test_embedding_carries_the_fit_padding():
+    d = {"x": [1.0, 2.0, 3.0], "y": [1.0, 2.0, 3.0]}
+    assert Embedding(d).options["padding"] == 0.04
+    assert Embedding(d, padding=0.25).options["padding"] == 0.25
+    # Zero is meaningful (fit tight to the data), so it must survive rather
+    # than being dropped as a falsy value.
+    assert Embedding(d, padding=0).options["padding"] == 0
