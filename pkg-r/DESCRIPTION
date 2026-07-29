@@ -6,9 +6,12 @@ Authors@R:
     person("Samuel", "Bharti", email = "samuel.bharti@posit.co",
            role = c("aut", "cre"))
 Description: Lightweight, GPU-accelerated bioinformatics visualization widgets
-    (volcano plots, heatmaps, treemaps, genome viewers and networks) backed by
-    a shared JavaScript core and exposed to R through 'htmlwidgets'. Designed
-    for large datasets that render smoothly in the browser, the RStudio Viewer,
+    (volcano plots, expression and clustered heatmaps, dot plots, stacked
+    violins, embeddings, spatial tissue maps, oncoprints, protein domain
+    lollipops, Kaplan-Meier curves, mutational signature profiles, UpSet plots,
+    treemaps, networks, Hi-C contact matrices and genome viewers) backed by a
+    shared JavaScript core and exposed to R through 'htmlwidgets'. Designed for
+    large datasets that render smoothly in the browser, the RStudio Viewer,
     R Markdown, Quarto and Shiny.
 License: MIT + file LICENSE
 Encoding: UTF-8
@@ -17,7 +20,8 @@ Imports:
     htmlwidgets,
     htmltools
 Suggests:
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    survival
 Config/testthat/edition: 3
 URL: https://github.com/samuelbharti/plotomics
 BugReports: https://github.com/samuelbharti/plotomics/issues

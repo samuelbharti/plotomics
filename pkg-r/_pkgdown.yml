@@ -15,7 +15,7 @@ home:
 
 navbar:
   structure:
-    left: [reference, articles]
+    left: [reference]
     right: [search, github]
   components:
     github:
@@ -24,19 +24,48 @@ navbar:
       aria-label: GitHub repository
 
 reference:
-- title: Visualization components
-  desc: One constructor per component. Each returns an htmlwidget.
+- title: Expression and abundance
+  desc: >
+    Differential expression, expression matrices and per-feature distributions.
+    Each constructor returns an htmlwidget.
   contents:
   - volcano
-  - embedding
   - bioheatmap
-  - heatmap_plotomics
   - clustermap
+  - dotplot
+  - violin
+- title: Single-cell and spatial
+  desc: Dimensionality-reduction maps and measurements placed on tissue.
+  contents:
+  - embedding
+  - spatial
+- title: Cohort and variant genomics
+  desc: Alteration landscapes, variant positions, survival and signature profiles.
+  contents:
+  - oncoplot
+  - lollipop
+  - km
+  - profile
+- title: Sets, hierarchies and networks
+  desc: Set intersections, hierarchical composition and large graphs.
+  contents:
+  - upset
   - treemap
+  - network
+- title: Genome and chromatin
+  desc: Contact matrices and track-based genome browsers.
+  contents:
   - hic
   - igv
   - gosling
-  - network
+- title: Data helpers
+  desc: >
+    Precompute the inputs the widgets consume. The widgets draw, they do not
+    estimate, so these run the statistics in R where you can see them.
+  contents:
+  - oncoplot_memo_sort
+  - upset_intersections
+  - violin_density
 - title: Shiny bindings
   desc: Output and render pairs for use in classic Shiny apps.
   contents:
