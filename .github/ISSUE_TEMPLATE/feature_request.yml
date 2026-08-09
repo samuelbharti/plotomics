@@ -35,13 +35,21 @@ body:
         - New / none
         - Volcano
         - Heatmap
-        - Treemap
         - Clustermap
+        - Dotplot
+        - Violin
+        - Embedding
+        - Spatial
+        - Oncoplot
+        - Lollipop
+        - Kaplan-Meier (km)
+        - Profile
+        - UpSet
+        - Treemap
+        - Network
         - Hi-C
         - IGV
         - Gosling
-        - Network
-        - Embedding
     validations:
       required: false
   - type: textarea

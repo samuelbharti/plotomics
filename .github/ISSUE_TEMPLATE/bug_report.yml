@@ -26,13 +26,21 @@ body:
       options:
         - Volcano
         - Heatmap
-        - Treemap
         - Clustermap
+        - Dotplot
+        - Violin
+        - Embedding
+        - Spatial
+        - Oncoplot
+        - Lollipop
+        - Kaplan-Meier (km)
+        - Profile
+        - UpSet
+        - Treemap
+        - Network
         - Hi-C
         - IGV
         - Gosling
-        - Network
-        - Embedding
         - Not component-specific / core
     validations:
       required: true
