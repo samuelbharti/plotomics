@@ -7,10 +7,24 @@ name = "plotomics"
 version = "0.1.0"
 description = "High-performance bioinformatics visualization widgets (volcano, heatmaps, dot plot, violin, embedding, spatial, oncoprint, lollipop, Kaplan-Meier, signature profile, UpSet, treemap, network, Hi-C, genome viewers) backed by a shared JavaScript core."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Samuel Bharti", email = "samuel.bharti@posit.co" }]
 keywords = ["bioinformatics", "visualization", "anywidget", "webgl", "genomics"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Framework :: Jupyter",
+]
 dependencies = [
     "anywidget>=0.9.0",
     "numpy>=1.23",
