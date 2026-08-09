@@ -313,7 +313,9 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (el, initial) => 
       const levs = levels();
       const cols = levelColors(levs.length);
       const idx = new Map<string, number>();
-      levs.forEach((lv, i) => idx.set(lv, i));
+      levs.forEach((lv, i) => {
+        idx.set(lv, i);
+      });
       for (let i = 0; i < x.length; i += 1) {
         const li = idx.get(col[i] as string);
         ctx.fillStyle = li === undefined ? theme.muted : (cols[li] as string);

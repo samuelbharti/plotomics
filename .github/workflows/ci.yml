@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   js:
-    name: JS (build · test · typecheck)
+    name: JS (build · test · typecheck · lint)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -21,6 +21,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
       - run: pnpm dist
       - name: Verify committed bundles are up to date
         run: |
@@ -74,7 +75,7 @@ jobs:
     needs: js
     strategy:
       matrix:
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.10", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

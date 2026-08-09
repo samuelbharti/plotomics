@@ -38,6 +38,10 @@ export default function Embedding({
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
 
+  // Create the GPU instance once on mount. data and options are deliberately
+  // omitted from the dependency array; the effects below push those changes
+  // imperatively so the instance survives instead of being torn down.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only by design
   useEffect(() => {
     if (!elRef.current) return;
     instRef.current = createEmbedding(elRef.current, {
@@ -48,8 +52,6 @@ export default function Embedding({
       instRef.current?.destroy();
       instRef.current = null;
     };
-    // Create once; subsequent data/option changes are pushed imperatively below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
