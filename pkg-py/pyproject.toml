@@ -9,7 +9,7 @@ description = "High-performance bioinformatics visualization widgets (volcano, h
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-authors = [{ name = "Samuel Bharti", email = "samuel.bharti@posit.co" }]
+authors = [{ name = "Samuel Bharti", email = "samuelbharti.io@gmail.com" }]
 keywords = ["bioinformatics", "visualization", "anywidget", "webgl", "genomics"]
 classifiers = [
     "Development Status :: 4 - Beta",

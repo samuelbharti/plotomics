@@ -3,7 +3,7 @@ Type: Package
 Title: High-Performance Bioinformatics Visualizations
 Version: 0.1.0
 Authors@R:
-    person("Samuel", "Bharti", email = "samuel.bharti@posit.co",
+    person("Samuel", "Bharti", email = "samuelbharti.io@gmail.com",
            role = c("aut", "cre"))
 Description: Lightweight, GPU-accelerated bioinformatics visualization widgets
     (volcano plots, expression and clustered heatmaps, dot plots, stacked

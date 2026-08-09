@@ -20,11 +20,11 @@ Useful links:
 
 }
 \author{
-\strong{Maintainer}: Samuel Bharti \email{samuel.bharti@posit.co}
+\strong{Maintainer}: Samuel Bharti \email{samuelbharti.io@gmail.com}
 
 Authors:
 \itemize{
-  \item Samuel Bharti \email{samuel.bharti@posit.co}
+  \item Samuel Bharti \email{samuelbharti.io@gmail.com}
 }
 
 }
