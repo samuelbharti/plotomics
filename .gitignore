@@ -29,8 +29,9 @@ plotomics_*.tar.gz
 pkg-r/docs/
 site/
 
-# Editors / OS
+# Editors / OS / agents
 .DS_Store
 .vscode/
 .idea/
+.claude/
 *.log

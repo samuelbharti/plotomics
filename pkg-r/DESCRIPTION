@@ -17,8 +17,7 @@ License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Imports:
-    htmlwidgets,
-    htmltools
+    htmlwidgets
 Suggests:
     testthat (>= 3.0.0),
     survival

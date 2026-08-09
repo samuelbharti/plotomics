@@ -28,7 +28,7 @@ updates:
 
   # Python package (anywidget wrapper).
   - package-ecosystem: pip
-    directory: "/python"
+    directory: "/pkg-py"
     schedule:
       interval: weekly
       day: monday
