@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="plotomics">
+  <defs>
+    <clipPath id="fhex" clipPathUnits="userSpaceOnUse">
+      <polygon points="16.0000,1.6000 3.5292,8.8000 3.5292,23.2000 16.0000,30.4000 28.4708,23.2000 28.4708,8.8000"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#fhex)">
+    <rect x="0" y="0" width="32" height="32" fill="#EDE6D8"/>
+    <rect x="0" y="0" width="16" height="32" fill="#C4643F"/>
+    <circle cx="21" cy="10.5" r="2" fill="#8E2A3C"/>
+    <circle cx="25.2" cy="16.6" r="2" fill="#8E2A3C"/>
+    <circle cx="20.4" cy="21.6" r="2" fill="#3A3634"/>
+  </g>
+  <polygon points="16.0000,1.6000 3.5292,8.8000 3.5292,23.2000 16.0000,30.4000 28.4708,23.2000 28.4708,8.8000" fill="none" stroke="#8E2A3C" stroke-width="2.4" stroke-linejoin="round"/>
+</svg>
