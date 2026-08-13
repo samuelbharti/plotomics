@@ -71,8 +71,13 @@ jobs:
 
       # Landing page at the site root.
       - name: Assemble landing page
+        # Copy every asset the landing page references, not just the HTML.
+        # index.html links favicon.svg relatively, so omitting it here serves a
+        # 404 for the icon on an otherwise healthy site - which is exactly what
+        # happened when the favicon first landed.
         run: |
           cp docs/index.html site/index.html
+          cp docs/favicon.svg site/favicon.svg
           cp docs/.nojekyll site/.nojekyll
 
       - uses: actions/upload-pages-artifact@v3
