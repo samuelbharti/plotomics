@@ -50,7 +50,7 @@ body:
       label: Language wrapper
       description: Where did you hit the bug?
       options:
-        - JS / TypeScript (@plotomics/components)
+        - JS / TypeScript (plotomics)
         - R (htmlwidgets)
         - Python (anywidget)
     validations:

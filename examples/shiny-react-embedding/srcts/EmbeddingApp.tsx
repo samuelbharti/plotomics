@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useShinyInput, useShinyOutput } from "@posit/shiny-react";
-import { darkTheme, type PlotomicsData } from "@plotomics/core";
+import { darkTheme, type PlotomicsData } from "plotomics/core";
 import Embedding from "./Embedding";
 
 /**
@@ -53,7 +53,7 @@ export default function EmbeddingApp() {
         <div className="titles">
           <h1>plotomics embedding · shiny-react</h1>
           <p className="hint">
-            A UMAP/t-SNE viewer from <code>@plotomics/components</code>, driven
+            A UMAP/t-SNE viewer from <code>plotomics</code>, driven
             through Shiny hooks. Selection is sent to the R server.
           </p>
         </div>

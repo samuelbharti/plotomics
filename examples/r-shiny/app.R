@@ -6,7 +6,7 @@
 # React-frontend example in ../shiny-react-embedding.
 #
 # Run (from the repo root, after building the JS once):
-#   pnpm dist                    # or: build @plotomics/components + node scripts/sync-assets.mjs
+#   pnpm dist                    # or: build plotomics + node scripts/sync-assets.mjs
 #   Rscript -e "shiny::runApp('examples/r-shiny', port = 8001)"
 
 library(shiny)

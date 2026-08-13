@@ -12,7 +12,7 @@
     "dev": "concurrently -c auto \"npm run watch\" \"npm run app\""
   },
   "dependencies": {
-    "@plotomics/components": "^0.1.0",
+    "plotomics": "^0.1.0",
     "@posit/shiny-react": "^0.0.16",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"

@@ -18,7 +18,7 @@
                     └─────────────┬─────────────-┘
                                   │  registerComponent()
       ┌───────────────────────────▼───────────────────────────┐
-      │        @plotomics/components  (headless factories)         │
+      │        plotomics  (headless factories)         │
       │   create<Name>(el, {data, options}) -> PlotomicsInstance   │
       └───────────────────────────▲───────────────────────────┘
                                   │  makeAnywidget()
@@ -27,13 +27,13 @@
                     └───────────────────────────┘
                                   │
                     ┌─────────────▼─────────────┐
-                    │        @plotomics/core        │
+                    │        plotomics/core        │
                     │ contract · theme · color · │
                     │ transport · dom · export   │
                     └───────────────────────────┘
 ```
 
-## The contract (`@plotomics/core`)
+## The contract (`plotomics/core`)
 
 ```ts
 type PlotomicsData = {
@@ -66,7 +66,7 @@ The exception is `onSelect`, which is a JS callback and cannot cross the wire.
 Each host supplies it instead:
 
 - **R.** `registerComponent()` wraps every widget in `withShinySelection()`
-  (`pkg-js/components/src/lib/umd.ts`). Under `HTMLWidgets.shinyMode` it
+  (`pkg-js/src/lib/umd.ts`). Under `HTMLWidgets.shinyMode` it
   injects an `onSelect` that pushes the selected row indices to
   `input$<outputId>_selected` with `priority: "event"`. Outside Shiny it is a
   no-op, and components without a selection ignore the extra key. So a lasso in
@@ -86,12 +86,12 @@ Each host supplies it instead:
 
 Both converge on the same `PlotomicsData`. The binary path exists because a
 million floats as JSON is ~20 MB of text to parse; as a `Float32Array` buffer
-it is 4 MB delivered as a `DataView`. See `pkg-js/core/src/transport.ts` and
+it is 4 MB delivered as a `DataView`. See `pkg-js/src/core/transport.ts` and
 `pkg-py/src/plotomics/_base.py::pack_columns`.
 
 ## Build & sync
 
-`pkg-js/components/build.mjs` (esbuild) globs `src/entries/{anywidget,umd}/*.ts`
+`pkg-js/build.mjs` (esbuild) globs `src/entries/{anywidget,umd}/*.ts`
 and emits one self-contained bundle per component per target. `scripts/sync-assets.mjs`
 copies them into `pkg-r/inst/htmlwidgets/lib/plotomics/` and
 `pkg-py/src/plotomics/static/`. These synced dirs are git-tracked and regenerated

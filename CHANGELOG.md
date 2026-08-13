@@ -5,9 +5,8 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Versions are shared across the JavaScript packages (`@plotomics/core`,
-`@plotomics/components`), the Python package (`plotomics`, PyPI) and the R package
-(`plotomics`, r-universe), which are released together from a single tag.
+One name on every registry: `plotomics` on npm, on PyPI and on r-universe. The
+three packages share a version and are released together from a single tag.
 
 ## [Unreleased]
 
@@ -18,13 +17,14 @@ source bundle to JavaScript, R and Python.
 
 ### Added
 
-- **Shared core (`@plotomics/core`).** A single TypeScript core defining the
+- **Shared core (`plotomics/core`).** A single TypeScript core defining the
   component contract, theming, colour scales, binary column transport and export
   helpers, consumed by every visualization so behaviour stays consistent across
   languages. Includes the `viridis` and `rdbu` ramps plus the `ltc` sequential
-  and `ltcdiv` diverging ramps.
+  and `ltcdiv` diverging ramps. Ships as a subpath of the one npm package rather
+  than a second package, so there is no version skew between core and components.
 - **Tri-language wrapper architecture.** Each component ships from one source
-  bundle to three targets: an npm package (`@plotomics/components`), a Python
+  bundle to three targets: an npm package (`plotomics`), a Python
   [anywidget](https://anywidget.dev) widget (`plotomics` on PyPI, for Jupyter,
   JupyterLab, marimo, Colab, VS Code, Shiny for Python and Streamlit) and an R
   [htmlwidget](https://www.htmlwidgets.org) (`plotomics`, for the RStudio Viewer,

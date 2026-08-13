@@ -9,14 +9,14 @@
   },
   "packageManager": "pnpm@11.9.0",
   "scripts": {
-    "build": "pnpm -r --filter \"./pkg-js/**\" build",
+    "build": "pnpm --filter plotomics build",
     "sync": "node scripts/sync-assets.mjs",
     "dist": "pnpm build && pnpm sync",
-    "test": "pnpm -r --filter \"./pkg-js/**\" test",
-    "typecheck": "pnpm -r --filter \"./pkg-js/**\" typecheck",
+    "test": "pnpm --filter plotomics test",
+    "typecheck": "pnpm --filter plotomics typecheck",
     "lint": "biome lint .",
     "format": "biome format --write .",
-    "dev": "pnpm --filter @plotomics/components dev"
+    "dev": "pnpm --filter plotomics dev"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.6",

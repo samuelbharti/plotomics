@@ -8,9 +8,9 @@ shared file.
 ## Architecture in one paragraph
 
 Every component is a **headless, imperative factory** in
-`pkg-js/components/src/components/<name>.ts` that knows nothing about R or
+`pkg-js/src/components/<name>.ts` that knows nothing about R or
 Python. It implements the `PlotomicsFactory` / `PlotomicsInstance` contract from
-`@plotomics/core`. Two tiny generated adapters expose it: an **anywidget** ESM
+`plotomics/core`. Two tiny generated adapters expose it: an **anywidget** ESM
 entry (Python) and a **UMD/IIFE** entry (R/htmlwidgets). Build artifacts are
 synced into the `pkg-r/` and `pkg-py/` packages, which are thin wrappers.
 
@@ -34,7 +34,7 @@ per-datum SVG/DOM for the data layer:
 
 ## Step-by-step
 
-1. **Factory**: `pkg-js/components/src/components/<name>.ts`
+1. **Factory**: `pkg-js/src/components/<name>.ts`
    - Export `create<Name>: PlotomicsFactory<<Name>Options>` and a
      `default<Name>Options`.
    - Extract pure logic (scales, classification, layout math) into exported
@@ -48,11 +48,11 @@ per-datum SVG/DOM for the data layer:
 
 3. **Programmatic export**: append to `src/lib/index.ts` (sorted).
 
-4. **Unit test**: `pkg-js/components/test/<name>.test.ts` for the pure helpers.
+4. **Unit test**: `pkg-js/test/<name>.test.ts` for the pure helpers.
 
-5. **Dev demo**: add a `demos.<name>` entry in `pkg-js/components/dev/main.ts`
+5. **Dev demo**: add a `demos.<name>` entry in `pkg-js/dev/main.ts`
    with synthetic data at scale (≥100k where meaningful) so it can be eyeballed
-   via `pnpm --filter @plotomics/components dev`.
+   via `pnpm --filter plotomics dev`.
 
 6. **R wrapper**
    - `pkg-r/R/<name>.R`: exported `<name>()` constructor calling
@@ -87,7 +87,7 @@ per-datum SVG/DOM for the data layer:
      that is documented but not indexed, including helpers like
      `violin_density()`.
    - `CHANGELOG.md` under `## [Unreleased]`.
-   - `pkg-js/components/README.md` engine table, only if it needs a peer
+   - `pkg-js/README.md` engine table, only if it needs a peer
      engine. If it does not, add its subpath to the "nothing extra" row.
    - `docs/architecture.md` rendering-strategy table.
 
@@ -112,9 +112,9 @@ cd pkg-py && pip install -e ".[dev]" && pytest && cd ..
 
 ## The only shared files (append, don't rewrite, and keep sorted)
 
-- `pkg-js/components/src/lib/index.ts`
+- `pkg-js/src/lib/index.ts`
 - `pkg-py/src/plotomics/__init__.py`
-- `pkg-js/components/dev/main.ts`
+- `pkg-js/dev/main.ts`
 - `pkg-r/_pkgdown.yml`
 
 The last one is easy to miss because nothing local fails without it: the docs
@@ -123,5 +123,5 @@ unnoticed until someone publishes. Run the pkgdown build yourself if you are
 adding an exported function.
 
 Everything else your component adds is brand-new files. If you find yourself
-editing `@plotomics/core`, prefer adding a new util over changing an existing
+editing `plotomics/core`, prefer adding a new util over changing an existing
 signature.

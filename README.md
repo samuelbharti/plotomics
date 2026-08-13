@@ -103,8 +103,8 @@ win.
 
 ```
 pkg-js/
-  core/         @plotomics/core        contract, theme, color, binary transport, export
-  components/   @plotomics/components  the headless viz factories + adapters + dev harness
+  core/         plotomics/core        contract, theme, color, binary transport, export
+  components/   plotomics  the headless viz factories + adapters + dev harness
 pkg-r/          R package (htmlwidgets)
 pkg-py/         Python package (anywidget)
 docs/           landing page, architecture notes, motivation
@@ -120,7 +120,7 @@ pnpm install
 pnpm dist        # build all JS + copy bundles into pkg-r/ and pkg-py/
 
 # Visual dev harness (WebGL, synthetic data at scale)
-pnpm --filter @plotomics/components dev   # http://localhost:5180
+pnpm --filter plotomics dev   # http://localhost:5180
 ```
 
 ### R

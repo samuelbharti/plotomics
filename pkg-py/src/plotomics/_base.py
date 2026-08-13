@@ -1,7 +1,7 @@
 """Shared base widget and binary column packing for plotomics components.
 
 Large datasets are packed into a single contiguous ``bytes`` buffer plus a tiny
-JSON schema (mirroring ``@plotomics/core``'s ``BufferSchema``) instead of being
+JSON schema (mirroring ``plotomics/core``'s ``BufferSchema``) instead of being
 serialized as JSON. anywidget delivers the buffer to the browser as a
 ``DataView`` which the JS core decodes zero-copy into typed arrays.
 """
@@ -18,7 +18,7 @@ import traitlets
 
 STATIC = Path(__file__).parent / "static"
 
-# numpy dtype -> transport dtype string understood by @plotomics/core.
+# numpy dtype -> transport dtype string understood by plotomics/core.
 _DTYPE_MAP: dict[str, str] = {
     "float32": "float32",
     "float64": "float64",
@@ -188,7 +188,7 @@ class PlotomicsWidget(anywidget.AnyWidget):
     """Base class for all plotomics widgets.
 
     Trait names mirror the JS adapter contract in
-    ``@plotomics/components`` (``lib/anywidget.ts``).
+    ``plotomics`` (``lib/anywidget.ts``).
     """
 
     # JSON side-channel: string columns + non-columnar metadata.

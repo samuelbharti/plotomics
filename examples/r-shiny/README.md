@@ -18,8 +18,8 @@ The widget JS must be built and synced into the R package first (those bundles
 are git-tracked and regenerated on demand). From the repo root:
 
 ```bash
-# build @plotomics/components and copy bundles into pkg-r (and pkg-py)
-pnpm --filter @plotomics/components build && node scripts/sync-assets.mjs
+# build plotomics and copy bundles into pkg-r (and pkg-py)
+pnpm --filter plotomics build && node scripts/sync-assets.mjs
 # (equivalently `pnpm dist` where pnpm is on PATH)
 
 Rscript -e "shiny::runApp('examples/r-shiny', port = 8001)"

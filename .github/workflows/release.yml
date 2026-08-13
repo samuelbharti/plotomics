@@ -59,7 +59,7 @@ jobs:
           packages-dir: pkg-py/dist
 
   npm:
-    name: Build & publish @plotomics/components (npm)
+    name: Build & publish plotomics (npm)
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC token for npm provenance attestations
@@ -77,12 +77,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        # @plotomics/core is a runtime dependency of @plotomics/components (workspace:*
-        # is rewritten to the concrete version on publish), so it must be
-        # published too for consumers to resolve the dependency.
-        run: |
-          pnpm publish --filter @plotomics/core --no-git-checks --access public --provenance
-          pnpm publish --filter @plotomics/components --no-git-checks --access public --provenance
+        # One unscoped package, matching `pip install plotomics` and the CRAN
+        # name. The shared core ships inside it as the `plotomics/core` subpath,
+        # so there is no second package to publish and no ordering to get wrong.
+        # Only dist/lib is packed; the umd/ and anywidget/ bundles built above
+        # are R and Python delivery artifacts and are excluded by `files`.
+        run: pnpm publish --filter plotomics --no-git-checks --access public --provenance
 
   github-release:
     name: Create the GitHub Release

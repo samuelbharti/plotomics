@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import {
   createEmbedding,
   type EmbeddingOptions,
-} from "@plotomics/components/embedding";
-import type { PlotomicsData } from "@plotomics/core";
+} from "plotomics/embedding";
+import type { PlotomicsData } from "plotomics/core";
 
 type Instance = ReturnType<typeof createEmbedding>;
 
@@ -16,7 +16,7 @@ export interface EmbeddingProps {
 }
 
 /**
- * Thin React wrapper around the headless `@plotomics/components` embedding factory.
+ * Thin React wrapper around the headless `plotomics` embedding factory.
  *
  * The factory owns the GPU canvas (regl-scatterplot) + the SVG legend overlay;
  * React only manages the container lifecycle and forwards prop changes through
