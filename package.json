@@ -20,7 +20,7 @@
     "logo": "node scripts/make-logo.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.6",
+    "@biomejs/biome": "2.5.7",
     "@resvg/resvg-js": "^2.6.2",
     "typescript": "^5.6.3"
   }
