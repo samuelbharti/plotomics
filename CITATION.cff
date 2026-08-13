@@ -16,6 +16,7 @@ authors:
   - family-names: Bharti
     given-names: Samuel
     email: samuelbharti.io@gmail.com
+    orcid: "https://orcid.org/0000-0003-4190-7058"
 repository-code: "https://github.com/samuelbharti/plotomics"
 url: "https://github.com/samuelbharti/plotomics"
 license: MIT

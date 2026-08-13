@@ -4,7 +4,8 @@ Title: High-Performance Bioinformatics Visualizations
 Version: 0.1.0
 Authors@R:
     person("Samuel", "Bharti", email = "samuelbharti.io@gmail.com",
-           role = c("aut", "cre"))
+           role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0003-4190-7058"))
 Description: Lightweight, GPU-accelerated bioinformatics visualization widgets
     (volcano plots, expression and clustered heatmaps, dot plots, stacked
     violins, embeddings, spatial tissue maps, oncoprints, protein domain
