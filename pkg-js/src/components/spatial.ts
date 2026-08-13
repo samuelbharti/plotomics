@@ -330,7 +330,11 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (el, initial) => 
         ctx.fill();
       }
       legendState = { kind: "categorical", levels: levs, colors: cols };
-    } else if (col) {
+    } else if (col && typeof (col as ArrayLike<unknown>)[0] === "number") {
+      // The type guard matters because the option and the data arrive
+      // separately: a caller switching to "continuous" gets the new option one
+      // render before the numeric column replaces the categorical one, and
+      // doing arithmetic on those strings yields NaN and took the panel down.
       const nums = col as unknown as ArrayLike<number>;
       const [lo, hi] = numericExtent(nums);
       const fn = ramp(opts.colormap);
