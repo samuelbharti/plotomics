@@ -15,7 +15,12 @@ function lerp(a: number, b: number, t: number): number {
 }
 
 function lerpRamp(stops: RGB[], t: number): RGB {
-  t = clamp01(t);
+  // A non-finite t indexes the stop array with NaN, which yields undefined and
+  // throws on the very next property read, taking the whole view down mid
+  // render. clamp01 cannot catch it, because every comparison against NaN is
+  // false. Pin it to the low end instead: a wrong colour is recoverable, a
+  // blank panel is not.
+  t = Number.isFinite(t) ? clamp01(t) : 0;
   const n = stops.length - 1;
   const scaled = t * n;
   const i = Math.min(Math.floor(scaled), n - 1);
