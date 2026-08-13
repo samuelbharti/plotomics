@@ -1,5 +1,7 @@
 # plotomics
 
+<img src="assets/logo.png" align="right" width="150" alt="plotomics" />
+
 **Lightweight, GPU-accelerated bioinformatics visualization components with R and Python wrappers.**
 
 One high-performance TypeScript core, wrapped for R (via
