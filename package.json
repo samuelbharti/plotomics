@@ -16,10 +16,12 @@
     "typecheck": "pnpm --filter plotomics typecheck",
     "lint": "biome lint .",
     "format": "biome format --write .",
-    "dev": "pnpm --filter plotomics dev"
+    "dev": "pnpm --filter plotomics dev",
+    "logo": "node scripts/make-logo.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.6",
+    "@resvg/resvg-js": "^2.6.2",
     "typescript": "^5.6.3"
   }
 }
