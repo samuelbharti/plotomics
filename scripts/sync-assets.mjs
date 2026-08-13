@@ -12,8 +12,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const distUmd = path.join(repo, "packages/components/dist/umd");
-const distAny = path.join(repo, "packages/components/dist/anywidget");
+const distUmd = path.join(repo, "pkg-js/components/dist/umd");
+const distAny = path.join(repo, "pkg-js/components/dist/anywidget");
 const rLib = path.join(repo, "pkg-r/inst/htmlwidgets/lib/plotomics");
 const pyStatic = path.join(repo, "pkg-py/src/plotomics/static");
 

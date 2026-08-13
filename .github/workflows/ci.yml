@@ -30,8 +30,8 @@ jobs:
           # files, which would let a missing bundle ship silently.
           git add -A pkg-r/inst/htmlwidgets/lib/plotomics pkg-py/src/plotomics/static
           git diff --cached --exit-code pkg-r/inst/htmlwidgets/lib/plotomics pkg-py/src/plotomics/static
-      - run: pnpm -r --filter "./packages/**" typecheck
-      - run: pnpm -r --filter "./packages/**" test
+      - run: pnpm -r --filter "./pkg-js/**" typecheck
+      - run: pnpm -r --filter "./pkg-js/**" test
       - name: Upload built bundles
         uses: actions/upload-artifact@v7
         with:

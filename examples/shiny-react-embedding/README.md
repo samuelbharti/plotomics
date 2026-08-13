@@ -52,7 +52,7 @@ root:
 ```bash
 pnpm dist                                   # build @plotomics/components
 cd examples/shiny-react-embedding
-pnpm link ../../packages/components         # or: npm install ../../packages/components
+pnpm link ../../pkg-js/components         # or: npm install ../../pkg-js/components
 ```
 
 (This example is intentionally **outside** the pnpm workspace so its React 19 /

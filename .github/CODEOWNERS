@@ -6,7 +6,7 @@
 *                @samuelbharti
 
 # Shared core: the contract every component depends on.
-/packages/core/  @samuelbharti
+/pkg-js/core/  @samuelbharti
 
 # Repo governance, CI, and automation.
 /.github/        @samuelbharti

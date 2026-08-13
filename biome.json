@@ -16,7 +16,7 @@
       "!pnpm-lock.yaml",
       "!pkg-r/inst/htmlwidgets/lib/plotomics/**",
       "!pkg-py/src/plotomics/static/**",
-      "!packages/*/dev/**"
+      "!pkg-js/*/dev/**"
     ]
   },
   "formatter": {

@@ -1,5 +1,5 @@
 packages:
-  - "packages/*"
+  - "pkg-js/*"
 allowBuilds:
   core-js: false
   esbuild: true

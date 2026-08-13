@@ -102,7 +102,7 @@ win.
 ## Repository layout
 
 ```
-packages/
+pkg-js/
   core/         @plotomics/core        contract, theme, color, binary transport, export
   components/   @plotomics/components  the headless viz factories + adapters + dev harness
 pkg-r/          R package (htmlwidgets)
