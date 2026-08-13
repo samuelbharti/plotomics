@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: If you use plotomics in your research, please cite it as below.
+title: "plotomics: High-Performance Bioinformatics Visualizations"
+abstract: >-
+  Lightweight, GPU-accelerated bioinformatics visualization components with a
+  single TypeScript core exposed to R (via htmlwidgets) and Python (via
+  anywidget). Seventeen components covering differential expression, expression
+  and clustered heatmaps, marker dot plots, stacked violins, single-cell
+  embeddings, spatial tissue maps, oncoprints, protein domain lollipops,
+  Kaplan-Meier curves, mutational signature profiles, UpSet plots, treemaps,
+  networks, Hi-C contact matrices and genome browsers. Built for large datasets
+  that stay interactive in the browser, the RStudio Viewer, Jupyter, Quarto and
+  Shiny.
+type: software
+authors:
+  - family-names: Bharti
+    given-names: Samuel
+    email: samuelbharti.io@gmail.com
+repository-code: "https://github.com/samuelbharti/plotomics"
+url: "https://github.com/samuelbharti/plotomics"
+license: MIT
+version: 0.1.0
+date-released: "2026-08-09"
+keywords:
+  - bioinformatics
+  - visualization
+  - genomics
+  - single-cell
+  - webgl
+  - htmlwidgets
+  - anywidget
+  - r
+  - python
+  - typescript
