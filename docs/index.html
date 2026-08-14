@@ -69,7 +69,11 @@
   /* content column */
   main { max-width: 800px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
 
-  .title-block { margin-bottom: 1.75rem; }
+  .title-block { margin-bottom: 1.75rem; position: relative; }
+  /* The mark is decorative: the h1 right beside it already says "plotomics",
+     so alt="" keeps a screen reader from announcing the name twice. */
+  .hero-logo { float: right; width: 132px; height: auto; margin: 0 0 1rem 1.25rem; }
+  @media (max-width: 620px) { .hero-logo { width: 96px; } }
   .title-block h1 {
     margin: 0; font-size: 2.5rem; font-weight: 700;
     color: var(--heading); letter-spacing: -0.02em; line-height: 1.1;
@@ -170,6 +174,7 @@
 
 <main id="top">
   <header class="title-block">
+    <img class="hero-logo" src="logo.svg" alt="" width="132" height="152" />
     <h1>plotomics</h1>
     <p class="subtitle">GPU-accelerated bioinformatics visualization for R, Python and the web.</p>
     <div class="meta">

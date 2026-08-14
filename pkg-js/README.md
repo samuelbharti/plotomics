@@ -1,5 +1,7 @@
 # plotomics
 
+<img src="https://raw.githubusercontent.com/samuelbharti/plotomics/main/assets/logo.png" align="right" width="140" alt="" />
+
 Headless, framework-agnostic bioinformatics visualization components. Each
 component is a factory: `createX(element, { data, options })` returns an
 instance with `setData` / `setOptions` / `resize` / `destroy` (and `exportSVG` /

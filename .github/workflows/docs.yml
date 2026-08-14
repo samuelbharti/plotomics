@@ -71,14 +71,18 @@ jobs:
 
       # Landing page at the site root.
       - name: Assemble landing page
-        # Copy every asset the landing page references, not just the HTML.
-        # index.html links favicon.svg relatively, so omitting it here serves a
-        # 404 for the icon on an otherwise healthy site - which is exactly what
-        # happened when the favicon first landed.
+        # Copy the page and every image it references. Naming assets one by one
+        # is how the favicon shipped broken: index.html linked it relatively, the
+        # copy step did not list it, and the site served a 404 for the icon while
+        # every page rendered fine. Globbing the images means a new asset is
+        # deployed by virtue of existing, not by remembering to add a line here.
+        # The .md files stay behind: they are sources for the R and Python sites,
+        # not pages served at the root.
         run: |
           cp docs/index.html site/index.html
-          cp docs/favicon.svg site/favicon.svg
+          cp docs/*.svg site/
           cp docs/.nojekyll site/.nojekyll
+          ls -1 site
 
       - uses: actions/upload-pages-artifact@v5
         with:

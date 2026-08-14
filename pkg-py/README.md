@@ -1,5 +1,7 @@
 # plotomics (Python)
 
+<img src="https://raw.githubusercontent.com/samuelbharti/plotomics/main/assets/logo.png" align="right" width="140" alt="" />
+
 High-performance bioinformatics visualization widgets backed by a shared
 JavaScript core, exposed to Python through [anywidget](https://anywidget.dev).
 
