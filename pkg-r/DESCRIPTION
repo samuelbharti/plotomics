@@ -23,6 +23,7 @@ Suggests:
     testthat (>= 3.0.0),
     survival
 Config/testthat/edition: 3
-URL: https://github.com/samuelbharti/plotomics
+URL: https://github.com/samuelbharti/plotomics,
+    https://doi.org/10.5281/zenodo.21926306
 BugReports: https://github.com/samuelbharti/plotomics/issues
 Config/roxygen2/version: 8.0.0

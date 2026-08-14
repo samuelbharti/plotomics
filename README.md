@@ -2,6 +2,8 @@
 
 <img src="assets/logo.png" align="right" width="150" alt="plotomics" />
 
+[![DOI](https://zenodo.org/badge/1285554289.svg)](https://doi.org/10.5281/zenodo.21926306)
+
 **Lightweight, GPU-accelerated bioinformatics visualization components with R and Python wrappers.**
 
 One high-performance TypeScript core, wrapped for R (via
@@ -182,6 +184,29 @@ New components follow one recipe, described in
 [CONTRIBUTING.md](CONTRIBUTING.md). The Volcano plot is the reference
 implementation. Architecture details are in
 [docs/architecture.md](docs/architecture.md).
+
+## Citation
+
+If plotomics contributed to work you are publishing, please cite it:
+
+> Bharti, S. plotomics: High-Performance Bioinformatics Visualizations. Zenodo.
+> [10.5281/zenodo.21926306](https://doi.org/10.5281/zenodo.21926306)
+
+```bibtex
+@software{bharti_plotomics,
+  author  = {Bharti, Samuel},
+  title   = {plotomics: High-Performance Bioinformatics Visualizations},
+  year    = {2026},
+  publisher = {Zenodo},
+  doi     = {10.5281/zenodo.21926306},
+  url     = {https://github.com/samuelbharti/plotomics}
+}
+```
+
+That DOI always resolves to the newest release. Zenodo also mints one per
+version, so use the version-specific DOI from the record if you need to pin the
+exact release you ran. [CITATION.cff](CITATION.cff) carries the same metadata in
+machine-readable form, and GitHub's "Cite this repository" button reads it.
 
 ## License
 
