@@ -1,3 +1,14 @@
+# plotomics 0.2.0
+
+## Breaking changes
+
+* `profile()` is renamed `bioprofile()`, with `profile_plotomics()` as an alias.
+  Attaching the package used to mask the `stats::profile()` generic; it now
+  masks nothing in base or the recommended packages. `bioheatmap()` already
+  worked this way for `stats::heatmap()`.
+* The Shiny bindings follow: `profileOutput()` and `renderProfile()` are now
+  `bioprofileOutput()` and `renderBioprofile()`.
+
 # plotomics 0.1.0
 
 First release.
@@ -34,7 +45,7 @@ the RStudio Viewer, R Markdown, Quarto and Shiny, and every one ships a matching
 * `lollipop()` — variants along a protein over its domain architecture.
 * `km()` — Kaplan-Meier curves with censoring ticks, confidence bands and a
   number-at-risk table. Accepts a `survival::survfit` object directly.
-* `profile()` — grouped categorical profile, built for the 96-context mutational
+* `bioprofile()` — grouped categorical profile, built for the 96-context mutational
   signature layout.
 
 ## Sets, hierarchies and networks

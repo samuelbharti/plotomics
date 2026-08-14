@@ -51,7 +51,7 @@ reference:
   - oncoplot
   - lollipop
   - km
-  - profile
+  - bioprofile
 - title: Sets, hierarchies and networks
   desc: Set intersections, hierarchical composition and large graphs.
   contents:

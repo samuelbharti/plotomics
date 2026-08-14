@@ -7,8 +7,8 @@ profile_fixture <- function() {
   )
 }
 
-test_that("profile() builds an htmlwidget with the expected payload", {
-  w <- profile(profile_fixture(), title = "Cohort catalogue",
+test_that("bioprofile() builds an htmlwidget with the expected payload", {
+  w <- bioprofile(profile_fixture(), title = "Cohort catalogue",
                y_label = "SNVs", bar_width = 0.5)
 
   expect_s3_class(w, "htmlwidget")
@@ -22,35 +22,35 @@ test_that("profile() builds an htmlwidget with the expected payload", {
 
 test_that("group order follows first appearance unless given", {
   df <- profile_fixture()
-  w1 <- profile(df)
+  w1 <- bioprofile(df)
   expect_equal(as.character(w1$x$data$meta$groups), c("C>A", "C>G", "C>T"))
-  w2 <- profile(df, groups = c("C>T", "C>G", "C>A"))
+  w2 <- bioprofile(df, groups = c("C>T", "C>G", "C>A"))
   expect_equal(as.character(w2$x$data$meta$groups), c("C>T", "C>G", "C>A"))
 })
 
 test_that("a single group still serializes as an array", {
-  w <- profile(data.frame(value = c(1, 2), group = c("g", "g"),
+  w <- bioprofile(data.frame(value = c(1, 2), group = c("g", "g"),
                           stringsAsFactors = FALSE))
   expect_true(is.character(as.character(w$x$data$meta$groups)))
   expect_length(as.character(w$x$data$meta$groups), 1)
 })
 
 test_that("value works without group or label columns", {
-  w <- profile(data.frame(value = c(1, 2, 3)))
+  w <- bioprofile(data.frame(value = c(1, 2, 3)))
   expect_equal(w$x$data$columns$value, c(1, 2, 3))
   expect_null(w$x$data$columns$group)
   expect_null(w$x$data$meta$groups)
 })
 
-test_that("profile() validates its input", {
+test_that("bioprofile() validates its input", {
   df <- profile_fixture()
-  expect_error(profile(list(value = 1)), "must be a data frame")
-  expect_error(profile(data.frame(a = 1)), "must contain a .value. column")
-  expect_error(profile(df, bar_width = 0), "in \\(0, 1\\]")
-  expect_error(profile(df, bar_width = 1.5), "in \\(0, 1\\]")
-  expect_error(profile(df, groups = c("C>A")), "not present in .groups.")
+  expect_error(bioprofile(list(value = 1)), "must be a data frame")
+  expect_error(bioprofile(data.frame(a = 1)), "must contain a .value. column")
+  expect_error(bioprofile(df, bar_width = 0), "in \\(0, 1\\]")
+  expect_error(bioprofile(df, bar_width = 1.5), "in \\(0, 1\\]")
+  expect_error(bioprofile(df, groups = c("C>A")), "not present in .groups.")
   expect_error(
-    profile(df, group_colors = c("#000000")),
+    bioprofile(df, group_colors = c("#000000")),
     "one entry per group"
   )
 })

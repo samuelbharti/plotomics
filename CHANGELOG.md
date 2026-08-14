@@ -10,6 +10,22 @@ three packages share a version and are released together from a single tag.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-14
+
+### Changed
+
+- **`profile()` is now `bioprofile()` (R only), with a `profile_plotomics()`
+  alias.** Attaching the package used to mask the `stats::profile()` generic,
+  which profiles a fitted model's likelihood. This mirrors what `bioheatmap()`
+  already did for `stats::heatmap()`, and means `library(plotomics)` now masks
+  nothing in base or the recommended packages. The Shiny bindings move with it:
+  `profileOutput()` and `renderProfile()` become `bioprofileOutput()` and
+  `renderBioprofile()`.
+
+  This is a breaking change for R code written against 0.1.0. The Python and
+  JavaScript packages are unaffected: neither language has the collision, so
+  `Profile` and `createProfile` keep their names.
+
 ## [0.1.0] - 2026-08-09
 
 First public release. Seventeen visualization components, each shipping from one
@@ -105,5 +121,6 @@ source bundle to JavaScript, R and Python.
   and the transport layer.
 - Reference sites are generated per language: pkgdown for R, pdoc for Python.
 
-[Unreleased]: https://github.com/samuelbharti/plotomics/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/samuelbharti/plotomics/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/samuelbharti/plotomics/releases/tag/v0.2.0
 [0.1.0]: https://github.com/samuelbharti/plotomics/releases/tag/v0.1.0

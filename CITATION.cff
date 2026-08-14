@@ -27,8 +27,8 @@ identifiers:
       Concept DOI for plotomics. Always resolves to the most recent release;
       each version also receives its own DOI on Zenodo.
 license: MIT
-version: 0.1.0
-date-released: "2026-08-09"
+version: 0.2.0
+date-released: "2026-08-14"
 keywords:
   - bioinformatics
   - visualization

@@ -15,6 +15,7 @@ payload consumed by the bundled JS component.
 Useful links:
 \itemize{
   \item \url{https://github.com/samuelbharti/plotomics}
+  \item \doi{10.5281/zenodo.21926306}
   \item Report bugs at \url{https://github.com/samuelbharti/plotomics/issues}
 }
 

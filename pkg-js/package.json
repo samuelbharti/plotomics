@@ -1,6 +1,6 @@
 {
   "name": "plotomics",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "High-performance bioinformatics visualization components: headless factories for volcano plots, heatmaps, embeddings, oncoprints, genome browsers and more, backed by a shared TypeScript core.",
   "license": "MIT",
   "type": "module",

@@ -13,11 +13,11 @@
 #' Bars are drawn in the order given. For SBS96 that order is part of the
 #' convention, so the component does not sort.
 #'
-#' Note that `profile()` masks the [stats::profile()] generic once the package
-#' is attached. Unlike [bioheatmap()], which is aliased to keep clear of
-#' [stats::heatmap()], this one keeps the obvious name: `stats::profile()`
-#' profiles a fitted model's likelihood, which no caller of this package is
-#' reaching for by accident. Call `stats::profile()` explicitly if you need it.
+#' Named `bioprofile()` rather than `profile()` so that attaching the package
+#' does not mask the [stats::profile()] generic, which profiles a fitted
+#' model's likelihood. This follows [bioheatmap()], which keeps clear of
+#' [stats::heatmap()] the same way. `profile_plotomics()` is an alias, for
+#' symmetry with `heatmap_plotomics()`.
 #'
 #' @param data A data frame with a numeric `value` column. Optional `group`
 #'   (category per bar, whose contiguous runs become the header blocks) and
@@ -41,21 +41,21 @@
 #'   group = c("C>A", "C>A", "C>T", "C>T"),
 #'   label = c("ACA", "ACC", "TCA", "TCT")
 #' )
-#' profile(df)
+#' bioprofile(df)
 #' @export
-profile <- function(data,
-                    groups = NULL,
-                    group_colors = NULL,
-                    title = NULL,
-                    bar_width = 0.62,
-                    as_fraction = FALSE,
-                    show_header = TRUE,
-                    show_bar_labels = TRUE,
-                    y_label = "mutations",
-                    theme = NULL,
-                    width = NULL,
-                    height = NULL,
-                    element_id = NULL) {
+bioprofile <- function(data,
+                       groups = NULL,
+                       group_colors = NULL,
+                       title = NULL,
+                       bar_width = 0.62,
+                       as_fraction = FALSE,
+                       show_header = TRUE,
+                       show_bar_labels = TRUE,
+                       y_label = "mutations",
+                       theme = NULL,
+                       width = NULL,
+                       height = NULL,
+                       element_id = NULL) {
   if (!is.data.frame(data)) {
     stop("`data` must be a data frame.", call. = FALSE)
   }
@@ -113,32 +113,36 @@ profile <- function(data,
   )
 }
 
-#' Shiny bindings for profile
+#' @rdname bioprofile
+#' @export
+profile_plotomics <- bioprofile
+
+#' Shiny bindings for bioprofile
 #'
-#' Output and render functions for using [profile()] within Shiny applications
-#' and interactive R Markdown / Quarto documents.
+#' Output and render functions for using [bioprofile()] within Shiny
+#' applications and interactive R Markdown / Quarto documents.
 #'
 #' @param output_id Output variable to read from.
 #' @param width,height Element size, passed to
 #'   [htmlwidgets::shinyWidgetOutput()].
-#' @param expr An expression that generates a [profile()] widget.
+#' @param expr An expression that generates a [bioprofile()] widget.
 #' @param env The environment in which to evaluate `expr`.
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
-#' @return `profileOutput()` returns a Shiny output UI element;
-#'   `renderProfile()` returns a Shiny render function.
-#' @name profile-shiny
+#' @return `bioprofileOutput()` returns a Shiny output UI element;
+#'   `renderBioprofile()` returns a Shiny render function.
+#' @name bioprofile-shiny
 #' @export
-profileOutput <- function(output_id, width = "100%", height = "380px") {
+bioprofileOutput <- function(output_id, width = "100%", height = "380px") {
   htmlwidgets::shinyWidgetOutput(output_id, "profile", width, height,
     package = "plotomics"
   )
 }
 
-#' @rdname profile-shiny
+#' @rdname bioprofile-shiny
 #' @export
-renderProfile <- function(expr, env = parent.frame(), quoted = FALSE) {
+renderBioprofile <- function(expr, env = parent.frame(), quoted = FALSE) {
   if (!quoted) {
     expr <- substitute(expr)
   }
-  htmlwidgets::shinyRenderWidget(expr, profileOutput, env, quoted = TRUE)
+  htmlwidgets::shinyRenderWidget(expr, bioprofileOutput, env, quoted = TRUE)
 }

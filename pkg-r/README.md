@@ -58,7 +58,7 @@ km(survival::survfit(survival::Surv(time, status) ~ sex, data = lung))
 | --- | --- |
 | Expression and abundance | `volcano()`, `bioheatmap()`, `clustermap()`, `dotplot()`, `violin()` |
 | Single-cell and spatial | `embedding()`, `spatial()` |
-| Cohort and variant | `oncoplot()`, `lollipop()`, `km()`, `profile()` |
+| Cohort and variant | `oncoplot()`, `lollipop()`, `km()`, `bioprofile()` |
 | Sets, hierarchies, networks | `upset()`, `treemap()`, `network()` |
 | Genome and chromatin | `hic()`, `igv()`, `gosling()` |
 
@@ -66,9 +66,10 @@ Helpers: `oncoplot_memo_sort()` for the conventional oncoplot column order,
 `upset_intersections()` for exclusive set intersections, and
 `violin_density()` for densities computed in R.
 
-Two names differ from the obvious choice to avoid masking base and recommended
-functions: `bioheatmap()` (aliased as `heatmap_plotomics()`) rather than
-`heatmap()`.
+Two names differ from the obvious choice, so that attaching the package masks
+nothing in base or the recommended packages: `bioheatmap()` rather than
+`heatmap()`, and `bioprofile()` rather than `profile()`. Both have
+`*_plotomics()` aliases (`heatmap_plotomics()`, `profile_plotomics()`).
 
 ## Shiny
 

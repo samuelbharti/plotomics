@@ -1,6 +1,6 @@
 {
   "name": "plotomics-monorepo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Lightweight, high-performance bioinformatics visualization components with R and Python wrappers.",
   "type": "module",
