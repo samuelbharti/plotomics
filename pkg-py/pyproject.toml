@@ -42,6 +42,7 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/samuelbharti/plotomics"
 Issues = "https://github.com/samuelbharti/plotomics/issues"
+DOI = "https://doi.org/10.5281/zenodo.21926306"
 
 # The built JS bundles live under src/plotomics/static/ and are git-tracked, so
 # hatchling includes them in both the sdist (VCS files) and the wheel (package
