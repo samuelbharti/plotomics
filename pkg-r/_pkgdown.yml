@@ -1,4 +1,4 @@
-url: https://samuelbharti.github.io/plotomics/r
+url: https://www.samuelbharti.com/plotomics/r
 
 template:
   bootstrap: 5
@@ -14,10 +14,16 @@ home:
     htmlwidgets and a shared JavaScript core.
 
 navbar:
+  # `news` must be listed explicitly: naming the structure replaces pkgdown's
+  # default rather than adding to it, and omitting it built NEWS.md into
+  # news/index.html with nothing linking to it.
   structure:
-    left: [reference]
-    right: [search, github]
+    left: [reference, news]
+    right: [search, site, github]
   components:
+    site:
+      text: Python & JS
+      href: https://www.samuelbharti.com/plotomics/
     github:
       icon: fa-github
       href: https://github.com/samuelbharti/plotomics
