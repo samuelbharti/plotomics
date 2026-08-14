@@ -25,7 +25,7 @@ navbar:
       text: Python & JS
       href: https://www.samuelbharti.com/plotomics/
     github:
-      icon: fa-github
+      icon: fab fa-github
       href: https://github.com/samuelbharti/plotomics
       aria-label: GitHub repository
 
