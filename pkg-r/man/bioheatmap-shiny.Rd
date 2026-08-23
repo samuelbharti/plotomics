@@ -30,3 +30,14 @@ renderBioheatmap(expr, env = parent.frame(), quoted = FALSE)
 Output and render functions for using \code{\link[=bioheatmap]{bioheatmap()}} within Shiny
 applications and interactive R Markdown / Quarto documents.
 }
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  ui <- fluidPage(bioheatmapOutput("hm"))
+  server <- function(input, output) {
+    output$hm <- renderBioheatmap({
+      bioheatmap(matrix(rnorm(200), 20, 10))
+    })
+  }
+  shinyApp(ui, server)
+}
+}

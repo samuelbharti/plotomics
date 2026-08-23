@@ -35,3 +35,17 @@ In a Shiny app, clicking a node pushes its \strong{id} (a character scalar, not 
 row index) to \verb{input$<output_id>_selected}, so \code{networkOutput("graph")}
 populates \code{input$graph_selected}. It is \code{NULL} until the first click.
 }
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  ui <- fluidPage(networkOutput("net"))
+  server <- function(input, output) {
+    output$net <- renderNetwork({
+      network(
+        nodes = data.frame(id = c("A", "B", "C")),
+        edges = data.frame(source = c("A", "B"), target = c("B", "C"))
+      )
+    })
+  }
+  shinyApp(ui, server)
+}
+}

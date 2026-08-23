@@ -30,3 +30,14 @@ renderClustermap(expr, env = parent.frame(), quoted = FALSE)
 Output and render functions for using \code{\link[=clustermap]{clustermap()}} within Shiny
 applications and interactive R Markdown / Quarto documents.
 }
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  ui <- fluidPage(clustermapOutput("cm"))
+  server <- function(input, output) {
+    output$cm <- renderClustermap({
+      clustermap(matrix(rnorm(200), 20, 10))
+    })
+  }
+  shinyApp(ui, server)
+}
+}

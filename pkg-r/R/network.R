@@ -175,6 +175,19 @@ network <- function(nodes,
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `networkOutput()` returns a Shiny output UI element;
 #'   `renderNetwork()` returns a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   ui <- fluidPage(networkOutput("net"))
+#'   server <- function(input, output) {
+#'     output$net <- renderNetwork({
+#'       network(
+#'         nodes = data.frame(id = c("A", "B", "C")),
+#'         edges = data.frame(source = c("A", "B"), target = c("B", "C"))
+#'       )
+#'     })
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name network-shiny
 #' @export
 networkOutput <- function(output_id, width = "100%", height = "480px") {

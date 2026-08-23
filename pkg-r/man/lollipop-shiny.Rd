@@ -30,3 +30,15 @@ renderLollipop(expr, env = parent.frame(), quoted = FALSE)
 Output and render functions for using \code{\link[=lollipop]{lollipop()}} within Shiny applications
 and interactive R Markdown / Quarto documents.
 }
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  ui <- fluidPage(lollipopOutput("lp"))
+  server <- function(input, output) {
+    output$lp <- renderLollipop({
+      lollipop(position = c(100, 250, 400), label = c("A", "B", "C"),
+               protein_length = 500)
+    })
+  }
+  shinyApp(ui, server)
+}
+}

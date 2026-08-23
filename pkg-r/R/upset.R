@@ -159,6 +159,15 @@ upset_intersections <- function(m, max_n = NULL) {
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `upsetOutput()` returns a Shiny output UI element; `renderUpset()`
 #'   returns a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   sets <- list(A = c("x", "y", "z"), B = c("y", "z", "w"))
+#'   ui <- fluidPage(upsetOutput("us"))
+#'   server <- function(input, output) {
+#'     output$us <- renderUpset(upset(upset_intersections(sets)))
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name upset-shiny
 #' @export
 upsetOutput <- function(output_id, width = "100%", height = "520px") {

@@ -214,6 +214,17 @@ violin_density <- function(values, n = 64L, adjust = 1) {
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `violinOutput()` returns a Shiny output UI element; `renderViolin()`
 #'   returns a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   ui <- fluidPage(violinOutput("vln"))
+#'   server <- function(input, output) {
+#'     output$vln <- renderViolin({
+#'       violin(data.frame(feature = rep("G1", 100), group = "A",
+#'                         value = rnorm(100)))
+#'     })
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name violin-shiny
 #' @export
 violinOutput <- function(output_id, width = "100%", height = "560px") {

@@ -30,3 +30,15 @@ returns a Shiny render function.
 Output and render functions for using \code{\link[=violin]{violin()}} within Shiny applications
 and interactive R Markdown / Quarto documents.
 }
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  ui <- fluidPage(violinOutput("vln"))
+  server <- function(input, output) {
+    output$vln <- renderViolin({
+      violin(data.frame(feature = rep("G1", 100), group = "A",
+                        value = rnorm(100)))
+    })
+  }
+  shinyApp(ui, server)
+}
+}

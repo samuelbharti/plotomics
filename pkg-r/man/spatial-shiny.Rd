@@ -30,3 +30,14 @@ renderSpatial(expr, env = parent.frame(), quoted = FALSE)
 Output and render functions for using \code{\link[=spatial]{spatial()}} within Shiny applications
 and interactive R Markdown / Quarto documents.
 }
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  ui <- fluidPage(spatialOutput("sp"))
+  server <- function(input, output) {
+    output$sp <- renderSpatial({
+      spatial(x = runif(50), y = runif(50), color = rnorm(50))
+    })
+  }
+  shinyApp(ui, server)
+}
+}

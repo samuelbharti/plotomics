@@ -130,6 +130,17 @@ profile_plotomics <- bioprofile
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `bioprofileOutput()` returns a Shiny output UI element;
 #'   `renderBioprofile()` returns a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   ui <- fluidPage(bioprofileOutput("bp"))
+#'   server <- function(input, output) {
+#'     output$bp <- renderBioprofile({
+#'       bioprofile(context = c("C>A", "C>G", "C>T"),
+#'                  value = c(0.3, 0.5, 0.2))
+#'     })
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name bioprofile-shiny
 #' @export
 bioprofileOutput <- function(output_id, width = "100%", height = "380px") {

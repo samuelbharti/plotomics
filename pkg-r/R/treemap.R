@@ -148,6 +148,17 @@ treemap <- function(data,
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `treemapOutput()` returns a Shiny output UI element;
 #'   `renderTreemap()` returns a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   ui <- fluidPage(treemapOutput("tm"))
+#'   server <- function(input, output) {
+#'     output$tm <- renderTreemap({
+#'       treemap(id = c("root", "A", "B"), parent = c(NA, "root", "root"),
+#'               value = c(NA, 3, 7))
+#'     })
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name treemap-shiny
 #' @export
 treemapOutput <- function(output_id, width = "100%", height = "480px") {

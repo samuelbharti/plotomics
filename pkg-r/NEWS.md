@@ -1,20 +1,3 @@
-# plotomics 0.2.0
-
-## Breaking changes
-
-* `profile()` is renamed `bioprofile()`, with `profile_plotomics()` as an alias.
-  Attaching the package used to mask the `stats::profile()` generic; it now
-  masks nothing in base or the recommended packages. `bioheatmap()` already
-  worked this way for `stats::heatmap()`.
-* The Shiny bindings follow: `profileOutput()` and `renderProfile()` are now
-  `bioprofileOutput()` and `renderBioprofile()`.
-
-## Removed widgets
-
-* `igv()` and `gosling()` (genome browser and declarative genomics figures) are
-  removed from this release to keep the installed size under the CRAN threshold.
-  They will return in a future version.
-
 # plotomics 0.1.0
 
 First release.

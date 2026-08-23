@@ -98,6 +98,16 @@ volcano <- function(data,
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `volcanoOutput()` returns a Shiny output UI element;
 #'   `renderVolcano()` returns a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   ui <- fluidPage(volcanoOutput("v"))
+#'   server <- function(input, output) {
+#'     output$v <- renderVolcano({
+#'       volcano(data.frame(x = rnorm(100), y = abs(rnorm(100)) * 3))
+#'     })
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name volcano-shiny
 #' @export
 volcanoOutput <- function(output_id, width = "100%", height = "480px") {
