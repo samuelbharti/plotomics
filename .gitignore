@@ -24,10 +24,12 @@ dist-python/
 .Ruserdata
 *.Rcheck/
 plotomics_*.tar.gz
+pkg-r/cran-comments.md
 
 # Docs build output
 pkg-r/docs/
 site/
+docs/local/
 
 # Editors / OS / agents
 .DS_Store
