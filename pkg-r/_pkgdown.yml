@@ -13,6 +13,12 @@ home:
     GPU-accelerated bioinformatics visualization widgets for R, built on
     htmlwidgets and a shared JavaScript core.
 
+# The home page sidebar lists the advisors and the funders next to the author.
+# The footer keeps the pkgdown default.
+authors:
+  sidebar:
+    roles: [aut, cre, ths, fnd]
+
 navbar:
   # `news` must be listed explicitly: naming the structure replaces pkgdown's
   # default rather than adding to it, and omitting it built NEWS.md into
