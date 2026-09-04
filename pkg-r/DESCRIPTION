@@ -12,7 +12,7 @@ Authors@R: c(
            comment = c(ORCID = "0000-0002-4958-2844")),
     person("Posit Software, PBC", role = c("cph", "fnd"),
            comment = c(ROR = "03wc8by49")),
-    person("Anthropic", role = "fnd")
+    person("Anthropic, PBC", role = "fnd")
   )
 Description: Lightweight, GPU-accelerated bioinformatics visualization widgets
     (volcano plots, expression and clustered heatmaps, dot plots, stacked

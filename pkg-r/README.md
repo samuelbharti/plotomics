@@ -103,7 +103,7 @@ drawable.
 
 Barret Schloerke and Carson Sievert advise this work as thesis advisors.
 Posit Software, PBC funds it and holds copyright together with the author. An
-additional gift from Anthropic supported the early stages and the planning of
+additional gift from Anthropic, PBC supported the early stages and the planning of
 this work.
 
 ## License
