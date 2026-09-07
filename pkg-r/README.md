@@ -99,13 +99,6 @@ drawable.
 - [Project overview](https://www.samuelbharti.com/plotomics/), including the
   Python and JavaScript packages
 
-## Acknowledgements
-
-Barret Schloerke and Carson Sievert advise this work as thesis advisors.
-Posit Software, PBC funds it and holds copyright together with the author. An
-additional gift from Anthropic, PBC supported the early stages and the planning of
-this work.
-
 ## License
 
 MIT. See [LICENSE](LICENSE).

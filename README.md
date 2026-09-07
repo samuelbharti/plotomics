@@ -211,9 +211,8 @@ machine-readable form, and GitHub's "Cite this repository" button reads it.
 ## Acknowledgements
 
 Barret Schloerke and Carson Sievert advise this work as thesis advisors.
-Posit Software, PBC funds it and holds copyright together with the author. An
-additional gift from Anthropic, PBC supported the early stages and the planning of
-this work.
+Posit Software, PBC funded early work on this package and holds copyright
+together with the author.
 
 ## License
 
