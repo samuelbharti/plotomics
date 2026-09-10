@@ -20,11 +20,12 @@ authors:
     roles: [aut, cre, ths, fnd]
 
 navbar:
-  # `news` must be listed explicitly: naming the structure replaces pkgdown's
-  # default rather than adding to it, and omitting it built NEWS.md into
-  # news/index.html with nothing linking to it.
+  # Naming the structure replaces pkgdown's default rather than adding to it.
+  # `intro` links the plotomics.Rmd vignette as Get Started, `articles` covers
+  # any future vignette, and `news` must stay listed or NEWS.md builds with
+  # nothing linking to it.
   structure:
-    left: [reference, news]
+    left: [intro, reference, articles, news]
     right: [search, site, github]
   components:
     site:
@@ -65,11 +66,9 @@ reference:
   - treemap
   - network
 - title: Genome and chromatin
-  desc: Contact matrices and track-based genome browsers.
+  desc: Contact matrices.
   contents:
   - hic
-  - igv
-  - gosling
 - title: Data helpers
   desc: >
     Precompute the inputs the widgets consume. The widgets draw, they do not

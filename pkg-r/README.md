@@ -1,6 +1,8 @@
 # plotomics <img src="man/figures/logo.svg" align="right" height="139" alt="" />
 
 <!-- badges: start -->
+[![CRAN status](https://www.r-pkg.org/badges/version/plotomics)](https://CRAN.R-project.org/package=plotomics)
+[![CRAN downloads](https://cranlogs.r-pkg.org/badges/plotomics)](https://CRAN.R-project.org/package=plotomics)
 [![R-CMD-check](https://github.com/samuelbharti/plotomics/actions/workflows/ci.yml/badge.svg)](https://github.com/samuelbharti/plotomics/actions/workflows/ci.yml)
 [![r-universe](https://samuelbharti.r-universe.dev/badges/plotomics)](https://samuelbharti.r-universe.dev/plotomics)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
