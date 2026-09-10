@@ -9,13 +9,13 @@ name: Docs
 # "GitHub Actions" (not "Deploy from a branch"). The deploy job then publishes
 # the site produced here.
 #
-# Trigger: manual only (workflow_dispatch), to avoid spending Actions minutes on
-# every push. Run it from the Actions tab when the docs change. To publish
-# automatically instead, add a `push:` trigger:
-#   push:
-#     branches: [main]
+# Trigger: every push to main, so a merged PR publishes on its own. The
+# manual workflow_dispatch trigger stays too, for a republish with no code
+# change.
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
