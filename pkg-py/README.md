@@ -82,3 +82,9 @@ pnpm dist          # build JS + sync bundles into this package
 pip install -e ".[dev]"
 pytest
 ```
+
+## Acknowledgements
+
+Barret Schloerke and Carson Sievert advise this work as thesis advisors.
+Posit Software, PBC funded early work on this package and holds copyright
+together with the author.

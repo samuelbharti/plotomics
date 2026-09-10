@@ -229,6 +229,12 @@ version, so use the version-specific DOI from the record if you need to pin the
 exact release you ran. [CITATION.cff](CITATION.cff) carries the same metadata in
 machine-readable form, and GitHub's "Cite this repository" button reads it.
 
+## Acknowledgements
+
+Barret Schloerke and Carson Sievert advise this work as thesis advisors.
+Posit Software, PBC funded early work on this package and holds copyright
+together with the author.
+
 ## License
 
 MIT

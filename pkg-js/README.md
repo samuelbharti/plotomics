@@ -77,3 +77,9 @@ npm install plotomics sigma graphology graphology-layout-forceatlas2
 — Gosling.js is a React component internally. No plotomics component imports
 React itself. Gosling.js 1.0.7 supports React 16 through 18 and pixi.js 6, which
 is why those peer ranges stop short of the current majors.
+
+## Acknowledgements
+
+Barret Schloerke and Carson Sievert advise this work as thesis advisors.
+Posit Software, PBC funded early work on this package and holds copyright
+together with the author.
