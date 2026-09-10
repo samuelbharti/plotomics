@@ -12,7 +12,7 @@ Description: Lightweight, GPU-accelerated bioinformatics visualization widgets
     lollipops, Kaplan-Meier curves, mutational signature profiles, UpSet plots,
     treemaps, networks and Hi-C contact matrices) backed by a shared JavaScript
     core and exposed to R through 'htmlwidgets'. Designed for large datasets
-    that render smoothly in the browser, the RStudio Viewer, R Markdown, Quarto
+    that render smoothly in the browser, the 'RStudio' Viewer, R Markdown, Quarto
     and Shiny.
 License: MIT + file LICENSE
 Encoding: UTF-8
