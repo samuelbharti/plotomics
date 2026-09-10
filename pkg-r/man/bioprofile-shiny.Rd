@@ -30,3 +30,15 @@ renderBioprofile(expr, env = parent.frame(), quoted = FALSE)
 Output and render functions for using \code{\link[=bioprofile]{bioprofile()}} within Shiny
 applications and interactive R Markdown / Quarto documents.
 }
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  ui <- fluidPage(bioprofileOutput("bp"))
+  server <- function(input, output) {
+    output$bp <- renderBioprofile({
+      bioprofile(context = c("C>A", "C>G", "C>T"),
+                 value = c(0.3, 0.5, 0.2))
+    })
+  }
+  shinyApp(ui, server)
+}
+}

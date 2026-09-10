@@ -30,3 +30,15 @@ renderTreemap(expr, env = parent.frame(), quoted = FALSE)
 Output and render functions for using \code{\link[=treemap]{treemap()}} within Shiny applications
 and interactive R Markdown / Quarto documents.
 }
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  ui <- fluidPage(treemapOutput("tm"))
+  server <- function(input, output) {
+    output$tm <- renderTreemap({
+      treemap(id = c("root", "A", "B"), parent = c(NA, "root", "root"),
+              value = c(NA, 3, 7))
+    })
+  }
+  shinyApp(ui, server)
+}
+}

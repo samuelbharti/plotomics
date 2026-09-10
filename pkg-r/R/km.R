@@ -247,6 +247,16 @@ bv_tidy_survfit <- function(fit, risk_times = NULL) {
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `kmOutput()` returns a Shiny output UI element; `renderKm()` returns
 #'   a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   ui <- fluidPage(kmOutput("surv"))
+#'   server <- function(input, output) {
+#'     output$surv <- renderKm({
+#'       km(time = c(1, 2, 3, 4, 5), event = c(1, 0, 1, 0, 1))
+#'     })
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name km-shiny
 #' @export
 kmOutput <- function(output_id, width = "100%", height = "520px") {

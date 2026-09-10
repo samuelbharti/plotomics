@@ -145,6 +145,16 @@ hic <- function(mat,
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `hicOutput()` returns a Shiny output UI element; `renderHic()`
 #'   returns a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   ui <- fluidPage(hicOutput("h"))
+#'   server <- function(input, output) {
+#'     output$h <- renderHic({
+#'       hic(matrix(runif(100), 10, 10))
+#'     })
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name hic-shiny
 #' @export
 hicOutput <- function(output_id, width = "100%", height = "480px") {

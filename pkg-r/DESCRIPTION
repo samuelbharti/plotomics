@@ -17,20 +17,24 @@ Description: Lightweight, GPU-accelerated bioinformatics visualization widgets
     (volcano plots, expression and clustered heatmaps, dot plots, stacked
     violins, embeddings, spatial tissue maps, oncoprints, protein domain
     lollipops, Kaplan-Meier curves, mutational signature profiles, UpSet plots,
-    treemaps, networks, Hi-C contact matrices and genome viewers) backed by a
-    shared JavaScript core and exposed to R through 'htmlwidgets'. Designed for
-    large datasets that render smoothly in the browser, the RStudio Viewer,
-    R Markdown, Quarto and Shiny.
+    treemaps, networks and Hi-C contact matrices) backed by a shared JavaScript
+    core and exposed to R through 'htmlwidgets'. Designed for large datasets
+    that render smoothly in the browser, the 'RStudio' Viewer, R Markdown, Quarto
+    and Shiny.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Imports:
     htmlwidgets
 Suggests:
+    knitr,
+    rmarkdown,
+    shiny,
     testthat (>= 3.0.0),
     survival
+VignetteBuilder: knitr
 Config/testthat/edition: 3
 URL: https://github.com/samuelbharti/plotomics,
     https://doi.org/10.5281/zenodo.21926306
 BugReports: https://github.com/samuelbharti/plotomics/issues
-Config/roxygen2/version: 8.0.0
+RoxygenNote: 8.0.0

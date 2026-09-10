@@ -30,3 +30,14 @@ a Shiny render function.
 Output and render functions for using \code{\link[=km]{km()}} within Shiny applications and
 interactive R Markdown / Quarto documents.
 }
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  ui <- fluidPage(kmOutput("surv"))
+  server <- function(input, output) {
+    output$surv <- renderKm({
+      km(time = c(1, 2, 3, 4, 5), event = c(1, 0, 1, 0, 1))
+    })
+  }
+  shinyApp(ui, server)
+}
+}

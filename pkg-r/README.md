@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 <!-- badges: end -->
 
-Seventeen GPU- and canvas-accelerated visualization widgets for bioinformatics,
+Fifteen GPU- and canvas-accelerated visualization widgets for bioinformatics,
 built on a shared JavaScript core and exposed to R through
 [htmlwidgets](https://www.htmlwidgets.org). Every widget renders in the RStudio
 Viewer, R Markdown, Quarto and Shiny, and each ships a matching
@@ -18,12 +18,14 @@ behaves identically in all three languages.
 ## Installation
 
 ``` r
-install.packages("plotomics", repos = "https://samuelbharti.r-universe.dev")
+install.packages("plotomics")
 ```
 
-Or from GitHub:
+For the development version, from r-universe or GitHub:
 
 ``` r
+install.packages("plotomics", repos = "https://samuelbharti.r-universe.dev")
+
 # install.packages("pak")
 pak::pak("samuelbharti/plotomics")
 ```
@@ -60,7 +62,12 @@ km(survival::survfit(survival::Surv(time, status) ~ sex, data = lung))
 | Single-cell and spatial | `embedding()`, `spatial()` |
 | Cohort and variant | `oncoplot()`, `lollipop()`, `km()`, `bioprofile()` |
 | Sets, hierarchies, networks | `upset()`, `treemap()`, `network()` |
-| Genome and chromatin | `hic()`, `igv()`, `gosling()` |
+| Genome and chromatin | `hic()` |
+
+The Python and JavaScript packages also ship `igv()` and `gosling()`, two
+genome-browser widgets. Both stayed out of this CRAN release to keep the
+installed package under CRAN's 5 MB limit, and a later release adds them
+back to R.
 
 Helpers: `oncoplot_memo_sort()` for the conventional oncoplot column order,
 `upset_intersections()` for exclusive set intersections, and
@@ -91,6 +98,24 @@ server <- function(input, output) {
 Numeric columns reach the browser as a binary buffer rather than JSON, which is
 what keeps several hundred thousand points interactive rather than merely
 drawable.
+
+## Motivation
+
+I built plotomics because I kept hitting the same wall in my own work. A
+single-cell embedding with 500,000 cells or a volcano plot with 20,000
+genes is common today. Most R plotting tools were built for a few
+thousand points. Past that count, a plot stops being useful before the
+data stops being interesting.
+
+I also work in both R and Python, and I got tired of writing the same
+figure twice and watching the two versions drift apart. I write each
+widget here once, in TypeScript, and wrap it thinly for R. The R version
+and the Python version cannot disagree, because they share one
+implementation.
+
+See the [project overview](https://www.samuelbharti.com/plotomics/) for
+the full story, including when an established R package like
+`ComplexHeatmap` or `survminer` is still the better choice.
 
 ## Documentation
 

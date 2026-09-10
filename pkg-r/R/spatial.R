@@ -147,6 +147,16 @@ spatial <- function(data,
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `spatialOutput()` returns a Shiny output UI element;
 #'   `renderSpatial()` returns a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   ui <- fluidPage(spatialOutput("sp"))
+#'   server <- function(input, output) {
+#'     output$sp <- renderSpatial({
+#'       spatial(x = runif(50), y = runif(50), color = rnorm(50))
+#'     })
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name spatial-shiny
 #' @export
 spatialOutput <- function(output_id, width = "100%", height = "560px") {

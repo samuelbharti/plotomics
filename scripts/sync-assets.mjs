@@ -6,6 +6,9 @@
 // source installs ship the JS); run `pnpm dist` (build + sync) to refresh them
 // before checking R/Python or packaging a release. CI's drift guard fails if a
 // committed bundle is stale.
+//
+// The sync skips gosling and igv for R. Both together push the installed
+// package past CRAN's 5MB size limit. Python still ships the full set.
 
 import { cp, mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
@@ -17,10 +20,12 @@ const distAny = path.join(repo, "pkg-js/dist/anywidget");
 const rLib = path.join(repo, "pkg-r/inst/htmlwidgets/lib/plotomics");
 const pyStatic = path.join(repo, "pkg-py/src/plotomics/static");
 
-async function syncDir(from, to) {
+const R_SKIP = new Set(["gosling.js", "igv.js"]);
+
+async function syncDir(from, to, skip = new Set()) {
   let files;
   try {
-    files = (await readdir(from)).filter((f) => f.endsWith(".js"));
+    files = (await readdir(from)).filter((f) => f.endsWith(".js") && !skip.has(f));
   } catch {
     console.warn(`! ${from} missing — run \`pnpm build\` first.`);
     return 0;
@@ -31,6 +36,6 @@ async function syncDir(from, to) {
   return files.length;
 }
 
-const r = await syncDir(distUmd, rLib);
+const r = await syncDir(distUmd, rLib, R_SKIP);
 const py = await syncDir(distAny, pyStatic);
 console.log(`Synced ${r} bundle(s) -> R, ${py} bundle(s) -> Python.`);

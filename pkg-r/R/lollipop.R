@@ -189,6 +189,17 @@ lollipop <- function(variants,
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `lollipopOutput()` returns a Shiny output UI element;
 #'   `renderLollipop()` returns a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   ui <- fluidPage(lollipopOutput("lp"))
+#'   server <- function(input, output) {
+#'     output$lp <- renderLollipop({
+#'       lollipop(position = c(100, 250, 400), label = c("A", "B", "C"),
+#'                protein_length = 500)
+#'     })
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name lollipop-shiny
 #' @export
 lollipopOutput <- function(output_id, width = "100%", height = "440px") {

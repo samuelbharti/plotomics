@@ -30,3 +30,17 @@ renderOncoplot(expr, env = parent.frame(), quoted = FALSE)
 Output and render functions for using \code{\link[=oncoplot]{oncoplot()}} within Shiny applications
 and interactive R Markdown / Quarto documents.
 }
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  ui <- fluidPage(oncoplotOutput("onco"))
+  server <- function(input, output) {
+    output$onco <- renderOncoplot({
+      oncoplot(data.frame(
+        gene = c("TP53", "KRAS"), sample = c("S1", "S2"),
+        class = "missense"
+      ))
+    })
+  }
+  shinyApp(ui, server)
+}
+}

@@ -29,3 +29,11 @@ Exposed separately so a caller can compute the order once and reuse it for
 both an interactive \code{\link[=oncoplot]{oncoplot()}} and a static rendering, rather than letting
 two implementations tie-break differently.
 }
+\examples{
+alt <- data.frame(
+  gene   = c("TP53", "TP53", "KRAS", "KRAS", "EGFR"),
+  sample = c("S1",   "S2",   "S2",   "S3",   "S1"),
+  class  = "missense"
+)
+oncoplot_memo_sort(alt)
+}

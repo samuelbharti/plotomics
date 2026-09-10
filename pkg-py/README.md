@@ -9,6 +9,14 @@ Works in Jupyter, JupyterLab, marimo, Google Colab, VS Code, Shiny for Python
 and Streamlit. Large numeric columns are shipped to the browser as a single
 binary buffer (not JSON), so millions of points stay interactive.
 
+## Installation
+
+```bash
+pip install plotomics
+```
+
+## Quick start
+
 ```python
 import numpy as np, pandas as pd
 from plotomics import Volcano
@@ -20,12 +28,6 @@ df = pd.DataFrame({
     "label": [f"GENE{i}" for i in range(n)],
 })
 Volcano(df, fc_threshold=1.0, p_threshold=0.05)
-```
-
-## Install
-
-```bash
-pip install plotomics
 ```
 
 ### Shiny for Python
@@ -51,6 +53,24 @@ def server(input, output, session):
 
 app = App(app_ui, server)
 ```
+
+## Motivation
+
+I built plotomics because I kept hitting the same wall in my own work. A
+single-cell embedding with 500,000 cells or a volcano plot with 20,000
+genes is common today. Most Python plotting tools were built for a few
+thousand points. Past that count, a plot stops being useful before the
+data stops being interesting.
+
+I also work in both Python and R, and I got tired of writing the same
+figure twice and watching the two versions drift apart. I write each
+widget here once, in TypeScript, and wrap it thinly for Python. The
+Python version and the R version cannot disagree, because they share one
+implementation.
+
+See the [project overview](https://www.samuelbharti.com/plotomics/) for
+the full story, including when an established Python package like
+`scanpy` or `plotly` is still the better choice.
 
 ## Development
 

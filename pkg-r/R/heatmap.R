@@ -101,6 +101,16 @@ heatmap_plotomics <- bioheatmap
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `bioheatmapOutput()` returns a Shiny output UI element;
 #'   `renderBioheatmap()` returns a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   ui <- fluidPage(bioheatmapOutput("hm"))
+#'   server <- function(input, output) {
+#'     output$hm <- renderBioheatmap({
+#'       bioheatmap(matrix(rnorm(200), 20, 10))
+#'     })
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name bioheatmap-shiny
 #' @export
 bioheatmapOutput <- function(output_id, width = "100%", height = "480px") {
