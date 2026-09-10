@@ -2,6 +2,9 @@
 
 <img src="assets/logo.png" align="right" width="150" alt="plotomics" />
 
+[![CRAN status](https://www.r-pkg.org/badges/version/plotomics)](https://CRAN.R-project.org/package=plotomics)
+[![PyPI](https://img.shields.io/pypi/v/plotomics.svg)](https://pypi.org/project/plotomics/)
+[![npm](https://img.shields.io/npm/v/plotomics.svg)](https://www.npmjs.com/package/plotomics)
 [![DOI](https://zenodo.org/badge/1285554289.svg)](https://doi.org/10.5281/zenodo.21926306)
 
 **Lightweight, GPU-accelerated bioinformatics visualization components with R and Python wrappers.**

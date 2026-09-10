@@ -2,6 +2,9 @@
 
 <img src="https://raw.githubusercontent.com/samuelbharti/plotomics/main/assets/logo.png" align="right" width="140" alt="" />
 
+[![PyPI](https://img.shields.io/pypi/v/plotomics.svg)](https://pypi.org/project/plotomics/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 High-performance bioinformatics visualization widgets backed by a shared
 JavaScript core, exposed to Python through [anywidget](https://anywidget.dev).
 
