@@ -30,3 +30,14 @@ returns a Shiny render function.
 Output and render functions for using \code{\link[=hic]{hic()}} within Shiny applications and
 interactive R Markdown / Quarto documents.
 }
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  ui <- fluidPage(hicOutput("h"))
+  server <- function(input, output) {
+    output$h <- renderHic({
+      hic(matrix(runif(100), 10, 10))
+    })
+  }
+  shinyApp(ui, server)
+}
+}

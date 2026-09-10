@@ -30,3 +30,16 @@ renderDotplot(expr, env = parent.frame(), quoted = FALSE)
 Output and render functions for using \code{\link[=dotplot]{dotplot()}} within Shiny applications
 and interactive R Markdown / Quarto documents.
 }
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  df <- expand.grid(gene = c("CD3D", "MS4A1"), cluster = c("T", "B"),
+                    stringsAsFactors = FALSE)
+  df$pct <- c(88, 4, 6, 91)
+  df$value <- c(2.4, 0.1, 0.2, 2.7)
+  ui <- fluidPage(dotplotOutput("dp"))
+  server <- function(input, output) {
+    output$dp <- renderDotplot(dotplot(df))
+  }
+  shinyApp(ui, server)
+}
+}

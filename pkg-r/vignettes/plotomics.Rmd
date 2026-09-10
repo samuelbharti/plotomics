@@ -1,0 +1,133 @@
+---
+title: "Getting started with plotomics"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with plotomics}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+plotomics ships GPU-accelerated visualization widgets for bioinformatics data.
+Every widget is an htmlwidget: it works in the RStudio Viewer, R Markdown,
+Quarto documents, and Shiny apps out of the box.
+
+This vignette walks through four common plot types with synthetic data so you
+can run every example without any external files.
+
+## Volcano plot
+
+A volcano plot shows differential-expression results: log2 fold change on the
+x-axis, statistical significance on the y-axis.
+
+```{r volcano, eval = FALSE}
+library(plotomics)
+
+set.seed(42)
+de <- data.frame(
+  x     = rnorm(5000),
+  y     = abs(rnorm(5000)) * 3,
+  label = paste0("GENE", seq_len(5000))
+)
+volcano(de, fc_threshold = 1, label_top_n = 5)
+```
+
+The widget renders all 5 000 points on the GPU, so even with hundreds of
+thousands of genes the plot stays interactive. Threshold lines and gene labels
+are vector overlays drawn on top.
+
+## Expression heatmap
+
+`bioheatmap()` displays a numeric matrix as a colormap texture. Row and column
+labels come from `dimnames`.
+
+```{r heatmap, eval = FALSE}
+set.seed(1)
+mat <- matrix(rnorm(200 * 50), nrow = 200, ncol = 50)
+rownames(mat) <- paste0("gene", seq_len(200))
+colnames(mat) <- paste0("sample", seq_len(50))
+
+bioheatmap(mat, z_score = TRUE, colormap = "rdbu")
+```
+
+Setting `z_score = TRUE` normalizes each row before coloring, which is useful
+when comparing expression levels across genes with different baselines. The
+`"rdbu"` colormap gives a red-white-blue diverging scale centered at zero.
+
+## Dot plot
+
+A dot plot encodes two values per cell: dot size for the fraction of cells
+expressing a gene, and dot colour for the expression level.
+
+```{r dotplot, eval = FALSE}
+genes    <- c("CD3D", "CD3E", "CD8A", "MS4A1", "CD79A", "LYZ", "CD14")
+clusters <- c("CD8 T", "CD4 T", "B", "Mono")
+
+df <- expand.grid(
+  gene    = factor(genes, levels = genes),
+  cluster = factor(clusters, levels = clusters),
+  stringsAsFactors = FALSE
+)
+set.seed(7)
+df$pct   <- sample(5:95, nrow(df), replace = TRUE)
+df$value <- round(runif(nrow(df), 0, 3), 1)
+
+dotplot(df, colormap = "viridis")
+```
+
+Row and column order follows the factor levels of `gene` and `cluster`, so you
+control the layout without sorting the data frame itself.
+
+## UMAP / t-SNE embedding
+
+`embedding()` renders a 2-D scatter of reduced-dimension coordinates. Points
+are drawn with WebGL, so several hundred thousand cells stay smooth.
+
+```{r embedding, eval = FALSE}
+set.seed(3)
+n <- 2000
+emb <- data.frame(
+  x     = c(rnorm(n/2, -3), rnorm(n/2, 3)),
+  y     = c(rnorm(n/2, 0), rnorm(n/2, 2)),
+  color = factor(rep(c("Cluster A", "Cluster B"), each = n/2))
+)
+embedding(emb, point_size = 4)
+```
+
+When `color` is a factor, the legend order and colour assignment follow the
+factor levels. This matches the `drop = FALSE` convention in ggplot2: unused
+levels are preserved and the palette stays stable across subsets.
+
+## Shiny usage
+
+Every widget comes with a `*Output()` / `render*()` pair for Shiny. A minimal
+app:
+```{r shiny, eval = FALSE}
+library(shiny)
+library(plotomics)
+
+ui <- fluidPage(
+  volcanoOutput("vol", height = "500px")
+)
+
+server <- function(input, output) {
+  output$vol <- renderVolcano({
+    df <- data.frame(x = rnorm(1000), y = abs(rnorm(1000)) * 3)
+    volcano(df)
+  })
+}
+
+shinyApp(ui, server)
+```
+
+## Next steps
+
+All 15 widgets follow the same pattern: pass a data frame (or matrix), set
+options, get back an htmlwidget. See the function reference for the full list
+and their parameters.

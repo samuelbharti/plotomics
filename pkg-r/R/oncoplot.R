@@ -206,6 +206,13 @@ oncoplot <- function(alterations,
 #' @param samples Optional character vector to use instead of the derived sample
 #'   order.
 #' @return A list with `genes` and `samples` character vectors.
+#' @examples
+#' alt <- data.frame(
+#'   gene   = c("TP53", "TP53", "KRAS", "KRAS", "EGFR"),
+#'   sample = c("S1",   "S2",   "S2",   "S3",   "S1"),
+#'   class  = "missense"
+#' )
+#' oncoplot_memo_sort(alt)
 #' @export
 oncoplot_memo_sort <- function(alterations, genes = NULL, samples = NULL) {
   g <- as.character(alterations$gene)
@@ -247,6 +254,19 @@ oncoplot_memo_sort <- function(alterations, genes = NULL, samples = NULL) {
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `oncoplotOutput()` returns a Shiny output UI element;
 #'   `renderOncoplot()` returns a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   ui <- fluidPage(oncoplotOutput("onco"))
+#'   server <- function(input, output) {
+#'     output$onco <- renderOncoplot({
+#'       oncoplot(data.frame(
+#'         gene = c("TP53", "KRAS"), sample = c("S1", "S2"),
+#'         class = "missense"
+#'       ))
+#'     })
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name oncoplot-shiny
 #' @export
 oncoplotOutput <- function(output_id, width = "100%", height = "560px") {

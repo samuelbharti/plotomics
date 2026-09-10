@@ -162,9 +162,9 @@
   <div class="navbar-inner">
     <a class="navbar-brand" href="#top">plotomics</a>
     <div class="navbar-links">
-      <a class="opt" href="#why">Why</a>
-      <a class="opt" href="#components">Components</a>
       <a class="opt" href="#installation">Install</a>
+      <a class="opt" href="#motivation">Motivation</a>
+      <a class="opt" href="#components">Components</a>
       <a href="https://www.samuelbharti.com/plotomics/r/">R docs</a>
       <a href="https://www.samuelbharti.com/plotomics/py/">Python docs</a>
       <a href="https://github.com/samuelbharti/plotomics">GitHub</a>
@@ -192,21 +192,71 @@
     Jupyter notebook, a Shiny app, the RStudio Viewer, or a plain web page.
   </p>
 
-  <h2 id="why">Why</h2>
+  <h2 id="installation">Installation</h2>
+
+  <h3>R</h3>
+  <div class="codeblock">
+    <button class="copy" type="button" data-copy='install.packages("plotomics")' aria-label="Copy R install command">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+    </button>
+    <pre><code>install.packages(<span style="color:#0a7c42">"plotomics"</span>)</code></pre>
+  </div>
+  <p>Load it with <code>library(plotomics)</code>. Widgets also render outside Shiny, in the
+    RStudio Viewer, R Markdown, and Quarto. The CRAN release carries 15 of the 17
+    components; the genome-browser pair (igv.js and Gosling) ships in R from
+    <a href="https://samuelbharti.r-universe.dev/plotomics">r-universe</a> until a later release
+    adds them to CRAN.</p>
+
+  <h3>Python</h3>
+  <div class="codeblock">
+    <button class="copy" type="button" data-copy="pip install plotomics" aria-label="Copy Python install command">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+    </button>
+    <pre><code>pip install plotomics</code></pre>
+  </div>
+  <p>Works in Jupyter, JupyterLab, Colab, VS Code, marimo, Shiny for Python, and Streamlit.</p>
+
+  <h3>JavaScript</h3>
+  <div class="codeblock">
+    <button class="copy" type="button" data-copy="pnpm add plotomics" aria-label="Copy npm install command">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+    </button>
+    <pre><code>pnpm add plotomics</code></pre>
+  </div>
+  <p>Headless factories with tree-shakeable subpath imports, for example
+    <code>plotomics/embedding</code>.</p>
+
+  <p class="note">
+    plotomics ships through <a href="https://cran.r-project.org/package=plotomics">CRAN</a>,
+    <a href="https://pypi.org/project/plotomics/">PyPI</a>, and
+    <a href="https://www.npmjs.com/package/plotomics">npm</a>.
+  </p>
+
+  <hr />
+
+  <h2 id="motivation">Motivation</h2>
   <p>
-    Omics data outgrew the plotting stack. A 500k-cell embedding or a 20k-gene volcano is
-    routine now, but the tools most of these figures are drawn with were designed for a few
-    thousand marks, and past that the figure stops being readable before the data stops
-    being interesting. Separately, labs run on both R and Python, so the same figure gets
-    implemented twice and the two drift apart.
+    I built plotomics because I kept hitting the same wall in my own work. A
+    500,000-cell embedding or a 20,000-gene volcano plot is common today. Most
+    plotting tools were built for a few thousand marks. Past that count, a
+    figure stops being readable before the data stops being interesting.
   </p>
   <p>
-    plotomics writes each component once and wraps it thinly for both languages, so the
-    notebook and the paper agree. It is deliberately not a general plotting library, and for
-    a small static figure there are better tools.
+    A second problem had nothing to do with size. My work runs on both R and
+    Python, so the same figure gets built twice, once per language, and the
+    two copies drift apart. I draw a heatmap in R and a different one in a
+    Python notebook, and I cannot say which one is correct without reading
+    both.
+  </p>
+  <p>
+    So I write each component once and wrap it thinly for both languages, so
+    the notebook and the paper agree. plotomics is not a general plotting
+    library by design, and for a small, static figure, better tools already
+    exist.
     <a href="https://github.com/samuelbharti/plotomics/blob/main/docs/motivation.md">Read the
-    motivation</a> for the goals, the non-goals, how it compares with ComplexHeatmap,
-    maftools, survminer, Seurat and scanpy, and when to use one of those instead.
+    full motivation</a> for the goals, the non-goals, how it compares with
+    ComplexHeatmap, maftools, survminer, Seurat and scanpy, and when to use
+    one of those instead.
   </p>
 
   <hr />
@@ -292,46 +342,6 @@
     you need a chart that is not one of the seventeen above, it is the better tool, and the
     <a href="https://github.com/samuelbharti/plotomics/blob/main/docs/motivation.md">motivation
     doc</a> is explicit about the other cases where an established package should win.
-  </p>
-
-  <h2 id="installation">Installation</h2>
-
-  <h3>R</h3>
-  <div class="codeblock">
-    <button class="copy" type="button" data-copy='install.packages("plotomics", repos = "https://samuelbharti.r-universe.dev")' aria-label="Copy R install command">
-      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-    </button>
-    <pre><code>install.packages(<span style="color:#0a7c42">"plotomics"</span>,
-                 repos = <span style="color:#0a7c42">"https://samuelbharti.r-universe.dev"</span>)</code></pre>
-  </div>
-  <p>Load it with <code>library(plotomics)</code>. Widgets also render outside Shiny, in the
-    RStudio Viewer, R Markdown, and Quarto.</p>
-
-  <h3>Python</h3>
-  <div class="codeblock">
-    <button class="copy" type="button" data-copy="pip install plotomics" aria-label="Copy Python install command">
-      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-    </button>
-    <pre><code>pip install plotomics</code></pre>
-  </div>
-  <p>Works in Jupyter, JupyterLab, Colab, VS Code, marimo, Shiny for Python, and Streamlit.</p>
-
-  <h3>JavaScript</h3>
-  <div class="codeblock">
-    <button class="copy" type="button" data-copy="pnpm add plotomics" aria-label="Copy npm install command">
-      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-    </button>
-    <pre><code>pnpm add plotomics</code></pre>
-  </div>
-  <p>Headless factories with tree-shakeable subpath imports, for example
-    <code>plotomics/embedding</code>.</p>
-
-  <p class="note">
-    The registries are not populated until the first tagged release. plotomics ships through
-    <a href="https://samuelbharti.r-universe.dev/plotomics">r-universe</a>,
-    <a href="https://pypi.org/project/plotomics/">PyPI</a>, and
-    <a href="https://www.npmjs.com/package/plotomics">npm</a>. Until then, install
-    from source. See the <a href="https://github.com/samuelbharti/plotomics#readme">README</a>.
   </p>
 
   <h2 id="goals">How it works</h2>

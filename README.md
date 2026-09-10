@@ -14,28 +14,49 @@ Gosling.js), and numeric data reaches the browser as a binary buffer rather than
 JSON, so hundreds of thousands to millions of features stay interactive.
 Components are designed to be **publication-ready**, not toy demos.
 
-## Why plotomics
+## Installation
 
-Omics data outgrew the plotting stack. A 500k-cell embedding or a 20k-gene
-volcano is routine now, but the tools most of these figures are drawn with were
-designed for a few thousand marks. Past that they get slow, and the figure stops
-being readable before the data stops being interesting.
+R, from CRAN:
 
-There is a second problem that has nothing to do with size. Labs run on both R
-and Python, so the same figure gets implemented twice and the two drift. The
-heatmap in the paper and the heatmap in the notebook disagree, and nobody can
-say which one is right.
+```r
+install.packages("plotomics")
+```
 
-plotomics writes each component once, in TypeScript, and wraps it thinly for
-both languages. You get GPU or canvas rendering with binary data transport, real
-SVG and PNG export rather than a screenshot, and the same object in a Jupyter
-notebook, a Shiny app, the RStudio Viewer, Quarto, or a plain web page.
+Python, from PyPI:
 
-It is deliberately not a general plotting library, and for a small static figure
-there are better tools. [docs/motivation.md](docs/motivation.md) sets out the
-goals, the non-goals, how plotomics compares with ComplexHeatmap, maftools,
-survminer, Seurat, scanpy and others, and when you should use one of those
-instead.
+```bash
+pip install plotomics
+```
+
+See [pkg-r/README.md](pkg-r/README.md) and [pkg-py/README.md](pkg-py/README.md)
+for the full quick start in each language.
+
+## Motivation
+
+I kept hitting the same wall. Omics data outgrew the plotting stack that I
+used to draw it. A 500,000-cell embedding or a 20,000-gene volcano plot is
+common work today, but most plotting tools were built for a few thousand
+marks. Past that count, rendering slows down, and the figure stops being
+readable before the data stops being interesting.
+
+A second problem had nothing to do with size. My work runs on both R and
+Python, so the same figure gets built twice: once in R, once in Python. The
+two copies drift apart. I draw a heatmap in R and a different one in a
+Python notebook, and I cannot say which one is correct without reading both.
+
+So I wrote each component once, in TypeScript, and wrapped it thinly for
+both languages. This gives me:
+
+- GPU or canvas rendering with binary data transport.
+- Real SVG and PNG export instead of a screenshot.
+- The same object in a Jupyter notebook, a Shiny app, the RStudio Viewer,
+  Quarto, or a plain web page.
+
+plotomics is not a general plotting library by design. For a small, static
+figure, better tools already exist. [docs/motivation.md](docs/motivation.md)
+covers the full goals and non-goals. It also covers how plotomics compares
+with ComplexHeatmap, maftools, survminer, Seurat, and scanpy, and when to
+use one of those instead.
 
 ## Components
 
@@ -105,7 +126,7 @@ win.
 
 ## Repository layout
 
-```
+```text
 pkg-js/
   core/         plotomics/core        contract, theme, color, binary transport, export
   components/   plotomics  the headless viz factories + adapters + dev harness

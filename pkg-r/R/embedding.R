@@ -154,6 +154,16 @@ embedding <- function(data,
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `embeddingOutput()` returns a Shiny output UI element;
 #'   `renderEmbedding()` returns a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   ui <- fluidPage(embeddingOutput("emb"))
+#'   server <- function(input, output) {
+#'     output$emb <- renderEmbedding({
+#'       embedding(data.frame(x = rnorm(200), y = rnorm(200)))
+#'     })
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name embedding-shiny
 #' @export
 embeddingOutput <- function(output_id, width = "100%", height = "480px") {

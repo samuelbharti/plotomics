@@ -30,3 +30,13 @@ returns a Shiny render function.
 Output and render functions for using \code{\link[=upset]{upset()}} within Shiny applications and
 interactive R Markdown / Quarto documents.
 }
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  sets <- list(A = c("x", "y", "z"), B = c("y", "z", "w"))
+  ui <- fluidPage(upsetOutput("us"))
+  server <- function(input, output) {
+    output$us <- renderUpset(upset(upset_intersections(sets)))
+  }
+  shinyApp(ui, server)
+}
+}

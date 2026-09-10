@@ -133,6 +133,16 @@ clustermap <- function(mat,
 #' @param quoted Is `expr` already quoted? Defaults to `FALSE`.
 #' @return `clustermapOutput()` returns a Shiny output UI element;
 #'   `renderClustermap()` returns a Shiny render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   ui <- fluidPage(clustermapOutput("cm"))
+#'   server <- function(input, output) {
+#'     output$cm <- renderClustermap({
+#'       clustermap(matrix(rnorm(200), 20, 10))
+#'     })
+#'   }
+#'   shinyApp(ui, server)
+#' }
 #' @name clustermap-shiny
 #' @export
 clustermapOutput <- function(output_id, width = "100%", height = "480px") {
