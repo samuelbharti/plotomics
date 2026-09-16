@@ -35,9 +35,9 @@ local development.
 
 Each dataset is generated once at startup; the controls only change widget
 **options**, so every `render*` rebuilds its widget from fixed data (server to
-client reactivity). The same pattern extends to the twelve components this app
-does not show (`clustermap`, `dotplot`, `violin`, `spatial`, `oncoplot`,
-`lollipop`, `km`, `profile`, `upset`, `hic`, `igv`, `gosling`): add a tab and
-call the matching `*Output` / `render*` pair. Every widget also renders outside
+client reactivity). The same pattern extends to every component this app does
+not show (`clustermap`, `dotplot`, `violin`, `spatial`, `oncoplot`, `lollipop`,
+`km`, `bioprofile`, `upset`, `hic`): add a tab and call the matching `*Output` /
+`render*` pair. Every widget also renders outside
 Shiny, in the RStudio Viewer, R Markdown or Quarto, by calling the constructor
 directly, e.g. `volcano(df)`.
