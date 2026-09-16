@@ -7,6 +7,16 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      # pixi.js is an optional peer, not something this package imports. It is
+      # here for gosling.js and higlass, and both pin it to 6:
+      #   gosling.js@1.0.7  pixi.js ^6.3.0
+      #   higlass@1.13.6    pixi.js ^5.0.3 || ^6.5.2
+      # A major bump resolves gosling against a pixi it does not support, and
+      # no test catches it because nothing tests the genome browsers. Moving
+      # pixi means upgrading gosling and higlass first.
+      - dependency-name: "pixi.js"
+        update-types: ["version-update:semver-major"]
     groups:
       # Collapse routine minor/patch bumps into a single PR to cut noise.
       npm-minor-patch:
