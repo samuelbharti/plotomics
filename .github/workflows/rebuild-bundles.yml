@@ -1,0 +1,64 @@
+name: rebuild-bundles
+
+# Rebuilds the committed JS bundles and pushes them to the branch it runs on.
+#
+# The bundles under pkg-r/inst/htmlwidgets/lib/plotomics and
+# pkg-py/src/plotomics/static are committed, because the R and Python packages
+# ship them. ci.yml rebuilds them and fails if the result differs from what is
+# committed. Any dependency bump therefore lands stale bundles, and dependabot
+# does not rebuild them, so its pull requests cannot pass on their own.
+#
+# Run this on a dependency branch to bring them up to date:
+#   gh workflow run rebuild-bundles.yml --ref <branch>
+#
+# The steps below mirror the js job in ci.yml exactly, down to the runner and
+# the Node version. That is the point: the bundles are verified byte for byte,
+# so they have to be built where they are checked, not on a laptop.
+#
+# Dispatch only. This writes a commit, so nothing else may trigger it.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write # pushes the rebuilt bundles
+
+jobs:
+  rebuild:
+    name: rebuild
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Pushing to the default branch would bypass the pull request rule, and
+      # the ruleset would reject it anyway. Fail with a readable reason instead.
+      - name: Refuse to run on the default branch
+        run: |
+          if [ "${{ github.ref_name }}" = "${{ github.event.repository.default_branch }}" ]; then
+            echo "This workflow pushes a commit. Run it on a branch, not ${{ github.ref_name }}." >&2
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm dist
+
+      - name: Commit the rebuilt bundles
+        run: |
+          # Scoped to the bundle paths so nothing else a build touched is swept
+          # in. -A so a brand new component's bundle is added, not only tracked
+          # files that changed.
+          git add -A pkg-r/inst/htmlwidgets/lib/plotomics pkg-py/src/plotomics/static
+          if git diff --cached --quiet; then
+            echo "Bundles already match the build. Nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build: rebuild the committed bundles"
+          git push
