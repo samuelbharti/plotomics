@@ -1,11 +1,13 @@
 # plotomics <img src="man/figures/logo.svg" align="right" height="139" alt="" />
 
 <!-- badges: start -->
+[![Lifecycle: stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html#stable)
 [![CRAN status](https://www.r-pkg.org/badges/version/plotomics)](https://CRAN.R-project.org/package=plotomics)
-[![CRAN downloads](https://cranlogs.r-pkg.org/badges/plotomics)](https://CRAN.R-project.org/package=plotomics)
-[![R-CMD-check](https://github.com/samuelbharti/plotomics/actions/workflows/ci.yml/badge.svg)](https://github.com/samuelbharti/plotomics/actions/workflows/ci.yml)
+[![CRAN downloads](https://cranlogs.r-pkg.org/badges/grand-total/plotomics)](https://CRAN.R-project.org/package=plotomics)
 [![r-universe](https://samuelbharti.r-universe.dev/badges/plotomics)](https://samuelbharti.r-universe.dev/plotomics)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![R-CMD-check](https://github.com/samuelbharti/plotomics/actions/workflows/ci.yml/badge.svg)](https://github.com/samuelbharti/plotomics/actions/workflows/ci.yml)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21926306-1682D4)](https://doi.org/10.5281/zenodo.21926306)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/samuelbharti/plotomics/blob/main/LICENSE)
 <!-- badges: end -->
 
 Fifteen GPU- and canvas-accelerated visualization widgets for bioinformatics,
@@ -29,7 +31,7 @@ For the development version, from r-universe or GitHub:
 install.packages("plotomics", repos = "https://samuelbharti.r-universe.dev")
 
 # install.packages("pak")
-pak::pak("samuelbharti/plotomics")
+pak::pak("samuelbharti/plotomics/pkg-r")
 ```
 
 ## Quick start
