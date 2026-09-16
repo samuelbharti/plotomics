@@ -115,7 +115,7 @@ Three components ship data helpers that run the statistics in R, where you can
 see them, rather than inside the renderer: `oncoplot_memo_sort()`,
 `upset_intersections()` and `violin_density()`.
 
-### A million cells, concretely
+### A worked example
 
 Cell centroids from a 1M-cell Xenium run go through `embedding`. Points become
 WebGL sprites drawn from GPU buffers, and the coordinates arrive from Python as a
@@ -155,7 +155,7 @@ scripts/        sync built bundles into the wrappers
 .github/        CI, docs and release workflows
 ```
 
-## Quick start
+## Usage
 
 ### R
 
