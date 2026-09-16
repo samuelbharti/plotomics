@@ -16,8 +16,8 @@ built on a shared JavaScript core and exposed to R through
 Viewer, R Markdown, Quarto and Shiny, and each ships a matching
 `*Output()` / `render*()` pair for Shiny apps.
 
-The same core drives the Python and JavaScript packages, so a figure looks and
-behaves identically in all three languages.
+The same core drives the Python and JavaScript packages, so a widget looks and
+behaves identically wherever it ships.
 
 ## Installation
 
@@ -68,10 +68,10 @@ km(survival::survfit(survival::Surv(time, status) ~ sex, data = lung))
 | Sets, hierarchies, networks | `upset()`, `treemap()`, `network()` |
 | Genome and chromatin | `hic()` |
 
-The Python and JavaScript packages also ship `igv()` and `gosling()`, two
-genome-browser widgets. Both stayed out of this CRAN release to keep the
-installed package under CRAN's 5 MB limit, and a later release adds them
-back to R.
+The Python and JavaScript packages ship two more: `igv()` and `gosling()`, both
+genome browsers. They came out of the R package before the CRAN submission,
+because their bundles push the installed size past CRAN's 5 MB limit. Whether
+they return is [open](https://github.com/samuelbharti/plotomics/issues/78).
 
 Helpers: `oncoplot_memo_sort()` for the conventional oncoplot column order,
 `upset_intersections()` for exclusive set intersections, and
@@ -103,31 +103,14 @@ Numeric columns reach the browser as a binary buffer rather than JSON, which is
 what keeps several hundred thousand points interactive rather than merely
 drawable.
 
-## Motivation
-
-I built plotomics because I kept hitting the same wall in my own work. A
-single-cell embedding with 500,000 cells or a volcano plot with 20,000
-genes is common today. Most R plotting tools were built for a few
-thousand points. Past that count, a plot stops being useful before the
-data stops being interesting.
-
-I also work in both R and Python, and I got tired of writing the same
-figure twice and watching the two versions drift apart. I write each
-widget here once, in TypeScript, and wrap it thinly for R. The R version
-and the Python version cannot disagree, because they share one
-implementation.
-
-See the [project overview](https://www.samuelbharti.com/plotomics/) for
-the full story, including when an established R package like
-`ComplexHeatmap` or `survminer` is still the better choice.
-
 ## Documentation
 
 - [Reference](https://www.samuelbharti.com/plotomics/r/reference/) for every function
 - [Changelog](https://www.samuelbharti.com/plotomics/r/news/)
-- [Project overview](https://www.samuelbharti.com/plotomics/), including the
-  Python and JavaScript packages
+- [Project overview](https://www.samuelbharti.com/plotomics/): why the package
+  exists, the Python and JavaScript packages, and when an established package
+  such as `ComplexHeatmap` or `survminer` is the better choice
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/samuelbharti/plotomics/blob/main/LICENSE).

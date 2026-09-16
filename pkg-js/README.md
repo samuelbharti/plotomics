@@ -44,7 +44,7 @@ barrel import (`plotomics`) down to what you use.
 
 ## The shared core
 
-`plotomics/core` exposes the pieces every component is built on — the component
+`plotomics/core` exposes the pieces every component is built on: the component
 contract (`PlotomicsFactory`, `PlotomicsInstance`), theming (`defaultTheme`,
 `darkTheme`, `OKABE_ITO`), colour ramps (`viridis`, `rdbu`, `ltc`, `ltcdiv`,
 `categoricalScale`), the binary column transport (`decodeColumns`) and the
@@ -80,10 +80,21 @@ module at build time. Install only the engine(s) your app actually uses:
 npm install plotomics sigma graphology graphology-layout-forceatlas2
 ```
 
-`react` and `react-dom` are optional peers required only by `plotomics/gosling`
-— Gosling.js is a React component internally. No plotomics component imports
-React itself. Gosling.js 1.0.7 supports React 16 through 18 and pixi.js 6, which
+`react` and `react-dom` are optional peers required only by `plotomics/gosling`,
+because Gosling.js is a React component internally. No plotomics component
+imports React itself. Gosling.js 1.0.7 supports React 16 through 18 and pixi.js 6, which
 is why those peer ranges stop short of the current majors.
+
+## Documentation
+
+The [project overview](https://www.samuelbharti.com/plotomics/) covers every
+component and links the R and Python packages. Types ship with the package, so
+an editor gives the full API inline. A published reference site is
+[open](https://github.com/samuelbharti/plotomics/issues/75).
+
+## License
+
+MIT. See [LICENSE](https://github.com/samuelbharti/plotomics/blob/main/LICENSE).
 
 ## Acknowledgements
 

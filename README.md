@@ -21,7 +21,7 @@ One high-performance TypeScript core, wrapped for R (via
 [anywidget](https://anywidget.dev/)). Built for **large datasets**: the
 rendering layer is WebGL/canvas throughout (regl, canvas, sigma, igv.js,
 Gosling.js), and numeric data reaches the browser as a binary buffer rather than
-JSON, so hundreds of thousands to millions of features stay interactive.
+JSON, so several hundred thousand features stay interactive.
 Components are designed to be **publication-ready**, not toy demos.
 
 ## Installation
@@ -38,8 +38,14 @@ Python, from PyPI:
 pip install plotomics
 ```
 
-See [pkg-r/README.md](pkg-r/README.md) and [pkg-py/README.md](pkg-py/README.md)
-for the full quick start in each language.
+JavaScript, from npm:
+
+```sh
+npm install plotomics
+```
+
+See [pkg-r/README.md](pkg-r/README.md), [pkg-py/README.md](pkg-py/README.md) and
+[pkg-js/README.md](pkg-js/README.md) for the full quick start in each language.
 
 ## Motivation
 
@@ -70,7 +76,8 @@ use one of those instead.
 
 ## Components
 
-Seventeen components, each available in all three languages. The R constructor
+Seventeen components. Fifteen of them ship in all three languages, and the two
+genome browsers are JavaScript and Python only, marked below. The R constructor
 is snake_case (`oncoplot()`), the Python class is PascalCase (`Oncoplot`), and
 the JS factory is `createOncoplot`.
 
@@ -97,8 +104,8 @@ and exercised for, not a benchmark and not a ceiling.
 | Gene treemap | Treemap of gene sets and pathway composition | canvas 2-D + `d3-hierarchy` (squarified layout) | 60k leaves |
 | Network graph | Force-directed PPI, co-expression and regulatory graphs | `sigma` v3 (WebGL) + `graphology` + `graphology-layout-forceatlas2` | 5k nodes |
 | Hi-C contact matrix | Hi-C / Micro-C contact maps | `regl` (WebGL) with a level-of-detail pyramid, no tile server | 1024 × 1024 ≈ 1M bins |
-| Genome viewer (igv.js) | Track browser: BAM, BigWig, VCF, BED, refGene | `igv.js`, streams and tiles internally | whole genome, server-streamed |
-| Genome viewer (Gosling) | Declarative genomics figures: circos, ideograms, linked views | `gosling.js` on `PIXI.js` (WebGL) | whole genome, per spec |
+| Genome viewer (igv.js), no R | Track browser: BAM, BigWig, VCF, BED, refGene | `igv.js`, streams and tiles internally | whole genome, server-streamed |
+| Genome viewer (Gosling), no R | Declarative genomics figures: circos, ideograms, linked views | `gosling.js` on `PIXI.js` (WebGL) | whole genome, per spec |
 
 Note that `clustermap` and `heatmap` look alike and are built differently: the
 first is a scaled 2-D canvas, the second a WebGL texture. Not every large figure
@@ -148,28 +155,13 @@ scripts/        sync built bundles into the wrappers
 .github/        CI, docs and release workflows
 ```
 
-## Quick start (dev)
-
-```bash
-pnpm install
-pnpm dist        # build all JS + copy bundles into pkg-r/ and pkg-py/
-
-# Visual dev harness (WebGL, synthetic data at scale)
-pnpm --filter plotomics dev   # http://localhost:5180
-```
+## Quick start
 
 ### R
 
-Make sure the bundles are synced first, from the shell:
-
-```bash
-pnpm dist
-```
-
-Then, in R:
-
 ```r
-devtools::load_all("pkg-r")
+library(plotomics)
+
 df <- data.frame(x = rnorm(1e5), y = abs(rnorm(1e5)) * 3, label = paste0("GENE", 1:1e5))
 volcano(df, fc_threshold = 1, p_threshold = 0.05)
 ```
@@ -197,6 +189,17 @@ k = np.random.randint(0, 8, n)                        # cluster per cell
 df = pd.DataFrame({"x": np.random.randn(n) + k*4, "y": np.random.randn(n) + k*4,
                    "color": [f"cluster {i}" for i in k]})
 Embedding(df, color_mode="categorical")
+```
+
+### JavaScript
+
+```js
+import { createVolcano } from "plotomics/volcano";
+
+const chart = createVolcano(document.getElementById("chart"), {
+  data: { columns: { x, y, label } },
+  options: { fcThreshold: 1, pThreshold: 0.05 },
+});
 ```
 
 ## Examples

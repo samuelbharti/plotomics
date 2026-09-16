@@ -43,20 +43,17 @@ npm run app        # Rscript shiny::runApp('r/app.R', port = 8000)
 
 Then open http://localhost:8000 and drag a lasso across the points.
 
-### Using the local (unpublished) plotomics build
+This example sits outside the pnpm workspace on purpose, so its React 19 and
+shiny-react dependencies stay out of the library's own React 18 build.
 
-`package.json` pins `plotomics: ^0.1.0` for when it is on npm. Until the
-v0.1 release is published, link the workspace build instead, from the repo
-root:
+To run it against a local build rather than the published package, build the
+library first and link it:
 
 ```bash
-pnpm dist                                   # build plotomics
+pnpm dist                        # from the repository root
 cd examples/shiny-react-embedding
-pnpm link ../../pkg-js         # or: npm install ../../pkg-js
+pnpm link ../../pkg-js
 ```
-
-(This example is intentionally **outside** the pnpm workspace so its React 19 /
-shiny-react deps don't mix into the library's own React 18 build.)
 
 ## The large-data caveat
 
