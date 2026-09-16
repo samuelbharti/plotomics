@@ -1,5 +1,6 @@
 [build-system]
-requires = ["hatchling"]
+# 1.27 is the first release that understands the PEP 639 license fields below.
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -9,12 +10,12 @@ description = "High-performance bioinformatics visualization widgets (volcano, h
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Samuel Bharti", email = "samuelbharti.io@gmail.com" }]
 keywords = ["bioinformatics", "visualization", "anywidget", "webgl", "genomics"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -24,6 +25,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Visualization",
     "Framework :: Jupyter",
+    "Typing :: Typed",
 ]
 dependencies = [
     "anywidget>=0.9.0",
@@ -42,6 +44,8 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/samuelbharti/plotomics"
 Issues = "https://github.com/samuelbharti/plotomics/issues"
+Source = "https://github.com/samuelbharti/plotomics/tree/main/pkg-py"
+Changelog = "https://github.com/samuelbharti/plotomics/blob/main/CHANGELOG.md"
 DOI = "https://doi.org/10.5281/zenodo.21926306"
 
 # The built JS bundles live under src/plotomics/static/ and are git-tracked, so
