@@ -1,9 +1,14 @@
 # plotomics (Python)
 
+<!-- badges: start -->
+[![Lifecycle: stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html#stable)
+[![PyPI](https://img.shields.io/pypi/v/plotomics)](https://pypi.org/project/plotomics/)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21926306-1682D4)](https://doi.org/10.5281/zenodo.21926306)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/samuelbharti/plotomics/blob/main/LICENSE)
+<!-- badges: end -->
+
 <img src="https://raw.githubusercontent.com/samuelbharti/plotomics/main/assets/logo.png" align="right" width="140" alt="" />
 
-[![PyPI](https://img.shields.io/pypi/v/plotomics.svg)](https://pypi.org/project/plotomics/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 High-performance bioinformatics visualization widgets backed by a shared
 JavaScript core, exposed to Python through [anywidget](https://anywidget.dev).

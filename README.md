@@ -1,13 +1,20 @@
 # plotomics
 
+<!-- badges: start -->
+[![Lifecycle: stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html#stable)
+[![CRAN status](https://www.r-pkg.org/badges/version/plotomics)](https://CRAN.R-project.org/package=plotomics)
+[![CRAN downloads](https://cranlogs.r-pkg.org/badges/grand-total/plotomics)](https://CRAN.R-project.org/package=plotomics)
+[![r-universe](https://samuelbharti.r-universe.dev/badges/plotomics)](https://samuelbharti.r-universe.dev/plotomics)
+[![npm](https://img.shields.io/npm/v/plotomics)](https://www.npmjs.com/package/plotomics)
+[![PyPI](https://img.shields.io/pypi/v/plotomics)](https://pypi.org/project/plotomics/)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21926306-1682D4)](https://doi.org/10.5281/zenodo.21926306)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/samuelbharti/plotomics/blob/main/LICENSE)
+<!-- badges: end -->
+
 <img src="assets/logo.png" align="right" width="150" alt="plotomics" />
 
-[![CRAN status](https://www.r-pkg.org/badges/version/plotomics)](https://CRAN.R-project.org/package=plotomics)
-[![PyPI](https://img.shields.io/pypi/v/plotomics.svg)](https://pypi.org/project/plotomics/)
-[![npm](https://img.shields.io/npm/v/plotomics.svg)](https://www.npmjs.com/package/plotomics)
-[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.21926306-1682D4)](https://doi.org/10.5281/zenodo.21926306)
 
-**Lightweight, GPU-accelerated bioinformatics visualization components with R and Python wrappers.**
+**Lightweight, GPU-accelerated bioinformatics visualization components for JavaScript, R and Python.**
 
 One high-performance TypeScript core, wrapped for R (via
 [htmlwidgets](https://www.htmlwidgets.org/)) and Python (via
