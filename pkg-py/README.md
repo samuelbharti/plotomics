@@ -15,7 +15,11 @@ JavaScript core, exposed to Python through [anywidget](https://anywidget.dev).
 
 Works in Jupyter, JupyterLab, marimo, Google Colab, VS Code, Shiny for Python
 and Streamlit. Large numeric columns are shipped to the browser as a single
-binary buffer (not JSON), so millions of points stay interactive.
+binary buffer rather than JSON, so several hundred thousand points stay
+interactive.
+
+Seventeen components ship, including the two genome browsers, `igv()` and
+`gosling()`, which the R package does not carry.
 
 ## Installation
 
@@ -62,34 +66,20 @@ def server(input, output, session):
 app = App(app_ui, server)
 ```
 
-## Motivation
+## Documentation
 
-I built plotomics because I kept hitting the same wall in my own work. A
-single-cell embedding with 500,000 cells or a volcano plot with 20,000
-genes is common today. Most Python plotting tools were built for a few
-thousand points. Past that count, a plot stops being useful before the
-data stops being interesting.
+- [Reference](https://www.samuelbharti.com/plotomics/py/) for every component
+- [Project overview](https://www.samuelbharti.com/plotomics/): why the package
+  exists, the R and JavaScript packages, and when an established package such as
+  `scanpy` or `plotly` is the better choice
 
-I also work in both Python and R, and I got tired of writing the same
-figure twice and watching the two versions drift apart. I write each
-widget here once, in TypeScript, and wrap it thinly for Python. The
-Python version and the R version cannot disagree, because they share one
-implementation.
+## Contributing
 
-See the [project overview](https://www.samuelbharti.com/plotomics/) for
-the full story, including when an established Python package like
-`scanpy` or `plotly` is still the better choice.
+See [CONTRIBUTING.md](https://github.com/samuelbharti/plotomics/blob/main/CONTRIBUTING.md).
 
-## Development
+## License
 
-The widget JS is built from the monorepo root and copied into
-`src/plotomics/static/`:
-
-```bash
-pnpm dist          # build JS + sync bundles into this package
-pip install -e ".[dev]"
-pytest
-```
+MIT. See [LICENSE](https://github.com/samuelbharti/plotomics/blob/main/LICENSE).
 
 ## Acknowledgements
 
