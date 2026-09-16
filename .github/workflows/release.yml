@@ -62,7 +62,7 @@ jobs:
     name: Build & publish plotomics (npm)
     runs-on: ubuntu-latest
     permissions:
-      id-token: write # OIDC token for npm provenance attestations
+      id-token: write # npm trusted publishing (OIDC) and provenance
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -75,8 +75,14 @@ jobs:
       - run: pnpm dist # builds pkg-js/*/dist consumed by the published packages
       - name: Publish to npm
         if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Authentication is npm trusted publishing over OIDC. No token, and no
+        # secret in the repository. The publisher on npm names this repository
+        # and this workflow file, so neither can be renamed on its own.
+        #
+        # pnpm 11.0.8 broke the OIDC exchange and returned 404 (pnpm/pnpm#11513).
+        # The fix landed in May 2026 and this repository pins pnpm 11.9.0, which
+        # carries it. A 404 at this step means that regression came back.
+        #
         # One unscoped package, matching `pip install plotomics` and the CRAN
         # name. The shared core ships inside it as the `plotomics/core` subpath,
         # so there is no second package to publish and no ordering to get wrong.
