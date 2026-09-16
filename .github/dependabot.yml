@@ -8,14 +8,29 @@ updates:
       day: monday
     open-pull-requests-limit: 5
     ignore:
-      # pixi.js is an optional peer, not something this package imports. It is
-      # here for gosling.js and higlass, and both pin it to 6:
+      # These three are optional peer dependencies. Nothing in pkg-js/src
+      # imports them. They are declared for gosling.js and higlass, and those
+      # two hold every one of them below its current major:
       #   gosling.js@1.0.7  pixi.js ^6.3.0
+      #                     react, react-dom ^16.6.3 || ^17.0.0 || ^18.0.0
       #   higlass@1.13.6    pixi.js ^5.0.3 || ^6.5.2
-      # A major bump resolves gosling against a pixi it does not support, and
-      # no test catches it because nothing tests the genome browsers. Moving
-      # pixi means upgrading gosling and higlass first.
+      #                     react, react-dom ^16.6.3 || ^17.0.0 || ^18.0.0
+      #
+      # A major bump resolves both libraries against a version they do not
+      # support. pnpm allows it, because a peer mismatch is a warning, so the
+      # lockfile changes and CI stays green. Nothing catches it, because no
+      # test touches the genome browser components.
+      #
+      # react and react-dom also have to move together. Dependabot proposes
+      # them separately, and merging one alone pairs react 19 with react-dom
+      # 18, which breaks at runtime on its own.
+      #
+      # Upgrading gosling.js and higlass is what unblocks all three.
       - dependency-name: "pixi.js"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
         update-types: ["version-update:semver-major"]
     groups:
       # Collapse routine minor/patch bumps into a single PR to cut noise.
