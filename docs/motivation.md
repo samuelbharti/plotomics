@@ -72,7 +72,7 @@ legitimately disagree. Where the precomputation is fiddly, R helpers do it in
 the open: `violin_density()`, `upset_intersections()` and
 `oncoplot_memo_sort()`.
 
-**It is not a grammar of graphics.** There are seventeen opinionated components,
+**It is not a grammar of graphics.** The components are a fixed, opinionated set,
 not composable primitives. You cannot build an arbitrary chart out of them. If
 your figure is not on the list, plotomics has nothing to offer and `ggplot2` or
 `plotly` does.
@@ -169,7 +169,7 @@ narrower and less exciting than "it is faster":
 
 And the other direction, which matters just as much: plotly is far more general,
 much more mature, far better documented, and has a vastly larger community. If
-your figure is not one of the seventeen here, plotly is the correct answer and
+your figure is not one of the components here, plotly is the correct answer and
 plotomics has nothing to offer you.
 
 ## When to use something else
@@ -180,7 +180,7 @@ plotomics has nothing to offer you.
 - **You need the statistics, not just the picture.** Use `survival`,
   `lifelines`, `scanpy`, `maftools`. You can still hand the result to plotomics
   afterwards.
-- **You need a figure that is not one of the seventeen.** Use a general plotting
+- **You need a figure the components do not cover.** Use a general plotting
   library.
 - **You want maximal control over every visual detail.** The components expose a
   fixed option set, not arbitrary layering.
