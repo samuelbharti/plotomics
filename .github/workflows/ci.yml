@@ -31,6 +31,11 @@ jobs:
       - name: Install Chromium for the browser tests
         run: pnpm --filter plotomics exec playwright install --with-deps --only-shell chromium
       - run: pnpm -r --filter "./pkg-js/**" test:browser
+      # docs.yml runs on main only, and in one job with the R and Python docs.
+      # Building the JavaScript reference here makes a TypeDoc failure show up
+      # on the pull request, before it can stop the whole docs deploy.
+      - name: Build the JavaScript reference
+        run: pnpm --filter plotomics docs:build
       # typecheck and test run before the bundle check on purpose. Any
       # dependency bump makes the committed bundles stale, so checking them
       # first turned an expected, mechanical failure into a wall that hid

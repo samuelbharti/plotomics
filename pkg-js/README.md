@@ -87,10 +87,12 @@ is why those peer ranges stop short of the current majors.
 
 ## Documentation
 
-The [project overview](https://www.samuelbharti.com/plotomics/) covers every
-component and links the R and Python packages. Types ship with the package, so
-an editor gives the full API inline. A published reference site is
-[open](https://github.com/samuelbharti/plotomics/issues/75).
+- [Reference](https://www.samuelbharti.com/plotomics/js/) for every factory,
+  options type and core helper
+- [Project overview](https://www.samuelbharti.com/plotomics/): every component,
+  and the R and Python packages
+
+Types ship with the package, so an editor gives the full API inline.
 
 ## License
 

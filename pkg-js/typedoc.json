@@ -1,0 +1,14 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "plotomics",
+  "entryPoints": ["src/lib/index.ts", "src/core/index.ts"],
+  "out": "site",
+  "readme": "README.md",
+  "hostedBaseUrl": "https://www.samuelbharti.com/plotomics/js/",
+  "navigationLinks": {
+    "plotomics": "https://www.samuelbharti.com/plotomics/",
+    "R docs": "https://www.samuelbharti.com/plotomics/r/",
+    "Python docs": "https://www.samuelbharti.com/plotomics/py/",
+    "GitHub": "https://github.com/samuelbharti/plotomics"
+  }
+}
