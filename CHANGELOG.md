@@ -5,10 +5,31 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-One name on every registry: `plotomics` on npm, on PyPI and on r-universe. The
-three packages share a version and are released together from a single tag.
+One name on every registry: `plotomics` on npm, on PyPI, on CRAN and on
+r-universe. The three packages share a version and are released together from a
+single tag. CRAN receives the R package by manual submission, so its version can
+be behind the tag.
 
 ## [Unreleased]
+
+### Added
+
+- The R package is on CRAN, published 2026-09-04 as 0.1.0. That release holds
+  the R package as this section describes it: `bioprofile()` from 0.2.0, and no
+  `igv()` or `gosling()`.
+- `citation("plotomics")` returns the Zenodo DOI (R only).
+- Every Shiny binding help page in the R package has an example, and so does
+  `oncoplot_memo_sort()`.
+
+### Removed
+
+- `igv()` and `gosling()` left the R package, with their Shiny bindings:
+  `igvOutput()`, `renderIgv()`, `goslingOutput()` and `renderGosling()`. The two
+  bundles are 7.4 MB of JavaScript, which puts the installed package past the
+  5 MB limit that CRAN sets.
+
+  This is a breaking change for R code that calls either function. The Python
+  and JavaScript packages keep both components.
 
 ## [0.2.0] - 2026-08-14
 
