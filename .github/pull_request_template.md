@@ -29,6 +29,7 @@
 
 - [ ] `pnpm dist` (build + sync bundles into `pkg-r/` and `pkg-py/`) passes
 - [ ] `pnpm -r test` passes
+- [ ] `pnpm test:browser` passes (mounts gosling and igv in headless Chromium)
 - [ ] `pnpm -r typecheck` passes
 - [ ] `pnpm lint` passes (or surfaces only pre-existing findings)
 - [ ] R touched → `devtools::test("pkg-r")` and `devtools::check("pkg-r", args = c("--no-manual", "--as-cran"))` pass
