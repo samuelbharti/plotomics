@@ -18,8 +18,9 @@ updates:
       #
       # A major bump resolves both libraries against a version they do not
       # support. pnpm allows it, because a peer mismatch is a warning, so the
-      # lockfile changes and CI stays green. Nothing catches it, because no
-      # test touches the genome browser components.
+      # lockfile changes and the install succeeds. The browser tests in
+      # pkg-js/test/browser fail on each of these majors, so the pull request
+      # would go red, but there is no fix to make until gosling.js moves.
       #
       # react and react-dom also have to move together. Dependabot proposes
       # them separately, and merging one alone pairs react 19 with react-dom
@@ -33,6 +34,14 @@ updates:
       - dependency-name: "react-dom"
         update-types: ["version-update:semver-major"]
     groups:
+      # @vitest/browser-playwright requires the exact vitest version it was
+      # released with, so the two only install together. This group comes
+      # first, because a dependency joins the first group it matches, and it
+      # covers majors as well, so a vitest major arrives as one pull request.
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
       # Collapse routine minor/patch bumps into a single PR to cut noise.
       npm-minor-patch:
         update-types:

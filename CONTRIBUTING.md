@@ -99,6 +99,11 @@ pnpm dist            # build all JS + sync bundles into pkg-r/ and pkg-py/
 pnpm -r test         # JS unit tests
 pnpm -r typecheck
 
+# gosling and igv load only in a browser. These tests mount both in headless
+# Chromium. The install line is needed once per machine.
+pnpm --filter plotomics exec playwright install --only-shell chromium
+pnpm test:browser
+
 Rscript -e 'roxygen2::roxygenise("pkg-r")'   # regenerate NAMESPACE + man/
 Rscript -e 'devtools::test("pkg-r")'
 Rscript -e 'devtools::check("pkg-r", args = c("--no-manual", "--as-cran"))'

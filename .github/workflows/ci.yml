@@ -25,6 +25,12 @@ jobs:
       - run: pnpm dist
       - run: pnpm -r --filter "./pkg-js/**" typecheck
       - run: pnpm -r --filter "./pkg-js/**" test
+      # gosling.js and igv.js load only in a real browser, so the Node tests
+      # above never import them. A dependency bump that breaks either one
+      # passes every earlier step. These tests mount both in headless Chromium.
+      - name: Install Chromium for the browser tests
+        run: pnpm --filter plotomics exec playwright install --with-deps --only-shell chromium
+      - run: pnpm -r --filter "./pkg-js/**" test:browser
       # typecheck and test run before the bundle check on purpose. Any
       # dependency bump makes the committed bundles stale, so checking them
       # first turned an expected, mechanical failure into a wall that hid

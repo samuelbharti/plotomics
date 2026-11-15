@@ -13,6 +13,7 @@
     "sync": "node scripts/sync-assets.mjs",
     "dist": "pnpm build && pnpm sync",
     "test": "pnpm --filter plotomics test",
+    "test:browser": "pnpm --filter plotomics test:browser",
     "typecheck": "pnpm --filter plotomics typecheck",
     "lint": "biome lint .",
     "format": "biome format --write .",

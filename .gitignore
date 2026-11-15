@@ -5,6 +5,8 @@ dist/
 .pnpm-store/
 npm-debug.log*
 pnpm-debug.log*
+# Failure screenshots from the browser tests
+.vitest/
 
 # Python
 __pycache__/
