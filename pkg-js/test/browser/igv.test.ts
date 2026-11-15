@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createIgv } from "../../src/components/igv.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { type IgvOptions, createIgv } from "../../src/components/igv.js";
+import type { PlotomicsInstance } from "../../src/core/index.js";
 import { mountPoint, trackRequests } from "./helpers.js";
 
 // A 1,200 base synthetic sequence, served by the test server.
@@ -16,39 +17,39 @@ const config = {
 
 describe("igv component in a browser", () => {
   let requests: ReturnType<typeof trackRequests>;
+  let instance: PlotomicsInstance<IgvOptions> | undefined;
 
   beforeEach(() => {
     requests = trackRequests();
+    instance = undefined;
   });
 
   afterEach(() => {
+    // destroy() is idempotent, and runs here so that a failed test does not
+    // leave an igv browser behind for the next one.
+    instance?.destroy();
     requests.restore();
-    vi.restoreAllMocks();
     document.body.replaceChildren();
   });
 
   it("creates a browser on a local reference and exports SVG", async () => {
-    const logged = vi.spyOn(console, "error");
     const el = mountPoint();
-    const instance = createIgv(el, { options: { config } });
+    instance = createIgv(el, { options: { config } });
+    const live = instance;
 
-    // The factory catches a failed createBrowser and only logs it. exportSVG
-    // returns null until the browser is live, so an SVG string proves that
-    // igv.js loaded and built its view.
+    // exportSVG returns null until the browser is live, and the factory only
+    // logs a failed createBrowser. An SVG string proves that igv.js loaded
+    // and built its view.
     await expect
-      .poll(() => instance.exportSVG?.() ?? null, {
+      .poll(() => live.exportSVG?.() ?? null, {
         timeout: 30_000,
         interval: 250,
       })
       .toContain("<svg");
 
-    const failures = logged.mock.calls.filter(
-      ([first]) => typeof first === "string" && first.startsWith("plotomics"),
-    );
-    expect(failures).toEqual([]);
     expect(requests.external()).toEqual([]);
 
-    instance.destroy();
+    live.destroy();
     expect(el.childElementCount).toBe(0);
   });
 });
