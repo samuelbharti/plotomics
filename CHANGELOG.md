@@ -20,16 +20,22 @@ be behind the tag.
 - `citation("plotomics")` returns the Zenodo DOI (R only).
 - Every Shiny binding help page in the R package has an example, and so does
   `oncoplot_memo_sort()`.
+- A "Getting started" vignette for the R package, `vignette("plotomics")`.
 
 ### Removed
 
 - `igv()` and `gosling()` left the R package, with their Shiny bindings:
   `igvOutput()`, `renderIgv()`, `goslingOutput()` and `renderGosling()`. The two
-  bundles are 7.4 MB of JavaScript, which puts the installed package past the
-  5 MB limit that CRAN sets.
+  bundles add up to more than 7 MB of JavaScript, which puts the installed
+  package past the 5 MB limit that CRAN sets.
 
   This is a breaking change for R code that calls either function. The Python
   and JavaScript packages keep both components.
+
+### Fixed
+
+- The Python wheel ships the licence text. The package metadata declares the
+  licence once, as PEP 639 requires, so newer build backends accept it.
 
 ## [0.2.0] - 2026-08-14
 
