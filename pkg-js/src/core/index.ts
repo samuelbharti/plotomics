@@ -1,3 +1,10 @@
+/**
+ * The shared core: the component types, themes, color ramps, the binary
+ * column transport, and the export and DOM helpers.
+ *
+ * @module plotomics/core
+ */
+
 export type {
   Column,
   PlotomicsData,
