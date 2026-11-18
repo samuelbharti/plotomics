@@ -35,6 +35,7 @@ import {
   type Tooltip,
   measure,
   canvasToPNG,
+  categoricalColors,
 } from "../core/index.js";
 import Graph from "graphology";
 import Sigma from "sigma";
@@ -135,10 +136,22 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   };
   el.addEventListener("mousemove", onMove);
 
+  /** The given palette, or the theme palette sized to the node groups. */
   function paletteColors(): string[] {
-    return opts.palette && opts.palette.length
-      ? opts.palette
-      : theme.categorical;
+    if (opts.palette?.length) return opts.palette;
+    const groups = (data.meta?.nodeGroup as unknown[] | undefined) ?? [];
+    // Missing groups (null, NaN, "") take the default node colour.
+    const n = new Set(
+      groups
+        .filter(
+          (g) =>
+            g != null &&
+            g !== "" &&
+            !(typeof g === "number" && Number.isNaN(g)),
+        )
+        .map((g) => String(g)),
+    ).size;
+    return categoricalColors(theme.categorical, n);
   }
 
   function buildAndLayout(): { graph: Graph; dropped: EdgeDrops } {

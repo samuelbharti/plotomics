@@ -42,7 +42,7 @@ import {
   serializeSVG,
   compositePNG,
   ramp,
-  OKABE_ITO,
+  categoricalColors,
 } from "../core/index.js";
 
 export type SpatialColorMode = "auto" | "categorical" | "continuous";
@@ -248,11 +248,8 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
    */
   function levelColors(n: number): string[] {
     const given = (data.meta?.colors as string[] | undefined) ?? [];
-    const pal = theme.categorical?.length ? theme.categorical : OKABE_ITO;
-    return Array.from(
-      { length: n },
-      (_, i) => given[i] ?? (pal[i % pal.length] as string),
-    );
+    const pal = categoricalColors(theme.categorical, n);
+    return Array.from({ length: n }, (_, i) => given[i] ?? (pal[i] as string));
   }
   /** A spot's position on screen, or null when a coordinate is missing. */
   function spotAt(i: number): [number, number] | null {

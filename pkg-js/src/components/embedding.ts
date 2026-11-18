@@ -31,7 +31,6 @@ import {
   dpr,
   serializeSVG,
   compositePNG,
-  categoricalScale,
   OKABE_ITO,
   ramp,
   sampleRamp,
@@ -42,6 +41,7 @@ import {
   isStartView,
   createRenderLoop,
   afterQuiet,
+  categoricalColors,
 } from "../core/index.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
@@ -557,11 +557,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     svg.setAttribute("height", String(height));
   }
 
-  /** N stable palette colors, one per category index, cycling the theme palette. */
+  /** One colour per category index, from the theme palette. */
   function categoricalPalette(n: number): string[] {
-    const base = theme.categorical.length ? theme.categorical : OKABE_ITO;
-    const scale = categoricalScale(base);
-    return Array.from({ length: Math.max(1, n) }, (_, i) => scale(String(i)));
+    return categoricalColors(theme.categorical, Math.max(1, n));
   }
 
   // `fit` recomputes the view to frame the data (used on new data); pass false
@@ -618,7 +616,10 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         pickValues(color as ArrayLike<unknown>, drawn),
         opts.categories,
       );
-      pointColor = categoricalPalette(categories.length);
+      // The NA entry is painted grey, so it takes no palette colour.
+      pointColor = categoricalPalette(
+        categories.length - (missing >= 0 ? 1 : 0),
+      );
       if (missing >= 0) {
         pointColor[missing] = MISSING_COLOR;
         missingColor = true;

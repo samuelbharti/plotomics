@@ -46,10 +46,11 @@ barrel import (`plotomics`) down to what you use.
 
 `plotomics/core` exposes the pieces every component is built on: the component
 contract (`PlotomicsFactory`, `PlotomicsInstance`), theming (`defaultTheme`,
-`darkTheme`, `OKABE_ITO`), colour ramps (`viridis`, `rdbu`, `ltc`, `ltcdiv`,
-`categoricalScale`), the binary column transport (`decodeColumns`) and the
-export helpers (`serializeSVG`, `canvasToPNG`, and `compositePNG`, which draws
-the canvases and the SVG overlay into one PNG).
+`darkTheme`, `OKABE_ITO`, `PALETTE_20`), colour ramps and palettes (`viridis`,
+`rdbu`, `ltc`, `ltcdiv`, `categoricalColors`, `categoricalScale`), the binary
+column transport (`decodeColumns`) and the export helpers (`serializeSVG`,
+`canvasToPNG`, and `compositePNG`, which draws the canvases and the SVG
+overlay into one PNG).
 
 ```js
 import { defaultTheme, categoricalScale } from "plotomics/core";

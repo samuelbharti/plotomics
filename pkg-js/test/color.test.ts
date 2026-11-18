@@ -6,7 +6,9 @@ import {
   ltcdiv,
   ramp,
   rgbToHex,
+  categoricalColors,
 } from "../src/core/color.js";
+import { OKABE_ITO, PALETTE_20 } from "../src/core/theme.js";
 
 const RAMP_FNS = [
   ["viridis", viridis],
@@ -65,5 +67,48 @@ describe("ramps still behave normally", () => {
         }
       }
     }
+  });
+});
+
+describe("categoricalColors", () => {
+  it("keeps Okabe-Ito up to 8 categories", () => {
+    expect(categoricalColors(OKABE_ITO, 3)).toEqual(OKABE_ITO.slice(0, 3));
+    expect(categoricalColors(OKABE_ITO, 8)).toEqual(OKABE_ITO);
+    expect(categoricalColors(undefined, 2)).toEqual(OKABE_ITO.slice(0, 2));
+    expect(categoricalColors([], 2)).toEqual(OKABE_ITO.slice(0, 2));
+  });
+
+  it("switches to the 20-colour palette past 8, so no colour repeats", () => {
+    const nine = categoricalColors(OKABE_ITO, 9);
+    expect(nine).toEqual(PALETTE_20.slice(0, 9));
+    expect(new Set(nine).size).toBe(9);
+    expect(new Set(categoricalColors(OKABE_ITO, 20)).size).toBe(20);
+    // Past 20 the colours repeat.
+    expect(categoricalColors(OKABE_ITO, 21)[20]).toBe(PALETTE_20[0]);
+    // The default palette sent from R or Python, in lower case, counts too.
+    const sent = OKABE_ITO.map((c) => c.toLowerCase());
+    expect(categoricalColors(sent, 9)).toEqual(PALETTE_20.slice(0, 9));
+  });
+
+  it("uses a palette the caller set as given", () => {
+    expect(categoricalColors(["#a", "#b"], 5)).toEqual([
+      "#a",
+      "#b",
+      "#a",
+      "#b",
+      "#a",
+    ]);
+    expect(categoricalColors(["#a"], 0)).toEqual([]);
+  });
+
+  it("does not stop on a palette entry that is not text", () => {
+    // R sends an NA in theme$categorical as null.
+    const pal = [...OKABE_ITO.slice(0, 7), null] as unknown as string[];
+    expect(categoricalColors(pal, 2)).toEqual(OKABE_ITO.slice(0, 2));
+  });
+
+  it("holds 20 distinct colours in PALETTE_20", () => {
+    expect(PALETTE_20).toHaveLength(20);
+    expect(new Set(PALETTE_20).size).toBe(20);
   });
 });
