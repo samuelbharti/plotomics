@@ -178,9 +178,24 @@ def _column(data: Any, name: str) -> Any | None:
             "plain numpy array; wrap your data with named columns "
             "(e.g. a pandas.DataFrame or a dict of arrays)."
         )
+    # Ask for the name only when the frame or mapping has it: polars raises
+    # its own ColumnNotFoundError for a missing column, which is none of the
+    # errors a pandas frame or a dict raises. A pyarrow Table keeps the names
+    # in `column_names`, and its `columns` holds the arrays.
+    columns = getattr(data, "column_names", None)
+    if columns is None:
+        columns = getattr(data, "columns", None)
+    if columns is not None and not isinstance(data, Mapping):
+        try:
+            if name not in list(columns):
+                return None
+        except (TypeError, ValueError):
+            pass
+    elif isinstance(data, Mapping) and name not in data:
+        return None
     try:
         return data[name]
-    except (KeyError, TypeError, IndexError):
+    except (KeyError, TypeError, IndexError, LookupError):
         return None
 
 
@@ -225,6 +240,9 @@ def _text_or_none(values: Any) -> list[str | None]:
     """
     out: list[str | None] = []
     for v in values:
+        # A pyarrow value, null included, as the Python value it holds.
+        if hasattr(v, "as_py"):
+            v = v.as_py()
         missing = (
             v is None
             or type(v).__name__ in ("NAType", "NaTType")
@@ -232,6 +250,25 @@ def _text_or_none(values: Any) -> list[str | None]:
         )
         out.append(None if missing else str(v))
     return out
+
+
+def _category_levels(values: Any) -> list[str] | None:
+    """The level order a categorical column states, or None when it states none.
+
+    A pandas Categorical states its levels, unused ones included, as an R
+    factor does. A polars Categorical states none: its ``categories`` list
+    every string any Categorical in the session has seen, so its values are
+    read as text, in order of appearance. A polars Enum states its own.
+    """
+    dtype = getattr(values, "dtype", None)
+    cats = getattr(dtype, "categories", None)
+    if cats is None:
+        return None
+    if type(dtype).__name__ == "Categorical" and type(dtype).__module__.startswith(
+        "polars"
+    ):
+        return None
+    return [str(v) for v in cats]
 
 
 def _numeric_values(values: Any, dtype: Any = np.float32) -> np.ndarray | None:
@@ -303,3 +340,16 @@ def _check_labels(labels: Any, n: int, name: str) -> list[str] | None:
     if len(out) != n:
         raise ValueError(f"`{name}` has {len(out)} entries; expected {n}.")
     return out
+
+
+def _check_choice(value: Any, name: str, choices: tuple[str, ...]) -> str:
+    """Stop with a clear message when ``value`` is not one of ``choices``.
+
+    The browser cannot draw an unknown colormap or mode and would leave the
+    widget blank, so the wrappers check every choice the way R's
+    ``match.arg`` does.
+    """
+    if value not in choices:
+        listed = ", ".join(repr(c) for c in choices)
+        raise ValueError(f"`{name}` must be one of {listed}; got {value!r}.")
+    return value

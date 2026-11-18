@@ -39,6 +39,8 @@ dev = [
     # Several tests read row and column order from a pandas Categorical. They
     # importorskip, so without pandas here they pass by never running.
     "pandas>=1.5",
+    # The wrappers also read polars DataFrames; their tests importorskip too.
+    "polars>=0.20",
 ]
 
 [project.urls]

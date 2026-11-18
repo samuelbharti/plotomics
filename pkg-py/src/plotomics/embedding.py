@@ -7,6 +7,8 @@ from typing import Any, Literal
 from ._base import (
     STATIC,
     PlotomicsWidget,
+    _category_levels,
+    _check_choice,
     _column,
     _numeric_values,
     _text_or_none,
@@ -111,8 +113,13 @@ class Embedding(PlotomicsWidget):
         y = _column(data, "y")
         if x is None or y is None:
             raise ValueError("`data` must provide `x` and `y` columns.")
-        if mouse_mode not in ("panZoom", "lasso"):
-            raise ValueError("`mouse_mode` must be 'panZoom' or 'lasso'.")
+        _check_choice(mouse_mode, "mouse_mode", ("panZoom", "lasso"))
+        _check_choice(
+            point_scale_mode, "point_scale_mode", ("asinh", "linear", "constant")
+        )
+        _check_choice(color_mode, "color_mode", ("auto", "categorical", "continuous"))
+        _check_choice(colormap, "colormap", ("viridis", "rdbu"))
+        _check_choice(aspect, "aspect", ("fill", "equal"))
 
         x_arr = _to_float32(x, "x")
         y_arr = _to_float32(y, "y")
@@ -127,9 +134,7 @@ class Embedding(PlotomicsWidget):
         if color is not None:
             # A pandas Categorical is the user stating the order they want, so
             # read it before np.asarray() flattens it to plain values.
-            cat_dtype = getattr(getattr(color, "dtype", None), "categories", None)
-            if cat_dtype is not None:
-                categories = [str(v) for v in cat_dtype]
+            categories = _category_levels(color)
             values = _numeric_values(color) if categories is None else None
             if values is not None:
                 # Continuous: transport as a packed numeric column, NaN for
@@ -142,7 +147,7 @@ class Embedding(PlotomicsWidget):
 
         label = _column(data, "label")
         if label is not None:
-            json_columns["label"] = [str(v) for v in label]
+            json_columns["label"] = _text_or_none(label)
 
         buffer, schema = pack_columns(numeric)
 

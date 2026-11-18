@@ -141,3 +141,24 @@ def test_embedding_keeps_a_numeric_colour_with_none_numeric():
     d = {"x": [0, 1, 2], "y": [0, 1, 2], "color": [None, 1.5, 2.5]}
     w = Embedding(d)
     assert "color" not in w.data["columns"]
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"colormap": "magma"},
+        {"colormap": "RdBu"},
+        {"point_scale_mode": "log"},
+        {"color_mode": "discrete"},
+        {"aspect": "square"},
+    ],
+)
+def test_embedding_rejects_a_choice_the_browser_cannot_draw(kwargs):
+    d = {"x": [0.0, 1.0], "y": [0.0, 1.0]}
+    with pytest.raises(ValueError, match="must be one of"):
+        Embedding(d, **kwargs)
+
+
+def test_embedding_sends_a_missing_label_as_null():
+    d = {"x": [0.0, 1.0], "y": [0.0, 1.0], "label": ["a", float("nan")]}
+    assert Embedding(d).data["columns"]["label"] == ["a", None]
