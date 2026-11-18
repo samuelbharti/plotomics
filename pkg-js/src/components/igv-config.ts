@@ -66,3 +66,19 @@ export function mergeOptions(
   if (!next) return { ...base };
   return { ...base, ...next };
 }
+
+/**
+ * A stable key for an igv.js track config: its name, URL, index URL, type
+ * and format. Two decodings of the same track give the same key, so an
+ * option change does not load a track twice.
+ */
+export function trackKey(track: Record<string, unknown>): string {
+  const pick = (k: string) => {
+    const v = track[k];
+    return typeof v === "string" || typeof v === "number" ? String(v) : "";
+  };
+  const key = ["name", "url", "indexURL", "type", "format"].map(pick);
+  // A track without any of those (inline features, say) falls back to its
+  // whole content.
+  return key.some((v) => v !== "") ? key.join("|") : JSON.stringify(track);
+}
