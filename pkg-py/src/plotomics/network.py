@@ -36,7 +36,7 @@ class Network(PlotomicsWidget):
         ids, an optional numeric ``weight`` column and an optional ``color``
         column giving a per-edge color (else ``default_edge_color``). Edge
         width follows the absolute weight, scaled over the weights in the
-        graph to 1-5 px, and the layout pulls nodes together by the absolute
+        graph to 1.7-6 px, and the layout pulls nodes together by the absolute
         weight, so a negative weight (as in a correlation network) counts by
         its size.
     layout:

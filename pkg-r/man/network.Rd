@@ -30,7 +30,7 @@ character). Optional columns: \code{x}, \code{y} (precomputed coordinates), \cod
 \item{edges}{A data frame of edges with columns \code{source} and \code{target} holding
 node ids, an optional numeric \code{weight} column, and an optional \code{color}
 column giving a per-edge color (else \code{default_edge_color}). Edge width
-follows the absolute weight, scaled over the weights in the graph to 1-5
+follows the absolute weight, scaled over the weights in the graph to 1.7-6
 px, and the layout pulls nodes together by the absolute weight, so a
 negative weight (as in a correlation network) counts by its size.}
 
