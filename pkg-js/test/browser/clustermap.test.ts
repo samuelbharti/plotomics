@@ -1,0 +1,161 @@
+import { agnes } from "ml-hclust";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createClustermap } from "../../src/components/clustermap.js";
+import type { PlotomicsInstance } from "../../src/core/index.js";
+
+// Count the clustering runs; the real agnes still runs.
+vi.mock("ml-hclust", { spy: true });
+
+function container(width = 600, height = 480) {
+  const el = document.createElement("div");
+  el.style.cssText = `width:${width}px;height:${height}px;`;
+  document.body.appendChild(el);
+  return el;
+}
+
+function svgTexts(el: HTMLElement): string[] {
+  return Array.from(el.querySelectorAll("svg text")).map(
+    (t) => t.textContent ?? "",
+  );
+}
+
+/** RGB of the heatmap canvas at a fraction of its width and height. */
+function cellPixel(el: HTMLElement, fx: number, fy: number): number[] {
+  const c = el.querySelector("canvas") as HTMLCanvasElement;
+  const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+  const d = ctx.getImageData(
+    Math.floor(fx * c.width),
+    Math.floor(fy * c.height),
+    1,
+    1,
+  ).data;
+  return [d[0] as number, d[1] as number, d[2] as number];
+}
+
+let instances: PlotomicsInstance<unknown>[] = [];
+afterEach(() => {
+  for (const i of instances) i.destroy();
+  instances = [];
+  document.body.replaceChildren();
+});
+
+describe("clustermap in a browser", () => {
+  it("draws every row once when a row has a missing cell", () => {
+    // The issue's matrix, with R's null for the NaN.
+    const el = container();
+    instances.push(
+      createClustermap(el, {
+        data: {
+          columns: {
+            values: [0, 0, 1, 1, null, 5, 10, 10] as unknown as number[],
+          },
+          meta: {
+            nrows: 4,
+            ncols: 2,
+            rowLabels: ["r0", "r1", "r2", "r3"],
+            colLabels: ["c0", "c1"],
+          },
+        },
+      }),
+    );
+    const texts = svgTexts(el);
+    for (const label of ["r0", "r1", "r2", "r3", "c0", "c1"]) {
+      expect(texts.filter((t) => t === label)).toHaveLength(1);
+    }
+    expect(texts).toContain("NA");
+    // Somewhere on the heatmap is the grey of the missing cell.
+    let grey = false;
+    for (let r = 0; r < 4 && !grey; r += 1) {
+      for (let c = 0; c < 2 && !grey; c += 1) {
+        const [R, G, B] = cellPixel(el, (c + 0.5) / 2, (r + 0.5) / 4);
+        grey = R === 0xcc && G === 0xcc && B === 0xcc;
+      }
+    }
+    expect(grey).toBe(true);
+  });
+
+  it("clusters again only when the data or a clustering option changes", () => {
+    const values = Float32Array.from(
+      { length: 8 * 5 },
+      (_, i) => (i * 37) % 11,
+    );
+    const data = () => ({
+      columns: { values: values.slice() },
+      meta: { nrows: 8, ncols: 5 },
+    });
+    const all = {
+      metric: "euclidean" as const,
+      linkage: "average" as const,
+      zScore: false,
+      clusterRows: true,
+      clusterCols: true,
+      colormap: "viridis" as const,
+      showLabels: true,
+      legendTitle: "value",
+    };
+    const el = container();
+    const runs = vi.mocked(agnes);
+    runs.mockClear();
+    const plot = createClustermap(el, { data: data(), options: all });
+    instances.push(plot);
+    expect(runs).toHaveBeenCalledTimes(2);
+    // A Shiny re-render: the same data again, then every option.
+    const rerender = (opts: typeof all) => {
+      runs.mockClear();
+      plot.setData(data());
+      plot.setOptions(opts);
+      return runs.mock.calls.length;
+    };
+    expect(rerender({ ...all, showLabels: false, legendTitle: "expr" })).toBe(
+      0,
+    );
+    expect(rerender({ ...all, colormap: "rdbu" as never })).toBe(0);
+    expect(rerender({ ...all, metric: "correlation" as never })).toBe(2);
+    // Turning row clustering off leaves the columns as they were.
+    expect(
+      rerender({ ...all, metric: "correlation" as never, clusterRows: false }),
+    ).toBe(0);
+    // New values cluster again.
+    runs.mockClear();
+    values[0] = 99;
+    plot.setData(data());
+    expect(runs).toHaveBeenCalledTimes(1);
+    expect(svgTexts(el).some((t) => t.startsWith("value"))).toBe(true);
+  });
+
+  it("keeps the NA key inside a narrow widget", () => {
+    const el = container(300, 400);
+    instances.push(
+      createClustermap(el, {
+        data: {
+          columns: {
+            values: [0, 0, 1, 1, null, 5, 10, 10] as unknown as number[],
+          },
+          meta: { nrows: 4, ncols: 2 },
+        },
+      }),
+    );
+    const na = Array.from(el.querySelectorAll("svg text")).find(
+      (t) => t.textContent === "NA",
+    ) as SVGTextElement;
+    const b = na.getBBox();
+    expect(b.x + b.width).toBeLessThanOrEqual(300);
+  });
+
+  it("gives each clustermap on a page its own colour bar gradient", () => {
+    const a = container();
+    const b = container();
+    const data = {
+      columns: { values: [1, 2, 3, 4] },
+      meta: { nrows: 2, ncols: 2 },
+    };
+    instances.push(
+      createClustermap(a, { data }),
+      createClustermap(b, { data, options: { colormap: "rdbu" } }),
+    );
+    const idA = a.querySelector("linearGradient")?.getAttribute("id");
+    const idB = b.querySelector("linearGradient")?.getAttribute("id");
+    expect(idA).toBeTruthy();
+    expect(idA).not.toBe(idB);
+  });
+});

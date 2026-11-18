@@ -55,6 +55,7 @@ import {
   toRowVectors,
   zScoreByRow,
 } from "./clustermap-cluster.js";
+import { uniqueId } from "../core/dom.js";
 
 export interface ClustermapOptions {
   /** Distance metric for clustering. */
@@ -103,6 +104,9 @@ const LABEL = 90; // px reserved for tick labels
 const COLORBAR = 54; // px reserved at the bottom for the colorbar
 const PAD = 12;
 const MIN_LABEL_CELL = 9; // hide labels once a cell is smaller than this (px)
+/** Fill for a missing cell, and its colour bar swatch. */
+const MISSING_RGB: [number, number, number] = [0xcc, 0xcc, 0xcc];
+const MISSING_COLOR = "#CCCCCC";
 
 // ---------------------------------------------------------------------------
 // Pure layout helper (kept here, exercised via the factory + tests)
@@ -148,8 +152,14 @@ export function computeLayout(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initial) => {
-  let opts: ClustermapOptions = mergeOptions(defaultClustermapOptions, initial.options);
+export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
+  el,
+  initial,
+) => {
+  let opts: ClustermapOptions = mergeOptions(
+    defaultClustermapOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -169,15 +179,26 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
   let colorLo = 0;
   let colorHi = 1;
   let diverging = false;
+  let anyMissing = false;
+  const gradId = uniqueId("plotomics-clustermap-cb");
+  // Clustering is the slow part (seconds per axis on a large matrix), so
+  // each axis keeps its last result with the inputs that produced it. R and
+  // Shiny send the data again on every update; unchanged values, shape,
+  // linkage and options reuse the result.
+  let lastValues: Float32Array | null = null;
+  let rowCache: AxisCache | null = null;
+  let colCache: AxisCache | null = null;
 
   // DOM: display canvas for the heatmap + full-size SVG overlay. A small
   // offscreen canvas holds one pixel per cell and is upscaled onto the display.
   el.style.position = el.style.position || "relative";
   const canvas = document.createElement("canvas");
-  canvas.style.cssText = "position:absolute;display:block;image-rendering:pixelated;";
+  canvas.style.cssText =
+    "position:absolute;display:block;image-rendering:pixelated;";
   const cellCanvas = document.createElement("canvas"); // offscreen (nrows×ncols)
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -208,8 +229,12 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
       nc = nc || (nr ? Math.floor(values.length / nr) : 0);
       nr = nr || (nc ? Math.floor(values.length / nc) : 0);
     }
-    const rl = Array.isArray(meta.rowLabels) ? (meta.rowLabels as unknown[]) : [];
-    const cl = Array.isArray(meta.colLabels) ? (meta.colLabels as unknown[]) : [];
+    const rl = Array.isArray(meta.rowLabels)
+      ? (meta.rowLabels as unknown[])
+      : [];
+    const cl = Array.isArray(meta.colLabels)
+      ? (meta.colLabels as unknown[])
+      : [];
     return {
       nrows: nr || 0,
       ncols: nc || 0,
@@ -226,7 +251,12 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     nrows = meta.nrows;
     ncols = meta.ncols;
 
-    if (!rawValues || nrows <= 0 || ncols <= 0 || rawValues.length < nrows * ncols) {
+    if (
+      !rawValues ||
+      nrows <= 0 ||
+      ncols <= 0 ||
+      rawValues.length < nrows * ncols
+    ) {
       nrows = 0;
       ncols = 0;
       display = new Float32Array(0);
@@ -238,54 +268,82 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
       return;
     }
 
-    display = opts.zScore
-      ? zScoreByRow(rawValues, nrows, ncols)
-      : toFloat32(rawValues, nrows * ncols);
-
-    // Color domain: symmetric for diverging maps (rdbu / z-score), else data extent.
-    diverging = opts.colormap === "rdbu" || opts.zScore;
-    [colorLo, colorHi] = diverging ? symmetricExtent(display) : dataExtent(display);
+    // R sends NA as null; toFloat32 keeps it missing (NaN), never 0.
+    const values = toFloat32(rawValues, nrows * ncols);
+    if (!lastValues || !sameValues(lastValues, values)) {
+      lastValues = values.slice();
+      rowCache = null;
+      colCache = null;
+    }
+    display = opts.zScore ? zScoreByRow(values, nrows, ncols) : values;
+    anyMissing = display.some((v) => !Number.isFinite(v));
+    computeColorDomain();
 
     rowLabels = meta.rowLabels;
     colLabels = meta.colLabels;
 
-    // Row ordering: precomputed > cluster > identity.
-    const rowPre = normalizePrecomputed(meta.rowLinkage, nrows);
-    if (rowPre) {
-      rowOrder = rowPre.order;
-      rowDendro = rowPre.dendrogram;
-    } else if (opts.clusterRows && nrows <= MAX_CLUSTER_N && nrows >= 2) {
-      const res = clusterVectors(
-        toRowVectors(display, nrows, ncols),
-        opts.metric,
-        opts.linkage,
-      );
-      rowOrder = res.order;
-      rowDendro = res.dendrogram;
-    } else {
-      rowOrder = identityOrder(nrows);
-      rowDendro = null;
+    // Row ordering: precomputed > cluster > identity, reused when nothing
+    // the rows depend on changed.
+    const rowKey = JSON.stringify([
+      nrows,
+      ncols,
+      opts.metric,
+      opts.linkage,
+      opts.zScore,
+      opts.clusterRows,
+      meta.rowLinkage ?? null,
+    ]);
+    if (rowCache?.key !== rowKey) {
+      const rowPre = normalizePrecomputed(meta.rowLinkage, nrows);
+      const res = rowPre
+        ? rowPre
+        : opts.clusterRows && nrows <= MAX_CLUSTER_N && nrows >= 2
+          ? clusterVectors(
+              toRowVectors(display, nrows, ncols),
+              opts.metric,
+              opts.linkage,
+            )
+          : { order: identityOrder(nrows), dendrogram: null };
+      rowCache = { key: rowKey, order: res.order, dendro: res.dendrogram };
     }
+    rowOrder = rowCache.order;
+    rowDendro = rowCache.dendro;
 
-    const colPre = normalizePrecomputed(meta.colLinkage, ncols);
-    if (colPre) {
-      colOrder = colPre.order;
-      colDendro = colPre.dendrogram;
-    } else if (opts.clusterCols && ncols <= MAX_CLUSTER_N && ncols >= 2) {
-      const res = clusterVectors(
-        toColVectors(display, nrows, ncols),
-        opts.metric,
-        opts.linkage,
-      );
-      colOrder = res.order;
-      colDendro = res.dendrogram;
-    } else {
-      colOrder = identityOrder(ncols);
-      colDendro = null;
+    const colKey = JSON.stringify([
+      nrows,
+      ncols,
+      opts.metric,
+      opts.linkage,
+      opts.zScore,
+      opts.clusterCols,
+      meta.colLinkage ?? null,
+    ]);
+    if (colCache?.key !== colKey) {
+      const colPre = normalizePrecomputed(meta.colLinkage, ncols);
+      const res = colPre
+        ? colPre
+        : opts.clusterCols && ncols <= MAX_CLUSTER_N && ncols >= 2
+          ? clusterVectors(
+              toColVectors(display, nrows, ncols),
+              opts.metric,
+              opts.linkage,
+            )
+          : { order: identityOrder(ncols), dendrogram: null };
+      colCache = { key: colKey, order: res.order, dendro: res.dendrogram };
     }
+    colOrder = colCache.order;
+    colDendro = colCache.dendro;
 
     paintCells();
     relayout();
+  }
+
+  /** Color domain: symmetric for diverging maps (rdbu / z-score), else data extent. */
+  function computeColorDomain() {
+    diverging = opts.colormap === "rdbu" || opts.zScore;
+    [colorLo, colorHi] = diverging
+      ? symmetricExtent(display)
+      : dataExtent(display);
   }
 
   // ---- heatmap painting (canvas data layer) ----
@@ -304,8 +362,9 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
       for (let cx = 0; cx < ncols; cx += 1) {
         const srcCol = colOrder[cx] as number;
         const v = cellAt(display, ncols, srcRow, srcCol);
-        const t = (v - colorLo) / span;
-        const [r, g, b] = toColor(t);
+        const [r, g, b] = Number.isFinite(v)
+          ? toColor((v - colorLo) / span)
+          : MISSING_RGB;
         const o = (ry * ncols + cx) * 4;
         buf[o] = r;
         buf[o + 1] = g;
@@ -319,7 +378,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
 
   function colorFn(): (t: number) => [number, number, number] {
     const fn = opts.colormap === "rdbu" ? rdbu : viridis;
-    return (t: number) => fn(t < 0 ? 0 : t > 1 ? 1 : t);
+    return (t: number) => fn(Math.min(1, Math.max(0, t)));
   }
 
   function drawCanvas() {
@@ -337,7 +396,17 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     if (nrows === 0 || ncols === 0) return;
     // Nearest-neighbour upscale from the 1px-per-cell offscreen buffer.
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(cellCanvas, 0, 0, ncols, nrows, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(
+      cellCanvas,
+      0,
+      0,
+      ncols,
+      nrows,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
   }
 
   // ---- layout + overlay ----
@@ -360,7 +429,14 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     if (!width || !height) return;
     if (nrows === 0 || ncols === 0) {
       svg.appendChild(
-        text(width / 2, height / 2, "No data", theme.muted, "middle", theme.fontSize),
+        text(
+          width / 2,
+          height / 2,
+          "No data",
+          theme.muted,
+          "middle",
+          theme.fontSize,
+        ),
       );
       return;
     }
@@ -369,7 +445,9 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     const cellH = heat.h / nrows;
 
     // Frame around the heatmap.
-    svg.appendChild(rect(heat.x, heat.y, heat.w, heat.h, "none", theme.axis, 1));
+    svg.appendChild(
+      rect(heat.x, heat.y, heat.w, heat.h, "none", theme.axis, 1),
+    );
 
     if (opts.showColDendrogram && colDendro) {
       renderDendrogram(colDendro, "top");
@@ -460,7 +538,9 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
   }
 
   function renderColorbar() {
-    const barW = 180;
+    // The bar gives up width so the "NA" key still fits a narrow widget.
+    const keyW = anyMissing ? 48 : 0;
+    const barW = Math.max(60, Math.min(180, width - layout.heat.x - keyW - 8));
     const barH = 10;
     const { heat } = layout;
     const x0 = heat.x;
@@ -468,7 +548,6 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     const toHex = ramp(opts.colormap);
 
     // Build a gradient from evenly-sampled stops (viridis/rdbu ramp).
-    const gradId = "cm-grad";
     const defs = document.createElementNS(SVG_NS, "defs");
     const grad = document.createElementNS(SVG_NS, "linearGradient");
     grad.setAttribute("id", gradId);
@@ -485,15 +564,36 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     defs.appendChild(grad);
     svg.appendChild(defs);
 
-    svg.appendChild(rect(x0, y0, barW, barH, `url(#${gradId})`, theme.axis, 0.75));
+    svg.appendChild(
+      rect(x0, y0, barW, barH, `url(#${gradId})`, theme.axis, 0.75),
+    );
     // Min / mid / max ticks.
     const label = opts.legendTitle + (opts.zScore ? " (row z-score)" : "");
     svg.appendChild(text(x0, y0 - 6, label, theme.foreground, "start", 11));
-    svg.appendChild(text(x0, y0 + barH + 12, fmt(colorLo), theme.muted, "start", 10));
     svg.appendChild(
-      text(x0 + barW / 2, y0 + barH + 12, fmt((colorLo + colorHi) / 2), theme.muted, "middle", 10),
+      text(x0, y0 + barH + 12, fmt(colorLo), theme.muted, "start", 10),
     );
-    svg.appendChild(text(x0 + barW, y0 + barH + 12, fmt(colorHi), theme.muted, "end", 10));
+    svg.appendChild(
+      text(
+        x0 + barW / 2,
+        y0 + barH + 12,
+        fmt((colorLo + colorHi) / 2),
+        theme.muted,
+        "middle",
+        10,
+      ),
+    );
+    svg.appendChild(
+      text(x0 + barW, y0 + barH + 12, fmt(colorHi), theme.muted, "end", 10),
+    );
+    // A grey swatch for missing cells, when the matrix has any.
+    if (anyMissing) {
+      const sx = x0 + barW + 16;
+      svg.appendChild(rect(sx, y0, 14, barH, MISSING_COLOR, theme.axis, 0.75));
+      svg.appendChild(
+        text(sx + 18, y0 + barH - 1, "NA", theme.foreground, "start", 10),
+      );
+    }
   }
 
   // ---- pointer / tooltip ----
@@ -506,12 +606,23 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     const px = e.clientX - rectEl.left;
     const py = e.clientY - rectEl.top;
     const { heat } = layout;
-    if (px < heat.x || px > heat.x + heat.w || py < heat.y || py > heat.y + heat.h) {
+    if (
+      px < heat.x ||
+      px > heat.x + heat.w ||
+      py < heat.y ||
+      py > heat.y + heat.h
+    ) {
       tooltip.hide();
       return;
     }
-    const cx = Math.min(ncols - 1, Math.max(0, Math.floor(((px - heat.x) / heat.w) * ncols)));
-    const ry = Math.min(nrows - 1, Math.max(0, Math.floor(((py - heat.y) / heat.h) * nrows)));
+    const cx = Math.min(
+      ncols - 1,
+      Math.max(0, Math.floor(((px - heat.x) / heat.w) * ncols)),
+    );
+    const ry = Math.min(
+      nrows - 1,
+      Math.max(0, Math.floor(((py - heat.y) / heat.h) * nrows)),
+    );
     const srcRow = rowOrder[ry] as number;
     const srcCol = colOrder[cx] as number;
     const v = cellAt(display, ncols, srcRow, srcCol);
@@ -528,7 +639,14 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
   el.addEventListener("mouseleave", onLeave);
 
   // ---- SVG element helpers ----
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string, w: number) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+    w: number,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -539,7 +657,15 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     l.setAttribute("shape-rendering", "crispEdges");
     return l;
   }
-  function rect(x: number, y: number, w: number, h: number, fill: string, stroke: string, sw: number) {
+  function rect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    fill: string,
+    stroke: string,
+    sw: number,
+  ) {
     const r = document.createElementNS(SVG_NS, "rect");
     r.setAttribute("x", String(x));
     r.setAttribute("y", String(y));
@@ -550,7 +676,14 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     r.setAttribute("stroke-width", String(sw));
     return r;
   }
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 11) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 11,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -586,16 +719,21 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
       const prev = opts;
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
-      // Re-cluster only when an option that affects ordering/values changed.
-      const needsRecompute =
-        next.metric !== undefined ||
-        next.linkage !== undefined ||
-        next.zScore !== undefined ||
-        next.clusterRows !== undefined ||
-        next.clusterCols !== undefined ||
-        next.colormap !== undefined;
-      if (needsRecompute || opts.metric !== prev.metric) applyData();
-      else relayout();
+      // R and Python send every option on each update, so compare values:
+      // clustering again costs seconds on a large matrix.
+      const recluster =
+        opts.metric !== prev.metric ||
+        opts.linkage !== prev.linkage ||
+        opts.zScore !== prev.zScore ||
+        opts.clusterRows !== prev.clusterRows ||
+        opts.clusterCols !== prev.clusterCols;
+      if (recluster) applyData();
+      else if (opts.colormap !== prev.colormap) {
+        // A new ramp changes the colours and the domain, not the order.
+        computeColorDomain();
+        paintCells();
+        relayout();
+      } else relayout();
     },
     resize(w, h) {
       doResize(w, h);
@@ -664,24 +802,41 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
 };
 
 // ---- small utilities ----
-function toFloat32(src: ArrayLike<number>, n: number): Float32Array {
+/** One axis's leaf order and dendrogram, with the inputs that made them. */
+interface AxisCache {
+  key: string;
+  order: number[];
+  dendro: Dendrogram | null;
+}
+/** Whether two value arrays hold the same numbers (NaN equal to NaN). */
+function sameValues(a: Float32Array, b: Float32Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i] as number;
+    const y = b[i] as number;
+    if (x !== y && !(Number.isNaN(x) && Number.isNaN(y))) return false;
+  }
+  return true;
+}
+/** Copy to a Float32Array, reading null (R's NA) as NaN, not 0. */
+function toFloat32(src: ArrayLike<number | null>, n: number): Float32Array {
   if (src instanceof Float32Array && src.length === n) return src;
   const out = new Float32Array(n);
-  for (let i = 0; i < n; i += 1) out[i] = src[i] as number;
+  for (let i = 0; i < n; i += 1) {
+    const v = src[i];
+    out[i] = v == null ? Number.NaN : v;
+  }
   return out;
 }
 function fmt(v: number): string {
-  if (!Number.isFinite(v)) return "—";
+  if (!Number.isFinite(v)) return "NA";
   if (v === 0) return "0";
   const a = Math.abs(v);
   if (a >= 1000 || a < 0.01) return v.toExponential(1);
   return Number(v.toFixed(2)).toString();
 }
 function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 function mergeOptions(
   base: ClustermapOptions,
