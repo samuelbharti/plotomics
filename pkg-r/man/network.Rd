@@ -28,8 +28,11 @@ character). Optional columns: \code{x}, \code{y} (precomputed coordinates), \cod
 \code{label} (display name; defaults to \code{id}).}
 
 \item{edges}{A data frame of edges with columns \code{source} and \code{target} holding
-node ids, an optional numeric \code{weight} column (mapped to edge width), and an
-optional \code{color} column giving a per-edge color (else \code{default_edge_color}).}
+node ids, an optional numeric \code{weight} column, and an optional \code{color}
+column giving a per-edge color (else \code{default_edge_color}). Edge width
+follows the absolute weight, scaled over the weights in the graph to 1-5
+px, and the layout pulls nodes together by the absolute weight, so a
+negative weight (as in a correlation network) counts by its size.}
 
 \item{layout}{Either \code{"forceatlas2"} (run a layout when coordinates are
 missing) or \code{"precomputed"} (require and use \code{x}/\code{y} from \code{nodes}).}
