@@ -271,4 +271,69 @@ describe("km in a browser", () => {
     // T's rows end at 5, so there is no T estimate to show at 15.
     expect(tip).not.toContain("T 90%");
   });
+
+  it("draws no curve or tick for a missing group, and hovers without an error", () => {
+    const errors: string[] = [];
+    const onError = (e: ErrorEvent) => errors.push(e.message);
+    window.addEventListener("error", onError);
+    try {
+      const el = container();
+      const km = createKm(el, {
+        data: {
+          columns: {
+            time: [0, 2, 0, 2],
+            surv: [1, 0.9, 1, 0.5],
+            group: ["a", "a", null, null] as unknown as string[],
+          },
+          meta: {
+            groups: ["a"],
+            censorTime: [4, 4],
+            censorSurv: [0.9, 0.5],
+            censorGroup: ["a", null] as unknown as string[],
+          },
+        },
+        options: { showCI: false },
+      });
+      instances.push(km);
+      const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+      const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+      const ratio = canvas.width / canvas.clientWidth;
+      const inkAt = (x: number, y: number) => {
+        for (let dy = -3; dy <= 3; dy += 1) {
+          const [r, g, b] = ctx.getImageData(
+            Math.round(x * ratio),
+            Math.round((y + dy) * ratio),
+            1,
+            1,
+          ).data;
+          if (!(r === 255 && g === 255 && b === 255)) return true;
+        }
+        return false;
+      };
+      // Before the fix the missing group ran on at 50% with a grey tick at 4.
+      expect(inkAt(tickX(el, "3"), tickY(el, "50%"))).toBe(false);
+      expect(inkAt(tickX(el, "4"), tickY(el, "50%"))).toBe(false);
+      const tip = hoverAt(el, tickX(el, "3"), tickY(el, "50%"));
+      expect(tip).toContain("a 90%");
+
+      // Every group missing: no curve, and hovering throws nothing.
+      const none = container();
+      const empty = createKm(none, {
+        data: {
+          columns: {
+            time: [0, 2],
+            surv: [1, 0.5],
+            group: [null, null] as unknown as string[],
+          },
+          meta: { groups: [] },
+        },
+      });
+      instances.push(empty);
+      hoverAt(none, 300, 150);
+      expect(none.querySelector("svg")?.textContent).not.toContain("null");
+      expect(errors).toEqual([]);
+    } finally {
+      window.removeEventListener("error", onError);
+    }
+  });
 });

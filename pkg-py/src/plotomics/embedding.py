@@ -7,6 +7,7 @@ from typing import Any, Literal
 from ._base import (
     STATIC,
     PlotomicsWidget,
+    _category_levels,
     _check_choice,
     _column,
     _numeric_values,
@@ -133,9 +134,7 @@ class Embedding(PlotomicsWidget):
         if color is not None:
             # A pandas Categorical is the user stating the order they want, so
             # read it before np.asarray() flattens it to plain values.
-            cat_dtype = getattr(getattr(color, "dtype", None), "categories", None)
-            if cat_dtype is not None:
-                categories = [str(v) for v in cat_dtype]
+            categories = _category_levels(color)
             values = _numeric_values(color) if categories is None else None
             if values is not None:
                 # Continuous: transport as a packed numeric column, NaN for

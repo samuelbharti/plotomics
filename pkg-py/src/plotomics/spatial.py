@@ -9,6 +9,7 @@ import numpy as np
 from ._base import (
     STATIC,
     PlotomicsWidget,
+    _category_levels,
     _check_choice,
     _column,
     _numeric_values,
@@ -146,9 +147,9 @@ class Spatial(PlotomicsWidget):
         col = _column(data, "color")
         if col is not None:
             # A pandas Categorical states the level order.
-            cats = getattr(getattr(col, "dtype", None), "categories", None)
+            cats = _category_levels(col)
             if levels is None and cats is not None:
-                levels = [str(v) for v in cats]
+                levels = cats
             values = _numeric_values(col)
             # Numeric colours ride the binary transport; categorical ones are
             # strings and travel as JSON, a missing value as null. Numbers

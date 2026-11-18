@@ -9,6 +9,7 @@ import numpy as np
 from ._base import (
     STATIC,
     PlotomicsWidget,
+    _category_levels,
     _column,
     _text_or_none,
     _to_float32,
@@ -129,9 +130,9 @@ class Km(PlotomicsWidget):
         meta: dict[str, Any] = {}
         if groups is None and grp_col is not None:
             # A pandas Categorical is the caller stating the stratum order.
-            cats = getattr(getattr(grp_col, "dtype", None), "categories", None)
+            cats = _category_levels(grp_col)
             if cats is not None:
-                groups = [str(v) for v in cats]
+                groups = cats
             else:
                 seen: list[str] = []
                 for g in grp:
@@ -161,7 +162,8 @@ class Km(PlotomicsWidget):
                 meta["censorSurv"] = [float(v) for v in cs]
                 cg = _column(censor, "group")
                 if cg is not None:
-                    meta["censorGroup"] = [str(v) for v in cg]
+                    # A tick with no group is left out, like its curve.
+                    meta["censorGroup"] = _text_or_none(cg)
 
         if risk_times is not None:
             times = [float(v) for v in risk_times]

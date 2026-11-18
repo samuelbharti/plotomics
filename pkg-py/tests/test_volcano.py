@@ -153,3 +153,43 @@ def test_wrappers_read_a_polars_frame_with_optional_columns_left_out():
     w = Embedding(pl.DataFrame({"x": [0.0, 1.0], "y": [0.0, 1.0],
                                 "color": ["a", None]}))
     assert w.data["columns"]["color"] == ["a", None]
+
+
+def test_wrappers_read_a_table_that_names_its_columns_in_column_names():
+    # A pyarrow Table keeps its arrays in `columns` and the names in
+    # `column_names`, and each value is a scalar with as_py().
+    class Scalar:
+        def __init__(self, v):
+            self.v = v
+
+        def as_py(self):
+            return self.v
+
+    class Table:
+        column_names = ["x", "y", "label"]
+        _cols = {"x": [1.0, -2.0], "y": [3.0, 0.5],
+                 "label": [Scalar("TP53"), Scalar(None)]}
+
+        @property
+        def columns(self):
+            return list(self._cols.values())
+
+        def __getitem__(self, name):
+            return self._cols[name]
+
+    w = Volcano(Table())
+    assert w.data["columns"]["label"] == ["TP53", None]
+    assert {c["name"] for c in w.schema["columns"]} == {"x", "y"}
+
+
+def test_embedding_reads_a_polars_categorical_as_text():
+    pl = pytest.importorskip("polars")
+    from plotomics import Embedding
+
+    other = pl.Series(["liver", "lung"], dtype=pl.Categorical)
+    color = pl.Series(["b", "a", None], dtype=pl.Categorical)
+    w = Embedding(pl.DataFrame({"x": [0.0, 1.0, 2.0], "y": [0.0, 1.0, 2.0],
+                                "color": color}))
+    assert "liver" not in w.options.get("categories", [])
+    assert other.len() == 2
+    assert w.data["columns"]["color"] == ["b", "a", None]
