@@ -14,10 +14,13 @@ import {
   type PlotomicsInstance,
   type PlotomicsTheme,
   type Column,
+  type TextSizes,
   resolveTheme,
+  textSizes,
   createTooltip,
   type Tooltip,
   measure,
+  textWidth,
   dpr,
   serializeSVG,
   canvasToPNG,
@@ -62,9 +65,27 @@ export const defaultVolcanoOptions: VolcanoOptions = {
   theme: {},
 };
 
-const MARGIN = { top: 16, right: 18, bottom: 46, left: 60 };
 const SVG_NS = "http://www.w3.org/2000/svg";
-const LABEL_SIZE = 11;
+
+/**
+ * Margins around the plot area. They hold the tick labels and the axis
+ * titles, so they grow with the text: 16, 18, 46 and 60 px at the default
+ * sizes of 11 px ticks and 13 px titles. The left margin fits the y title
+ * and tick labels of about five characters.
+ */
+function axisMargins(sizes: TextSizes): {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+} {
+  return {
+    top: Math.round(sizes.label + 5),
+    right: Math.round(sizes.label + 7),
+    bottom: Math.round(sizes.label + sizes.axisTitle + 22),
+    left: Math.round(sizes.axisTitle + 4.3 * sizes.label),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/volcano.test.ts)
@@ -270,6 +291,9 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     initial.options,
   );
   let theme = resolveTheme(opts.theme);
+  // Text sizes and the margins that hold the axis text, from the theme.
+  let sizes = textSizes(theme);
+  let margin = axisMargins(sizes);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   // Layout state
@@ -353,17 +377,17 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   el.addEventListener("mousemove", onMove);
 
   // ---- pixel mapping (overlay) ----
-  const innerW = () => Math.max(1, width - MARGIN.left - MARGIN.right);
-  const innerH = () => Math.max(1, height - MARGIN.top - MARGIN.bottom);
+  const innerW = () => Math.max(1, width - margin.left - margin.right);
+  const innerH = () => Math.max(1, height - margin.top - margin.bottom);
   const pxX = (v: number) =>
-    MARGIN.left + ((v - xDomain[0]) / (xDomain[1] - xDomain[0])) * innerW();
+    margin.left + ((v - xDomain[0]) / (xDomain[1] - xDomain[0])) * innerW();
   const pxY = (v: number) =>
-    MARGIN.top + (1 - (v - yDomain[0]) / (yDomain[1] - yDomain[0])) * innerH();
+    margin.top + (1 - (v - yDomain[0]) / (yDomain[1] - yDomain[0])) * innerH();
 
   function layoutCanvas() {
     const ratio = dpr();
-    canvas.style.left = `${MARGIN.left}px`;
-    canvas.style.top = `${MARGIN.top}px`;
+    canvas.style.left = `${margin.left}px`;
+    canvas.style.top = `${margin.top}px`;
     canvas.style.width = `${innerW()}px`;
     canvas.style.height = `${innerH()}px`;
     canvas.width = Math.round(innerW() * ratio);
@@ -459,44 +483,52 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     const axisColor = theme.axis;
     const gridColor = theme.grid;
 
+    // Baseline offset that centres a tick label on its tick.
+    const mid = Math.round(sizes.label * 0.35);
     // x ticks
     for (const t of niceTicks(xDomain)) {
       const x = pxX(t);
-      if (x < MARGIN.left - 1 || x > width - MARGIN.right + 1) continue;
+      if (x < margin.left - 1 || x > width - margin.right + 1) continue;
       svg.appendChild(
-        line(x, MARGIN.top, x, height - MARGIN.bottom, gridColor, 1),
+        line(x, margin.top, x, height - margin.bottom, gridColor, 1),
       );
       svg.appendChild(
-        text(x, height - MARGIN.bottom + 16, fmt(t), axisColor, "middle"),
+        text(
+          x,
+          height - margin.bottom + 5 + sizes.label,
+          fmt(t),
+          axisColor,
+          "middle",
+        ),
       );
     }
     // y ticks
     for (const t of niceTicks(yDomain)) {
       const y = pxY(t);
-      if (y < MARGIN.top - 1 || y > height - MARGIN.bottom + 1) continue;
+      if (y < margin.top - 1 || y > height - margin.bottom + 1) continue;
       svg.appendChild(
-        line(MARGIN.left, y, width - MARGIN.right, y, gridColor, 1),
+        line(margin.left, y, width - margin.right, y, gridColor, 1),
       );
-      svg.appendChild(text(MARGIN.left - 8, y + 4, fmt(t), axisColor, "end"));
+      svg.appendChild(text(margin.left - 8, y + mid, fmt(t), axisColor, "end"));
     }
 
     // axis frame
     svg.appendChild(
       line(
-        MARGIN.left,
-        height - MARGIN.bottom,
-        width - MARGIN.right,
-        height - MARGIN.bottom,
+        margin.left,
+        height - margin.bottom,
+        width - margin.right,
+        height - margin.bottom,
         axisColor,
         1.5,
       ),
     );
     svg.appendChild(
       line(
-        MARGIN.left,
-        MARGIN.top,
-        MARGIN.left,
-        height - MARGIN.bottom,
+        margin.left,
+        margin.top,
+        margin.left,
+        height - margin.bottom,
         axisColor,
         1.5,
       ),
@@ -505,25 +537,27 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     // axis titles
     svg.appendChild(
       text(
-        MARGIN.left + innerW() / 2,
-        height - 8,
+        margin.left + innerW() / 2,
+        height - Math.round(sizes.axisTitle * 0.6),
         opts.xLabel,
         theme.foreground,
         "middle",
-        13,
+        sizes.axisTitle,
       ),
     );
+    // The y title's baseline, one title size in from the left edge.
+    const titleX = Math.round(3 + sizes.axisTitle);
     const yTitle = text(
-      16,
-      MARGIN.top + innerH() / 2,
+      titleX,
+      margin.top + innerH() / 2,
       opts.yLabel,
       theme.foreground,
       "middle",
-      13,
+      sizes.axisTitle,
     );
     yTitle.setAttribute(
       "transform",
-      `rotate(-90 16 ${MARGIN.top + innerH() / 2})`,
+      `rotate(-90 ${titleX} ${margin.top + innerH() / 2})`,
     );
     svg.appendChild(yTitle);
 
@@ -534,16 +568,16 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   function renderThresholds() {
     const yThresh = -Math.log10(opts.pThreshold);
     const yp = pxY(yThresh);
-    if (yp > MARGIN.top && yp < height - MARGIN.bottom) {
+    if (yp > margin.top && yp < height - margin.bottom) {
       svg.appendChild(
-        dashed(MARGIN.left, yp, width - MARGIN.right, yp, theme.muted),
+        dashed(margin.left, yp, width - margin.right, yp, theme.muted),
       );
     }
     for (const fx of [-opts.fcThreshold, opts.fcThreshold]) {
       const xp = pxX(fx);
-      if (xp > MARGIN.left && xp < width - MARGIN.right) {
+      if (xp > margin.left && xp < width - margin.right) {
         svg.appendChild(
-          dashed(xp, MARGIN.top, xp, height - MARGIN.bottom, theme.muted),
+          dashed(xp, margin.top, xp, height - margin.bottom, theme.muted),
         );
       }
     }
@@ -578,10 +612,10 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       ...down.sort(byY).slice(0, opts.labelTopN),
     ];
     const bounds = {
-      left: MARGIN.left,
-      right: width - MARGIN.right,
-      top: MARGIN.top,
-      bottom: height - MARGIN.bottom,
+      left: margin.left,
+      right: width - margin.right,
+      top: margin.top,
+      bottom: height - margin.bottom,
     };
     const items: {
       i: number;
@@ -597,9 +631,15 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       if (x < bounds.left || x > bounds.right) continue;
       if (y < bounds.top || y > bounds.bottom) continue;
       const label = str(cols.label, pts.rows[i] as number) ?? "";
-      items.push({ i, x, y, width: textWidth(label, LABEL_SIZE), label });
+      items.push({
+        i,
+        x,
+        y,
+        width: textWidth(label, sizes.label, theme.fontFamily),
+        label,
+      });
     }
-    const spots = placeLabels(items, bounds, LABEL_SIZE);
+    const spots = placeLabels(items, bounds, sizes.label);
     items.forEach((it, k) => {
       const spot = spots[k];
       if (!spot) return;
@@ -609,7 +649,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         it.label,
         theme.foreground,
         spot.anchor,
-        LABEL_SIZE,
+        sizes.label,
       );
       // Widths are measured at normal weight; a bold page must not widen
       // the drawn text past its measured box.
@@ -617,14 +657,6 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       t.setAttribute("letter-spacing", "normal");
       svg.appendChild(t);
     });
-  }
-
-  // Text widths for label placement, measured with the label font.
-  const measureCtx = document.createElement("canvas").getContext("2d");
-  function textWidth(s: string, size: number): number {
-    if (!measureCtx) return s.length * size * 0.6;
-    measureCtx.font = `${size}px ${theme.fontFamily}`;
-    return measureCtx.measureText(s).width;
   }
 
   // ---- SVG element helpers ----
@@ -662,7 +694,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     content: string,
     fill: string,
     anchor: string,
-    size = 11,
+    size = sizes.label,
   ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
@@ -699,7 +731,23 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       el.style.backgroundColor = theme.background;
-      // No option changes the data range, so the current pan/zoom stays.
+      const prev = margin;
+      sizes = textSizes(theme);
+      margin = axisMargins(sizes);
+      if (
+        margin.top !== prev.top ||
+        margin.right !== prev.right ||
+        margin.bottom !== prev.bottom ||
+        margin.left !== prev.left
+      ) {
+        // A new text size changes the plot area, which refits while the
+        // view is untouched, as a resize does.
+        doResize(width, height);
+        applyData(isStartView(scatterplot));
+        return;
+      }
+      // No other option changes the data range, so the current pan/zoom
+      // stays.
       applyData(false);
     },
     resize(w, h) {
@@ -711,8 +759,8 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       // Hybrid figure: rasterized GPU layer + vector axes/labels.
       const out = svg.cloneNode(true) as SVGSVGElement;
       const img = document.createElementNS(SVG_NS, "image");
-      img.setAttribute("x", String(MARGIN.left));
-      img.setAttribute("y", String(MARGIN.top));
+      img.setAttribute("x", String(margin.left));
+      img.setAttribute("y", String(margin.top));
       img.setAttribute("width", String(innerW()));
       img.setAttribute("height", String(innerH()));
       img.setAttribute("href", canvas.toDataURL("image/png"));

@@ -24,10 +24,13 @@ import {
   type PlotomicsTheme,
   type Column,
   type RampName,
+  type TextSizes,
   resolveTheme,
+  textSizes,
   createTooltip,
   type Tooltip,
   measure,
+  textWidth,
   dpr,
   serializeSVG,
   canvasToPNG,
@@ -129,7 +132,6 @@ export interface EmbeddingInstance extends PlotomicsInstance<EmbeddingOptions> {
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const AXIS_MARGIN = { top: 16, right: 18, bottom: 46, left: 60 };
 const BARE_MARGIN = { top: 10, right: 10, bottom: 10, left: 10 };
 /** Gradient swatches sampled from the ramp for continuous coloring. */
 const CONTINUOUS_STEPS = 256;
@@ -405,6 +407,26 @@ export function niceTicks(domain: [number, number], count = 6): number[] {
   return d3ticks(domain[0], domain[1], count);
 }
 
+/**
+ * Margins around the plot area when the axes are drawn. They hold the tick
+ * labels and the axis titles, so they grow with the text: 16, 18, 46 and 60
+ * px at the default sizes of 11 px ticks and 13 px titles. The left margin
+ * fits the y title and tick labels of about five characters.
+ */
+function axisMargins(sizes: TextSizes): {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+} {
+  return {
+    top: Math.round(sizes.label + 5),
+    right: Math.round(sizes.label + 7),
+    bottom: Math.round(sizes.label + sizes.axisTitle + 22),
+    left: Math.round(sizes.axisTitle + 4.3 * sizes.label),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -433,6 +455,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     initial.options,
   );
   let theme = resolveTheme(opts.theme);
+  // Text sizes and the axis margins that hold the text, from the theme.
+  let sizes = textSizes(theme);
+  let axisMargin = axisMargins(sizes);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   // Layout / view state.
@@ -535,7 +560,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   }
 
   // ---- pixel mapping (overlay) ----
-  const margin = () => (opts.showAxes ? AXIS_MARGIN : BARE_MARGIN);
+  const margin = () => (opts.showAxes ? axisMargin : BARE_MARGIN);
   const innerW = () => Math.max(1, width - margin().left - margin().right);
   const innerH = () => Math.max(1, height - margin().top - margin().bottom);
   const pxX = (v: number) =>
@@ -693,19 +718,27 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     const m = margin();
     const axisColor = theme.axis;
     const gridColor = theme.grid;
+    // Baseline offset that centres a tick label on its tick.
+    const mid = Math.round(sizes.label * 0.35);
     for (const t of niceTicks(xDomain)) {
       const x = pxX(t);
       if (x < m.left - 1 || x > width - m.right + 1) continue;
       svg.appendChild(line(x, m.top, x, height - m.bottom, gridColor, 1));
       svg.appendChild(
-        text(x, height - m.bottom + 16, fmt(t), axisColor, "middle"),
+        text(
+          x,
+          height - m.bottom + 5 + sizes.label,
+          fmt(t),
+          axisColor,
+          "middle",
+        ),
       );
     }
     for (const t of niceTicks(yDomain)) {
       const y = pxY(t);
       if (y < m.top - 1 || y > height - m.bottom + 1) continue;
       svg.appendChild(line(m.left, y, width - m.right, y, gridColor, 1));
-      svg.appendChild(text(m.left - 8, y + 4, fmt(t), axisColor, "end"));
+      svg.appendChild(text(m.left - 8, y + mid, fmt(t), axisColor, "end"));
     }
     svg.appendChild(
       line(
@@ -723,22 +756,27 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     svg.appendChild(
       text(
         m.left + innerW() / 2,
-        height - 8,
+        height - Math.round(sizes.axisTitle * 0.6),
         opts.xLabel,
         theme.foreground,
         "middle",
-        13,
+        sizes.axisTitle,
       ),
     );
+    // The y title's baseline, one title size in from the left edge.
+    const titleX = Math.round(3 + sizes.axisTitle);
     const yTitle = text(
-      16,
+      titleX,
       m.top + innerH() / 2,
       opts.yLabel,
       theme.foreground,
       "middle",
-      13,
+      sizes.axisTitle,
     );
-    yTitle.setAttribute("transform", `rotate(-90 16 ${m.top + innerH() / 2})`);
+    yTitle.setAttribute(
+      "transform",
+      `rotate(-90 ${titleX} ${m.top + innerH() / 2})`,
+    );
     svg.appendChild(yTitle);
   }
 
@@ -773,7 +811,24 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         colour: allPalette[missing] as string,
       };
     }
-    const shown = Math.min(categories.length, LEGEND_MAX);
+    const rowH = Math.round(sizes.label + 5);
+    const swatch = Math.round((sizes.label * 10) / 11);
+    const pad = 8;
+    const y0 = m.top + 6;
+    // Rows the plot height holds. When the list would run past it, fewer
+    // categories are listed and the rest go into the "+N more" line.
+    const fit = Math.max(
+      1,
+      Math.floor((height - m.bottom - y0 - pad * 2) / rowH),
+    );
+    const extra = tail ? 1 : 0;
+    const rowsFor = (cap: number) =>
+      Math.min(categories.length, cap) +
+      (categories.length > cap ? 1 : 0) +
+      extra;
+    let cap = LEGEND_MAX;
+    if (rowsFor(cap) > fit) cap = Math.max(1, fit - 1 - extra);
+    const shown = Math.min(categories.length, cap);
     const rows = categories.slice(0, shown);
     const overflow = categories.length - shown;
     const labels = overflow > 0 ? [...rows, `+${overflow} more`] : rows;
@@ -781,14 +836,13 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       labels.push(tail.label);
       palette = [...palette.slice(0, shown), MISSING_COLOR];
     }
-    const rowH = 16;
-    const swatch = 10;
-    const pad = 8;
-    const longest = labels.reduce((mx, s) => Math.max(mx, s.length), 1);
-    const boxW = pad * 2 + swatch + 6 + Math.ceil(longest * 6.6);
+    const longest = labels.reduce(
+      (mx, s) => Math.max(mx, textWidth(s, sizes.label, theme.fontFamily)),
+      0,
+    );
+    const boxW = pad * 2 + swatch + 6 + Math.ceil(longest);
     const boxH = pad * 2 + labels.length * rowH;
     const x0 = Math.max(m.left + 4, width - m.right - boxW - 6);
-    const y0 = m.top + 6;
     svg.appendChild(legendBg(x0, y0, boxW, boxH));
     for (let r = 0; r < labels.length; r += 1) {
       const cy = y0 + pad + r * rowH;
@@ -814,7 +868,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
           labels[r] ?? "",
           isOverflow ? theme.muted : theme.foreground,
           "start",
-          11,
+          sizes.label,
         ),
       );
     }
@@ -822,10 +876,23 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
 
   function renderColorbar(domain: [number, number]) {
     const m = margin();
+    const fs = sizes.label;
     const cbW = 12;
     const cbH = Math.min(160, Math.max(80, innerH() - 40));
-    const x0 = width - m.right - cbW - 46;
-    const y0 = m.top + 12;
+    // Padding above and below the bar, and the baseline offset that centres
+    // a label on a point of the bar.
+    const pad = Math.round((fs * 8) / 11);
+    const mid = Math.round(fs * 0.35);
+    const mean = (domain[0] + domain[1]) / 2;
+    const values = [fmt(domain[1]), fmt(mean), fmt(domain[0])];
+    // The box is as wide as the bar and its longest label.
+    const labelW = [...values, missingColor ? MISSING_LABEL : ""].reduce(
+      (mx, s) => Math.max(mx, textWidth(s, fs, theme.fontFamily)),
+      0,
+    );
+    const boxW = 6 + cbW + 5 + Math.ceil(labelW) + 6;
+    const x0 = width - m.right - boxW + 6;
+    const y0 = m.top + 4 + pad;
     const fn = ramp(opts.colormap);
     const gradId = `${uid}-cb`;
     const defs = document.createElementNS(SVG_NS, "defs");
@@ -846,45 +913,51 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     defs.appendChild(grad);
     svg.appendChild(defs);
 
-    svg.appendChild(legendBg(x0 - 6, y0 - 8, cbW + 52, cbH + 16));
+    svg.appendChild(legendBg(x0 - 6, y0 - pad, boxW, cbH + pad * 2));
     svg.appendChild(rect(x0, y0, cbW, cbH, `url(#${gradId})`, theme.axis, 1));
-    const mid = (domain[0] + domain[1]) / 2;
     svg.appendChild(
-      text(x0 + cbW + 5, y0 + 4, fmt(domain[1]), theme.foreground, "start", 10),
+      text(
+        x0 + cbW + 5,
+        y0 + mid,
+        values[0] ?? "",
+        theme.foreground,
+        "start",
+        fs,
+      ),
     );
     svg.appendChild(
       text(
         x0 + cbW + 5,
-        y0 + cbH / 2 + 3,
-        fmt(mid),
+        y0 + cbH / 2 + mid,
+        values[1] ?? "",
         theme.foreground,
         "start",
-        10,
+        fs,
       ),
     );
     svg.appendChild(
       text(
         x0 + cbW + 5,
         y0 + cbH,
-        fmt(domain[0]),
+        values[2] ?? "",
         theme.foreground,
         "start",
-        10,
+        fs,
       ),
     );
     // A grey swatch for points with no value, when there are any.
     if (missingColor) {
-      const sy = y0 + cbH + 14;
-      svg.appendChild(legendBg(x0 - 6, sy - 4, cbW + 52, 18));
+      const sy = y0 + cbH + pad + 6;
+      svg.appendChild(legendBg(x0 - 6, sy - 4, boxW, Math.round(fs + 7)));
       svg.appendChild(rect(x0, sy, cbW, 10, MISSING_COLOR, theme.axis, 1));
       svg.appendChild(
         text(
           x0 + cbW + 5,
-          sy + 9,
+          sy + 5 + mid,
           MISSING_LABEL,
           theme.foreground,
           "start",
-          10,
+          fs,
         ),
       );
     }
@@ -939,7 +1012,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     content: string,
     fill: string,
     anchor: string,
-    size = 11,
+    size = sizes.label,
   ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
@@ -984,16 +1057,25 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     },
     setOptions(next) {
       const prev = opts;
+      const prevMargin = margin();
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      sizes = textSizes(theme);
+      axisMargin = axisMargins(sizes);
       // aspect and padding decide the fitted range, so a change to either
-      // refits. showAxes changes the plot area's size, which refits while
-      // the view is untouched, as a resize does. The wrappers may resend
-      // every option, so compare values.
+      // refits. showAxes and the text size change the plot area's size,
+      // which refits while the view is untouched, as a resize does. The
+      // wrappers may resend every option, so compare values.
+      const m = margin();
+      const areaChanged =
+        m.top !== prevMargin.top ||
+        m.right !== prevMargin.right ||
+        m.bottom !== prevMargin.bottom ||
+        m.left !== prevMargin.left;
       const refit =
         opts.aspect !== prev.aspect ||
         opts.padding !== prev.padding ||
-        (opts.showAxes !== prev.showAxes && isStartView(scatterplot));
+        (areaChanged && isStartView(scatterplot));
       scatterplot.set({
         backgroundColor: theme.background,
         mouseMode: opts.mouseMode,
