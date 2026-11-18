@@ -473,7 +473,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     const mode = color && color.length ? resolveColorMode(color, opts.colorMode) : null;
     let z: ArrayLike<number>;
     let zDataType: "categorical" | "continuous" = "categorical";
-    let colorBy = "category";
+    let colorBy: "category" | "valueA" = "category";
     let pointColor: string[];
 
     if (mode === "categorical") {
