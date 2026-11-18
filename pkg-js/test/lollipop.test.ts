@@ -297,4 +297,15 @@ describe("lollipop residue ticks", () => {
   it("handles a degenerate length", () => {
     expect(residueTicks(1)).toEqual([1]);
   });
+
+  it("puts round ticks between the ends, never two labels together", () => {
+    expect(residueTicks(393)).toEqual([
+      1, 50, 100, 150, 200, 250, 300, 350, 393,
+    ]);
+    // PTEN (403) and CTNNB1 (781): 400 and 780 sit too close to the end.
+    expect(residueTicks(403)).toEqual([
+      1, 50, 100, 150, 200, 250, 300, 350, 403,
+    ]);
+    expect(residueTicks(781).slice(-2)).toEqual([700, 781]);
+  });
 });
