@@ -14,10 +14,16 @@
 #' much larger matrices.
 #'
 #' @param mat A numeric matrix. Row and column names, if present, are used as
-#'   labels. Values are transported row-major to the browser.
+#'   labels. Values are transported row-major to the browser. A missing cell
+#'   (`NA`, `NaN` or an infinite value) is drawn grey, and distances between
+#'   rows or columns use the cells both have, scaled up as [stats::dist()]
+#'   does.
 #' @param metric Distance metric for clustering: `"euclidean"` or
 #'   `"correlation"` (1 - Pearson correlation).
 #' @param linkage Agglomeration method: `"average"`, `"complete"` or `"ward"`.
+#'   `"ward"` is Ward's method as `hclust(method = "ward.D2")` and scipy
+#'   compute it, and it assumes the euclidean metric (a warning says so for
+#'   correlation).
 #' @param colormap Color ramp: `"viridis"` (sequential) or `"rdbu"` (diverging).
 #' @param z_score Standardize each row to mean 0 / sd 1 before coloring.
 #' @param cluster_rows,cluster_cols Cluster and reorder rows / columns. Ignored
@@ -76,6 +82,13 @@ clustermap <- function(mat,
   }
   metric <- match.arg(metric)
   linkage <- match.arg(linkage)
+  if (linkage == "ward" && metric != "euclidean") {
+    warning(
+      "Ward linkage assumes euclidean distances; with `metric = \"",
+      metric, "\"` its merge heights have no clear meaning.",
+      call. = FALSE
+    )
+  }
   colormap <- match.arg(colormap)
 
   nr <- nrow(mat)
