@@ -55,6 +55,8 @@ export interface ViolinOptions {
   showMedian: boolean;
   /** Draw the per-row feature labels. */
   showFeatureLabels: boolean;
+  /** Draw each row's value axis, with its lowest and highest grid value. */
+  showValueAxis: boolean;
   theme: Partial<PlotomicsTheme>;
 }
 
@@ -63,8 +65,12 @@ export const defaultViolinOptions: ViolinOptions = {
   scalePerViolin: false,
   showMedian: true,
   showFeatureLabels: true,
+  showValueAxis: true,
   theme: {},
 };
+
+/** Right gutter that holds the value axis and its labels. */
+const VALUE_AXIS_W = 44;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -88,13 +94,14 @@ export function layoutViolin(
   height: number,
   nFeatures: number,
   nGroups: number,
-  opts: Pick<ViolinOptions, "showFeatureLabels">,
+  opts: Pick<ViolinOptions, "showFeatureLabels"> &
+    Partial<Pick<ViolinOptions, "showValueAxis">>,
   longestLabel = 8,
 ): ViolinLayout {
   const left = opts.showFeatureLabels
     ? Math.min(150, Math.max(50, longestLabel * 6.4 + 12))
     : 16;
-  const right = 14;
+  const right = opts.showValueAxis ? VALUE_AXIS_W : 14;
   const top = 10;
   const bottom = 70;
   const plotW = Math.max(1, width - left - right);
@@ -255,10 +262,14 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       return;
     }
     const med = medians();
+    // R sends a missing median (a violin with no finite values) as null.
+    const m = med && i < med.length ? (med[i] as number) : undefined;
     const medTxt =
-      med && i < med.length
-        ? `<br/>median ${(med[i] as number).toFixed(2)}`
-        : "";
+      m === undefined
+        ? ""
+        : Number.isFinite(m)
+          ? `<br/>median ${m.toFixed(2)}`
+          : "<br/>no data";
     tooltip.show(
       `<b>${esc(f[row] as string)}</b> in ${esc(g[col] as string)}${medTxt}`,
       lastPointer.x,
@@ -351,7 +362,13 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
         ctx.globalAlpha = 1;
 
         const i = idx[c] as number;
-        if (opts.showMedian && med && i >= 0 && i < med.length) {
+        if (
+          opts.showMedian &&
+          med &&
+          i >= 0 &&
+          i < med.length &&
+          Number.isFinite(med[i] as number)
+        ) {
           const my = toY(med[i] as number);
           ctx.strokeStyle = theme.background;
           ctx.lineWidth = 1.5;
@@ -393,6 +410,33 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
             9,
           ),
         );
+      }
+    }
+
+    // A value axis per row on the right: each row can have its own range, so
+    // each gets its own lowest and highest value. The lowest is left out when
+    // the row is too short for both labels.
+    const gr = grid();
+    if (opts.showValueAxis && gr.length) {
+      const grs = grids();
+      const x = layout.left + layout.plotW + 4;
+      for (let r = 0; r < f.length; r += 1) {
+        const rowGrid = gridForRow(gr, grs, r);
+        const lo = rowGrid[0] as number;
+        const hi = rowGrid[rowGrid.length - 1] as number;
+        const yTop = layout.top + r * layout.rowH + 2;
+        const yBot = layout.top + (r + 1) * layout.rowH - 2;
+        svg.appendChild(line(x, yTop, x, yBot, theme.axis));
+        svg.appendChild(line(x, yTop, x + 3, yTop, theme.axis));
+        svg.appendChild(
+          text(x + 5, yTop + 6, fmtAxis(hi), theme.muted, "start", 8),
+        );
+        if (yBot - yTop >= 20) {
+          svg.appendChild(line(x, yBot, x + 3, yBot, theme.axis));
+          svg.appendChild(
+            text(x + 5, yBot, fmtAxis(lo), theme.muted, "start", 8),
+          );
+        }
       }
     }
 
@@ -494,6 +538,13 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
 };
 
 // ---- small utilities ----
+/** An axis value: whole numbers as they are, others to three digits. */
+function fmtAxis(v: number): string {
+  if (!Number.isFinite(v)) return "";
+  if (Number.isInteger(v)) return String(v);
+  if (Math.abs(v) >= 100) return String(Math.round(v));
+  return String(Number(v.toPrecision(3)));
+}
 function uniq(col: readonly string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];

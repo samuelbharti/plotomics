@@ -139,3 +139,11 @@ def test_violin_group_colors_without_groups():
     # Colours follow the groups in order of first appearance, as in R.
     assert w.data["meta"]["groups"] == ["T", "B"]
     assert w.data["meta"]["groupColors"] == ["#111", "#222"]
+
+
+def test_violin_sends_the_value_axis_option():
+    data, grid, density = make_args()
+    w = Violin(data, grid=grid, density=density)
+    assert w.options["showValueAxis"] is True
+    w = Violin(data, grid=grid, density=density, show_value_axis=False)
+    assert w.options["showValueAxis"] is False

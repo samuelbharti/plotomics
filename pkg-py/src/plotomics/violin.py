@@ -50,6 +50,9 @@ class Violin(PlotomicsWidget):
         the default so groups stay comparable within a feature.
     show_median, show_feature_labels:
         Toggle the median tick and the row labels.
+    show_value_axis:
+        Draw each row's value axis on the right, with the lowest and highest
+        value of its grid.
     theme:
         Optional theme overrides forwarded to the JS renderer.
     height:
@@ -73,6 +76,7 @@ class Violin(PlotomicsWidget):
         scale_per_violin: bool = False,
         show_median: bool = True,
         show_feature_labels: bool = True,
+        show_value_axis: bool = True,
         theme: dict | None = None,
         height: int = 560,
         **kwargs: Any,
@@ -164,6 +168,7 @@ class Violin(PlotomicsWidget):
             "scalePerViolin": scale_per_violin,
             "showMedian": show_median,
             "showFeatureLabels": show_feature_labels,
+            "showValueAxis": show_value_axis,
         }
         if theme is not None:
             options["theme"] = theme

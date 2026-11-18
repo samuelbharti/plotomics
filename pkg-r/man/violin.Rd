@@ -17,6 +17,7 @@ violin(
   scale_per_violin = FALSE,
   show_median = TRUE,
   show_feature_labels = TRUE,
+  show_value_axis = TRUE,
   theme = NULL,
   width = NULL,
   height = NULL,
@@ -49,6 +50,9 @@ palette.}
 row's. Per-row is the default so groups stay comparable within a feature.}
 
 \item{show_median, show_feature_labels}{Toggle the median tick and row labels.}
+
+\item{show_value_axis}{Draw each row's value axis on the right, with the
+lowest and highest value of its grid.}
 
 \item{theme}{Optional named list of theme overrides.}
 

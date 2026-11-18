@@ -83,6 +83,15 @@ describe("violin helpers", () => {
     expect(none.left).toBeLessThan(short.left);
   });
 
+  it("makes room on the right for the value axis", () => {
+    const off = layoutViolin(800, 600, 4, 3, { showFeatureLabels: true });
+    const on = layoutViolin(800, 600, 4, 3, {
+      showFeatureLabels: true,
+      showValueAxis: true,
+    });
+    expect(on.plotW).toBe(off.plotW - (44 - 14));
+  });
+
   it("stays well-defined with no rows or columns", () => {
     const l = layoutViolin(400, 300, 0, 0, { showFeatureLabels: true });
     expect(l.cellW).toBeGreaterThan(0);
