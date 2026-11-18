@@ -39,8 +39,12 @@ export interface EdgeDrops {
   missingCoords?: number;
 }
 
-/** Edge width range in px for weighted edges (|weight| is mapped onto it). */
-export const EDGE_WIDTH: readonly [number, number] = [1, 5];
+/**
+ * Edge width range in px for weighted edges (|weight| is mapped onto it).
+ * Sigma draws no edge thinner than its `minEdgeThickness` of 1.7 px, so the
+ * range starts there; a lower start would draw the weakest edges alike.
+ */
+export const EDGE_WIDTH: readonly [number, number] = [1.7, 6];
 
 /**
  * Map each |weight| linearly onto `range`, over the smallest and largest

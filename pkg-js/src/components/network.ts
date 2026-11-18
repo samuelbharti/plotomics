@@ -316,9 +316,24 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     // Sigma's WebGL layers do not keep their drawing buffer, so a copy taken
     // after the frame was shown reads a cleared canvas. refresh() renders
     // synchronously, and the copies below run before the browser clears it.
-    renderer.refresh();
+    // A hidden container (a collapsed notebook output) has no size, and
+    // Sigma then throws; there is nothing to export in that case.
+    try {
+      renderer.refresh();
+    } catch {
+      return null;
+    }
     const canvases = renderer.getCanvases();
-    const order = ["edges", "edgeLabels", "nodes", "labels", "hovers"];
+    // Sigma's own stacking order; a hovered node is redrawn on hoverNodes
+    // above the label box that hovers paints.
+    const order = [
+      "edges",
+      "edgeLabels",
+      "nodes",
+      "labels",
+      "hovers",
+      "hoverNodes",
+    ];
     const layers = order
       .map((k) => canvases[k])
       .filter((c): c is HTMLCanvasElement => !!c);

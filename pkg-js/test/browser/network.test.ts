@@ -44,6 +44,15 @@ describe("network in a browser", () => {
     expect(svg).toContain("data:image/png;base64,");
   });
 
+  it("returns no image, without throwing, when the view is hidden", async () => {
+    const el = container();
+    const net = createNetwork(el, { data: spiral() });
+    instances.push(net);
+    el.style.display = "none";
+    expect(net.exportSVG?.()).toBeNull();
+    expect(await net.exportPNG?.(1)).toBeNull();
+  });
+
   it("renders a correlation network with negative weights", () => {
     const n = 40;
     const id = Array.from({ length: n }, (_, i) => `N${i}`);

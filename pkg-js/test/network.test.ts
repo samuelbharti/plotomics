@@ -240,24 +240,33 @@ describe("weights and missing values", () => {
     const e = graph.edge("N0", "N1") as string;
     expect(graph.getEdgeAttribute(e, "weight")).toBeGreaterThanOrEqual(0);
     expect(graph.getEdgeAttribute(e, "rawWeight")).toBe(weight[0]);
+    // Width follows |weight| over the graph's range, not the raw weight.
+    const sizes = graph.mapEdges((_e, a) => a.size as number);
+    expect(Math.min(...sizes)).toBeCloseTo(1.7, 6);
+    expect(Math.max(...sizes)).toBeCloseTo(6, 6);
   });
 
   it("treats null and NaN as missing, not as 0 or the text 'null'", () => {
     const { graph, dropped } = buildFull({
       columns: {
-        id: ["a", "b", "c"],
-        x: [0, null as unknown as number, 4],
-        y: [0, 2, Number.NaN],
+        id: ["a", "b", "c", "d"],
+        x: [2, null as unknown as number, 4, 6],
+        y: [4, 2, Number.NaN, 8],
         source: ["a"],
         target: ["b"],
         weight: [null as unknown as number],
       },
-      meta: { nodeGroup: ["g1", null, "g1"], nodeLabels: [null, "B", "C"] },
+      meta: {
+        nodeGroup: ["g1", null, "g1", "g1"],
+        nodeLabels: [null, "B", "C", "D"],
+      },
     });
     expect(dropped.missingCoords).toBe(2);
-    // b and c sit at the centre of the placed node a.
-    expect(graph.getNodeAttribute("b", "x")).toBe(0);
-    expect(graph.getNodeAttribute("c", "y")).toBe(0);
+    // b and c sit at the centre of the placed nodes a (2, 4) and d (6, 8).
+    expect(graph.getNodeAttribute("b", "x")).toBe(4);
+    expect(graph.getNodeAttribute("b", "y")).toBe(6);
+    expect(graph.getNodeAttribute("c", "x")).toBe(4);
+    expect(graph.getNodeAttribute("c", "y")).toBe(6);
     expect(graph.getNodeAttribute("b", "group")).toBeUndefined();
     expect(graph.getNodeAttribute("b", "color")).toBe("#000");
     expect(graph.getNodeAttribute("a", "label")).toBe("a");
