@@ -5,6 +5,7 @@ import {
   uniqueInOrder,
   valueExtent,
 } from "../src/components/dotplot.js";
+import { textSizes } from "../src/core/theme.js";
 
 describe("dotplot helpers", () => {
   it("scales dot AREA, not radius, with the percentage", () => {
@@ -56,12 +57,59 @@ describe("dotplot helpers", () => {
   });
 
   it("widens the left gutter for long row labels", () => {
-    const short = layoutDotplot(800, 600, 4, 4, { showLegend: true }, 4);
-    const long = layoutDotplot(800, 600, 4, 4, { showLegend: true }, 30);
+    const at = (rowLabel: number) =>
+      layoutDotplot(800, 600, 4, 4, { showLegend: true }, { rowLabel });
+    // Widths in px of labels of 4 and 30 characters.
+    const short = at(26);
+    const long = at(192);
     expect(long.left).toBeGreaterThan(short.left);
     // But never so far that the grid disappears.
     expect(long.plotW).toBeGreaterThan(0);
     expect(long.left).toBeLessThanOrEqual(150);
+  });
+
+  it("sizes the bottom gutter from the longest column label", () => {
+    const at = (colLabel: number) =>
+      layoutDotplot(800, 600, 4, 4, { showLegend: true }, { colLabel });
+    // Turned 45 degrees, a label 100 px longer reaches 100 / sqrt(2) lower.
+    expect(at(120).bottom - at(20).bottom).toBeCloseTo(100 * Math.SQRT1_2, 0);
+    // At most 35% of the height.
+    expect(at(2000).bottom).toBe(Math.floor(600 * 0.35));
+  });
+
+  it("widens the left gutter so the first column label stays inside", () => {
+    // Eight narrow columns with a 150 px label under each: turned 45
+    // degrees, the first one reaches (150 + 1.1 * 11) / sqrt(2) px left of
+    // its column.
+    const l = layoutDotplot(
+      400,
+      600,
+      4,
+      8,
+      { showLegend: false },
+      { rowLabel: 10, colLabel: 150 },
+    );
+    expect(l.left).toBeGreaterThan(52);
+    expect(l.left + l.cellW / 2).toBeGreaterThanOrEqual(
+      (150 + 1.1 * 11) * Math.SQRT1_2,
+    );
+  });
+
+  it("scales the left gutter's cap and the top with the text size", () => {
+    const at = (fontSize: number) =>
+      layoutDotplot(
+        800,
+        600,
+        4,
+        4,
+        { showLegend: true },
+        { sizes: textSizes({ fontSize }), rowLabel: 400 },
+      );
+    expect(at(12).left).toBe(150);
+    // 150 px times 22 / 11 is 300 px, past 35% of the width.
+    expect(at(24).left).toBe(280);
+    expect(at(12).top).toBe(12);
+    expect(at(24).top).toBe(18);
   });
 
   it("reclaims the legend gutter when the legend is off", () => {

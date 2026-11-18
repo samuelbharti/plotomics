@@ -40,7 +40,8 @@ class Treemap(PlotomicsWidget):
     colormap:
         Ramp used when ``color_by="value"``: ``"viridis"`` or ``"rdbu"``.
     label_min_size:
-        Minimum tile side (px) before a label is drawn.
+        Minimum tile side (px) before a label is drawn, at the default font
+        size. It grows with ``theme["fontSize"]``.
     theme:
         Optional theme overrides forwarded to the JS renderer.
     height:

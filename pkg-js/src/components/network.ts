@@ -31,6 +31,7 @@ import {
   type PlotomicsInstance,
   type PlotomicsTheme,
   resolveTheme,
+  textSizes,
   createTooltip,
   type Tooltip,
   measure,
@@ -39,7 +40,10 @@ import {
 } from "../core/index.js";
 import Graph from "graphology";
 import Sigma from "sigma";
-import { EdgeArrowProgram } from "sigma/rendering";
+import {
+  EdgeArrowProgram,
+  type NodeLabelDrawingFunction,
+} from "sigma/rendering";
 import {
   type NetworkLayout,
   type EdgeDrops,
@@ -100,6 +104,80 @@ export const defaultNetworkOptions: NetworkOptions = {
   directed: false,
   theme: {},
   onSelect: null,
+};
+
+type LabelArgs = Parameters<NodeLabelDrawingFunction>;
+
+/**
+ * Which side of its node a label goes on, and its width. Sigma puts it on
+ * the right; a label that would run past the right edge goes on the left.
+ * Sets the label font on the context.
+ */
+function labelSide(
+  context: LabelArgs[0],
+  data: LabelArgs[1],
+  settings: LabelArgs[2],
+): { left: boolean; width: number } {
+  context.font = `${settings.labelWeight} ${settings.labelSize}px ${settings.labelFont}`;
+  const width = context.measureText(data.label ?? "").width;
+  // The context is scaled by the pixel ratio; the edge is in CSS pixels.
+  const edge = context.canvas.width / (context.getTransform().a || 1);
+  return { left: data.x + data.size + 3 + width > edge, width };
+}
+
+/** A node label, on the side that {@link labelSide} picks. */
+const drawNodeLabel: NodeLabelDrawingFunction = (context, data, settings) => {
+  if (!data.label) return;
+  const size = settings.labelSize;
+  const { left, width } = labelSide(context, data, settings);
+  context.fillStyle = settings.labelColor.color ?? "#000";
+  const x = left
+    ? Math.max(0, data.x - data.size - 3 - width)
+    : data.x + data.size + 3;
+  context.fillText(data.label, x, data.y + size / 3);
+};
+
+/**
+ * The hovered node: sigma's white box with a shadow around the node and its
+ * label, on the same side as the label, then the label itself.
+ */
+const drawNodeHover: NodeLabelDrawingFunction = (context, data, settings) => {
+  const size = settings.labelSize;
+  const pad = 2;
+  context.fillStyle = "#FFF";
+  context.shadowOffsetX = 0;
+  context.shadowOffsetY = 0;
+  context.shadowBlur = 8;
+  context.shadowColor = "#000";
+  if (typeof data.label === "string") {
+    const { left, width } = labelSide(context, data, settings);
+    const boxWidth = Math.round(width + 5);
+    const boxHeight = Math.round(size + 2 * pad);
+    const radius = Math.max(data.size, size / 2) + pad;
+    const angle = Math.asin(boxHeight / 2 / radius);
+    const dx = Math.sqrt(Math.abs(radius ** 2 - (boxHeight / 2) ** 2));
+    // The box runs right of the node, or left of it for a label on the left.
+    const s = left ? -1 : 1;
+    context.beginPath();
+    context.moveTo(data.x + s * dx, data.y + boxHeight / 2);
+    context.lineTo(data.x + s * (radius + boxWidth), data.y + boxHeight / 2);
+    context.lineTo(data.x + s * (radius + boxWidth), data.y - boxHeight / 2);
+    context.lineTo(data.x + s * dx, data.y - boxHeight / 2);
+    if (left)
+      context.arc(data.x, data.y, radius, Math.PI + angle, Math.PI - angle);
+    else context.arc(data.x, data.y, radius, angle, -angle);
+    context.closePath();
+    context.fill();
+  } else {
+    context.beginPath();
+    context.arc(data.x, data.y, data.size + pad, 0, Math.PI * 2);
+    context.closePath();
+    context.fill();
+  }
+  context.shadowOffsetX = 0;
+  context.shadowOffsetY = 0;
+  context.shadowBlur = 0;
+  drawNodeLabel(context, data, settings);
 };
 
 // ---------------------------------------------------------------------------
@@ -189,11 +267,19 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
 
   function makeRenderer() {
     renderer?.kill();
+    const labelSize = textSizes(theme).label;
     renderer = new Sigma(graph, host, {
       defaultNodeColor: opts.defaultNodeColor,
       defaultEdgeColor: opts.defaultEdgeColor,
       labelColor: { color: theme.foreground },
       labelFont: theme.fontFamily,
+      labelSize,
+      // Sigma shows a set number of labels per grid cell, 100 px wide by
+      // default. The cell grows with the labels, so larger text is not more
+      // crowded.
+      labelGridCellSize: Math.round((100 * labelSize) / 11),
+      defaultDrawNodeLabel: drawNodeLabel,
+      defaultDrawNodeHover: drawNodeHover,
       labelRenderedSizeThreshold: opts.labelThreshold,
       renderLabels: true,
       // Directed graphs draw arrowheads via sigma's arrow edge program.

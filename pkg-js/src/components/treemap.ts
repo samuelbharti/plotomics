@@ -17,9 +17,11 @@ import {
   type PlotomicsInstance,
   type PlotomicsTheme,
   resolveTheme,
+  textSizes,
   createTooltip,
   type Tooltip,
   measure,
+  textWidth,
   dpr,
   serializeSVG,
   compositePNG,
@@ -47,7 +49,8 @@ export interface TreemapOptions {
   colorBy: "parent" | "value";
   /** Sequential/diverging ramp used when `colorBy` is "value". */
   colormap: RampName;
-  /** Minimum tile side (px) required before a label is drawn. */
+  /** Minimum tile side (px) required before a label is drawn, at the
+   * default text size. It grows in step with `theme.fontSize`. */
   labelMinSize: number;
   theme: Partial<PlotomicsTheme>;
 }
@@ -62,10 +65,7 @@ export const defaultTreemapOptions: TreemapOptions = {
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-/** Breadcrumb strip reserved at the top of the container. */
-const BREADCRUMB_H = 24;
-/** Header strip for a group's name, and the border around a group. */
-const GROUP_HEADER_H = 16;
+/** The border around a group. */
 const GROUP_PAD = 2;
 
 // ---------------------------------------------------------------------------
@@ -194,6 +194,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     initial.options,
   );
   let theme = resolveTheme(opts.theme);
+  let sizes = textSizes(theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   let width = 0;
@@ -225,12 +226,18 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     for (const top of tops) paletteFor(top.data.id);
   }
 
+  /** Breadcrumb strip reserved at the top of the container: 24 px at the
+   * default text size. */
+  const breadcrumbH = () => Math.round(sizes.axisTitle + 11);
+  /** Header strip for a group's name: 16 px at the default text size. */
+  const headerH = () => Math.round(sizes.label + 5);
+
   /** Whether a group tile has room for its name in a header strip. */
   const hasHeader = (d: HierarchyRectangularNode<TreeRow>) =>
     d.depth === 1 &&
     !!d.children &&
-    d.y1 - d.y0 >= 3 * GROUP_HEADER_H &&
-    d.x1 - d.x0 >= 48;
+    d.y1 - d.y0 >= 3 * headerH() &&
+    d.x1 - d.x0 >= 4 * sizes.label + 4;
 
   // DOM: canvas for the tiles, SVG overlay for labels + breadcrumb.
   el.style.position = el.style.position || "relative";
@@ -250,12 +257,12 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     content: string,
     fill: string,
     anchor: string,
-    size = 11,
+    size = sizes.label,
   ) => svgText(x, y, content, fill, anchor, size, theme.fontFamily);
 
-  const plotTop = () => BREADCRUMB_H;
+  const plotTop = () => breadcrumbH();
   const plotW = () => Math.max(1, width);
-  const plotH = () => Math.max(1, height - BREADCRUMB_H);
+  const plotH = () => Math.max(1, height - breadcrumbH());
 
   function layoutCanvas() {
     const ratio = dpr();
@@ -324,7 +331,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
         if (!hasHeader(d as HierarchyRectangularNode<TreeRow>))
           return GROUP_PAD;
         headers.add(d.data.id);
-        return GROUP_HEADER_H;
+        return headerH();
       })
       .round(true)(sub);
     headerIds = headers;
@@ -416,7 +423,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
 
   function renderBreadcrumb() {
     // Background strip so tile labels never bleed into the breadcrumb.
-    svg.appendChild(rect(0, 0, width, BREADCRUMB_H, theme.background));
+    svg.appendChild(rect(0, 0, width, breadcrumbH(), theme.background));
     const crumbsEnd = renderCrumbs();
     if (opts.colorBy === "value" && layoutLeaves.length) {
       renderValueKey(crumbsEnd);
@@ -427,33 +434,97 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
   function renderCrumbs(): number {
     if (!focus) return 0;
     const chain = focus.ancestors().reverse(); // root -> focus
+    const size = sizes.axisTitle;
+    // Baseline that centres the crumbs in the strip.
+    const y = Math.round(breadcrumbH() / 2 + size * 0.35);
+    const crumbs = fitCrumbs(chain, size);
     let x = 8;
-    chain.forEach((node, i) => {
+    crumbs.forEach((crumb, i) => {
       if (i > 0) {
-        svg.appendChild(
-          text(x, BREADCRUMB_H - 8, "›", theme.muted, "start", 12),
-        );
-        x += 12;
+        svg.appendChild(text(x, y, "›", theme.muted, "start", size));
+        x += size;
       }
-      const label = node.data.label || node.data.id;
-      const isLast = i === chain.length - 1;
+      const isLast = i === crumbs.length - 1;
       const t = text(
         x,
-        BREADCRUMB_H - 8,
-        label,
+        y,
+        crumb.label,
         isLast ? theme.foreground : theme.axis,
         "start",
-        12,
+        size,
       );
       // Crumbs are interactive; the overlay is otherwise pointer-transparent.
       t.style.pointerEvents = "auto";
       t.style.cursor = "pointer";
       if (isLast) t.setAttribute("font-weight", "600");
-      t.addEventListener("click", () => zoomTo(node));
+      t.addEventListener("click", () => zoomTo(crumb.node));
       svg.appendChild(t);
-      x += approxTextWidth(label, 12) + 6;
+      x += crumbWidth(crumb.label, size, isLast) + 6;
     });
     return x;
+  }
+
+  /** Width of a crumb. The last crumb is bold, which sets about 10% wider
+   * than the regular weight that is measured. */
+  function crumbWidth(label: string, size: number, bold: boolean): number {
+    return textWidth(label, size, theme.fontFamily) * (bold ? 1.1 : 1);
+  }
+
+  /**
+   * The crumbs that fit the strip, from the root to the focus. When the
+   * whole path is too wide, the ancestors after the root are hidden, oldest
+   * first, behind one "…" crumb that opens the nearest hidden one. When
+   * that is still too wide, the focus crumb is cut with an ellipsis, and so
+   * is the root when it takes more than half the strip.
+   */
+  function fitCrumbs(
+    chain: HierarchyNode<TreeRow>[],
+    size: number,
+  ): { label: string; node: HierarchyNode<TreeRow> }[] {
+    const avail = width - 16;
+    // Width from the first crumb's start to the last crumb's end.
+    const span = (list: { label: string }[], boldLast: boolean) =>
+      list.reduce(
+        (sum, c, i) =>
+          sum +
+          (i > 0 ? size + 6 : 0) +
+          crumbWidth(c.label, size, boldLast && i === list.length - 1),
+        0,
+      );
+    const all = chain.map((node) => ({
+      label: node.data.label || node.data.id,
+      node,
+    }));
+    let crumbs = all;
+    for (
+      let hide = 1;
+      span(crumbs, true) > avail && hide < all.length - 1;
+      hide += 1
+    ) {
+      const nearest = all[hide] as (typeof all)[number];
+      crumbs = [
+        all[0] as (typeof all)[number],
+        { label: "…", node: nearest.node },
+        ...all.slice(hide + 1),
+      ];
+    }
+    if (span(crumbs, true) <= avail) return crumbs;
+    const head = crumbs.slice(0, -1).map((c) => ({ ...c }));
+    const last = { ...(crumbs[crumbs.length - 1] as (typeof all)[number]) };
+    const first = head[0];
+    // The space before the focus crumb, with its separator.
+    const before = () => (head.length ? span(head, false) + 6 + size : 0);
+    if (first && before() > avail / 2) {
+      const cut = before() - avail / 2;
+      first.label = fitLabel(
+        first.label,
+        Math.max(0, crumbWidth(first.label, size, false) - cut),
+        size,
+        1,
+      );
+    }
+    last.label = fitLabel(last.label, Math.max(0, avail - before()), size, 1.1);
+    return [...head, last];
   }
 
   /**
@@ -470,9 +541,18 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       if (v < lo) lo = v;
       if (v > hi) hi = v;
     }
+    const fs = sizes.label;
+    const loText = fmt(lo);
+    const hiText = hi > lo ? fmt(hi) : "";
+    const hiW = textWidth(hiText, fs, theme.fontFamily);
+    const loW = textWidth(loText, fs, theme.fontFamily);
     const barW = 90;
-    const x = width - barW - 46;
-    if (x - 30 < crumbsEnd) return; // the min label would meet the breadcrumb
+    const x = Math.floor(width - 8 - hiW - 4 - barW);
+    // Left out when the min label would meet the breadcrumb.
+    if (x - 4 - loW - 8 < crumbsEnd) return;
+    // The bar and its labels sit on the middle of the strip.
+    const midY = breadcrumbH() / 2;
+    const baseline = Math.round(midY + fs * 0.35);
     const gid = `${uid}-key`;
     const defs = document.createElementNS(SVG_NS, "defs");
     const grad = document.createElementNS(SVG_NS, "linearGradient");
@@ -486,11 +566,13 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     }
     defs.appendChild(grad);
     svg.appendChild(defs);
-    svg.appendChild(rect(x, 8, barW, 8, `url(#${gid})`));
-    svg.appendChild(text(x - 4, 16, fmt(lo), theme.axis, "end", 10));
+    svg.appendChild(rect(x, Math.round(midY - 4), barW, 8, `url(#${gid})`));
+    svg.appendChild(text(x - 4, baseline, loText, theme.axis, "end", fs));
     // One value only: every tile has it, and it takes the low end of the ramp.
-    if (hi > lo) {
-      svg.appendChild(text(x + barW + 4, 16, fmt(hi), theme.axis, "start", 10));
+    if (hiText) {
+      svg.appendChild(
+        text(x + barW + 4, baseline, hiText, theme.axis, "start", fs),
+      );
     }
   }
 
@@ -509,10 +591,33 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     t.setAttribute("stroke", "rgba(0,0,0,0.55)");
     t.setAttribute("stroke-width", "2");
     if (weight) t.setAttribute("font-weight", weight);
-    const maxChars = Math.max(1, Math.floor(maxWidth / (size * 0.56)));
-    t.textContent =
-      label.length > maxChars ? `${label.slice(0, maxChars - 1)}…` : label;
+    // Bold text sets about 10% wider than the regular weight that is measured.
+    t.textContent = fitLabel(label, maxWidth, size, weight ? 1.1 : 1);
     svg.appendChild(t);
+  }
+
+  /**
+   * `label` as it fits in `maxWidth` px at `size`: whole, or cut with an
+   * ellipsis. `widen` scales the measured width.
+   */
+  function fitLabel(
+    label: string,
+    maxWidth: number,
+    size: number,
+    widen: number,
+  ): string {
+    const fits = (s: string) =>
+      textWidth(s, size, theme.fontFamily) * widen <= maxWidth;
+    if (fits(label)) return label;
+    // The most characters that still fit with the ellipsis after them.
+    let lo = 0;
+    let hi = label.length - 1;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (fits(`${label.slice(0, mid)}…`)) lo = mid;
+      else hi = mid - 1;
+    }
+    return `${label.slice(0, lo)}…`;
   }
 
   function renderLabels() {
@@ -523,22 +628,24 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       const label = g.data.label || g.data.id;
       haloText(
         g.x0 + 4,
-        yOff + g.y0 + GROUP_HEADER_H - 4,
+        yOff + g.y0 + headerH() - 4,
         label,
         g.x1 - g.x0 - 8,
-        11,
+        sizes.label,
         "600",
       );
     }
+    // labelMinSize is set for the default 11 px labels and scales with them.
+    const minSide = (opts.labelMinSize * sizes.label) / 11;
     for (const leaf of layoutLeaves) {
-      if (!tileFitsLabel(leaf, opts.labelMinSize)) continue;
+      if (!tileFitsLabel(leaf, minSide)) continue;
       const label = leaf.data.label || leaf.data.id;
       haloText(
         leaf.x0 + 4,
-        yOff + leaf.y0 + 14,
+        yOff + leaf.y0 + Math.round(sizes.label + 3),
         label,
         leaf.x1 - leaf.x0 - 8,
-        11,
+        sizes.label,
       );
     }
   }
@@ -627,6 +734,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      sizes = textSizes(theme);
       assignPalette();
       // Keep the current focus; only re-layout + recolor.
       computeLayout();
@@ -719,10 +827,6 @@ function svgText(
   t.setAttribute("font-size", String(size));
   t.textContent = content;
   return t;
-}
-
-function approxTextWidth(s: string, size: number): number {
-  return s.length * size * 0.55;
 }
 
 function fmt(v: number): string {

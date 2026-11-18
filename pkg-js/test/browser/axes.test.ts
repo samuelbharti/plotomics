@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createLollipop } from "../../src/components/lollipop.js";
 import { createProfile } from "../../src/components/profile.js";
 import { createUpset } from "../../src/components/upset.js";
-import type { PlotomicsInstance } from "../../src/core/index.js";
+import {
+  type PlotomicsInstance,
+  defaultTheme,
+  textSizes,
+} from "../../src/core/index.js";
 
 function container(width = 700, height = 400) {
   const el = document.createElement("div");
@@ -94,11 +98,13 @@ describe("profile axis, title and bar labels", () => {
     expect(b.bottom).toBeLessThanOrEqual(box.bottom + 0.5);
   });
 
-  it("draws the bar labels at the tick label size", () => {
+  it("draws the bar labels at the small text size", () => {
     const el = container();
     instances.push(createProfile(el, { data }));
     const lab = texts(el).find((t) => t.textContent === "A[C>A]A");
-    expect(lab?.getAttribute("font-size")).toBe("9");
+    expect(lab?.getAttribute("font-size")).toBe(
+      String(textSizes(defaultTheme).small),
+    );
   });
 });
 

@@ -4,6 +4,7 @@ import {
   layoutProfile,
   finiteMax,
 } from "../src/components/profile.js";
+import { textSizes } from "../src/core/theme.js";
 
 describe("profile group runs", () => {
   it("collapses a group column into contiguous runs", () => {
@@ -102,5 +103,41 @@ describe("profile title and bar labels", () => {
     const short = layoutProfile(1000, 400, 96, opts, false, 20);
     const long = layoutProfile(1000, 400, 96, opts, false, 40);
     expect(short.axisY - long.axisY).toBe(20);
+  });
+});
+
+describe("profile layout at other text sizes", () => {
+  const big = textSizes({ fontSize: 16 });
+  const huge = textSizes({ fontSize: 24 });
+  const opts = { showHeader: true, showBarLabels: true };
+
+  it("widens the left gutter for wider y tick labels", () => {
+    const narrow = layoutProfile(800, 380, 96, opts, false, 24, big, 30);
+    const wide = layoutProfile(800, 380, 96, opts, false, 24, big, 70);
+    expect(wide.left - narrow.left).toBeGreaterThanOrEqual(39);
+    // The labels end 8 px short of the bars, and the rotated y title keeps
+    // more than an em to the left of them.
+    expect(wide.left - 8 - 70).toBeGreaterThanOrEqual(1.3 * big.axisTitle);
+  });
+
+  it("gives a larger title and larger group names more room", () => {
+    const small = layoutProfile(800, 380, 96, opts, true);
+    const large = layoutProfile(800, 380, 96, opts, true, 24, huge);
+    expect(large.headerTop).toBeGreaterThan(small.headerTop);
+    expect(large.plotTop - large.headerTop).toBeGreaterThan(
+      small.plotTop - small.headerTop,
+    );
+  });
+
+  it("starts the bars low enough for the top tick label without a banner", () => {
+    const bare = { showHeader: false, showBarLabels: true };
+    const l = layoutProfile(800, 380, 96, bare, false, 24, huge);
+    expect(l.plotTop).toBeGreaterThanOrEqual((1.08 - 0.35) * huge.label);
+  });
+
+  it("lets the band of bar labels grow with the small size", () => {
+    const small = layoutProfile(800, 380, 96, opts, false, 200);
+    const large = layoutProfile(800, 380, 96, opts, false, 200, huge);
+    expect(large.axisY).toBeLessThan(small.axisY);
   });
 });

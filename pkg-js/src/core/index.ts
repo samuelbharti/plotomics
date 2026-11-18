@@ -18,6 +18,8 @@ export {
   darkTheme,
   resolveTheme,
   OKABE_ITO,
+  type TextSizes,
+  textSizes,
   PALETTE_20,
 } from "./theme.js";
 
@@ -56,6 +58,8 @@ export {
   clearElement,
   createTooltip,
   measure,
+  textWidth,
+  fitText,
   dpr,
 } from "./dom.js";
 

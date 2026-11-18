@@ -150,14 +150,17 @@ describe("heatmap helpers", () => {
   });
 
   it("labels every cell, every k-th cell, or none by the cell size", () => {
+    // The default 11 px labels need 13 px cells.
     expect(labelEvery(14)).toBe(1);
-    expect(labelEvery(12)).toBe(1);
-    // 6.7 px rows, as with 60 rows in the default height: every 2nd.
-    expect(labelEvery(6.7)).toBe(2);
-    expect(labelEvery(3)).toBe(4);
+    expect(labelEvery(13)).toBe(1);
+    // 7 px rows, as with 60 rows in the default height: every 2nd.
+    expect(labelEvery(7)).toBe(2);
+    expect(labelEvery(3.25)).toBe(4);
     // Tighter than that, a label could name any of many rows: none.
-    expect(labelEvery(2.9)).toBe(0);
+    expect(labelEvery(3.2)).toBe(0);
     expect(labelEvery(0)).toBe(0);
+    // Larger labels need larger cells.
+    expect(labelEvery(14, 16.7)).toBe(2);
   });
 
   it("returns all indices when count <= max", () => {

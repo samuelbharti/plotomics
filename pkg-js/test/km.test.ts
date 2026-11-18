@@ -8,6 +8,7 @@ import {
   tickDecimals,
   timeTicks,
 } from "../src/components/km.js";
+import { textSizes } from "../src/core/theme.js";
 
 describe("km helpers", () => {
   it("expands points into a right-continuous step", () => {
@@ -70,7 +71,7 @@ describe("km helpers", () => {
     const l = layoutKm(800, 200, 12, { showRiskTable: true });
     expect(l.plotH).toBeGreaterThanOrEqual(40);
     // Eight strata fit at the tightest rows, so the panel keeps half.
-    expect(layoutKm(800, 300, 8, { showRiskTable: true }).axisY).toBe(150);
+    expect(layoutKm(800, 340, 8, { showRiskTable: true }).axisY).toBe(170);
     expect(l.riskRowH).toBeLessThan(16);
     expect(l.riskRowH).toBeGreaterThanOrEqual(8);
   });
@@ -134,5 +135,61 @@ describe("km rows, labels and layout", () => {
       expect(l.riskRowH).toBeGreaterThanOrEqual(8);
       expect(l.plotH).toBeGreaterThan(30);
     }
+  });
+});
+
+describe("km layout at other text sizes", () => {
+  const big = textSizes({ fontSize: 16 });
+  const noTable = { showRiskTable: false };
+
+  it("widens the left gutter for wider y tick labels", () => {
+    const narrow = layoutKm(600, 520, 2, noTable, false, 0, big, 30);
+    const wide = layoutKm(600, 520, 2, noTable, false, 0, big, 70);
+    expect(wide.left - narrow.left).toBeGreaterThanOrEqual(39);
+    // The labels end 8 px short of the panel, and the rotated y title keeps
+    // more than an em to the left of them.
+    expect(wide.left - 8 - 70).toBeGreaterThanOrEqual(1.3 * big.axisTitle);
+  });
+
+  it("leaves room for half the last tick label right of the panel", () => {
+    expect(
+      layoutKm(600, 520, 2, noTable, false, 0, big, 0, 50).right,
+    ).toBeGreaterThanOrEqual(25);
+    expect(layoutKm(600, 520, 2, noTable, false, 0, big, 0, 10).right).toBe(16);
+  });
+
+  it("starts the panel low enough for the top tick label", () => {
+    // The "100%" label is centred on the top of the panel: its font box
+    // reaches 1.08 em above the baseline, which sits 0.35 em under the top.
+    for (const fontSize of [16, 24, 30]) {
+      const s = textSizes({ fontSize });
+      const l = layoutKm(600, 520, 2, noTable, false, 0, s);
+      expect(l.top).toBeGreaterThanOrEqual((1.08 - 0.35) * s.label);
+    }
+  });
+
+  it("keeps each risk-table row taller than a name", () => {
+    const cases = [
+      [260, 12],
+      [300, 12],
+      [360, 16],
+      [400, 16],
+    ] as const;
+    for (const [h, fontSize] of cases) {
+      const s = textSizes({ fontSize });
+      const l = layoutKm(600, h, 8, { showRiskTable: true }, true, 50, s);
+      expect(l.riskRowH).toBeGreaterThan(s.label);
+      // The last row ends inside the element.
+      expect(l.riskTop + 7.5 * l.riskRowH).toBeLessThanOrEqual(h);
+    }
+  });
+
+  it("moves the table down and opens its rows for larger text", () => {
+    const small = layoutKm(600, 520, 3, { showRiskTable: true });
+    const large = layoutKm(600, 520, 3, { showRiskTable: true }, true, 0, big);
+    expect(large.riskTop - large.axisY).toBeGreaterThan(
+      small.riskTop - small.axisY,
+    );
+    expect(large.riskRowH).toBeGreaterThan(small.riskRowH);
   });
 });
