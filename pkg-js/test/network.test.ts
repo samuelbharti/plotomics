@@ -5,6 +5,7 @@ import {
   groupColorResolver,
   needsLayout,
   runForceAtlas2,
+  edgeWidths,
 } from "../src/components/network-core.js";
 import type { PlotomicsData } from "../src/core/index.js";
 
@@ -36,7 +37,12 @@ describe("network helpers", () => {
   it("extracts edges from meta.edges pairs when no columns given", () => {
     const edges = extractEdges({
       columns: {},
-      meta: { edges: [["a", "b"], ["c", "d"]] },
+      meta: {
+        edges: [
+          ["a", "b"],
+          ["c", "d"],
+        ],
+      },
     });
     expect(edges).toEqual([
       { source: "a", target: "b" },
@@ -54,7 +60,9 @@ describe("network helpers", () => {
   });
 
   it("decides when a layout is needed", () => {
-    const withCoords: PlotomicsData = { columns: { id: ["a"], x: [0], y: [0] } };
+    const withCoords: PlotomicsData = {
+      columns: { id: ["a"], x: [0], y: [0] },
+    };
     const noCoords: PlotomicsData = { columns: { id: ["a"] } };
     expect(needsLayout(noCoords, "forceatlas2")).toBe(true);
     expect(needsLayout(withCoords, "forceatlas2")).toBe(false);
@@ -112,7 +120,8 @@ describe("network helpers", () => {
     const g = build({ columns: { id: ["a", "b", "c"] } });
     // No node should remain at the degenerate origin.
     const atOrigin = ["a", "b", "c"].every(
-      (n) => g.getNodeAttribute(n, "x") === 0 && g.getNodeAttribute(n, "y") === 0,
+      (n) =>
+        g.getNodeAttribute(n, "x") === 0 && g.getNodeAttribute(n, "y") === 0,
     );
     expect(atOrigin).toBe(false);
   });
@@ -145,7 +154,12 @@ describe("network helpers", () => {
     });
     // a-b kept; a-missing (unknown endpoint), a-a (self-loop), b-a (duplicate).
     expect(graph.size).toBe(1);
-    expect(dropped).toEqual({ missingEndpoint: 1, selfLoop: 1, duplicate: 1 });
+    expect(dropped).toEqual({
+      missingEndpoint: 1,
+      selfLoop: 1,
+      duplicate: 1,
+      missingCoords: 0,
+    });
   });
 
   it("reads a per-edge color column and applies it to the edge", () => {
@@ -188,5 +202,66 @@ describe("network helpers", () => {
     expect(graph.type).toBe("directed");
     expect(graph.size).toBe(2); // a->b and b->a both survive
     expect(dropped.duplicate).toBe(0);
+  });
+});
+
+describe("weights and missing values", () => {
+  it("maps |weight| onto the width range over the graph's own weights", () => {
+    const w = edgeWidths([0.2, -0.9, 0.55], [1, 5]);
+    expect(w[0]).toBe(1);
+    expect(w[1]).toBe(5);
+    expect(w[2]).toBeCloseTo(3, 10);
+    expect(edgeWidths([400, 999], [1, 5])).toEqual([1, 5]);
+    expect(edgeWidths([2, 2], [1, 5])).toEqual([3, 3]);
+    expect(edgeWidths([Number.NaN, 1, 2], [1, 5])).toEqual([1, 1, 5]);
+  });
+
+  it("lays out a correlation network with negative weights", () => {
+    const n = 40;
+    const id = Array.from({ length: n }, (_, i) => `N${i}`);
+    const source: string[] = [];
+    const target: string[] = [];
+    const weight: number[] = [];
+    for (let i = 0; i < n; i += 1) {
+      for (const j of [i + 1, i + 7]) {
+        if (j >= n) continue;
+        source.push(`N${i}`);
+        target.push(`N${j}`);
+        weight.push(((i * 37 + j * 11) % 19) / 10 - 0.9); // -0.9 .. 0.9
+      }
+    }
+    const { graph } = buildFull({ columns: { id, source, target, weight } });
+    runForceAtlas2(graph, 200);
+    graph.forEachNode((_node, attrs) => {
+      expect(Number.isFinite(attrs.x)).toBe(true);
+      expect(Number.isFinite(attrs.y)).toBe(true);
+    });
+    // The signed weight is kept; the layout reads its size.
+    const e = graph.edge("N0", "N1") as string;
+    expect(graph.getEdgeAttribute(e, "weight")).toBeGreaterThanOrEqual(0);
+    expect(graph.getEdgeAttribute(e, "rawWeight")).toBe(weight[0]);
+  });
+
+  it("treats null and NaN as missing, not as 0 or the text 'null'", () => {
+    const { graph, dropped } = buildFull({
+      columns: {
+        id: ["a", "b", "c"],
+        x: [0, null as unknown as number, 4],
+        y: [0, 2, Number.NaN],
+        source: ["a"],
+        target: ["b"],
+        weight: [null as unknown as number],
+      },
+      meta: { nodeGroup: ["g1", null, "g1"], nodeLabels: [null, "B", "C"] },
+    });
+    expect(dropped.missingCoords).toBe(2);
+    // b and c sit at the centre of the placed node a.
+    expect(graph.getNodeAttribute("b", "x")).toBe(0);
+    expect(graph.getNodeAttribute("c", "y")).toBe(0);
+    expect(graph.getNodeAttribute("b", "group")).toBeUndefined();
+    expect(graph.getNodeAttribute("b", "color")).toBe("#000");
+    expect(graph.getNodeAttribute("a", "label")).toBe("a");
+    const e = graph.edge("a", "b") as string;
+    expect(graph.getEdgeAttribute(e, "weight")).toBeUndefined();
   });
 });

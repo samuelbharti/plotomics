@@ -34,6 +34,38 @@ export interface EdgeDrops {
   selfLoop: number;
   /** A parallel edge in the simple graph (the pair was already connected). */
   duplicate: number;
+  /** Nodes whose given x or y was missing (null or NaN). They are placed at
+   * the centre of the other nodes, so the renderer does not reject them. */
+  missingCoords?: number;
+}
+
+/** Edge width range in px for weighted edges (|weight| is mapped onto it). */
+export const EDGE_WIDTH: readonly [number, number] = [1, 5];
+
+/**
+ * Map each |weight| linearly onto `range`, over the smallest and largest
+ * |weight| of the graph. Missing weights (NaN) get the low end; when every
+ * weight is the same, every edge gets the middle.
+ */
+export function edgeWidths(
+  weights: readonly number[],
+  range: readonly [number, number] = EDGE_WIDTH,
+): number[] {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const w of weights) {
+    const a = Math.abs(w);
+    if (!Number.isFinite(a)) continue;
+    if (a < lo) lo = a;
+    if (a > hi) hi = a;
+  }
+  const [r0, r1] = range;
+  return weights.map((w) => {
+    const a = Math.abs(w);
+    if (!Number.isFinite(a)) return r0;
+    if (hi <= lo) return (r0 + r1) / 2;
+    return r0 + ((a - lo) / (hi - lo)) * (r1 - r0);
+  });
 }
 
 /** Read edges from a {@link PlotomicsData} in whichever form was supplied. */
@@ -50,7 +82,8 @@ export function extractEdges(data: PlotomicsData): EdgeSpec[] {
       out[i] = {
         source: String(src[i]),
         target: String(tgt[i]),
-        ...(w ? { weight: Number(w[i]) } : {}),
+        // null (R's JSON for NA) is a missing weight, not 0.
+        ...(w ? { weight: w[i] == null ? Number.NaN : Number(w[i]) } : {}),
         ...(c ? { color: String(c[i]) } : {}),
       };
     }
@@ -72,12 +105,16 @@ export function groupColorResolver(
   defaultColor: string,
 ): (group: string | undefined) => string {
   const scale = categoricalScale(palette);
-  return (group) => (group == null || group === "" ? defaultColor : scale(group));
+  return (group) =>
+    group == null || group === "" ? defaultColor : scale(group);
 }
 
 /** Whether ForceAtlas2 should run: only in `"forceatlas2"` mode and only when
  * both x and y coordinate columns are absent (partial coords are ignored). */
-export function needsLayout(data: PlotomicsData, layout: NetworkLayout): boolean {
+export function needsLayout(
+  data: PlotomicsData,
+  layout: NetworkLayout,
+): boolean {
   if (layout === "precomputed") return false;
   const { x, y } = data.columns;
   return !(x && y && x.length > 0);
@@ -121,22 +158,63 @@ export function buildGraph(
   const size = cols.size as ArrayLike<number> | undefined;
   const hasCoords = !!(x && y);
 
+  // A missing value is null (R's JSON for NA) or NaN; it must not become 0.
+  const num = (col: ArrayLike<number>, i: number) => {
+    const v = col[i] as number | null | undefined;
+    return v == null ? Number.NaN : Number(v);
+  };
+  const missingText = (v: unknown) =>
+    v == null || (typeof v === "number" && Number.isNaN(v));
+
   const n = ids.length;
+  const noCoords: string[] = [];
+  let sumX = 0;
+  let sumY = 0;
+  let placed = 0;
   for (let i = 0; i < n; i += 1) {
     const id = String(ids[i]);
     if (graph.hasNode(id)) continue;
-    const group = groups ? String(groups[i]) : undefined;
+    // A node with no group takes the default color, not a "null" category.
+    const rawGroup = groups?.[i];
+    const group = missingText(rawGroup) ? undefined : String(rawGroup);
+    const rawLabel = labels?.[i];
+    let nx = 0;
+    let ny = 0;
+    if (hasCoords) {
+      nx = num(x as ArrayLike<number>, i);
+      ny = num(y as ArrayLike<number>, i);
+      if (Number.isFinite(nx) && Number.isFinite(ny)) {
+        sumX += nx;
+        sumY += ny;
+        placed += 1;
+      } else {
+        noCoords.push(id);
+      }
+    }
+    const nodeSize = size ? num(size, i) : Number.NaN;
     graph.addNode(id, {
-      x: hasCoords ? Number(x![i]) : 0,
-      y: hasCoords ? Number(y![i]) : 0,
-      size: size ? Number(size[i]) : opts.defaultNodeSize,
-      label: labels ? String(labels[i]) : id,
+      x: nx,
+      y: ny,
+      size: Number.isFinite(nodeSize) ? nodeSize : opts.defaultNodeSize,
+      label: missingText(rawLabel) ? id : String(rawLabel),
       color: opts.colorFor(group),
       ...(group !== undefined ? { group } : {}),
     });
   }
+  // The renderer rejects a node without numeric coordinates, so put those
+  // at the centre of the placed nodes.
+  for (const id of noCoords) {
+    graph.setNodeAttribute(id, "x", placed ? sumX / placed : 0);
+    graph.setNodeAttribute(id, "y", placed ? sumY / placed : 0);
+  }
 
-  const dropped: EdgeDrops = { missingEndpoint: 0, selfLoop: 0, duplicate: 0 };
+  const dropped: EdgeDrops = {
+    missingEndpoint: 0,
+    selfLoop: 0,
+    duplicate: 0,
+    missingCoords: noCoords.length,
+  };
+  const weighted: { edge: string; weight: number }[] = [];
   for (const e of extractEdges(data)) {
     if (!graph.hasNode(e.source) || !graph.hasNode(e.target)) {
       dropped.missingEndpoint += 1;
@@ -150,11 +228,23 @@ export function buildGraph(
       dropped.duplicate += 1;
       continue;
     }
-    graph.addEdge(e.source, e.target, {
+    const edge = graph.addEdge(e.source, e.target, {
       color: e.color ?? opts.defaultEdgeColor,
-      ...(e.weight !== undefined ? { weight: e.weight, size: e.weight } : {}),
+      // ForceAtlas2 reads `weight` as attraction, and a negative attraction
+      // makes it diverge, so the layout gets |weight|. The signed value is kept
+      // as `rawWeight`; a missing weight (NaN) falls back to the default of 1.
+      ...(e.weight !== undefined && Number.isFinite(e.weight)
+        ? { weight: Math.abs(e.weight), rawWeight: e.weight }
+        : {}),
     });
+    if (e.weight !== undefined) weighted.push({ edge, weight: e.weight });
   }
+  // Edge width follows |weight| over the graph's own range, so 0-1 scores and
+  // 400-999 STRING scores both give visible, bounded widths.
+  const widths = edgeWidths(weighted.map((w) => w.weight));
+  weighted.forEach((w, k) => {
+    graph.setEdgeAttribute(w.edge, "size", widths[k] as number);
+  });
 
   // Seed a deterministic ring when coordinates are absent so ForceAtlas2 has a
   // non-degenerate starting configuration (it stalls if every node is at 0,0).
