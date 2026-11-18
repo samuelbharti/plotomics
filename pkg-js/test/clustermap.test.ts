@@ -336,3 +336,32 @@ describe("clustermap with missing values and Ward linkage", () => {
     expect(z[2]).toBeCloseTo(1, 6);
   });
 });
+
+describe("clustermap layout from its labels", () => {
+  const flags = {
+    showRowDendrogram: true,
+    showColDendrogram: true,
+    hasRowDendro: true,
+    hasColDendro: true,
+    showLabels: true,
+  };
+
+  it("sizes the label gutters from the longest label", () => {
+    const none = computeLayout(800, 560, flags);
+    const some = computeLayout(800, 560, flags, 60, 50);
+    expect(none.labelW).toBe(12);
+    expect(some.labelW).toBe(70);
+    expect(some.labelH).toBe(60);
+    // Capped for very long labels.
+    expect(computeLayout(800, 560, flags, 500, 500).labelW).toBe(140);
+    expect(computeLayout(800, 560, flags, 500, 500).labelH).toBe(120);
+  });
+
+  it("puts the colour bar right of the row labels and gives the height back", () => {
+    const l = computeLayout(800, 560, flags, 60, 50);
+    expect(l.colorbarX).toBeGreaterThanOrEqual(l.heat.x + l.heat.w + l.labelW);
+    expect(l.colorbarX + 12).toBeLessThanOrEqual(800);
+    // 60 px dendrogram, 12 px padding, 60 px column labels.
+    expect(l.heat.h).toBe(560 - 12 - 60 - 60);
+  });
+});
