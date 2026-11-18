@@ -6,7 +6,15 @@ from typing import Any, Literal
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _column,
+    _numeric_values,
+    _text_or_none,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Spatial(PlotomicsWidget):
@@ -40,7 +48,9 @@ class Spatial(PlotomicsWidget):
     data:
         A pandas ``DataFrame`` or mapping of arrays with numeric ``x`` and
         ``y`` columns giving spot centres **in image pixel coordinates**.
-        Optional ``color`` and ``label`` columns.
+        Optional ``color`` and ``label`` columns. A missing ``color`` is drawn
+        grey and keyed "NA", and a spot with a missing ``x`` or ``y`` is not
+        drawn.
     image:
         URL or path of the tissue image, as the browser will fetch it.
     img_width, img_height:
@@ -48,8 +58,10 @@ class Spatial(PlotomicsWidget):
     spot_diameter:
         Spot diameter in image pixels.
     levels, colors:
-        Fix the categorical order and colours. ``None`` derives them from the
-        data and the theme palette.
+        Fix the categorical order and colours. ``None`` takes the categories
+        of a pandas ``Categorical`` color, else the distinct values in natural
+        order ("2" before "10"), and the theme palette. Levels past the end of
+        a short ``colors`` take the palette.
     color_mode:
         ``"auto"``, ``"categorical"`` or ``"continuous"``.
     colormap:
@@ -129,13 +141,24 @@ class Spatial(PlotomicsWidget):
 
         col = _column(data, "color")
         if col is not None:
-            arr = np.asarray(col)
+            # A pandas Categorical states the level order.
+            cats = getattr(getattr(col, "dtype", None), "categories", None)
+            if levels is None and cats is not None:
+                levels = [str(v) for v in cats]
+            values = _numeric_values(col)
             # Numeric colours ride the binary transport; categorical ones are
-            # strings and travel as JSON.
-            if np.issubdtype(arr.dtype, np.number):
-                packed["color"] = _to_float32(col, "color")
+            # strings and travel as JSON, a missing value as null.
+            if values is not None:
+                packed["color"] = values
             else:
-                json_columns["color"] = [str(v) for v in col]
+                json_columns["color"] = _text_or_none(col)
+                if levels is None and colors is not None:
+                    present = {v for v in json_columns["color"] if v is not None}
+                    if len(colors) < len(present):
+                        raise ValueError(
+                            "`colors` must have one entry per level: "
+                            f"{len(present)} levels, {len(colors)} colours."
+                        )
         lab = _column(data, "label")
         if lab is not None:
             json_columns["label"] = [str(v) for v in lab]

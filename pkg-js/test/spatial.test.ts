@@ -3,6 +3,7 @@ import {
   fitTransform,
   isCategorical,
   numericExtent,
+  spatialLevels,
   spotRadius,
 } from "../src/components/spatial.js";
 
@@ -97,5 +98,20 @@ describe("spatial colour handling", () => {
     expect(numericExtent([NaN, 2, Infinity, 6])).toEqual([2, 6]);
     expect(numericExtent([NaN, NaN])).toEqual([0, 1]);
     expect(numericExtent([])).toEqual([0, 1]);
+  });
+});
+
+describe("spatial levels and missing values", () => {
+  it("decides the colour type from the first value that is not missing", () => {
+    expect(isCategorical([null, "a", "b"], "auto")).toBe(true);
+    expect(isCategorical([null, 1, 2], "auto")).toBe(false);
+    expect(isCategorical([Number.NaN, 1], "auto")).toBe(false);
+  });
+
+  it("sorts levels in natural order and leaves out missing values", () => {
+    expect(spatialLevels([10, 2, null, 0, 1])).toEqual(["0", "1", "2", "10"]);
+    expect(spatialLevels(["b", "a"], ["b", "a"])).toEqual(["b", "a"]);
+    // Numeric levels from R arrive as numbers; they are read as text.
+    expect(spatialLevels([], [0, 1])).toEqual(["0", "1"]);
   });
 });

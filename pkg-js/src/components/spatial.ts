@@ -136,15 +136,51 @@ export function numericExtent(col: ArrayLike<number>): [number, number] {
   return [lo, hi];
 }
 
-/** Whether a color column should be read as categorical. */
+/** A missing value: null (R's NA), undefined, or NaN. */
+export function isMissing(v: unknown): boolean {
+  return v == null || (typeof v === "number" && Number.isNaN(v));
+}
+
+/**
+ * Whether a color column should be read as categorical. The first value that
+ * is not missing decides, since R sends a leading NA as null.
+ */
 export function isCategorical(
   col: unknown[] | undefined,
   mode: SpatialColorMode,
 ): boolean {
   if (mode === "categorical") return true;
   if (mode === "continuous") return false;
-  if (!col || col.length === 0) return false;
-  return typeof col[0] === "string";
+  if (!col) return false;
+  for (const v of col) if (!isMissing(v)) return typeof v === "string";
+  return false;
+}
+
+/** Compare level names in natural order, so "2" comes before "10". */
+export function naturalCompare(a: string, b: string): number {
+  return (
+    a.localeCompare(b, undefined, { numeric: true }) ||
+    (a < b ? -1 : a > b ? 1 : 0)
+  );
+}
+
+/**
+ * The levels of a categorical colour column: the given ones, else the
+ * distinct values in natural order. Missing values are not a level.
+ */
+export function spatialLevels(
+  col: ArrayLike<unknown> | undefined,
+  given?: readonly unknown[],
+): string[] {
+  if (given?.length) return given.map(String);
+  const seen = new Set<string>();
+  if (col) {
+    for (let i = 0; i < col.length; i += 1) {
+      const v = col[i];
+      if (!isMissing(v)) seen.add(String(v));
+    }
+  }
+  return [...seen].sort(naturalCompare);
 }
 
 // ---------------------------------------------------------------------------
@@ -188,18 +224,31 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
   const spotD = () => (data.meta?.spotDiameter as number) ?? 4;
 
   function levels(): string[] {
-    const given = data.meta?.levels as string[] | undefined;
-    if (given && given.length) return given;
-    const col = (colorCol() as string[] | undefined) ?? [];
-    const seen: string[] = [];
-    for (const v of col) if (!seen.includes(v)) seen.push(v);
-    return seen.sort();
+    return spatialLevels(
+      colorCol(),
+      data.meta?.levels as unknown[] | undefined,
+    );
   }
+  /**
+   * One colour per level: the given colours first, then the palette for any
+   * level past the end of a short list.
+   */
   function levelColors(n: number): string[] {
-    const given = data.meta?.colors as string[] | undefined;
-    if (given && given.length) return given;
+    const given = (data.meta?.colors as string[] | undefined) ?? [];
     const pal = theme.categorical?.length ? theme.categorical : OKABE_ITO;
-    return Array.from({ length: n }, (_, i) => pal[i % pal.length] as string);
+    return Array.from(
+      { length: n },
+      (_, i) => given[i] ?? (pal[i % pal.length] as string),
+    );
+  }
+  /** A spot's position on screen, or null when a coordinate is missing. */
+  function spotAt(i: number): [number, number] | null {
+    const x = xs()[i] as number | null;
+    const y = ys()[i] as number | null;
+    if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) {
+      return null;
+    }
+    return [fit.offsetX + x * fit.scale, fit.offsetY + y * fit.scale];
   }
 
   // ---- image loading ----
@@ -212,7 +261,17 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       render();
       return;
     }
+    load(url, true);
+  }
+  /**
+   * Load the tissue image. A cross-origin image is first asked for with CORS,
+   * so drawing it keeps the canvas exportable; a server that does not send
+   * CORS headers refuses that, and the image is then loaded plainly, which
+   * still draws but blocks export.
+   */
+  function load(url: string, cors: boolean) {
     const im = new Image();
+    if (cors && !url.startsWith("data:")) im.crossOrigin = "anonymous";
     im.onload = () => {
       // A late load must not paint onto a stale dataset.
       if (imageUrl === url) {
@@ -221,7 +280,9 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       }
     };
     im.onerror = () => {
-      if (imageUrl === url) render();
+      if (imageUrl !== url) return;
+      if (im.crossOrigin) load(url, false);
+      else render();
     };
     im.src = url;
   }
@@ -235,15 +296,14 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     const x = xs();
-    const y = ys();
     const r = spotRadius(spotD(), fit.scale, opts.spotScale);
     const hitR = Math.max(r, 3);
     let best = -1;
     let bestD = Infinity;
     for (let i = 0; i < x.length; i += 1) {
-      const px = fit.offsetX + (x[i] as number) * fit.scale;
-      const py = fit.offsetY + (y[i] as number) * fit.scale;
-      const d = Math.hypot(mx - px, my - py);
+      const at = spotAt(i);
+      if (!at) continue;
+      const d = Math.hypot(mx - at[0], my - at[1]);
       if (d <= hitR && d < bestD) {
         bestD = d;
         best = i;
@@ -257,9 +317,10 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     const cv = col ? col[best] : undefined;
     const lab = labels()[best];
     const head = lab ? `<b>${esc(lab)}</b><br/>` : "";
-    const body =
-      cv === undefined
-        ? ""
+    const body = !col
+      ? ""
+      : isMissing(cv)
+        ? "NA"
         : typeof cv === "string"
           ? esc(cv)
           : `${(cv as number).toFixed(2)}`;
@@ -319,29 +380,39 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     const r = spotRadius(spotD(), fit.scale, opts.spotScale);
 
     let legendState: LegendState = null;
+    let anyMissing = false;
     ctx.globalAlpha = opts.spotOpacity;
+    // A spot with a missing coordinate is not drawn; one with a missing colour
+    // value is drawn grey and keyed "NA".
+    const dot = (i: number, fill: string) => {
+      const at = spotAt(i);
+      if (!at) return;
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      ctx.arc(at[0], at[1], r, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    const firstValue = col?.find((v) => !isMissing(v));
     if (cat && col) {
       const levs = levels();
       const cols = levelColors(levs.length);
+      // Keyed by text, so numeric cluster ids match levels sent as text.
       const idx = new Map<string, number>();
       levs.forEach((lv, i) => {
         idx.set(lv, i);
       });
       for (let i = 0; i < x.length; i += 1) {
-        const li = idx.get(col[i] as string);
-        ctx.fillStyle = li === undefined ? theme.muted : (cols[li] as string);
-        ctx.beginPath();
-        ctx.arc(
-          fit.offsetX + (x[i] as number) * fit.scale,
-          fit.offsetY + (y[i] as number) * fit.scale,
-          r,
-          0,
-          Math.PI * 2,
-        );
-        ctx.fill();
+        const v = col[i];
+        if (isMissing(v)) {
+          anyMissing = true;
+          dot(i, MISSING_COLOR);
+          continue;
+        }
+        const li = idx.get(String(v));
+        dot(i, li === undefined ? theme.muted : (cols[li] as string));
       }
       legendState = { kind: "categorical", levels: levs, colors: cols };
-    } else if (col && typeof (col as ArrayLike<unknown>)[0] === "number") {
+    } else if (col && typeof firstValue === "number") {
       // The type guard matters because the option and the data arrive
       // separately: a caller switching to "continuous" gets the new option one
       // render before the numeric column replaces the categorical one, and
@@ -351,40 +422,32 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       const fn = ramp(opts.colormap);
       const span = hi - lo || 1;
       for (let i = 0; i < x.length; i += 1) {
-        ctx.fillStyle = fn(((nums[i] as number) - lo) / span);
-        ctx.beginPath();
-        ctx.arc(
-          fit.offsetX + (x[i] as number) * fit.scale,
-          fit.offsetY + (y[i] as number) * fit.scale,
-          r,
-          0,
-          Math.PI * 2,
-        );
-        ctx.fill();
+        const v = nums[i] as number;
+        if (isMissing(v) || !Number.isFinite(v)) {
+          anyMissing = true;
+          dot(i, MISSING_COLOR);
+          continue;
+        }
+        dot(i, fn((v - lo) / span));
       }
       legendState = { kind: "continuous", lo, hi };
     } else {
-      ctx.fillStyle = theme.foreground;
-      for (let i = 0; i < x.length; i += 1) {
-        ctx.beginPath();
-        ctx.arc(
-          fit.offsetX + (x[i] as number) * fit.scale,
-          fit.offsetY + (y[i] as number) * fit.scale,
-          r,
-          0,
-          Math.PI * 2,
-        );
-        ctx.fill();
-      }
+      for (let i = 0; i < x.length; i += 1) dot(i, theme.foreground);
     }
     ctx.globalAlpha = 1;
+    if (legendState) legendState.missing = anyMissing;
 
     renderOverlay(legendState);
   }
 
   type LegendState =
-    | { kind: "categorical"; levels: string[]; colors: string[] }
-    | { kind: "continuous"; lo: number; hi: number }
+    | {
+        kind: "categorical";
+        levels: string[];
+        colors: string[];
+        missing?: boolean;
+      }
+    | { kind: "continuous"; lo: number; hi: number; missing?: boolean }
     | null;
 
   function renderOverlay(legend: LegendState) {
@@ -419,7 +482,9 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
             10,
           ),
         );
+        y += 14;
       }
+      if (legend.missing) missingKey(width - 128, y);
     } else {
       // Colourbar: a gradient strip with its two ends labelled.
       const barH = 90;
@@ -455,7 +520,21 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       svg.appendChild(
         text(x0 - 4, y0 + barH, fmt(legend.lo), theme.muted, "end", 9),
       );
+      if (legend.missing) missingKey(x0, y0 + barH + 18);
     }
+  }
+
+  /** A grey swatch and "NA", for spots whose colour value is missing. */
+  function missingKey(x: number, y: number) {
+    const sw = document.createElementNS(SVG_NS, "rect");
+    sw.setAttribute("x", String(x));
+    sw.setAttribute("y", String(y - 8));
+    sw.setAttribute("width", "9");
+    sw.setAttribute("height", "9");
+    sw.setAttribute("rx", "2");
+    sw.setAttribute("fill", MISSING_COLOR);
+    svg.appendChild(sw);
+    svg.appendChild(text(x + 14, y, "NA", theme.foreground, "start", 10));
   }
 
   function text(
@@ -509,17 +588,31 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     },
     exportSVG() {
       const out = svg.cloneNode(true) as SVGSVGElement;
-      const img = document.createElementNS(SVG_NS, "image");
-      img.setAttribute("x", "0");
-      img.setAttribute("y", "0");
-      img.setAttribute("width", String(width));
-      img.setAttribute("height", String(height));
-      img.setAttribute("href", canvas.toDataURL("image/png"));
-      out.insertBefore(img, out.firstChild);
+      let href = "";
+      try {
+        href = canvas.toDataURL("image/png");
+      } catch {
+        // A cross-origin image without CORS headers taints the canvas.
+        console.warn(TAINTED);
+      }
+      if (href) {
+        const img = document.createElementNS(SVG_NS, "image");
+        img.setAttribute("x", "0");
+        img.setAttribute("y", "0");
+        img.setAttribute("width", String(width));
+        img.setAttribute("height", String(height));
+        img.setAttribute("href", href);
+        out.insertBefore(img, out.firstChild);
+      }
       return serializeSVG(out);
     },
     async exportPNG(scale = 2) {
-      return canvasToPNG(canvas, scale);
+      try {
+        return await canvasToPNG(canvas, scale);
+      } catch {
+        console.warn(TAINTED);
+        return null;
+      }
     },
     destroy() {
       el.removeEventListener("mousemove", onMove);
@@ -535,6 +628,13 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
 };
 
 let gradSeq = 0;
+
+/** Colour of a spot whose colour value is missing. */
+const MISSING_COLOR = "#BDBDBD";
+const TAINTED =
+  "plotomics spatial: the tissue image comes from another origin without " +
+  "CORS headers, so the browser blocks exporting the canvas; the export " +
+  "leaves out the image and spots.";
 
 // ---- small utilities ----
 function fmt(v: number): string {

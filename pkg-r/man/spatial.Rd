@@ -37,7 +37,11 @@ spatial(
 \item{spot_diameter}{Spot diameter in image pixels.}
 
 \item{levels, colors}{Character vectors fixing the categorical order and
-colours. \code{NULL} derives them from the data and the theme palette.}
+colours. \code{NULL} takes the levels of a factor \code{color}, else the distinct
+values in natural order ("2" before "10"), and the theme palette. Levels
+past the end of a short \code{colors} take the palette. A missing \code{color} is
+drawn grey and keyed "NA", and a spot with a missing \code{x} or \code{y} is not
+drawn.}
 
 \item{color_mode}{\code{"auto"} (detect from the column type), \code{"categorical"} or
 \code{"continuous"}.}

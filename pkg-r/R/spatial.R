@@ -29,7 +29,11 @@
 #' @param img_width,img_height Natural size of that image in pixels.
 #' @param spot_diameter Spot diameter in image pixels.
 #' @param levels,colors Character vectors fixing the categorical order and
-#'   colours. `NULL` derives them from the data and the theme palette.
+#'   colours. `NULL` takes the levels of a factor `color`, else the distinct
+#'   values in natural order ("2" before "10"), and the theme palette. Levels
+#'   past the end of a short `colors` take the palette. A missing `color` is
+#'   drawn grey and keyed "NA", and a spot with a missing `x` or `y` is not
+#'   drawn.
 #' @param color_mode `"auto"` (detect from the column type), `"categorical"` or
 #'   `"continuous"`.
 #' @param colormap Sequential ramp for continuous colouring: `"viridis"`,
@@ -93,10 +97,21 @@ spatial <- function(data,
 
   columns <- list(x = x, y = y)
   if (!is.null(data$color)) {
+    # A factor states the level order, as in embedding().
+    if (is.null(levels) && is.factor(data$color)) levels <- levels(data$color)
     columns$color <- if (is.numeric(data$color)) {
       as.numeric(data$color)
     } else {
       as.character(data$color)
+    }
+    if (is.null(levels) && !is.null(colors) && !is.numeric(data$color)) {
+      n_levels <- length(unique(stats::na.omit(columns$color)))
+      if (length(colors) < n_levels) {
+        stop(sprintf(
+          "`colors` must have one entry per level: %d levels, %d colours.",
+          n_levels, length(colors)
+        ), call. = FALSE)
+      }
     }
   }
   if (!is.null(data$label)) columns$label <- as.character(data$label)
