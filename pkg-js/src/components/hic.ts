@@ -3,13 +3,16 @@
  *
  * Chromatin contact matrices are large (thousands of bins per axis, i.e.
  * millions of cells) and heavily skewed, so the intensity is shown on a log
- * scale with a perceptually-uniform sequential colormap. The whole matrix is
- * uploaded once as a single-channel float texture and drawn as one textured
- * quad via `regl`; the colormap and the log/linear transform run in the
- * fragment shader, so pan/zoom is just a UV-space affine transform (no
- * per-cell DOM, no re-upload). A precomputed level-of-detail (LOD) pyramid of
- * mean-pooled downsamples keeps very large matrices smooth: at each zoom level
- * the coarsest texture whose resolution still exceeds the viewport is sampled.
+ * scale with a perceptually-uniform sequential colormap. Each level of the
+ * matrix is normalized on the CPU into an 8-bit single-channel texture (byte 0
+ * is "no data", bytes 1-255 span the color scale) and drawn as one textured
+ * quad via `regl`; the colormap lookup runs in the fragment shader, so pan/zoom
+ * is just a UV-space affine transform (no per-cell DOM, no re-upload). 8-bit
+ * textures need no WebGL extension, unlike float textures. A precomputed
+ * level-of-detail (LOD) pyramid of mean-pooled downsamples keeps very large
+ * matrices smooth: at each zoom level the coarsest texture whose resolution
+ * still exceeds the viewport is sampled, and levels larger than the GPU's
+ * maximum texture size are skipped.
  *
  * SVG is reserved for the low-cardinality overlay only: genomic coordinate
  * ticks along both axes and a colorbar legend. The data interface is designed
@@ -29,23 +32,28 @@ import {
   dpr,
   serializeSVG,
   canvasToPNG,
-  viridis,
+  RAMPS,
   type RGB,
 } from "../core/index.js";
 import createREGL from "regl";
 import type { Regl, Texture2D, DrawCommand } from "regl";
 
-export type HicColormap = "viridis";
+export type HicColormap = "viridis" | "rdbu";
 export type HicTransform = "log" | "linear";
 
 export interface HicOptions {
-  /** Sequential colormap for intensity. */
+  /** Colormap for intensity: sequential `"viridis"` or diverging `"rdbu"`. */
   colormap: HicColormap;
   /** Intensity transform applied before color mapping. */
   transform: HicTransform;
   /** Upper clip of the intensity scale; null auto-picks a high percentile. */
   vmax: number | null;
-  /** Lower clip of the intensity scale (values <= vmin map to color 0). */
+  /**
+   * Lower clip of the intensity scale. With the log transform, or when `vmin`
+   * is 0 or more, values at or below it are drawn as background (no
+   * contacts). With the linear transform and a negative `vmin` (for example
+   * observed/expected log2 ratios), values below it take the lowest color.
+   */
   vmin: number;
   /** Percentile (0-1) used for auto vmax when `vmax` is null. */
   vmaxPercentile: number;
@@ -71,6 +79,10 @@ const MARGIN = { top: 16, right: 96, bottom: 46, left: 60 };
 const SVG_NS = "http://www.w3.org/2000/svg";
 const COLORBAR_W = 14;
 const COLORMAP_SIZE = 256;
+/** Smallest zoom window, in bins (or the whole matrix when it is smaller). */
+const MIN_VIEW_BINS = 4;
+
+let hicSeq = 0;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/hic.test.ts)
@@ -108,7 +120,9 @@ export function densifySymmetric(
   for (let k = 0; k < m; k += 1) {
     const r = i[k] as number;
     const c = j[k] as number;
-    const val = v[k] as number;
+    // A missing value (null, which is how R's JSON sends NA) is NaN, not 0.
+    const raw = v[k] as number | null | undefined;
+    const val = raw == null ? Number.NaN : raw;
     if (r < 0 || r >= n || c < 0 || c >= n) continue;
     out[r * n + c] = val;
     if (symmetric) out[c * n + r] = val;
@@ -117,9 +131,10 @@ export function densifySymmetric(
 }
 
 /**
- * Approximate an upper percentile of the strictly positive entries via a fixed
- * log-spaced histogram — O(len) with no allocation of a sorted copy, so it
- * scales to millions of cells. Returns 1 when there are no positive values.
+ * Approximate an upper percentile of the strictly positive, finite entries via
+ * a fixed log-spaced histogram — O(len) with no allocation of a sorted copy, so
+ * it scales to millions of cells. NaN and Infinity are left out. Returns 1 when
+ * there are no positive values.
  */
 export function autoVmax(values: ArrayLike<number>, percentile = 0.99): number {
   const n = values.length;
@@ -127,7 +142,7 @@ export function autoVmax(values: ArrayLike<number>, percentile = 0.99): number {
   let positive = 0;
   for (let k = 0; k < n; k += 1) {
     const v = values[k] as number;
-    if (v > 0) {
+    if (v > 0 && v < Infinity) {
       positive += 1;
       if (v > max) max = v;
     }
@@ -138,7 +153,7 @@ export function autoVmax(values: ArrayLike<number>, percentile = 0.99): number {
   const hist = new Int32Array(BINS);
   for (let k = 0; k < n; k += 1) {
     const v = values[k] as number;
-    if (v <= 0) continue;
+    if (!(v > 0 && v < Infinity)) continue;
     let b = Math.floor((Math.log1p(v) / logMax) * BINS);
     if (b >= BINS) b = BINS - 1;
     if (b < 0) b = 0;
@@ -176,9 +191,36 @@ export function normalizeIntensity(
 }
 
 /**
+ * Encode raw intensities as texture bytes for the shader. Byte 0 means "draw
+ * the background" (NaN, or a value at or below a floor of no signal); bytes
+ * 1-255 map linearly onto the color scale. The floor counts as background
+ * with the log transform and whenever `vmin >= 0`; with the linear transform
+ * and a negative `vmin`, low values clamp to the lowest color instead.
+ */
+export function encodeIntensity(
+  values: ArrayLike<number>,
+  vmin: number,
+  vmax: number,
+  transform: HicTransform,
+): Uint8Array {
+  const out = new Uint8Array(values.length);
+  const floorIsBackground = transform === "log" || vmin >= 0;
+  for (let k = 0; k < values.length; k += 1) {
+    const v = values[k] as number;
+    if (Number.isNaN(v)) continue;
+    const t = normalizeIntensity(v, vmin, vmax, transform);
+    if (t <= 0 && floorIsBackground) continue;
+    out[k] = 1 + Math.round(t * 254);
+  }
+  return out;
+}
+
+/**
  * Build a mean-pooled level-of-detail pyramid. Level 0 is the full matrix;
  * each subsequent level halves resolution (2x2 average) until it is <=
- * `minSize`. Returns `{ size, data }[]` from finest (level 0) to coarsest.
+ * `minSize`. NaN cells (masked bins in a balanced matrix) are left out of the
+ * mean, so one masked bin does not blank its block; a block with no numbers
+ * stays NaN. Returns `{ size, data }[]` from finest (level 0) to coarsest.
  * Cheap enough to compute once per dataset.
  */
 export function buildLODPyramid(
@@ -206,11 +248,13 @@ export function buildLODPyramid(
           for (let dc = 0; dc < 2; dc += 1) {
             const cc = c0 + dc;
             if (cc >= size) continue;
-            sum += cur[rr * size + cc] as number;
+            const v = cur[rr * size + cc] as number;
+            if (Number.isNaN(v)) continue;
+            sum += v;
             cnt += 1;
           }
         }
-        next[r * half + c] = cnt > 0 ? sum / cnt : 0;
+        next[r * half + c] = cnt > 0 ? sum / cnt : Number.NaN;
       }
     }
     levels.push({ size: half, data: next });
@@ -256,29 +300,72 @@ export function niceTickStep(span: number, target = 6): number {
   return step * mag;
 }
 
+/**
+ * Tick step for the window [lo, hi], never below `minStep`. Bin-index axes pass
+ * 1 so a narrow window does not get half-bin ticks.
+ */
+export function tickStep(
+  lo: number,
+  hi: number,
+  target = 6,
+  minStep = 0,
+): number {
+  return Math.max(minStep, niceTickStep(hi - lo, target));
+}
+
 /** Tick positions (bin indices) across the current visible window [lo, hi]. */
-export function axisTicks(lo: number, hi: number, target = 6): number[] {
-  const span = hi - lo;
-  const step = niceTickStep(span, target);
-  const start = Math.ceil(lo / step) * step;
+export function axisTicks(
+  lo: number,
+  hi: number,
+  target = 6,
+  minStep = 0,
+): number[] {
+  const step = tickStep(lo, hi, target, minStep);
+  const first = Math.ceil(lo / step - 1e-9);
   const out: number[] = [];
-  for (let t = start; t <= hi + 1e-9; t += step) out.push(t);
+  // Multiply, do not accumulate, so 0.1-sized steps do not drift.
+  // `+ 0` turns -0 (from ceil of a tiny negative) into 0.
+  for (let k = first; k * step <= hi + 1e-9; k += 1) out.push(k * step + 0);
   return out;
 }
 
-/** Format a genomic coordinate (bp) compactly (bp / kb / Mb). */
-export function formatCoord(bp: number): string {
+/**
+ * Format a genomic coordinate (bp) compactly as bp, kb or Mb. `step` is the
+ * spacing in bp between the values being labelled (the tick step, or the bin
+ * size for a single bin); it sets the number of decimals, so neighbouring
+ * labels never print the same text. Without a step, up to three significant
+ * digits are kept and trailing zeros after the decimal point are dropped.
+ */
+export function formatCoord(bp: number, step = 0): string {
   const a = Math.abs(bp);
-  if (a >= 1e6) return `${(bp / 1e6).toPrecision(3).replace(/\.?0+$/, "")}Mb`;
-  if (a >= 1e3) return `${(bp / 1e3).toPrecision(3).replace(/\.?0+$/, "")}kb`;
-  return `${Math.round(bp)}`;
+  const [div, unit] = a >= 1e6 ? [1e6, "Mb"] : a >= 1e3 ? [1e3, "kb"] : [1, ""];
+  const v = bp / div;
+  if (step > 0) return `${v.toFixed(decimalsFor(step / div))}${unit}`;
+  if (div === 1) return `${Math.round(bp)}`;
+  const s = v.toPrecision(3);
+  return `${s.includes(".") ? s.replace(/\.?0+$/, "") : s}${unit}`;
 }
 
-/** Sample the colormap into a Uint8 RGBA lookup texture (256x1). */
-export function colormapLUT(_name: HicColormap): Uint8Array {
+/**
+ * Decimals needed to write `x` exactly (2.5 needs 1, 0.25 needs 2), at most 6.
+ * Tick values are whole multiples of the step, so they need no more.
+ */
+function decimalsFor(x: number): number {
+  for (let d = 0; d < 6; d += 1) {
+    const scaled = x * 10 ** d;
+    if (Math.abs(scaled - Math.round(scaled)) < 1e-6 * Math.max(1, scaled)) {
+      return d;
+    }
+  }
+  return 6;
+}
+
+/** Sample the named colormap into a Uint8 RGBA lookup texture (256x1). */
+export function colormapLUT(name: HicColormap): Uint8Array {
+  const fn = RAMPS[name] ?? RAMPS.viridis;
   const lut = new Uint8Array(COLORMAP_SIZE * 4);
   for (let i = 0; i < COLORMAP_SIZE; i += 1) {
-    const [r, g, b]: RGB = viridis(i / (COLORMAP_SIZE - 1));
+    const [r, g, b]: RGB = fn(i / (COLORMAP_SIZE - 1));
     lut[i * 4 + 0] = Math.round(r);
     lut[i * 4 + 1] = Math.round(g);
     lut[i * 4 + 2] = Math.round(b);
@@ -294,6 +381,8 @@ export function colormapLUT(_name: HicColormap): Uint8Array {
 interface Level {
   size: number;
   data: Float32Array;
+  /** Encoded bytes for the current scale; built on first use. */
+  bytes: Uint8Array | null;
   texture: Texture2D | null;
 }
 
@@ -329,18 +418,35 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   let regl: Regl | null = null;
   let draw: DrawCommand | null = null;
   let cmapTex: Texture2D | null = null;
+  let maxTextureSize = Infinity;
+  // Set when WebGL is missing or a draw failed; the overlay still renders and
+  // no method throws.
+  let glBroken = false;
+  const uid = `plotomics-hic-${hicSeq++}`;
 
+  /** Set up WebGL once; on any failure, mark it broken and draw no matrix. */
   function initGL() {
-    if (regl) return;
+    if (regl || glBroken) return;
     try {
-      regl = createREGL({
-        canvas,
-        attributes: { antialias: false, preserveDrawingBuffer: true },
-      });
-    } catch {
+      setupGL();
+    } catch (err) {
+      // setupGL assigns these, which TypeScript cannot see from here.
+      (cmapTex as Texture2D | null)?.destroy?.();
+      (regl as Regl | null)?.destroy?.();
       regl = null;
-      return;
+      draw = null;
+      cmapTex = null;
+      glBroken = true;
+      console.error("plotomics hic: WebGL setup failed", err);
     }
+  }
+
+  function setupGL() {
+    regl = createREGL({
+      canvas,
+      attributes: { antialias: false, preserveDrawingBuffer: true },
+    });
+    maxTextureSize = regl.limits.maxTextureSize;
     cmapTex = regl.texture({
       data: colormapLUT(opts.colormap),
       width: COLORMAP_SIZE,
@@ -366,29 +472,17 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       frag: `
         precision highp float;
         varying vec2 uv;
-        uniform sampler2D matrix;   // R/luminance channel = raw intensity
+        uniform sampler2D matrix;   // luminance byte: 0 = background, 1-255 = scale
         uniform sampler2D cmap;     // 256x1 colormap LUT
-        uniform float vmin, vmax;
-        uniform int useLog;
         uniform vec3 background;
-        float norm(float v) {
-          if (useLog == 1) {
-            float lo = log(1.0 + max(0.0, vmin));
-            float hi = log(1.0 + max(vmin, vmax));
-            if (hi <= lo) return 0.0;
-            return clamp((log(1.0 + max(0.0, v)) - lo) / (hi - lo), 0.0, 1.0);
-          }
-          if (vmax <= vmin) return 0.0;
-          return clamp((v - vmin) / (vmax - vmin), 0.0, 1.0);
-        }
         void main() {
           if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
             gl_FragColor = vec4(background, 1.0);
             return;
           }
-          float v = texture2D(matrix, uv).r;
-          float t = norm(v);
-          if (t <= 0.0) { gl_FragColor = vec4(background, 1.0); return; }
+          float b = texture2D(matrix, uv).r * 255.0;
+          if (b < 0.5) { gl_FragColor = vec4(background, 1.0); return; }
+          float t = clamp((b - 1.0) / 254.0, 0.0, 1.0);
           gl_FragColor = texture2D(cmap, vec2(t, 0.5));
         }`,
       attributes: {
@@ -404,10 +498,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
         cmap: () => cmapTex as Texture2D,
         uvLo: regl.prop<{ uvLo: [number, number] }, "uvLo">("uvLo"),
         uvHi: regl.prop<{ uvHi: [number, number] }, "uvHi">("uvHi"),
-        vmin: () => Math.max(0, opts.vmin),
-        vmax: () => vmaxResolved,
-        useLog: () => (opts.transform === "log" ? 1 : 0),
-        background: () => hexToUnitRGB(theme.background),
+        background: () => cssColorToUnitRGB(theme.background),
       },
       count: 4,
       primitive: "triangle strip",
@@ -421,12 +512,20 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   function levelTexture(level: Level): Texture2D | null {
     if (!regl) return null;
     if (level.texture) return level.texture;
+    if (!level.bytes) {
+      level.bytes = encodeIntensity(
+        level.data,
+        opts.vmin,
+        vmaxResolved,
+        opts.transform,
+      );
+    }
     level.texture = regl.texture({
-      data: level.data,
+      data: level.bytes,
       width: level.size,
       height: level.size,
       format: "luminance",
-      type: "float",
+      type: "uint8",
       mag: "nearest",
       min: "linear",
       wrap: "clamp",
@@ -434,9 +533,27 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     return level.texture;
   }
 
-  function applyData() {
-    // Reset GPU textures from the previous dataset.
-    for (const lv of levels) lv.texture?.destroy?.();
+  /** Drop the encoded bytes and textures, after the color scale changed. */
+  function invalidateLevels() {
+    for (const lv of levels) {
+      lv.texture?.destroy?.();
+      lv.texture = null;
+      lv.bytes = null;
+    }
+  }
+
+  function resolveVmax() {
+    vmaxResolved =
+      dense == null
+        ? 1
+        : opts.vmax != null
+          ? opts.vmax
+          : autoVmax(dense, opts.vmaxPercentile);
+  }
+
+  /** Read the data into the dense matrix and its LOD pyramid. */
+  function buildMatrix() {
+    invalidateLevels();
     levels = [];
     dense = null;
 
@@ -455,21 +572,29 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     } else if (iCol && jCol && vCol && n > 0) {
       dense = densifySymmetric(iCol, jCol, vCol, n, opts.symmetric);
     }
-
     if (!dense || n === 0) {
-      viewLo = 0;
-      viewHi = 1;
-      render();
+      dense = null;
+      n = 0;
       return;
     }
+    resolveVmax();
+    levels = buildLODPyramid(dense, n).map((p) => ({
+      ...p,
+      bytes: null,
+      texture: null,
+    }));
+  }
 
-    vmaxResolved =
-      opts.vmax != null ? opts.vmax : autoVmax(dense, opts.vmaxPercentile);
-    const pyramid = buildLODPyramid(dense, n);
-    levels = pyramid.map((p) => ({ ...p, texture: null }));
+  const isSparse = () =>
+    !data.columns.values &&
+    !!data.columns.i &&
+    !!data.columns.j &&
+    !!data.columns.v;
 
+  function applyData() {
+    buildMatrix();
     viewLo = 0;
-    viewHi = n;
+    viewHi = n > 0 ? n : 1;
     render();
   }
 
@@ -506,14 +631,36 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     renderOverlay();
   }
 
+  /** Draw the matrix; on any WebGL failure, log once and stop drawing. */
   function drawMatrix() {
+    if (!regl || !draw || glBroken) return;
+    try {
+      drawMatrixUnsafe();
+    } catch (err) {
+      glBroken = true;
+      console.error("plotomics hic: WebGL drawing failed", err);
+    }
+  }
+
+  function drawMatrixUnsafe() {
     if (!regl || !draw) return;
-    regl.clear({ color: [...hexToUnitRGB(theme.background), 1], depth: 1 });
+    regl.clear({
+      color: [...cssColorToUnitRGB(theme.background), 1],
+      depth: 1,
+    });
     if (!levels.length || n === 0) return;
 
     const ratio = dpr();
     const visibleBins = viewHi - viewLo;
-    const level = pickLODLevel(levels, visibleBins, plotSize() * ratio);
+    let level = pickLODLevel(levels, visibleBins, plotSize() * ratio);
+    // A level wider than the GPU allows cannot be uploaded; use the finest
+    // one that fits.
+    while (
+      level < levels.length - 1 &&
+      (levels[level] as Level).size > maxTextureSize
+    ) {
+      level += 1;
+    }
     const tex = levelTexture(levels[level] as Level);
     if (!tex) return;
 
@@ -553,10 +700,15 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     svg.appendChild(rectStroke(left, top, size, size, ax, 1.5));
 
     if (n > 0) {
-      for (const t of axisTicks(viewLo, viewHi)) {
+      // Bin-index axes tick whole bins only; genomic axes may tick inside a bin.
+      const minStep = binSize > 1 ? 0 : 1;
+      const stepBp = tickStep(viewLo, viewHi, 6, minStep) * binSize;
+      for (const t of axisTicks(viewLo, viewHi, 6, minStep)) {
         if (t < viewLo - 1e-6 || t > viewHi + 1e-6) continue;
         const label =
-          binSize > 1 ? formatCoord(t * binSize) : String(Math.round(t));
+          binSize > 1
+            ? formatCoord(t * binSize, stepBp)
+            : String(Math.round(t));
         // bottom axis
         const x = binToPx(t);
         svg.appendChild(line(x, top + size, x, top + size + 5, ax, 1));
@@ -585,15 +737,18 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
 
   function renderColorbar(x: number, top: number, h: number) {
     const grad = document.createElementNS(SVG_NS, "linearGradient");
-    const gid = "hic-cbar-grad";
+    // One id per instance: `url(#id)` resolves to the first match in the whole
+    // document, so a shared id would paint every colorbar with the first one.
+    const gid = `${uid}-cbar`;
     grad.setAttribute("id", gid);
     grad.setAttribute("x1", "0");
     grad.setAttribute("y1", "1");
     grad.setAttribute("x2", "0");
     grad.setAttribute("y2", "0");
+    const rampFn = RAMPS[opts.colormap] ?? RAMPS.viridis;
     for (let i = 0; i <= 8; i += 1) {
       const t = i / 8;
-      const [r, g, b] = viridis(t);
+      const [r, g, b] = rampFn(t);
       const stop = document.createElementNS(SVG_NS, "stop");
       stop.setAttribute("offset", `${(t * 100).toFixed(0)}%`);
       stop.setAttribute("stop-color", `rgb(${r | 0},${g | 0},${b | 0})`);
@@ -628,7 +783,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       text(
         x + COLORBAR_W + 4,
         top + h,
-        fmtVal(Math.max(0, opts.vmin)),
+        fmtVal(opts.transform === "log" ? Math.max(0, opts.vmin) : opts.vmin),
         theme.axis,
         "start",
         10,
@@ -685,23 +840,27 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       render();
       return;
     }
-    // Hover tooltip.
+    // Hover tooltip, only over the plot square: when zoomed, the margins map to
+    // bins outside the view that are not on screen.
     if (n === 0 || !dense) {
       tooltip.hide();
       return;
     }
-    const bx = Math.floor(pxToBin(e.clientX - rect.left));
-    const by = Math.floor(
-      viewLo +
-        ((e.clientY - rect.top - plotTop()) / plotSize()) * (viewHi - viewLo),
-    );
+    const mx = e.clientX - rect.left - plotLeft();
+    const my = e.clientY - rect.top - plotTop();
+    if (mx < 0 || my < 0 || mx >= plotSize() || my >= plotSize()) {
+      tooltip.hide();
+      return;
+    }
+    const bx = Math.floor(viewLo + (mx / plotSize()) * (viewHi - viewLo));
+    const by = Math.floor(viewLo + (my / plotSize()) * (viewHi - viewLo));
     if (bx < 0 || bx >= n || by < 0 || by >= n) {
       tooltip.hide();
       return;
     }
     const val = dense[by * n + bx] as number;
     const coord = (b: number) =>
-      binSize > 1 ? formatCoord(b * binSize) : String(b);
+      binSize > 1 ? formatCoord(b * binSize, binSize) : String(b);
     tooltip.show(
       `<b>${coord(bx)} × ${coord(by)}</b><br/>contacts: ${fmtVal(val)}`,
       e.clientX,
@@ -716,7 +875,8 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     const anchorX = pxToBin(e.clientX - rect.left);
     const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
     let span = (viewHi - viewLo) * factor;
-    span = Math.max(4, Math.min(n, span)); // stop at a few bins / the whole map
+    // Stop at a few bins, or at the whole map when it has fewer bins than that.
+    span = Math.max(Math.min(MIN_VIEW_BINS, n), Math.min(n, span));
     // Zoom about the cursor, keeping anchorX roughly fixed.
     const rel = (anchorX - viewLo) / (viewHi - viewLo);
     let lo = anchorX - rel * span;
@@ -734,10 +894,12 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     render();
   };
 
+  const onLeave = () => tooltip.hide();
+
   canvas.addEventListener("mousedown", onDown);
   window.addEventListener("mouseup", onUp);
   el.addEventListener("mousemove", onMove);
-  el.addEventListener("mouseleave", () => tooltip.hide());
+  el.addEventListener("mouseleave", onLeave);
   canvas.addEventListener("wheel", onWheel, { passive: false });
 
   function doResize(w: number, h: number) {
@@ -815,20 +977,31 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       applyData();
     },
     setOptions(next) {
-      const prevCmap = opts.colormap;
+      const prev = opts;
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
-      if (regl && cmapTex && opts.colormap !== prevCmap) {
+      if (regl && cmapTex && opts.colormap !== prev.colormap) {
         cmapTex.subimage({
           data: colormapLUT(opts.colormap),
           width: COLORMAP_SIZE,
           height: 1,
         });
       }
-      // vmax may have switched between auto and fixed; recompute if needed.
-      if (dense) {
-        vmaxResolved =
-          opts.vmax != null ? opts.vmax : autoVmax(dense, opts.vmaxPercentile);
+      if (opts.symmetric !== prev.symmetric && isSparse()) {
+        // The mirror is applied when the triplet is densified, so build the
+        // matrix again; keep the current view.
+        const [lo, hi] = [viewLo, viewHi];
+        buildMatrix();
+        if (n > 0) [viewLo, viewHi] = [lo, Math.min(hi, n)];
+      } else if (
+        opts.vmin !== prev.vmin ||
+        opts.vmax !== prev.vmax ||
+        opts.vmaxPercentile !== prev.vmaxPercentile ||
+        opts.transform !== prev.transform
+      ) {
+        // The color scale is baked into the texture bytes.
+        resolveVmax();
+        invalidateLevels();
       }
       render();
     },
@@ -858,9 +1031,10 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       canvas.removeEventListener("mousedown", onDown);
       window.removeEventListener("mouseup", onUp);
       el.removeEventListener("mousemove", onMove);
+      el.removeEventListener("mouseleave", onLeave);
       canvas.removeEventListener("wheel", onWheel);
       tooltip.destroy();
-      for (const lv of levels) lv.texture?.destroy?.();
+      invalidateLevels();
       cmapTex?.destroy?.();
       regl?.destroy?.();
       canvas.remove();
@@ -872,33 +1046,68 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
 };
 
 // ---- small utilities ----
+/**
+ * Copy a column into a Float32Array. A missing cell (null, which is how R's
+ * JSON sends NA) becomes NaN, so it is drawn as background, not as 0.
+ */
 function toFloat32(col: ArrayLike<number>, len: number): Float32Array {
   if (col instanceof Float32Array && col.length === len) return col;
   const out = new Float32Array(len);
-  for (let i = 0; i < len; i += 1) out[i] = (col[i] as number) ?? 0;
+  for (let i = 0; i < len; i += 1) {
+    const v = col[i] as number | null | undefined;
+    out[i] = v == null ? Number.NaN : v;
+  }
   return out;
 }
 
 function fmtVal(v: number): string {
-  if (!isFinite(v)) return "0";
+  if (Number.isNaN(v)) return "NA";
+  if (!isFinite(v)) return v > 0 ? "Inf" : "-Inf";
   const a = Math.abs(v);
   if (a >= 10000 || (a > 0 && a < 0.01)) return v.toExponential(1);
   return Number(v.toFixed(2)).toString();
 }
 
-function hexToUnitRGB(hex: string): [number, number, number] {
-  const h = hex.replace("#", "");
-  const full =
-    h.length === 3
-      ? h
-          .split("")
-          .map((c) => c + c)
-          .join("")
-      : h;
-  const r = parseInt(full.slice(0, 2), 16) || 0;
-  const g = parseInt(full.slice(2, 4), 16) || 0;
-  const b = parseInt(full.slice(4, 6), 16) || 0;
-  return [r / 255, g / 255, b / 255];
+const colorCache = new Map<string, [number, number, number]>();
+
+/**
+ * Any CSS color as unit RGB. Hex is parsed directly; other forms ("white",
+ * "rgb(...)") go through a 2D context, which normalizes them. Unparseable or
+ * fully transparent input falls back to white.
+ */
+export function cssColorToUnitRGB(color: string): [number, number, number] {
+  const cached = colorCache.get(color);
+  if (cached) return cached;
+  let rgb: [number, number, number] = [1, 1, 1];
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
+  if (hex) {
+    const h = hex[1] as string;
+    const full = h.length === 3 ? [...h].map((c) => c + c).join("") : h;
+    rgb = [0, 2, 4].map((k) => parseInt(full.slice(k, k + 2), 16) / 255) as [
+      number,
+      number,
+      number,
+    ];
+  } else if (typeof document !== "undefined") {
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = color;
+      const norm = String(ctx.fillStyle);
+      if (norm.startsWith("#")) {
+        rgb = cssColorToUnitRGB(norm);
+      } else {
+        // "rgba(r, g, b, a)". A fully transparent color has no RGB of its
+        // own, so it keeps the white fallback; partial alpha keeps the RGB.
+        const m = norm.match(/[\d.]+/g);
+        if (m && m.length >= 3 && !(m.length >= 4 && Number(m[3]) === 0)) {
+          rgb = [Number(m[0]) / 255, Number(m[1]) / 255, Number(m[2]) / 255];
+        }
+      }
+    }
+  }
+  colorCache.set(color, rgb);
+  return rgb;
 }
 
 /** Crop a square region of the (device-pixel) canvas to a PNG data URL. */
@@ -928,7 +1137,10 @@ function cropCanvas(
   return off.toDataURL("image/png");
 }
 
-function mergeOptions(base: HicOptions, next?: Partial<HicOptions>): HicOptions {
+function mergeOptions(
+  base: HicOptions,
+  next?: Partial<HicOptions>,
+): HicOptions {
   if (!next) return { ...base };
   return {
     ...base,

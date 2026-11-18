@@ -36,7 +36,8 @@ bp/kb/Mb. \code{NULL} labels axes by bin index.}
 
 \item{chrom}{Optional chromosome name shown as the axis title.}
 
-\item{colormap}{Sequential colormap for intensity: \code{"viridis"} or \code{"rdbu"}.}
+\item{colormap}{Colormap for intensity: sequential \code{"viridis"} or diverging
+\code{"rdbu"}.}
 
 \item{transform}{Intensity transform, \code{"log"} (default) or \code{"linear"}.}
 
@@ -46,7 +47,10 @@ percentile.}
 \item{vmax_percentile}{Percentile in \verb{(0, 1]} used to auto-pick \code{vmax} when
 \code{vmax} is \code{NULL}. \code{NULL} uses the component default.}
 
-\item{vmin}{Lower clip of the intensity scale.}
+\item{vmin}{Lower clip of the intensity scale. With the log transform, or
+when \code{vmin} is 0 or more, values at or below it are drawn as background.
+With the linear transform and a negative \code{vmin} (for example
+observed/expected log2 ratios), values below it take the lowest color.}
 
 \item{symmetric}{Mirror sparse \code{i}/\code{j}/\code{v} entries across the diagonal.}
 
@@ -64,13 +68,12 @@ theme.}
 An \code{htmlwidget} object.
 }
 \description{
-A GPU-accelerated Hi-C chromatin contact map. The matrix is uploaded once as
-a single-channel float texture and drawn as one WebGL quad (via \code{regl}), with
-the colormap and log/linear transform applied in the fragment shader, so
-pan/zoom stays smooth on very large matrices. A precomputed level-of-detail
-pyramid keeps interaction fast when zoomed out. Axes (genomic coordinate
-ticks) and the colorbar are drawn as crisp vector overlays. No tile server is
-required.
+A GPU-accelerated Hi-C chromatin contact map. The matrix is normalized to an
+8-bit texture and drawn as one WebGL quad (via \code{regl}), with the colormap
+applied in the fragment shader, so pan/zoom stays smooth on very large
+matrices. A precomputed level-of-detail pyramid keeps interaction fast when
+zoomed out. Axes (genomic coordinate ticks) and the colorbar are drawn as
+crisp vector overlays. No tile server is required.
 }
 \examples{
 set.seed(1)

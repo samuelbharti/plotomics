@@ -12,20 +12,22 @@ from ._base import STATIC, PlotomicsWidget, _column, pack_columns
 class HiC(PlotomicsWidget):
     """GPU-accelerated Hi-C chromatin contact map.
 
-    The contact matrix is uploaded once as a single-channel float texture and
-    drawn as one WebGL quad; the colormap and the log/linear transform run in
-    the fragment shader, so pan/zoom stays smooth on very large matrices. A
-    precomputed level-of-detail pyramid keeps interaction fast when zoomed out.
-    Genomic coordinate ticks and the colorbar are crisp vector overlays. No
-    tile server is required.
+    The contact matrix is normalized to an 8-bit texture and drawn as one WebGL
+    quad, with the colormap applied in the fragment shader, so pan/zoom stays
+    smooth on very large matrices. A precomputed level-of-detail pyramid keeps
+    interaction fast when zoomed out. Genomic coordinate ticks and the colorbar
+    are crisp vector overlays. No tile server is required.
 
     Parameters
     ----------
     matrix:
-        Either a 2-D square NumPy array of contact counts (dense), or a
-        COO-like triplet of ``(i, j, v)`` for the sparse form. A triplet may be
-        given as a tuple/list ``(i, j, v)``, a mapping with keys ``i``/``j``/``v``
-        (e.g. a DataFrame), or via the ``i``, ``j``, ``v`` keyword arguments.
+        Either a 2-D square array of contact counts (dense), as a NumPy array
+        or a nested list of rows, or a COO-like triplet of ``(i, j, v)`` for
+        the sparse form. A triplet may be given as a tuple ``(i, j, v)``, a
+        mapping with keys ``i``/``j``/``v`` (e.g. a DataFrame), or via the
+        ``i``, ``j``, ``v`` keyword arguments. A list of three sequences is also
+        read as a triplet, unless it is a 3x3 nested list, which is read as a
+        dense matrix; pass a tuple or the keywords for a three-contact triplet.
     n:
         Number of bins per axis. Required for the sparse form when it cannot be
         inferred from ``max(i, j) + 1``; ignored for a dense matrix.
@@ -35,7 +37,8 @@ class HiC(PlotomicsWidget):
     chrom:
         Optional chromosome name shown as the axis title.
     colormap:
-        Sequential colormap for intensity (currently ``"viridis"``).
+        Colormap for intensity: sequential ``"viridis"`` (default) or diverging
+        ``"rdbu"``.
     transform:
         Intensity transform, ``"log"`` (default) or ``"linear"``.
     vmax:
@@ -43,7 +46,10 @@ class HiC(PlotomicsWidget):
     vmax_percentile:
         Percentile (0-1) used for the auto ``vmax`` when ``vmax`` is ``None``.
     vmin:
-        Lower clip of the intensity scale.
+        Lower clip of the intensity scale. With the log transform, or when
+        ``vmin`` is 0 or more, values at or below it are drawn as background.
+        With the linear transform and a negative ``vmin`` (for example
+        observed/expected log2 ratios), values below it take the lowest color.
     symmetric:
         Mirror sparse ``i``/``j``/``v`` entries across the diagonal.
     label:
@@ -91,6 +97,8 @@ class HiC(PlotomicsWidget):
     ) -> None:
         if transform not in ("log", "linear"):
             raise ValueError("`transform` must be 'log' or 'linear'.")
+        if colormap not in ("viridis", "rdbu"):
+            raise ValueError("`colormap` must be 'viridis' or 'rdbu'.")
 
         columns: dict[str, Any] = {}
 
@@ -184,8 +192,14 @@ def _numeric(values: Any, name: str, dtype: Any) -> np.ndarray:
 
 def _extract_triplet(matrix: Any) -> tuple[Any, Any, Any] | tuple[None, None, None]:
     """Pull (i, j, v) out of a mapping/DataFrame or a 3-tuple; else all None."""
-    # tuple/list of three sequences
-    if isinstance(matrix, (tuple, list)) and len(matrix) == 3:
+    # A tuple of three sequences is always a triplet.
+    if isinstance(matrix, tuple) and len(matrix) == 3:
+        return matrix[0], matrix[1], matrix[2]
+    # A list of three sequences is a triplet too, except a 3x3 nested list,
+    # which reads as a dense matrix of three rows.
+    if isinstance(matrix, list) and len(matrix) == 3:
+        if all(_is_row_of(row, 3) for row in matrix):
+            return None, None, None
         return matrix[0], matrix[1], matrix[2]
     # A dense numpy matrix has no named columns; it is handled by the caller.
     if isinstance(matrix, np.ndarray):
@@ -197,3 +211,13 @@ def _extract_triplet(matrix: Any) -> tuple[Any, Any, Any] | tuple[None, None, No
     if i is not None and j is not None and v is not None:
         return i, j, v
     return None, None, None
+
+
+def _is_row_of(row: Any, length: int) -> bool:
+    """Whether ``row`` is a non-string sequence of exactly ``length`` items."""
+    if isinstance(row, (str, bytes)):
+        return False
+    try:
+        return len(row) == length
+    except TypeError:
+        return False
