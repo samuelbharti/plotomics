@@ -23,7 +23,7 @@ import {
   textWidth,
   dpr,
   serializeSVG,
-  canvasToPNG,
+  compositePNG,
   toNdc,
   baseDomains,
   fitView,
@@ -768,7 +768,23 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       return serializeSVG(out);
     },
     async exportPNG(scale = 2) {
-      return canvasToPNG(canvas, scale);
+      // The points at their place, with the axes and labels over them.
+      return compositePNG({
+        width,
+        height,
+        scale,
+        background: theme.background,
+        layers: [
+          {
+            canvas,
+            x: MARGIN.left,
+            y: MARGIN.top,
+            width: innerW(),
+            height: innerH(),
+          },
+        ],
+        overlay: svg,
+      });
     },
     destroy() {
       destroyed = true;

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createHic, cssColorToUnitRGB } from "../../src/components/hic.js";
 import type { PlotomicsInstance } from "../../src/core/index.js";
-import { drawnPixels } from "./helpers.js";
+import { canvasPNG, drawnPixels } from "./helpers.js";
 
 // Hi-C draws through WebGL, so these checks need a real browser: the matrix
 // must reach the canvas, the axis labels must state the right coordinates, and
@@ -70,7 +70,7 @@ describe("hic in a browser", () => {
     });
     instances.push(hic);
 
-    const png = await hic.exportPNG?.(1);
+    const png = await canvasPNG(el);
     expect(png).toBeTruthy();
     // The plot square is 338 px wide; most of it is colored.
     expect(await drawnPixels(png as Blob)).toBeGreaterThan(338 * 338 * 0.5);
@@ -150,7 +150,7 @@ describe("hic in a browser", () => {
     });
     instances.push(hic);
 
-    const png = (await hic.exportPNG?.(1)) as Blob;
+    const png = (await canvasPNG(el)) as Blob;
     // Before the fix, every value at or below 0 was drawn as background.
     expect(await drawnPixels(png)).toBeGreaterThan(338 * 338 * 0.9);
   });

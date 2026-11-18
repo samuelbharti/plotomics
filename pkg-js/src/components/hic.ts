@@ -33,7 +33,7 @@ import {
   measure,
   dpr,
   serializeSVG,
-  canvasToPNG,
+  compositePNG,
   RAMPS,
   type RGB,
 } from "../core/index.js";
@@ -1094,7 +1094,32 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     },
     async exportPNG(scale = 2) {
       drawMatrix();
-      return canvasToPNG(canvas, scale);
+      // The plot square of the canvas, as in the SVG export, with the axes
+      // and colour bar over it.
+      const size = plotSize();
+      const r = canvas.width / Math.max(1, width);
+      return compositePNG({
+        width,
+        height,
+        scale,
+        background: theme.background,
+        layers: [
+          {
+            canvas,
+            x: plotLeft(),
+            y: plotTop(),
+            width: size,
+            height: size,
+            source: {
+              x: plotLeft() * r,
+              y: plotTop() * r,
+              width: size * r,
+              height: size * r,
+            },
+          },
+        ],
+        overlay: svg,
+      });
     },
     destroy() {
       canvas.removeEventListener("mousedown", onDown);

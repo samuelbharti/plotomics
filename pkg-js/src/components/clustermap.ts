@@ -41,7 +41,7 @@ import {
   measure,
   dpr,
   serializeSVG,
-  canvasToPNG,
+  compositePNG,
 } from "../core/index.js";
 import {
   type Dendrogram,
@@ -946,36 +946,20 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       return serializeSVG(out);
     },
     async exportPNG(scale = 2) {
-      // Compose the overlay onto the heatmap into one full-size canvas.
-      const ratio = dpr();
-      const out = document.createElement("canvas");
-      out.width = Math.round(width * ratio * scale);
-      out.height = Math.round(height * ratio * scale);
-      const ctx = out.getContext("2d");
-      if (!ctx) return null;
-      ctx.fillStyle = theme.background;
-      ctx.fillRect(0, 0, out.width, out.height);
-      ctx.scale(ratio * scale, ratio * scale);
-      if (nrows > 0 && ncols > 0) {
-        const { x, y, w, h } = layout.heat;
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(cellCanvas, 0, 0, ncols, nrows, x, y, w, h);
-      }
-      // Rasterize the SVG overlay via an <img>, then draw it on top.
-      const svgStr = serializeSVG(svg);
-      const blob = await new Promise<Blob | null>((resolve) => {
-        const image = new Image();
-        image.onload = () => {
-          ctx.drawImage(image, 0, 0, width, height);
-          out.toBlob(resolve, "image/png");
-        };
-        image.onerror = () => {
-          // Fall back to just the heatmap if the overlay fails to load.
-          canvasToPNG(out, 1).then(resolve);
-        };
-        image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgStr)}`;
+      // The cells come from the one-pixel-per-cell buffer, so they stay
+      // sharp at any scale; the dendrograms, labels and colour bar go over.
+      const { x, y, w, h } = layout.heat;
+      return compositePNG({
+        width,
+        height,
+        scale,
+        background: theme.background,
+        layers:
+          nrows > 0 && ncols > 0
+            ? [{ canvas: cellCanvas, x, y, width: w, height: h }]
+            : [],
+        overlay: svg,
       });
-      return blob;
     },
     destroy() {
       el.removeEventListener("mousemove", onMove);

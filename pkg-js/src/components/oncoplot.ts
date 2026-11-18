@@ -42,7 +42,7 @@ import {
   measure,
   dpr,
   serializeSVG,
-  canvasToPNG,
+  compositePNG,
   defaultTheme,
   type TextSizes,
   textSizes,
@@ -897,7 +897,15 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       return serializeSVG(out);
     },
     async exportPNG(scale = 2) {
-      return canvasToPNG(canvas, scale);
+      // The canvas with the axes, labels and legend over it.
+      return compositePNG({
+        width,
+        height,
+        scale,
+        background: theme.background,
+        layers: [{ canvas, x: 0, y: 0, width, height }],
+        overlay: svg,
+      });
     },
     destroy() {
       el.removeEventListener("mousemove", onMove);

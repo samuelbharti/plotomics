@@ -33,7 +33,11 @@ export interface PlotomicsInstance<TOptions = Record<string, unknown>> {
   resize(width: number, height: number): void;
   /** Publication export: standalone SVG string, or null if not supported. */
   exportSVG?(): string | null;
-  /** Publication export: rasterized PNG blob, or null if not supported. */
+  /**
+   * Publication export: the whole widget (marks, axes, labels and legends)
+   * as a PNG blob, `scale` times the device resolution, or null if not
+   * supported.
+   */
   exportPNG?(scale?: number): Promise<Blob | null>;
   /** Release all GPU/DOM/listener resources. Idempotent. */
   destroy(): void;

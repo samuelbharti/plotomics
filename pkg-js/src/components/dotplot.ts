@@ -44,7 +44,7 @@ import {
   measure,
   dpr,
   serializeSVG,
-  canvasToPNG,
+  compositePNG,
 } from "../core/index.js";
 
 export interface DotplotOptions {
@@ -682,7 +682,15 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
       return serializeSVG(out);
     },
     async exportPNG(scale = 2) {
-      return canvasToPNG(canvas, scale);
+      // The canvas with the axes, labels and legend over it.
+      return compositePNG({
+        width,
+        height,
+        scale,
+        background: theme.background,
+        layers: [{ canvas, x: 0, y: 0, width, height }],
+        overlay: svg,
+      });
     },
     destroy() {
       el.removeEventListener("mousemove", onMove);
