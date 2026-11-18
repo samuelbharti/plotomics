@@ -34,8 +34,8 @@ describe("embedding helpers", () => {
     // Force overrides detection.
     expect(resolveColorMode(["cl1"], "continuous")).toBe("continuous");
     expect(resolveColorMode([1, 2], "categorical")).toBe("categorical");
-    // No column defaults to continuous under "auto".
-    expect(resolveColorMode(undefined, "auto")).toBe("continuous");
+    // No column, or no value in it, colours nothing.
+    expect(resolveColorMode(undefined, "auto")).toBeNull();
   });
 
   it("maps categorical labels to dense indices + ordered categories", () => {
@@ -213,5 +213,30 @@ describe("equalAspectDomains", () => {
       [0, 0],
       [0, 1],
     ]);
+  });
+});
+
+describe("embedding category edge cases", () => {
+  it("sorts numbers forced to categories by value", () => {
+    expect(categoryToIndex([0.5, 0.25, 1, -2, -10]).categories).toEqual([
+      "-10",
+      "-2",
+      "0.25",
+      "0.5",
+      "1",
+    ]);
+  });
+
+  it("names the missing entry so it differs from a real NA category", () => {
+    expect(categoryToIndex(["A", "NA", null]).categories).toEqual([
+      "A",
+      "NA",
+      "NA (missing)",
+    ]);
+  });
+
+  it("colours nothing for a column with no value", () => {
+    expect(resolveColorMode([null, null] as unknown as string[])).toBeNull();
+    expect(resolveColorMode([Number.NaN], "categorical")).toBeNull();
   });
 });

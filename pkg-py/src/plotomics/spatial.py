@@ -59,9 +59,10 @@ class Spatial(PlotomicsWidget):
         Spot diameter in image pixels.
     levels, colors:
         Fix the categorical order and colours. ``None`` takes the categories
-        of a pandas ``Categorical`` color, else the distinct values in natural
-        order ("2" before "10"), and the theme palette. Levels past the end of
-        a short ``colors`` take the palette.
+        of a pandas ``Categorical`` color, else the distinct values (text in
+        natural order, "2" before "10"; numbers by value), and the theme
+        palette. With ``levels`` given, ``colors`` needs one entry per level;
+        without, at least one per level.
     color_mode:
         ``"auto"``, ``"categorical"`` or ``"continuous"``.
     colormap:
@@ -126,7 +127,8 @@ class Spatial(PlotomicsWidget):
             raise ValueError(
                 "`color_mode` must be 'auto', 'categorical' or 'continuous'."
             )
-        if levels is not None and colors is not None and len(levels) != len(colors):
+        levels_given = levels is not None
+        if levels_given and colors is not None and len(levels) != len(colors):
             raise ValueError("`colors` must have one entry per level.")
 
         x = _to_float32(xc, "x")
@@ -147,18 +149,29 @@ class Spatial(PlotomicsWidget):
                 levels = [str(v) for v in cats]
             values = _numeric_values(col)
             # Numeric colours ride the binary transport; categorical ones are
-            # strings and travel as JSON, a missing value as null.
-            if values is not None:
+            # strings and travel as JSON, a missing value as null. Numbers
+            # read as categories travel as JSON too, at full precision, so
+            # 0.1 matches the level "0.1" as it does from R.
+            if values is not None and color_mode != "categorical":
                 packed["color"] = values
+            elif values is not None:
+                exact = _numeric_values(col, np.float64)
+                json_columns["color"] = [
+                    None if np.isnan(v) else float(v) for v in exact
+                ]
             else:
                 json_columns["color"] = _text_or_none(col)
-                if levels is None and colors is not None:
-                    present = {v for v in json_columns["color"] if v is not None}
-                    if len(colors) < len(present):
-                        raise ValueError(
-                            "`colors` must have one entry per level: "
-                            f"{len(present)} levels, {len(colors)} colours."
-                        )
+            if not levels_given and colors is not None and values is None:
+                present = (
+                    levels
+                    if levels is not None
+                    else {v for v in json_columns["color"] if v is not None}
+                )
+                if len(colors) < len(present):
+                    raise ValueError(
+                        "`colors` must have one entry per level: "
+                        f"{len(present)} levels, {len(colors)} colours."
+                    )
         lab = _column(data, "label")
         if lab is not None:
             json_columns["label"] = [str(v) for v in lab]

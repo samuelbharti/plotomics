@@ -153,6 +153,66 @@ describe("embedding with missing values", () => {
   });
 });
 
+describe("embedding legend and selection on re-render", () => {
+  it("keeps the NA key in view with more than 20 categories", async () => {
+    const el = container(600, 500);
+    const labels = Array.from({ length: 22 }, (_, i) => `c${i + 1}`);
+    instances.push(
+      createEmbedding(el, {
+        data: {
+          columns: {
+            x: [...labels.map((_, i) => i), 30],
+            y: [...labels.map((_, i) => i), 30],
+            color: [...labels, null] as unknown as string[],
+          },
+        },
+      }),
+    );
+    await expect
+      .poll(() => svgTexts(el), poll)
+      .toEqual(expect.arrayContaining(["+2 more", "NA"]));
+  });
+
+  it("keeps the selection when the same points arrive again", async () => {
+    const el = container();
+    const pts = () => ({ columns: { x: [0, 1, 2, 3], y: [0, 1, 2, 3] } });
+    const plot = createEmbedding(el, {
+      data: pts(),
+      options: { mouseMode: "lasso" },
+    });
+    instances.push(plot);
+    await new Promise((r) => setTimeout(r, 300));
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const r = canvas.getBoundingClientRect();
+    const at = (fx: number, fy: number) => ({
+      clientX: r.left + fx * r.width,
+      clientY: r.top + fy * r.height,
+      bubbles: true,
+      buttons: 1,
+    });
+    canvas.dispatchEvent(new MouseEvent("mousedown", at(0.01, 0.01)));
+    for (const [fx, fy] of [
+      [0.99, 0.01],
+      [0.99, 0.99],
+      [0.01, 0.99],
+      [0.01, 0.02],
+    ] as const) {
+      for (let s = 1; s <= 10; s += 1) {
+        window.dispatchEvent(new MouseEvent("mousemove", at(fx, fy)));
+        await new Promise((res) => setTimeout(res, 5));
+      }
+    }
+    window.dispatchEvent(new MouseEvent("mouseup", at(0.01, 0.02)));
+    await expect
+      .poll(() => plot.selectedIndices.length, poll)
+      .toBeGreaterThan(0);
+    const before = plot.selectedIndices;
+    // A Shiny re-render: the same points, as a new object.
+    plot.setData(pts());
+    expect(plot.selectedIndices).toEqual(before);
+  });
+});
+
 describe("spatial colours and missing values", () => {
   const base = {
     x: [20, 60, 100, 140],
@@ -168,7 +228,7 @@ describe("spatial colours and missing values", () => {
           columns: { ...base, color: [0, 1, 2, 0] },
           meta: { ...meta, levels: ["0", "1", "2"] },
         },
-        options: { colorMode: "categorical", showImage: false },
+        options: { colorMode: "categorical", showImage: false, spotOpacity: 1 },
       }),
     );
     // 400 x 250 holds the 160 x 100 image at scale 2.5.

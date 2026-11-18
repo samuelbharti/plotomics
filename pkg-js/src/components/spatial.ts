@@ -156,12 +156,25 @@ export function isCategorical(
   return false;
 }
 
-/** Compare level names in natural order, so "2" comes before "10". */
+// One collator for every comparison: building the options per call made a
+// sort of 50,000 labels take seconds.
+const COLLATOR = new Intl.Collator(undefined, { numeric: true });
+
+/** Compare category names in natural order, so "cluster 2" < "cluster 10". */
 export function naturalCompare(a: string, b: string): number {
-  return (
-    a.localeCompare(b, undefined, { numeric: true }) ||
-    (a < b ? -1 : a > b ? 1 : 0)
-  );
+  return COLLATOR.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
+/**
+ * Sort distinct category values: numbers by value (a numeric column forced to
+ * categories), text in natural order.
+ */
+export function sortCategories(values: Iterable<unknown>): string[] {
+  const all = [...values];
+  if (all.length && all.every((v) => typeof v === "number")) {
+    return (all as number[]).sort((a, b) => a - b).map(String);
+  }
+  return all.map(String).sort(naturalCompare);
 }
 
 /**
@@ -173,14 +186,14 @@ export function spatialLevels(
   given?: readonly unknown[],
 ): string[] {
   if (given?.length) return given.map(String);
-  const seen = new Set<string>();
+  const seen = new Map<string, unknown>();
   if (col) {
     for (let i = 0; i < col.length; i += 1) {
       const v = col[i];
-      if (!isMissing(v)) seen.add(String(v));
+      if (!isMissing(v) && !seen.has(String(v))) seen.set(String(v), v);
     }
   }
-  return [...seen].sort(naturalCompare);
+  return sortCategories(seen.values());
 }
 
 // ---------------------------------------------------------------------------

@@ -234,7 +234,7 @@ def _text_or_none(values: Any) -> list[str | None]:
     return out
 
 
-def _numeric_values(values: Any) -> np.ndarray | None:
+def _numeric_values(values: Any, dtype: Any = np.float32) -> np.ndarray | None:
     """A colour column as float32 when it holds numbers, else None.
 
     A missing value (None, NaN, pandas NA) does not decide the type, so a
@@ -247,7 +247,7 @@ def _numeric_values(values: Any) -> np.ndarray | None:
     if arr.dtype.kind == "b":
         return None
     if np.issubdtype(arr.dtype, np.number):
-        return arr.astype(np.float32)
+        return arr.astype(dtype)
     present = [v for v in _text_or_none(arr.tolist()) if v is not None]
     if not present:
         return None
@@ -259,4 +259,4 @@ def _numeric_values(values: Any) -> np.ndarray | None:
             out.append(float(v))
         else:
             return None
-    return np.asarray(out, dtype=np.float32)
+    return np.asarray(out, dtype=dtype)

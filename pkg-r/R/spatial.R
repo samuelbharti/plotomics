@@ -30,10 +30,10 @@
 #' @param spot_diameter Spot diameter in image pixels.
 #' @param levels,colors Character vectors fixing the categorical order and
 #'   colours. `NULL` takes the levels of a factor `color`, else the distinct
-#'   values in natural order ("2" before "10"), and the theme palette. Levels
-#'   past the end of a short `colors` take the palette. A missing `color` is
-#'   drawn grey and keyed "NA", and a spot with a missing `x` or `y` is not
-#'   drawn.
+#'   values (text in natural order, "2" before "10"; numbers by value), and
+#'   the theme palette. With `levels` given, `colors` needs one entry per
+#'   level; without, at least one per level. A missing `color` is drawn grey
+#'   and keyed "NA", and a spot with a missing `x` or `y` is not drawn.
 #' @param color_mode `"auto"` (detect from the column type), `"categorical"` or
 #'   `"continuous"`.
 #' @param colormap Sequential ramp for continuous colouring: `"viridis"`,
@@ -96,16 +96,25 @@ spatial <- function(data,
   bv_check_finite(y, "y")
 
   columns <- list(x = x, y = y)
+  levels_given <- !is.null(levels)
   if (!is.null(data$color)) {
-    # A factor states the level order, as in embedding().
-    if (is.null(levels) && is.factor(data$color)) levels <- levels(data$color)
     columns$color <- if (is.numeric(data$color)) {
       as.numeric(data$color)
     } else {
       as.character(data$color)
     }
-    if (is.null(levels) && !is.null(colors) && !is.numeric(data$color)) {
-      n_levels <- length(unique(stats::na.omit(columns$color)))
+    # Levels not given: a factor states them (as in embedding()), else the
+    # browser takes the distinct values. `colors` then needs at least one
+    # entry per level; extra entries are not used.
+    if (!levels_given && is.factor(data$color)) {
+      levels <- levels(data$color)
+    }
+    if (!levels_given && !is.null(colors) && !is.numeric(data$color)) {
+      n_levels <- if (is.factor(data$color)) {
+        length(levels)
+      } else {
+        length(unique(stats::na.omit(columns$color)))
+      }
       if (length(colors) < n_levels) {
         stop(sprintf(
           "`colors` must have one entry per level: %d levels, %d colours.",
@@ -125,7 +134,7 @@ spatial <- function(data,
   # I() so a single level or colour still crosses as a JSON array.
   if (!is.null(levels)) meta$levels <- I(as.character(levels))
   if (!is.null(colors)) meta$colors <- I(as.character(colors))
-  if (!is.null(levels) && !is.null(colors) &&
+  if (levels_given && !is.null(colors) &&
         length(levels) != length(colors)) {
     stop("`colors` must have one entry per level.", call. = FALSE)
   }
