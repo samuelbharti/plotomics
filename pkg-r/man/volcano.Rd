@@ -24,7 +24,9 @@ volcano(
 \arguments{
 \item{data}{A data frame with numeric columns \code{x} (log2 fold change) and \code{y}
 (\code{-log10} p-value). An optional \code{label} column supplies gene names for
-tooltips and top-hit labels.}
+tooltips and top-hit labels. A \code{y} of \code{Inf} (p = 0) is drawn just above
+the highest finite value and counts as significant. Rows with \code{NA} or
+\code{NaN} in \code{x} or \code{y} are not drawn.}
 
 \item{fc_threshold}{Absolute log2 fold-change cutoff for calling a hit.}
 

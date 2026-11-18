@@ -5,7 +5,14 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _column,
+    _text_or_none,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Network(PlotomicsWidget):
@@ -26,9 +33,12 @@ class Network(PlotomicsWidget):
         mapped to a palette color) and ``label`` (display name; defaults to id).
     edges:
         A ``DataFrame`` or mapping with ``source`` and ``target`` columns of node
-        ids, an optional numeric ``weight`` column (mapped to edge width) and an
-        optional ``color`` column giving a per-edge color (else
-        ``default_edge_color``).
+        ids, an optional numeric ``weight`` column and an optional ``color``
+        column giving a per-edge color (else ``default_edge_color``). Edge
+        width follows the absolute weight, scaled over the weights in the
+        graph to 1.7-6 px, and the layout pulls nodes together by the absolute
+        weight, so a negative weight (as in a correlation network) counts by
+        its size.
     layout:
         ``"forceatlas2"`` (run a layout when coordinates are missing) or
         ``"precomputed"`` (require and use ``x``/``y`` from ``nodes``).
@@ -169,11 +179,12 @@ class Network(PlotomicsWidget):
 
         meta: dict[str, Any] = {}
         label = _column(nodes, "label")
+        # A missing label or group stays missing (JSON null), not "nan".
         if label is not None:
-            meta["nodeLabels"] = [str(v) for v in label]
+            meta["nodeLabels"] = _text_or_none(label)
         group = _column(nodes, "group")
         if group is not None:
-            meta["nodeGroup"] = [str(v) for v in group]
+            meta["nodeGroup"] = _text_or_none(group)
 
         options: dict[str, Any] = {
             "layout": layout,
