@@ -55,6 +55,7 @@ import {
   toRowVectors,
   zScoreByRow,
 } from "./clustermap-cluster.js";
+import { uniqueId } from "../core/dom.js";
 
 export interface ClustermapOptions {
   /** Distance metric for clustering. */
@@ -103,6 +104,9 @@ const LABEL = 90; // px reserved for tick labels
 const COLORBAR = 54; // px reserved at the bottom for the colorbar
 const PAD = 12;
 const MIN_LABEL_CELL = 9; // hide labels once a cell is smaller than this (px)
+/** Fill for a missing cell, and its colour bar swatch. */
+const MISSING_RGB: [number, number, number] = [0xcc, 0xcc, 0xcc];
+const MISSING_COLOR = "#CCCCCC";
 
 // ---------------------------------------------------------------------------
 // Pure layout helper (kept here, exercised via the factory + tests)
@@ -175,6 +179,8 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
   let colorLo = 0;
   let colorHi = 1;
   let diverging = false;
+  let anyMissing = false;
+  const gradId = uniqueId("plotomics-clustermap-cb");
 
   // DOM: display canvas for the heatmap + full-size SVG overlay. A small
   // offscreen canvas holds one pixel per cell and is upscaled onto the display.
@@ -255,15 +261,11 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       return;
     }
 
-    display = opts.zScore
-      ? zScoreByRow(rawValues, nrows, ncols)
-      : toFloat32(rawValues, nrows * ncols);
-
-    // Color domain: symmetric for diverging maps (rdbu / z-score), else data extent.
-    diverging = opts.colormap === "rdbu" || opts.zScore;
-    [colorLo, colorHi] = diverging
-      ? symmetricExtent(display)
-      : dataExtent(display);
+    // R sends NA as null; toFloat32 keeps it missing (NaN), never 0.
+    const values = toFloat32(rawValues, nrows * ncols);
+    display = opts.zScore ? zScoreByRow(values, nrows, ncols) : values;
+    anyMissing = display.some((v) => !Number.isFinite(v));
+    computeColorDomain();
 
     rowLabels = meta.rowLabels;
     colLabels = meta.colLabels;
@@ -307,6 +309,14 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     relayout();
   }
 
+  /** Color domain: symmetric for diverging maps (rdbu / z-score), else data extent. */
+  function computeColorDomain() {
+    diverging = opts.colormap === "rdbu" || opts.zScore;
+    [colorLo, colorHi] = diverging
+      ? symmetricExtent(display)
+      : dataExtent(display);
+  }
+
   // ---- heatmap painting (canvas data layer) ----
   function paintCells() {
     if (nrows === 0 || ncols === 0) return;
@@ -323,8 +333,9 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       for (let cx = 0; cx < ncols; cx += 1) {
         const srcCol = colOrder[cx] as number;
         const v = cellAt(display, ncols, srcRow, srcCol);
-        const t = (v - colorLo) / span;
-        const [r, g, b] = toColor(t);
+        const [r, g, b] = Number.isFinite(v)
+          ? toColor((v - colorLo) / span)
+          : MISSING_RGB;
         const o = (ry * ncols + cx) * 4;
         buf[o] = r;
         buf[o + 1] = g;
@@ -506,7 +517,6 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     const toHex = ramp(opts.colormap);
 
     // Build a gradient from evenly-sampled stops (viridis/rdbu ramp).
-    const gradId = "cm-grad";
     const defs = document.createElementNS(SVG_NS, "defs");
     const grad = document.createElementNS(SVG_NS, "linearGradient");
     grad.setAttribute("id", gradId);
@@ -545,6 +555,14 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     svg.appendChild(
       text(x0 + barW, y0 + barH + 12, fmt(colorHi), theme.muted, "end", 10),
     );
+    // A grey swatch for missing cells, when the matrix has any.
+    if (anyMissing) {
+      const sx = x0 + barW + 16;
+      svg.appendChild(rect(sx, y0, 14, barH, MISSING_COLOR, theme.axis, 0.75));
+      svg.appendChild(
+        text(sx + 18, y0 + barH - 1, "NA", theme.foreground, "start", 10),
+      );
+    }
   }
 
   // ---- pointer / tooltip ----
@@ -670,16 +688,21 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       const prev = opts;
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
-      // Re-cluster only when an option that affects ordering/values changed.
-      const needsRecompute =
-        next.metric !== undefined ||
-        next.linkage !== undefined ||
-        next.zScore !== undefined ||
-        next.clusterRows !== undefined ||
-        next.clusterCols !== undefined ||
-        next.colormap !== undefined;
-      if (needsRecompute || opts.metric !== prev.metric) applyData();
-      else relayout();
+      // R and Python send every option on each update, so compare values:
+      // clustering again costs seconds on a large matrix.
+      const recluster =
+        opts.metric !== prev.metric ||
+        opts.linkage !== prev.linkage ||
+        opts.zScore !== prev.zScore ||
+        opts.clusterRows !== prev.clusterRows ||
+        opts.clusterCols !== prev.clusterCols;
+      if (recluster) applyData();
+      else if (opts.colormap !== prev.colormap) {
+        // A new ramp changes the colours and the domain, not the order.
+        computeColorDomain();
+        paintCells();
+        relayout();
+      } else relayout();
     },
     resize(w, h) {
       doResize(w, h);
@@ -748,14 +771,18 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
 };
 
 // ---- small utilities ----
-function toFloat32(src: ArrayLike<number>, n: number): Float32Array {
+/** Copy to a Float32Array, reading null (R's NA) as NaN, not 0. */
+function toFloat32(src: ArrayLike<number | null>, n: number): Float32Array {
   if (src instanceof Float32Array && src.length === n) return src;
   const out = new Float32Array(n);
-  for (let i = 0; i < n; i += 1) out[i] = src[i] as number;
+  for (let i = 0; i < n; i += 1) {
+    const v = src[i];
+    out[i] = v == null ? Number.NaN : v;
+  }
   return out;
 }
 function fmt(v: number): string {
-  if (!Number.isFinite(v)) return "—";
+  if (!Number.isFinite(v)) return "NA";
   if (v === 0) return "0";
   const a = Math.abs(v);
   if (a >= 1000 || a < 0.01) return v.toExponential(1);

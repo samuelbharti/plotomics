@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Mapping
 
 import numpy as np
@@ -34,12 +35,17 @@ class Clustermap(PlotomicsWidget):
     matrix:
         A 2D NumPy array or a pandas ``DataFrame``. For a ``DataFrame``, the
         index becomes row labels and the columns become column labels. Values
-        are packed as ``float32`` and transported row-major.
+        are packed as ``float32`` and transported row-major. A missing cell
+        (NaN) is drawn grey, and distances between rows or columns use the
+        cells both have, scaled up as R's ``dist()`` does.
     metric:
         Distance metric for clustering: ``"euclidean"`` or ``"correlation"``
         (1 - Pearson correlation).
     linkage:
         Agglomeration method: ``"average"``, ``"complete"`` or ``"ward"``.
+        ``"ward"`` is Ward's method as scipy and R's ``ward.D2`` compute it,
+        and it assumes the euclidean metric (a warning says so for
+        correlation).
     colormap:
         Color ramp: ``"viridis"`` (sequential) or ``"rdbu"`` (diverging).
     z_score:
@@ -107,6 +113,12 @@ class Clustermap(PlotomicsWidget):
         if linkage not in _LINKAGES:
             raise ValueError(
                 "`linkage` must be 'average', 'complete' or 'ward'."
+            )
+        if linkage == "ward" and metric != "euclidean":
+            warnings.warn(
+                "Ward linkage assumes euclidean distances; with "
+                f"metric={metric!r} its merge heights have no clear meaning.",
+                stacklevel=2,
             )
         if colormap not in _COLORMAPS:
             raise ValueError("`colormap` must be 'viridis' or 'rdbu'.")

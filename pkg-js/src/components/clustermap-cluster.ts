@@ -82,40 +82,61 @@ export function toColVectors(
   return out;
 }
 
-/** Euclidean distance between two equal-length vectors. */
+/**
+ * Euclidean distance between two equal-length vectors, over the positions
+ * where both are finite. As in R's `dist()`, the sum is scaled up by the
+ * share of positions used, so a missing cell does not pull two rows
+ * together. Returns NaN when no position is finite in both.
+ */
 export function euclidean(a: ArrayLike<number>, b: ArrayLike<number>): number {
+  const n = a.length;
   let s = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    const d = (a[i] as number) - (b[i] as number);
-    s += d * d;
+  let m = 0;
+  for (let i = 0; i < n; i += 1) {
+    const x = a[i] as number;
+    const y = b[i] as number;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    s += (x - y) * (x - y);
+    m += 1;
   }
-  return Math.sqrt(s);
+  if (m === 0) return Number.NaN;
+  return Math.sqrt((s * n) / m);
 }
 
 /**
- * Correlation distance: 1 - Pearson r. Returns 1 (max dissimilarity for the
- * clustering) when either vector is constant (undefined correlation).
+ * Correlation distance: 1 - Pearson r, over the positions where both vectors
+ * are finite. Returns 1 (max dissimilarity for the clustering) when either
+ * vector is constant there, and NaN when fewer than two positions are finite
+ * in both.
  */
 export function correlationDistance(
   a: ArrayLike<number>,
   b: ArrayLike<number>,
 ): number {
   const n = a.length;
-  if (n === 0) return 1;
+  let m = 0;
   let ma = 0;
   let mb = 0;
   for (let i = 0; i < n; i += 1) {
-    ma += a[i] as number;
-    mb += b[i] as number;
+    const x = a[i] as number;
+    const y = b[i] as number;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    ma += x;
+    mb += y;
+    m += 1;
   }
-  ma /= n;
-  mb /= n;
+  if (m < 2) return n === 0 ? 1 : Number.NaN;
+  ma /= m;
+  mb /= m;
   let num = 0;
   let da = 0;
   let db = 0;
   for (let i = 0; i < n; i += 1) {
-    const xa = (a[i] as number) - ma;
-    const xb = (b[i] as number) - mb;
+    const x = a[i] as number;
+    const y = b[i] as number;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const xa = x - ma;
+    const xb = y - mb;
     num += xa * xb;
     da += xa * xa;
     db += xb * xb;
@@ -126,10 +147,45 @@ export function correlationDistance(
   return 1 - r;
 }
 
+/**
+ * Pairwise distances between `vectors`. A pair with no finite overlap gets
+ * the largest finite distance in the matrix, so it joins last and never
+ * hands the clustering a NaN.
+ */
+export function distanceMatrix(
+  vectors: number[][],
+  metric: Metric,
+): number[][] {
+  const n = vectors.length;
+  const fn = metric === "correlation" ? correlationDistance : euclidean;
+  const d: number[][] = Array.from({ length: n }, () =>
+    new Array<number>(n).fill(0),
+  );
+  let max = 0;
+  for (let i = 0; i < n; i += 1) {
+    for (let j = i + 1; j < n; j += 1) {
+      const v = fn(vectors[i] as number[], vectors[j] as number[]);
+      (d[i] as number[])[j] = v;
+      (d[j] as number[])[i] = v;
+      if (Number.isFinite(v) && v > max) max = v;
+    }
+  }
+  const fill = max > 0 ? max : 1;
+  for (let i = 0; i < n; i += 1) {
+    const row = d[i] as number[];
+    for (let j = 0; j < n; j += 1) {
+      if (i !== j && !Number.isFinite(row[j] as number)) row[j] = fill;
+    }
+  }
+  return d;
+}
+
+// "ward" is Ward's method as scipy and R's ward.D2 compute it, which is
+// ml-hclust's "ward2". Its "ward" works on unsquared distances (R's ward.D).
 const METHOD_MAP: Record<Linkage, AgglomerationMethod> = {
   average: "average",
   complete: "complete",
-  ward: "ward",
+  ward: "ward2",
 };
 
 /**
@@ -186,13 +242,17 @@ export function clusterVectors(
   if (n < 2) return { order: identityOrder(n), dendrogram: null };
   if (n > MAX_CLUSTER_N) return { order: identityOrder(n), dendrogram: null };
 
-  const distanceFunction =
-    metric === "correlation" ? correlationDistance : euclidean;
-  const root = agnes(vectors, {
+  const root = agnes(distanceMatrix(vectors, metric), {
     method: METHOD_MAP[linkage],
-    distanceFunction,
+    isDistanceMatrix: true,
   });
-  return { order: root.indices(), dendrogram: clusterToDendrogram(root, n) };
+  const order = root.indices();
+  // A leaf order that is not a permutation would drop and repeat rows on
+  // screen; keep the input order then.
+  if (!isValidOrder(order, n)) {
+    return { order: identityOrder(n), dendrogram: null };
+  }
+  return { order, dendrogram: clusterToDendrogram(root, n) };
 }
 
 /**
@@ -238,8 +298,10 @@ function isValidOrder(order: number[], n: number): boolean {
 
 /**
  * Per-row z-score standardization: subtract the row mean and divide by the row
- * standard deviation (population). Constant rows map to all-zeros. Returns a
- * new Float32Array; the input is untouched.
+ * standard deviation (population), both over the finite cells of the row, so
+ * one missing cell does not turn the row into NaN. Missing cells stay NaN and
+ * constant rows map to zeros. Returns a new Float32Array; the input is
+ * untouched.
  */
 export function zScoreByRow(
   values: ArrayLike<number>,
@@ -249,22 +311,27 @@ export function zScoreByRow(
   const out = new Float32Array(nrows * ncols);
   for (let r = 0; r < nrows; r += 1) {
     const base = r * ncols;
+    let n = 0;
     let mean = 0;
-    for (let c = 0; c < ncols; c += 1) mean += values[base + c] as number;
-    mean /= ncols;
+    for (let c = 0; c < ncols; c += 1) {
+      const v = values[base + c] as number;
+      if (!Number.isFinite(v)) continue;
+      n += 1;
+      mean += v;
+    }
+    mean /= n || 1;
     let variance = 0;
     for (let c = 0; c < ncols; c += 1) {
-      const d = (values[base + c] as number) - mean;
-      variance += d * d;
+      const v = values[base + c] as number;
+      if (!Number.isFinite(v)) continue;
+      variance += (v - mean) * (v - mean);
     }
-    variance /= ncols;
+    variance /= n || 1;
     const sd = Math.sqrt(variance);
-    if (sd === 0) {
-      // row stays zero-filled
-      continue;
-    }
     for (let c = 0; c < ncols; c += 1) {
-      out[base + c] = ((values[base + c] as number) - mean) / sd;
+      const v = values[base + c] as number;
+      if (!Number.isFinite(v)) out[base + c] = Number.NaN;
+      else out[base + c] = sd === 0 ? 0 : (v - mean) / sd;
     }
   }
   return out;

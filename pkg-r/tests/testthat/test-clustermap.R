@@ -2,9 +2,13 @@ test_that("clustermap() builds an htmlwidget with the expected payload", {
   mat <- matrix(1:6, nrow = 2, byrow = TRUE)
   rownames(mat) <- c("r1", "r2")
   colnames(mat) <- c("c1", "c2", "c3")
-  w <- clustermap(mat,
-    metric = "correlation", linkage = "ward",
-    colormap = "rdbu", z_score = TRUE, legend_title = "expr"
+  # Ward with correlation is allowed, with a warning.
+  expect_warning(
+    w <- clustermap(mat,
+      metric = "correlation", linkage = "ward",
+      colormap = "rdbu", z_score = TRUE, legend_title = "expr"
+    ),
+    "Ward linkage"
   )
 
   expect_s3_class(w, "htmlwidget")
@@ -98,4 +102,12 @@ test_that("clustermap() forwards a theme override", {
   w <- clustermap(mat, theme = list(background = "#444"))
   expect_equal(w$x$options$theme$background, "#444")
   expect_null(clustermap(mat)$x$options$theme)
+})
+
+test_that("clustermap() warns on ward linkage with a correlation metric", {
+  m <- matrix(1:6, 3, 2)
+  expect_warning(
+    clustermap(m, linkage = "ward", metric = "correlation"),
+    "Ward linkage assumes euclidean"
+  )
 })

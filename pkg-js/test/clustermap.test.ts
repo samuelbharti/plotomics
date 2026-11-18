@@ -6,6 +6,7 @@ import {
   correlationDistance,
   dataExtent,
   dendrogramPositions,
+  distanceMatrix,
   euclidean,
   identityOrder,
   normalizePrecomputed,
@@ -232,5 +233,94 @@ describe("layout math", () => {
     });
     expect(l.heat.w).toBeGreaterThanOrEqual(1);
     expect(l.heat.h).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("clustermap with missing values and Ward linkage", () => {
+  const isPermutation = (order: number[], n: number) =>
+    order.length === n &&
+    new Set(order).size === n &&
+    order.every((i) => Number.isInteger(i) && i >= 0 && i < n);
+
+  it("measures distance over the cells both rows have, scaled up", () => {
+    // Positions 0 and 2 are shared: 0^2 + 2^2 = 4, times 3/2 for the gap.
+    expect(euclidean([1, Number.NaN, 3], [1, 2, 5])).toBeCloseTo(
+      Math.sqrt(6),
+      9,
+    );
+    expect(Number.isNaN(euclidean([Number.NaN, 1], [2, Number.NaN]))).toBe(
+      true,
+    );
+    // Correlation over the shared positions only.
+    expect(
+      correlationDistance([1, 2, Number.NaN, 4], [2, 4, 100, 8]),
+    ).toBeCloseTo(0, 9);
+  });
+
+  it("gives a pair with no shared cell the largest distance", () => {
+    const d = distanceMatrix(
+      [
+        [0, Number.NaN],
+        [Number.NaN, 1],
+        [3, 4],
+      ],
+      "euclidean",
+    );
+    expect(d.flat().every((v) => Number.isFinite(v))).toBe(true);
+    expect(d[0]?.[1]).toBe(Math.max(d[0]?.[2] as number, d[1]?.[2] as number));
+  });
+
+  it("keeps the leaf order a permutation when a row has NaN", () => {
+    // The example from the issue: rows came out as 3, 1, 0, 3, 1, 0.
+    const rows = [
+      [0, 0],
+      [1, 1],
+      [Number.NaN, 5],
+      [10, 10],
+    ];
+    for (const linkage of ["average", "complete", "ward"] as const) {
+      for (const metric of ["euclidean", "correlation"] as const) {
+        const res = clusterVectors(rows, metric, linkage);
+        expect(isPermutation(res.order, 4)).toBe(true);
+        for (const m of res.dendrogram?.merges ?? []) {
+          expect(Number.isFinite(m.height)).toBe(true);
+        }
+      }
+    }
+    // Columns of the same matrix: [0, 1, NaN, 10] and [0, 1, 5, 10].
+    const cols = clusterVectors(
+      [
+        [0, 1, Number.NaN, 10],
+        [0, 1, 5, 10],
+      ],
+      "euclidean",
+      "average",
+    );
+    expect(isPermutation(cols.order, 2)).toBe(true);
+  });
+
+  it("computes Ward's method as R's ward.D2 and scipy do", () => {
+    const pts = [
+      [0, 0],
+      [1, 0],
+      [0, 3],
+      [5, 5],
+      [6, 5],
+      [10, 0],
+    ];
+    const res = clusterVectors(pts, "euclidean", "ward");
+    const heights = (res.dendrogram?.merges ?? [])
+      .map((m) => m.height)
+      .sort((a, b) => a - b);
+    // hclust(dist(pts), "ward.D2")$height; ward.D gives 3.77, 8.65, 15.96.
+    const expected = [1, 1, 3.511885, 7.767453, 12.233833];
+    heights.forEach((h, i) => expect(h).toBeCloseTo(expected[i] as number, 5));
+  });
+
+  it("z-scores a row over its finite cells and keeps NaN missing", () => {
+    const z = zScoreByRow([1, Number.NaN, 3], 1, 3);
+    expect(z[0]).toBeCloseTo(-1, 6);
+    expect(Number.isNaN(z[1] as number)).toBe(true);
+    expect(z[2]).toBeCloseTo(1, 6);
   });
 });
