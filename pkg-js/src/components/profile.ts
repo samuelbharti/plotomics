@@ -38,6 +38,9 @@ import {
   serializeSVG,
   canvasToPNG,
   OKABE_ITO,
+  zeroTicks,
+  fitZeroTicks,
+  formatTick,
 } from "../core/index.js";
 
 export interface ProfileOptions {
@@ -63,6 +66,12 @@ export const defaultProfileOptions: ProfileOptions = {
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+/** Height of the title row, when a title is set. */
+const TITLE_H = 18;
+/** Font size of the per-bar labels, the same as the axis tick labels. */
+const BAR_LABEL_SIZE = 9;
+/** Tallest the band of rotated bar labels may get. */
+const MAX_BAR_LABEL_H = 60;
 /** Height of the coloured group banner. */
 const HEADER_H = 18;
 /** Gap between the banner and the tallest bar. */
@@ -99,18 +108,14 @@ export function groupRuns(groups: string[]): GroupRun[] {
   return out;
 }
 
-/** A rounded axis maximum at or above the data maximum. */
-export function niceMax(values: ArrayLike<number>): number {
+/** The largest finite value, or 0. */
+export function finiteMax(values: ArrayLike<number>): number {
   let m = 0;
   for (let i = 0; i < values.length; i += 1) {
     const v = values[i] as number;
-    if (v > m) m = v;
+    if (Number.isFinite(v) && v > m) m = v;
   }
-  if (m <= 0) return 1;
-  const mag = Math.pow(10, Math.floor(Math.log10(m)));
-  const norm = m / mag;
-  const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
-  return step * mag;
+  return m;
 }
 
 export interface ProfileLayout {
@@ -130,12 +135,21 @@ export function layoutProfile(
   height: number,
   nBars: number,
   opts: Pick<ProfileOptions, "showHeader" | "showBarLabels">,
+  /** Whether a title is drawn; it gets its own row above the strip. */
+  hasTitle = false,
+  /** Width in px of the longest bar label, which runs down the bottom. */
+  barLabelW = 24,
 ): ProfileLayout {
   const left = 56;
   const right = 14;
-  const headerTop = opts.showHeader ? 8 : 0;
-  const plotTop = opts.showHeader ? headerTop + HEADER_H + HEADER_GAP : 10;
-  const labelH = opts.showBarLabels ? 34 : 10;
+  const titleH = hasTitle ? TITLE_H : 0;
+  const headerTop = titleH + (opts.showHeader ? 6 : 0);
+  const plotTop = opts.showHeader
+    ? headerTop + HEADER_H + HEADER_GAP
+    : titleH + 10;
+  const labelH = opts.showBarLabels
+    ? Math.min(MAX_BAR_LABEL_H, Math.ceil(barLabelW) + 10)
+    : 10;
   const axisY = height - labelH - 14;
   return {
     left,
@@ -154,8 +168,14 @@ export function layoutProfile(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => {
-  let opts: ProfileOptions = mergeOptions(defaultProfileOptions, initial.options);
+export const createProfile: PlotomicsFactory<ProfileOptions> = (
+  el,
+  initial,
+) => {
+  let opts: ProfileOptions = mergeOptions(
+    defaultProfileOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -167,7 +187,8 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -187,6 +208,38 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
     const given = data.meta?.groupColors as string[] | undefined;
     if (given && given.length) return given;
     return groups().map((_, i) => OKABE_ITO[i % OKABE_ITO.length] as string);
+  }
+  const measureCtx = document.createElement("canvas").getContext("2d");
+  /** A bar label cut with an ellipsis to fit `maxW` px. */
+  function fitBarLabel(label: string, maxW: number): string {
+    const w = (s: string) => {
+      if (!measureCtx) return s.length * BAR_LABEL_SIZE * 0.56;
+      measureCtx.font = `${BAR_LABEL_SIZE}px ${theme.fontFamily}`;
+      return measureCtx.measureText(s).width;
+    };
+    if (w(label) <= maxW) return label;
+    let lo = 1;
+    let hi = label.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (w(`${label.slice(0, mid)}\u2026`) <= maxW) lo = mid;
+      else hi = mid - 1;
+    }
+    return `${label.slice(0, lo)}\u2026`;
+  }
+  /** Width of the longest bar label at its font size, in px. */
+  function longestBarLabel(): number {
+    let w = 0;
+    for (const lab of barLabels()) {
+      const s = lab ?? "";
+      if (measureCtx) {
+        measureCtx.font = `${BAR_LABEL_SIZE}px ${theme.fontFamily}`;
+        w = Math.max(w, measureCtx.measureText(s).width);
+      } else {
+        w = Math.max(w, s.length * BAR_LABEL_SIZE * 0.56);
+      }
+    }
+    return w;
   }
   function plotted(): number[] {
     const v = values();
@@ -250,16 +303,25 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
     const ctx = canvas.getContext("2d");
     if (!ctx || !width || !height) return;
     const v = plotted();
-    layout = layoutProfile(width, height, v.length, opts);
+    layout = layoutProfile(
+      width,
+      height,
+      v.length,
+      opts,
+      Boolean(data.meta?.title),
+      longestBarLabel(),
+    );
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, width, height);
     if (!v.length) {
-      renderOverlay(1);
+      renderOverlay(zeroTicks(1, 4));
       return;
     }
 
-    const max = niceMax(v);
+    // As many round ticks as the plot height holds without crowding.
+    const axis = fitZeroTicks(finiteMax(v), layout.plotH);
+    const max = axis.top;
     const gcol = groupCol();
     const glist = groups();
     const gcols = groupColors();
@@ -285,27 +347,41 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
       }
     }
 
-    renderOverlay(max);
+    renderOverlay(axis);
   }
 
-  function renderOverlay(max: number) {
+  function renderOverlay(axis: { ticks: number[]; top: number; step: number }) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const gcol = groupCol();
     const glist = groups();
     const gcols = groupColors();
 
-    // y gridlines and ticks.
-    for (let t = 0; t <= 4; t += 1) {
-      const val = (t / 4) * max;
-      const y = layout.baseline - (t / 4) * layout.plotH;
-      svg.appendChild(line(layout.left, y, width - layout.right, y, theme.grid));
+    // y gridlines and ticks, on round steps, each label stating its value.
+    for (const val of axis.ticks) {
+      const y = layout.baseline - (val / axis.top) * layout.plotH;
       svg.appendChild(
-        text(layout.left - 8, y + 3, fmtTick(val, opts.asFraction), theme.muted, "end", 9),
+        line(layout.left, y, width - layout.right, y, theme.grid),
+      );
+      svg.appendChild(
+        text(
+          layout.left - 8,
+          y + 3,
+          formatTick(val, axis.step, { percent: opts.asFraction }),
+          theme.muted,
+          "end",
+          9,
+        ),
       );
     }
     svg.appendChild(
-      rotatedText(14, layout.plotTop + layout.plotH / 2, opts.yLabel, theme.muted, 10),
+      rotatedText(
+        14,
+        layout.plotTop + layout.plotH / 2,
+        opts.yLabel,
+        theme.muted,
+        10,
+      ),
     );
 
     // Group names on the banner, in a colour that reads on the block.
@@ -317,8 +393,14 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
         const bg = gi >= 0 ? (gcols[gi] as string) : theme.foreground;
         if (x1 - x0 > estimateTextWidth(run.group, 10) + 8) {
           svg.appendChild(
-            text((x0 + x1) / 2, layout.headerTop + HEADER_H - 5, run.group,
-              readableOn(bg), "middle", 10),
+            text(
+              (x0 + x1) / 2,
+              layout.headerTop + HEADER_H - 5,
+              run.group,
+              readableOn(bg),
+              "middle",
+              10,
+            ),
           );
         }
       }
@@ -327,10 +409,19 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
     // Per-bar labels, rotated, thinned when they would collide.
     if (opts.showBarLabels) {
       const labs = barLabels();
-      const every = Math.max(1, Math.ceil(7 / layout.slot));
+      const every = Math.max(1, Math.ceil((BAR_LABEL_SIZE + 1) / layout.slot));
+      // A label longer than the band under the axis is cut to fit.
+      const room = Math.max(8, height - layout.axisY - 8);
       for (let i = 0; i < labs.length; i += every) {
         const x = layout.left + i * layout.slot + layout.slot / 2;
-        const t = text(x, layout.axisY + 6, labs[i] ?? "", theme.muted, "end", 7);
+        const t = text(
+          x,
+          layout.axisY + 6,
+          fitBarLabel(labs[i] ?? "", room),
+          theme.muted,
+          "end",
+          BAR_LABEL_SIZE,
+        );
         t.setAttribute("transform", `rotate(-90 ${x} ${layout.axisY + 6})`);
         svg.appendChild(t);
       }
@@ -338,12 +429,22 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
 
     const title = data.meta?.title as string | undefined;
     if (title) {
-      svg.appendChild(text(layout.left, layout.headerTop - 2, title, theme.foreground, "start", 11));
+      // In its own row above the strip, with room for capitals and descenders.
+      svg.appendChild(
+        text(layout.left, TITLE_H - 5, title, theme.foreground, "start", 11),
+      );
     }
   }
 
   // ---- SVG helpers ----
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 10) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 10,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -354,12 +455,24 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
     t.textContent = content;
     return t;
   }
-  function rotatedText(x: number, y: number, content: string, fill: string, size: number) {
+  function rotatedText(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    size: number,
+  ) {
     const t = text(x, y, content, fill, "middle", size);
     t.setAttribute("transform", `rotate(-90 ${x} ${y})`);
     return t;
   }
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -436,20 +549,27 @@ function readableOn(hex: string): string {
 function fmtInt(v: number): string {
   return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2);
 }
-function fmtTick(v: number, asFraction: boolean): string {
-  if (asFraction) return `${(v * 100).toFixed(0)}%`;
-  if (v >= 1000) return `${Math.round(v / 1000)}k`;
-  return String(Math.round(v));
-}
+
 function estimateTextWidth(s: string, size: number): number {
   return s.length * size * 0.56;
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+    c === "&"
+      ? "&amp;"
+      : c === "<"
+        ? "&lt;"
+        : c === ">"
+          ? "&gt;"
+          : c === '"'
+            ? "&quot;"
+            : "&#39;",
   );
 }
-function mergeOptions(base: ProfileOptions, next?: Partial<ProfileOptions>): ProfileOptions {
+function mergeOptions(
+  base: ProfileOptions,
+  next?: Partial<ProfileOptions>,
+): ProfileOptions {
   if (!next) return { ...base };
   return { ...base, ...next, theme: { ...base.theme, ...(next.theme ?? {}) } };
 }

@@ -36,6 +36,9 @@ import {
   dpr,
   serializeSVG,
   canvasToPNG,
+  zeroTicks,
+  fitZeroTicks,
+  formatTick,
 } from "../core/index.js";
 
 export interface UpsetOptions {
@@ -64,6 +67,9 @@ export const defaultUpsetOptions: UpsetOptions = {
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+/** The set-name column grows to this many px, or this share of the width. */
+const NAME_MAX_PX = 200;
+const NAME_MAX_SHARE = 0.3;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/upset.test.ts)
@@ -83,6 +89,8 @@ export interface UpsetLayout {
   matrixH: number;
   /** Width of the left-hand set-size panel. */
   setPanelW: number;
+  /** Width of the set-name column. */
+  nameW: number;
 }
 
 /**
@@ -95,11 +103,19 @@ export function layoutUpset(
   nSets: number,
   nIntersections: number,
   opts: Pick<UpsetOptions, "barFraction" | "showSetSizes">,
-  longestName = 8,
+  /** Width in px of the longest set name. */
+  nameWidth = 48,
+  /** Width in px of the widest set-size count. */
+  countWidth = 24,
 ): UpsetLayout {
   const setPanelW = opts.showSetSizes ? 74 : 0;
-  const nameW = Math.min(130, Math.max(44, longestName * 6.4 + 10));
-  const left = setPanelW + nameW + 12;
+  // The counts sit just right of the set-size bars, then the names; the
+  // name column grows with the longest name up to a share of the width, and
+  // longer names are shortened when drawn.
+  const countW = opts.showSetSizes ? Math.ceil(countWidth) + 8 : 0;
+  const cap = Math.min(NAME_MAX_PX, Math.max(44, width * NAME_MAX_SHARE));
+  const nameW = Math.min(cap, Math.max(44, Math.ceil(nameWidth) + 10));
+  const left = setPanelW + countW + nameW + 12;
   const top = 14;
   const bottom = 16;
   const avail = Math.max(1, height - top - bottom);
@@ -113,25 +129,24 @@ export function layoutUpset(
     barBaseline: top + barH,
     barH,
     rowH: nSets > 0 ? matrixH / nSets : matrixH,
-    colW: nIntersections > 0 ? Math.max(1, (width - left - 12) / nIntersections) : 1,
+    colW:
+      nIntersections > 0
+        ? Math.max(1, (width - left - 12) / nIntersections)
+        : 1,
     matrixH,
     setPanelW,
+    nameW,
   };
 }
 
-/** Round up to a readable axis maximum (1, 2, 2.5 or 5 times a power of ten). */
-export function niceMax(values: ArrayLike<number>): number {
+/** The largest finite value, or 0. */
+export function finiteMax(values: ArrayLike<number>): number {
   let max = 0;
   for (let i = 0; i < values.length; i += 1) {
     const v = values[i] as number;
-    if (isFinite(v) && v > max) max = v;
+    if (Number.isFinite(v) && v > max) max = v;
   }
-  if (max <= 0) return 1;
-  const mag = 10 ** Math.floor(Math.log10(max));
-  for (const m of [1, 2, 2.5, 5, 10]) {
-    if (m * mag >= max) return m * mag;
-  }
-  return mag * 10;
+  return max;
 }
 
 /**
@@ -148,7 +163,8 @@ export function membershipRow(
   if (!membership || nSets <= 0 || index < 0) return out;
   const base = index * nSets;
   if (base + nSets > membership.length) return out;
-  for (let s = 0; s < nSets; s += 1) out[s] = (membership[base + s] as number) === 1;
+  for (let s = 0; s < nSets; s += 1)
+    out[s] = (membership[base + s] as number) === 1;
   return out;
 }
 
@@ -169,7 +185,8 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -178,9 +195,29 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
   const sizes = () => (data.columns.size as ArrayLike<number>) ?? [];
   const sets = () => (data.meta?.sets as string[]) ?? [];
   const setSizes = () => data.meta?.setSizes as ArrayLike<number> | undefined;
-  const membership = () => data.meta?.membership as ArrayLike<number> | undefined;
+  const membership = () =>
+    data.meta?.membership as ArrayLike<number> | undefined;
   const barFill = () => opts.barColor ?? theme.foreground;
   const emptyFill = () => opts.emptyDotColor ?? theme.grid;
+
+  const measureCtx = document.createElement("canvas").getContext("2d");
+  function textWidth(s: string, size: number): number {
+    if (!measureCtx) return s.length * size * 0.56;
+    measureCtx.font = `${size}px ${theme.fontFamily}`;
+    return measureCtx.measureText(s).width;
+  }
+  /** A name cut with an ellipsis to fit `maxW` px. */
+  function fitName(name: string, maxW: number): string {
+    if (textWidth(name, 10) <= maxW) return name;
+    let lo = 1;
+    let hi = name.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (textWidth(`${name.slice(0, mid)}\u2026`, 10) <= maxW) lo = mid;
+      else hi = mid - 1;
+    }
+    return `${name.slice(0, lo)}\u2026`;
+  }
 
   // ---- pointer ----
   const lastPointer = { x: 0, y: 0 };
@@ -189,18 +226,38 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     lastPointer.y = e.clientY;
     const rect = el.getBoundingClientRect();
     const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
     const s = sizes();
+    // Left of the matrix, on a set's row: the full name and its size, since
+    // a long name is shortened on the plot.
+    const names = sets();
+    const k = Math.floor((my - layout.barBaseline) / layout.rowH);
+    if (mx < layout.left && k >= 0 && k < names.length) {
+      const ss = setSizes();
+      const n = ss?.[k];
+      const size =
+        typeof n === "number" && Number.isFinite(n)
+          ? ` (${n.toLocaleString()})`
+          : "";
+      tooltip.show(
+        `<b>${esc(names[k] ?? "")}</b>${size}`,
+        lastPointer.x,
+        lastPointer.y,
+      );
+      return;
+    }
     const i = Math.floor((mx - layout.left) / layout.colW);
     if (mx < layout.left || i < 0 || i >= s.length) {
       tooltip.hide();
       return;
     }
-    const names = sets();
     const inSet = membershipRow(membership(), i, names.length)
       .map((v, k) => (v ? names[k] : null))
       .filter(Boolean);
     const total = data.meta?.total as number | undefined;
-    const pct = total ? ` (${((100 * (s[i] as number)) / total).toFixed(1)}%)` : "";
+    const pct = total
+      ? ` (${((100 * (s[i] as number)) / total).toFixed(1)}%)`
+      : "";
     tooltip.show(
       `<b>${(s[i] as number).toLocaleString()}</b>${pct}<br/>` +
         `${inSet.length ? esc(inSet.join(" + ")) : "none"}`,
@@ -232,18 +289,38 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     if (!ctx || !width || !height) return;
     const s = sizes();
     const names = sets();
-    const longest = names.reduce((m, n) => Math.max(m, n.length), 4);
-    layout = layoutUpset(width, height, names.length, s.length, opts, longest);
+    const nameWidth = names.reduce((m, n) => Math.max(m, textWidth(n, 10)), 0);
+    const ssAll = setSizes();
+    let countWidth = 0;
+    if (ssAll) {
+      for (let k = 0; k < ssAll.length; k += 1) {
+        countWidth = Math.max(
+          countWidth,
+          textWidth(fmtInt(ssAll[k] as number), 8),
+        );
+      }
+    }
+    layout = layoutUpset(
+      width,
+      height,
+      names.length,
+      s.length,
+      opts,
+      nameWidth,
+      countWidth,
+    );
 
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, width, height);
     if (!s.length || !names.length) {
-      renderOverlay(1);
+      renderOverlay(zeroTicks(1, 4));
       return;
     }
 
-    const max = niceMax(s);
+    // Whole-number ticks, as many as the bar panel holds without crowding.
+    const axis = fitZeroTicks(finiteMax(s), layout.barH - 6, { integer: true });
+    const max = axis.top;
     const bw = Math.max(1, layout.colW * 0.68);
     const mem = membership();
 
@@ -261,11 +338,19 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       if (r % 2 === 1) continue;
       ctx.fillStyle = theme.grid;
       ctx.globalAlpha = 0.25;
-      ctx.fillRect(layout.left, layout.barBaseline + r * layout.rowH,
-        width - layout.left - 12, layout.rowH);
+      ctx.fillRect(
+        layout.left,
+        layout.barBaseline + r * layout.rowH,
+        width - layout.left - 12,
+        layout.rowH,
+      );
       ctx.globalAlpha = 1;
     }
-    const r = Math.min(opts.dotRadius, layout.colW / 2 - 1, layout.rowH / 2 - 1);
+    const r = Math.min(
+      opts.dotRadius,
+      layout.colW / 2 - 1,
+      layout.rowH / 2 - 1,
+    );
     for (let i = 0; i < s.length; i += 1) {
       const cx = layout.left + (i + 0.5) * layout.colW;
       const row = membershipRow(mem, i, names.length);
@@ -286,7 +371,13 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       }
       for (let k = 0; k < names.length; k += 1) {
         ctx.beginPath();
-        ctx.arc(cx, layout.barBaseline + (k + 0.5) * layout.rowH, Math.max(1, r), 0, Math.PI * 2);
+        ctx.arc(
+          cx,
+          layout.barBaseline + (k + 0.5) * layout.rowH,
+          Math.max(1, r),
+          0,
+          Math.PI * 2,
+        );
         ctx.fillStyle = row[k] ? barFill() : emptyFill();
         ctx.fill();
       }
@@ -295,7 +386,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     // Set totals, drawn leftwards from the matrix so they read against it.
     const ss = setSizes();
     if (opts.showSetSizes && ss) {
-      const smax = niceMax(ss);
+      const smax = zeroTicks(finiteMax(ss), 4, { integer: true }).top;
       ctx.fillStyle = barFill();
       ctx.globalAlpha = 0.55;
       for (let k = 0; k < names.length; k += 1) {
@@ -306,30 +397,51 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       ctx.globalAlpha = 1;
     }
 
-    renderOverlay(max);
+    renderOverlay(axis);
   }
 
-  function renderOverlay(max: number) {
+  function renderOverlay(axis: { ticks: number[]; top: number; step: number }) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const names = sets();
 
-    // Bar axis.
-    for (let t = 0; t <= 4; t += 1) {
-      const v = (t / 4) * max;
-      const y = layout.barBaseline - (t / 4) * (layout.barH - 6);
+    // Bar axis, on round steps, each label stating its value.
+    for (const v of axis.ticks) {
+      const y = layout.barBaseline - (v / axis.top) * (layout.barH - 6);
       svg.appendChild(line(layout.left, y, width - 12, y, theme.grid));
-      svg.appendChild(text(layout.left - 6, y + 3, fmtInt(v), theme.muted, "end", 9));
+      svg.appendChild(
+        text(
+          layout.left - 6,
+          y + 3,
+          formatTick(v, axis.step),
+          theme.muted,
+          "end",
+          9,
+        ),
+      );
     }
     svg.appendChild(
-      rotatedText(14, layout.top + layout.barH / 2, opts.yLabel, theme.muted, 10),
+      rotatedText(
+        14,
+        layout.top + layout.barH / 2,
+        opts.yLabel,
+        theme.muted,
+        10,
+      ),
     );
 
-    // Set names, between the total bars and the matrix.
+    // Set names, between the counts and the matrix, shortened to fit.
+    const nameRoom = Math.max(12, layout.nameW - 4);
     for (let k = 0; k < names.length; k += 1) {
       svg.appendChild(
-        text(layout.left - 10, layout.barBaseline + (k + 0.5) * layout.rowH + 3,
-          names[k] ?? "", theme.foreground, "end", 10),
+        text(
+          layout.left - 10,
+          layout.barBaseline + (k + 0.5) * layout.rowH + 3,
+          fitName(names[k] ?? "", nameRoom),
+          theme.foreground,
+          "end",
+          10,
+        ),
       );
     }
 
@@ -340,8 +452,14 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       );
       for (let k = 0; k < names.length; k += 1) {
         svg.appendChild(
-          text(layout.setPanelW + 3, layout.barBaseline + (k + 0.5) * layout.rowH + 3,
-            fmtInt(ss[k] as number), theme.muted, "start", 8),
+          text(
+            layout.setPanelW + 3,
+            layout.barBaseline + (k + 0.5) * layout.rowH + 3,
+            fmtInt(ss[k] as number),
+            theme.muted,
+            "start",
+            8,
+          ),
         );
       }
     }
@@ -349,14 +467,27 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     const total = data.meta?.total as number | undefined;
     if (total) {
       svg.appendChild(
-        text(width - 12, layout.top + 2, `${total.toLocaleString()} total`,
-          theme.muted, "end", 9),
+        text(
+          width - 12,
+          layout.top + 2,
+          `${total.toLocaleString()} total`,
+          theme.muted,
+          "end",
+          9,
+        ),
       );
     }
   }
 
   // ---- SVG helpers ----
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 10) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 10,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -367,12 +498,24 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     t.textContent = content;
     return t;
   }
-  function rotatedText(x: number, y: number, content: string, fill: string, size: number) {
+  function rotatedText(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    size: number,
+  ) {
     const t = text(x, y, content, fill, "middle", size);
     t.setAttribute("transform", `rotate(-90 ${x} ${y})`);
     return t;
   }
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -441,10 +584,21 @@ function fmtInt(v: number): string {
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+    c === "&"
+      ? "&amp;"
+      : c === "<"
+        ? "&lt;"
+        : c === ">"
+          ? "&gt;"
+          : c === '"'
+            ? "&quot;"
+            : "&#39;",
   );
 }
-function mergeOptions(base: UpsetOptions, next?: Partial<UpsetOptions>): UpsetOptions {
+function mergeOptions(
+  base: UpsetOptions,
+  next?: Partial<UpsetOptions>,
+): UpsetOptions {
   if (!next) return { ...base };
   return { ...base, ...next, theme: { ...base.theme, ...(next.theme ?? {}) } };
 }
