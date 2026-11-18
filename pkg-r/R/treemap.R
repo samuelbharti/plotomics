@@ -20,7 +20,8 @@
 #' @param color_by Color leaves by `"parent"` (top-level ancestor, categorical)
 #'   or by `"value"` (a sequential/diverging ramp).
 #' @param colormap Ramp used when `color_by = "value"`: `"viridis"` or `"rdbu"`.
-#' @param label_min_size Minimum tile side (px) before a label is drawn.
+#' @param label_min_size Minimum tile side (px) before a label is drawn, at
+#'   the default font size. It grows with `theme$fontSize`.
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
 #'   merged over the component defaults in the browser. `NULL` uses the default
 #'   theme.
