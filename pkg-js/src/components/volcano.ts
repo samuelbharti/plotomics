@@ -21,6 +21,12 @@ import {
   dpr,
   serializeSVG,
   canvasToPNG,
+  toNdc,
+  baseDomains,
+  fitView,
+  resizeView,
+  isStartView,
+  createDrawQueue,
 } from "../core/index.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
@@ -133,8 +139,8 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
-  // GPU scatter. Passing d3 scales makes draw() accept *data* coordinates and
-  // keeps domains in sync with pan/zoom.
+  // GPU scatter. It draws points in [-1, 1], and keeps the d3 scales in sync
+  // with pan/zoom once fitView() has handed them over. See core/scatter.ts.
   const scatterplot = createScatterplot({
     canvas,
     xScale,
@@ -144,6 +150,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     backgroundColor: theme.background,
     lassoInitiator: false,
   });
+  const queue = createDrawQueue();
 
   scatterplot.subscribe("pointOver", (i: number) => showTip(i));
   scatterplot.subscribe("pointOut", () => tooltip.hide());
@@ -196,15 +203,18 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
   function applyData() {
     const cols = data.columns;
     if (!cols.x || !cols.y || cols.x.length === 0) {
-      scatterplot.clear?.();
+      // clear() acts at once. Its promise waits for a "draw" event that an
+      // empty plot may never fire, so the queue does not wait for it.
+      void queue(async () => {
+        void scatterplot.clear?.();
+      });
       renderOverlay();
       return;
     }
     xDomain = symmetricExtent(cols.x);
     yDomain = paddedExtent(cols.y);
     yDomain[0] = Math.min(0, yDomain[0]);
-    xScale.domain(xDomain);
-    yScale.domain(yDomain);
+    const [xBase, yBase] = baseDomains(xDomain, yDomain, innerW(), innerH());
 
     const yThresh = -Math.log10(opts.pThreshold);
     const n = cols.x.length;
@@ -212,11 +222,15 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     for (let i = 0; i < n; i += 1) {
       z[i] = classify(num(cols.x, i), num(cols.y, i), opts.fcThreshold, yThresh);
     }
-    applyColors();
-    scatterplot.draw({
-      x: cols.x as ArrayLike<number>,
-      y: cols.y as ArrayLike<number>,
+    const points = {
+      x: toNdc(cols.x as ArrayLike<number>, xBase),
+      y: toNdc(cols.y as ArrayLike<number>, yBase),
       z,
+    };
+    applyColors();
+    void queue(async () => {
+      await fitView(scatterplot, xScale, yScale, xBase, yBase);
+      await scatterplot.draw(points);
     });
     renderOverlay();
   }
@@ -345,7 +359,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     width = w;
     height = h;
     layoutCanvas();
-    scatterplot.set({ width: innerW(), height: innerH() });
+    void resizeView(scatterplot, innerW(), innerH());
     renderOverlay();
   }
 
@@ -368,6 +382,9 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     },
     resize(w, h) {
       doResize(w, h);
+      // Until the person pans or zooms, the plot keeps showing all the data,
+      // so it fits again at the new size. After that it keeps their view.
+      if (data.columns.x && isStartView(scatterplot)) applyData();
     },
     exportSVG() {
       // Hybrid figure: rasterized GPU layer + vector axes/labels.

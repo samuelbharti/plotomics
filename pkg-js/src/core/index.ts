@@ -53,3 +53,13 @@ export {
   measure,
   dpr,
 } from "./dom.js";
+
+export {
+  type ScatterplotView,
+  toNdc,
+  baseDomains,
+  fitView,
+  resizeView,
+  isStartView,
+  createDrawQueue,
+} from "./scatter.js";
