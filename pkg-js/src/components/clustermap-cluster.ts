@@ -93,10 +93,11 @@ export function euclidean(a: ArrayLike<number>, b: ArrayLike<number>): number {
   let s = 0;
   let m = 0;
   for (let i = 0; i < n; i += 1) {
-    const x = a[i] as number;
-    const y = b[i] as number;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    s += (x - y) * (x - y);
+    const d = (a[i] as number) - (b[i] as number);
+    // d - d is 0 for a finite d and NaN when either value is NaN or
+    // infinite; this test is several times faster than Number.isFinite.
+    if (d - d !== 0) continue;
+    s += d * d;
     m += 1;
   }
   if (m === 0) return Number.NaN;
@@ -120,7 +121,8 @@ export function correlationDistance(
   for (let i = 0; i < n; i += 1) {
     const x = a[i] as number;
     const y = b[i] as number;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    // NaN unless both are finite (see euclidean).
+    if (x - x + (y - y) !== 0) continue;
     ma += x;
     mb += y;
     m += 1;
@@ -134,7 +136,7 @@ export function correlationDistance(
   for (let i = 0; i < n; i += 1) {
     const x = a[i] as number;
     const y = b[i] as number;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (x - x + (y - y) !== 0) continue;
     const xa = x - ma;
     const xb = y - mb;
     num += xa * xb;
@@ -149,8 +151,9 @@ export function correlationDistance(
 
 /**
  * Pairwise distances between `vectors`. A pair with no finite overlap gets
- * the largest finite distance in the matrix, so it joins last and never
- * hands the clustering a NaN.
+ * the largest finite distance in the matrix, so the clustering never sees a
+ * NaN. (With average linkage such a row joins last; Ward's method can still
+ * merge it earlier.)
  */
 export function distanceMatrix(
   vectors: number[][],

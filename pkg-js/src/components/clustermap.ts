@@ -181,6 +181,13 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
   let diverging = false;
   let anyMissing = false;
   const gradId = uniqueId("plotomics-clustermap-cb");
+  // Clustering is the slow part (seconds per axis on a large matrix), so
+  // each axis keeps its last result with the inputs that produced it. R and
+  // Shiny send the data again on every update; unchanged values, shape,
+  // linkage and options reuse the result.
+  let lastValues: Float32Array | null = null;
+  let rowCache: AxisCache | null = null;
+  let colCache: AxisCache | null = null;
 
   // DOM: display canvas for the heatmap + full-size SVG overlay. A small
   // offscreen canvas holds one pixel per cell and is upscaled onto the display.
@@ -263,6 +270,11 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
 
     // R sends NA as null; toFloat32 keeps it missing (NaN), never 0.
     const values = toFloat32(rawValues, nrows * ncols);
+    if (!lastValues || !sameValues(lastValues, values)) {
+      lastValues = values.slice();
+      rowCache = null;
+      colCache = null;
+    }
     display = opts.zScore ? zScoreByRow(values, nrows, ncols) : values;
     anyMissing = display.some((v) => !Number.isFinite(v));
     computeColorDomain();
@@ -270,40 +282,57 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     rowLabels = meta.rowLabels;
     colLabels = meta.colLabels;
 
-    // Row ordering: precomputed > cluster > identity.
-    const rowPre = normalizePrecomputed(meta.rowLinkage, nrows);
-    if (rowPre) {
-      rowOrder = rowPre.order;
-      rowDendro = rowPre.dendrogram;
-    } else if (opts.clusterRows && nrows <= MAX_CLUSTER_N && nrows >= 2) {
-      const res = clusterVectors(
-        toRowVectors(display, nrows, ncols),
-        opts.metric,
-        opts.linkage,
-      );
-      rowOrder = res.order;
-      rowDendro = res.dendrogram;
-    } else {
-      rowOrder = identityOrder(nrows);
-      rowDendro = null;
+    // Row ordering: precomputed > cluster > identity, reused when nothing
+    // the rows depend on changed.
+    const rowKey = JSON.stringify([
+      nrows,
+      ncols,
+      opts.metric,
+      opts.linkage,
+      opts.zScore,
+      opts.clusterRows,
+      meta.rowLinkage ?? null,
+    ]);
+    if (rowCache?.key !== rowKey) {
+      const rowPre = normalizePrecomputed(meta.rowLinkage, nrows);
+      const res = rowPre
+        ? rowPre
+        : opts.clusterRows && nrows <= MAX_CLUSTER_N && nrows >= 2
+          ? clusterVectors(
+              toRowVectors(display, nrows, ncols),
+              opts.metric,
+              opts.linkage,
+            )
+          : { order: identityOrder(nrows), dendrogram: null };
+      rowCache = { key: rowKey, order: res.order, dendro: res.dendrogram };
     }
+    rowOrder = rowCache.order;
+    rowDendro = rowCache.dendro;
 
-    const colPre = normalizePrecomputed(meta.colLinkage, ncols);
-    if (colPre) {
-      colOrder = colPre.order;
-      colDendro = colPre.dendrogram;
-    } else if (opts.clusterCols && ncols <= MAX_CLUSTER_N && ncols >= 2) {
-      const res = clusterVectors(
-        toColVectors(display, nrows, ncols),
-        opts.metric,
-        opts.linkage,
-      );
-      colOrder = res.order;
-      colDendro = res.dendrogram;
-    } else {
-      colOrder = identityOrder(ncols);
-      colDendro = null;
+    const colKey = JSON.stringify([
+      nrows,
+      ncols,
+      opts.metric,
+      opts.linkage,
+      opts.zScore,
+      opts.clusterCols,
+      meta.colLinkage ?? null,
+    ]);
+    if (colCache?.key !== colKey) {
+      const colPre = normalizePrecomputed(meta.colLinkage, ncols);
+      const res = colPre
+        ? colPre
+        : opts.clusterCols && ncols <= MAX_CLUSTER_N && ncols >= 2
+          ? clusterVectors(
+              toColVectors(display, nrows, ncols),
+              opts.metric,
+              opts.linkage,
+            )
+          : { order: identityOrder(ncols), dendrogram: null };
+      colCache = { key: colKey, order: res.order, dendro: res.dendrogram };
     }
+    colOrder = colCache.order;
+    colDendro = colCache.dendro;
 
     paintCells();
     relayout();
@@ -349,7 +378,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
 
   function colorFn(): (t: number) => [number, number, number] {
     const fn = opts.colormap === "rdbu" ? rdbu : viridis;
-    return (t: number) => fn(t < 0 ? 0 : t > 1 ? 1 : t);
+    return (t: number) => fn(Math.min(1, Math.max(0, t)));
   }
 
   function drawCanvas() {
@@ -509,7 +538,9 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
   }
 
   function renderColorbar() {
-    const barW = 180;
+    // The bar gives up width so the "NA" key still fits a narrow widget.
+    const keyW = anyMissing ? 48 : 0;
+    const barW = Math.max(60, Math.min(180, width - layout.heat.x - keyW - 8));
     const barH = 10;
     const { heat } = layout;
     const x0 = heat.x;
@@ -771,6 +802,22 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
 };
 
 // ---- small utilities ----
+/** One axis's leaf order and dendrogram, with the inputs that made them. */
+interface AxisCache {
+  key: string;
+  order: number[];
+  dendro: Dendrogram | null;
+}
+/** Whether two value arrays hold the same numbers (NaN equal to NaN). */
+function sameValues(a: Float32Array, b: Float32Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i] as number;
+    const y = b[i] as number;
+    if (x !== y && !(Number.isNaN(x) && Number.isNaN(y))) return false;
+  }
+  return true;
+}
 /** Copy to a Float32Array, reading null (R's NA) as NaN, not 0. */
 function toFloat32(src: ArrayLike<number | null>, n: number): Float32Array {
   if (src instanceof Float32Array && src.length === n) return src;

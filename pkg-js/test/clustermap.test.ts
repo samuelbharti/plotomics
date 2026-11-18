@@ -282,6 +282,8 @@ describe("clustermap with missing values and Ward linkage", () => {
       for (const metric of ["euclidean", "correlation"] as const) {
         const res = clusterVectors(rows, metric, linkage);
         expect(isPermutation(res.order, 4)).toBe(true);
+        // A real dendrogram, not the input order the fallback would give.
+        expect(res.dendrogram?.merges).toHaveLength(3);
         for (const m of res.dendrogram?.merges ?? []) {
           expect(Number.isFinite(m.height)).toBe(true);
         }
@@ -297,6 +299,13 @@ describe("clustermap with missing values and Ward linkage", () => {
       "average",
     );
     expect(isPermutation(cols.order, 2)).toBe(true);
+    expect(cols.dendrogram?.merges).toHaveLength(1);
+    // The NaN row is placed by its shared cell: (NaN, 5) is closest to
+    // (1, 1), so with average linkage it joins rows 0 and 1 before row 3.
+    const avg = clusterVectors(rows, "euclidean", "average");
+    const merges = avg.dendrogram?.merges ?? [];
+    expect([merges[0]?.left, merges[0]?.right].sort()).toEqual([0, 1]);
+    expect([merges[1]?.left, merges[1]?.right]).toContain(2);
   });
 
   it("computes Ward's method as R's ward.D2 and scipy do", () => {
@@ -314,7 +323,10 @@ describe("clustermap with missing values and Ward linkage", () => {
       .sort((a, b) => a - b);
     // hclust(dist(pts), "ward.D2")$height; ward.D gives 3.77, 8.65, 15.96.
     const expected = [1, 1, 3.511885, 7.767453, 12.233833];
-    heights.forEach((h, i) => expect(h).toBeCloseTo(expected[i] as number, 5));
+    expect(heights).toHaveLength(expected.length);
+    for (let i = 0; i < expected.length; i += 1) {
+      expect(heights[i]).toBeCloseTo(expected[i] as number, 5);
+    }
   });
 
   it("z-scores a row over its finite cells and keeps NaN missing", () => {

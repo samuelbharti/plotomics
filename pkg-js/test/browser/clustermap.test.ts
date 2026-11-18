@@ -1,6 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { agnes } from "ml-hclust";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClustermap } from "../../src/components/clustermap.js";
 import type { PlotomicsInstance } from "../../src/core/index.js";
+
+// Count the clustering runs; the real agnes still runs.
+vi.mock("ml-hclust", { spy: true });
 
 function container(width = 600, height = 480) {
   const el = document.createElement("div");
@@ -70,35 +74,72 @@ describe("clustermap in a browser", () => {
     expect(grey).toBe(true);
   });
 
-  it("does not cluster again when the options sent are unchanged", () => {
-    const n = 600;
-    const values = new Float32Array(n * 6);
-    let s = 7;
-    for (let i = 0; i < values.length; i += 1) {
-      s = (s * 16807) % 2147483647;
-      values[i] = s / 2147483647;
-    }
-    const el = container();
-    const data = { columns: { values }, meta: { nrows: n, ncols: 6 } };
-    const t0 = performance.now();
-    const plot = createClustermap(el, { data });
-    const first = performance.now() - t0;
-    instances.push(plot);
-    // R and Python send every option, changed or not.
-    const t1 = performance.now();
-    plot.setOptions({
-      metric: "euclidean",
-      linkage: "average",
+  it("clusters again only when the data or a clustering option changes", () => {
+    const values = Float32Array.from(
+      { length: 8 * 5 },
+      (_, i) => (i * 37) % 11,
+    );
+    const data = () => ({
+      columns: { values: values.slice() },
+      meta: { nrows: 8, ncols: 5 },
+    });
+    const all = {
+      metric: "euclidean" as const,
+      linkage: "average" as const,
       zScore: false,
       clusterRows: true,
       clusterCols: true,
-      colormap: "viridis",
-      showLabels: false,
-      legendTitle: "expression",
-    });
-    const again = performance.now() - t1;
-    expect(again).toBeLessThan(first / 5);
-    expect(svgTexts(el).some((t) => t.startsWith("expression"))).toBe(true);
+      colormap: "viridis" as const,
+      showLabels: true,
+      legendTitle: "value",
+    };
+    const el = container();
+    const runs = vi.mocked(agnes);
+    runs.mockClear();
+    const plot = createClustermap(el, { data: data(), options: all });
+    instances.push(plot);
+    expect(runs).toHaveBeenCalledTimes(2);
+    // A Shiny re-render: the same data again, then every option.
+    const rerender = (opts: typeof all) => {
+      runs.mockClear();
+      plot.setData(data());
+      plot.setOptions(opts);
+      return runs.mock.calls.length;
+    };
+    expect(rerender({ ...all, showLabels: false, legendTitle: "expr" })).toBe(
+      0,
+    );
+    expect(rerender({ ...all, colormap: "rdbu" as never })).toBe(0);
+    expect(rerender({ ...all, metric: "correlation" as never })).toBe(2);
+    // Turning row clustering off leaves the columns as they were.
+    expect(
+      rerender({ ...all, metric: "correlation" as never, clusterRows: false }),
+    ).toBe(0);
+    // New values cluster again.
+    runs.mockClear();
+    values[0] = 99;
+    plot.setData(data());
+    expect(runs).toHaveBeenCalledTimes(1);
+    expect(svgTexts(el).some((t) => t.startsWith("value"))).toBe(true);
+  });
+
+  it("keeps the NA key inside a narrow widget", () => {
+    const el = container(300, 400);
+    instances.push(
+      createClustermap(el, {
+        data: {
+          columns: {
+            values: [0, 0, 1, 1, null, 5, 10, 10] as unknown as number[],
+          },
+          meta: { nrows: 4, ncols: 2 },
+        },
+      }),
+    );
+    const na = Array.from(el.querySelectorAll("svg text")).find(
+      (t) => t.textContent === "NA",
+    ) as SVGTextElement;
+    const b = na.getBBox();
+    expect(b.x + b.width).toBeLessThanOrEqual(300);
   });
 
   it("gives each clustermap on a page its own colour bar gradient", () => {
