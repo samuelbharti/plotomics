@@ -48,8 +48,17 @@ describe("volcano missing values and p = 0", () => {
     const p = preparePoints(x, y);
     expect(Array.from(p.rows)).toEqual([0, 3, 4]);
     expect(Array.from(p.y)).toEqual([2, Number.POSITIVE_INFINITY, 6]);
-    // Finite y from 2 to 6: p = 0 is drawn 5% of that range above 6.
-    expect(p.yDraw[1]).toBeCloseTo(6.2, 10);
+    // The axis runs from 0 to 6: p = 0 is drawn 5% of that above 6.
+    expect(p.yDraw[1]).toBeCloseTo(6.3, 10);
+  });
+
+  it("keeps p = 0 clear of a narrow band of finite values", () => {
+    const p = preparePoints(
+      [1, 2, 3, 4],
+      [10, 10.2, 10.5, Number.POSITIVE_INFINITY],
+    );
+    // 5% of 0..10.5, not of 10..10.5.
+    expect(p.yDraw[3]).toBeCloseTo(11.025, 10);
   });
 
   it("reads rows R marks as infinite, since JSON sends them as null", () => {

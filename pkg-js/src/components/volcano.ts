@@ -169,7 +169,11 @@ export function preparePoints(
       if (y > hi) hi = y;
     }
   }
-  const top = Number.isFinite(hi) ? hi + 0.05 * (hi - lo || 1) : 1;
+  // 5% of the drawn y range above the highest finite y. The axis starts at
+  // 0, so the range is measured from 0, which keeps p = 0 clear of the top
+  // finite point when the finite values sit in a narrow band.
+  const span = hi - Math.min(0, lo);
+  const top = Number.isFinite(hi) ? hi + 0.05 * (span || 1) : 1;
   return {
     rows: Int32Array.from(rows),
     x: Float64Array.from(xs),
@@ -287,8 +291,8 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   // regl-scatterplot leaves the canvas transparent, so the theme background is
   // painted on the element: the plot panel and the axis margins alike.
   // destroy() puts back what the element had.
-  const priorBackground = el.style.background;
-  el.style.background = theme.background;
+  const priorBackground = el.style.backgroundColor;
+  el.style.backgroundColor = theme.background;
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
@@ -552,6 +556,8 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     const up: number[] = [];
     const down: number[] = [];
     for (let i = 0; i < pts.rows.length; i += 1) {
+      // A gene with no label (NA from R) takes no label slot or space.
+      if (!str(cols.label, pts.rows[i] as number)) continue;
       const c = classify(
         pts.x[i] as number,
         pts.y[i] as number,
@@ -597,16 +603,19 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     items.forEach((it, k) => {
       const spot = spots[k];
       if (!spot) return;
-      svg.appendChild(
-        text(
-          spot.x,
-          spot.y,
-          it.label,
-          theme.foreground,
-          spot.anchor,
-          LABEL_SIZE,
-        ),
+      const t = text(
+        spot.x,
+        spot.y,
+        it.label,
+        theme.foreground,
+        spot.anchor,
+        LABEL_SIZE,
       );
+      // Widths are measured at normal weight; a bold page must not widen
+      // the drawn text past its measured box.
+      t.setAttribute("font-weight", "normal");
+      t.setAttribute("letter-spacing", "normal");
+      svg.appendChild(t);
     });
   }
 
@@ -689,7 +698,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
-      el.style.background = theme.background;
+      el.style.backgroundColor = theme.background;
       // No option changes the data range, so the current pan/zoom stays.
       applyData(false);
     },
@@ -722,7 +731,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       scatterplot.destroy();
       canvas.remove();
       svg.remove();
-      el.style.background = priorBackground;
+      el.style.backgroundColor = priorBackground;
     },
   };
 

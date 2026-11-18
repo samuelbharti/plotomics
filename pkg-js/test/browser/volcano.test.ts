@@ -71,6 +71,49 @@ describe("volcano in a browser", () => {
     expect(Math.max(...yTicks(el))).toBeGreaterThanOrEqual(20);
   });
 
+  it("draws the p = 0 gene at the top, where hovering finds it", async () => {
+    const el = container(800, 400);
+    const x = spread(300, -4, 4, 1);
+    const y = spread(300, 0, 20, 2);
+    x[10] = 3;
+    y[10] = Number.POSITIVE_INFINITY;
+    const v = createVolcano(el, {
+      data: { columns: { x, y } },
+      options: { labelTopN: 0 },
+    });
+    instances.push(v);
+    await expect.poll(() => yTicks(el).length, poll).toBeGreaterThan(0);
+    await new Promise((r) => setTimeout(r, 300));
+
+    // x = 3 sits halfway between the "2" and "4" ticks.
+    const tickX = (label: string) =>
+      Number(
+        Array.from(el.querySelectorAll('svg text[text-anchor="middle"]'))
+          .find((t) => t.textContent === label)
+          ?.getAttribute("x"),
+      );
+    const px = (tickX("2") + tickX("4")) / 2;
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const box = el.getBoundingClientRect();
+    const tip = () =>
+      Array.from(el.children).find((c) => c.tagName === "DIV")?.textContent ??
+      "";
+    let found = false;
+    // Walk down from the top of the plot until the tooltip names p = 0.
+    for (let py = 16; py < 80 && !found; py += 2) {
+      canvas.dispatchEvent(
+        new MouseEvent("mousemove", {
+          clientX: box.left + px,
+          clientY: box.top + py,
+          bubbles: true,
+        }),
+      );
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      found = tip().includes("Inf (p = 0)");
+    }
+    expect(found).toBe(true);
+  });
+
   it("places gene labels inside the plot without overlap", async () => {
     const el = container(600, 400);
     // Twenty genes crowded into the two top corners, as in a strong DE result.
@@ -121,6 +164,12 @@ describe("volcano in a browser", () => {
     expect(getComputedStyle(el).backgroundColor).toBe("rgb(0, 0, 0)");
     v.destroy();
     instances = [];
-    expect(el.style.background).toBe("");
+    expect(el.style.backgroundColor).toBe("");
+
+    // A host's own background colour comes back after destroy.
+    const host = container(600, 400);
+    host.style.backgroundColor = "rgb(1, 2, 3)";
+    createVolcano(host, { data: { columns: { x: [1], y: [1] } } }).destroy();
+    expect(host.style.backgroundColor).toBe("rgb(1, 2, 3)");
   });
 });
