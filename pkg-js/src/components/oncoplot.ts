@@ -98,6 +98,26 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const ANN_ROW_H = 13;
 /** Gap between the grid and the annotation strips. */
 const ANN_GAP = 6;
+/** Height of one legend row. */
+const LEGEND_ROW_H = 15;
+/** Swatch size and the gaps around a legend entry. */
+const SWATCH = 9;
+const SWATCH_GAP = 4;
+const ENTRY_GAP = 14;
+/**
+ * Default colors for annotation strips (ColorBrewer Set2). They are lighter
+ * than the Okabe-Ito class colors, so a strip does not read as an alteration.
+ */
+const ANNOTATION_PALETTE = [
+  "#66C2A5",
+  "#FC8D62",
+  "#8DA0CB",
+  "#E78AC3",
+  "#A6D854",
+  "#FFD92F",
+  "#E5C494",
+  "#B3B3B3",
+];
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/oncoplot.test.ts)
@@ -136,6 +156,8 @@ export function layoutOncoplot(
     "showBurden" | "showFrequency" | "showAnnotations" | "showLegend"
   >,
   geneLabelW = 96,
+  /** Rows of legend entries; the legend wraps, so it can need several. */
+  legendRows = 1,
 ): OncoplotLayout {
   const burdenH = opts.showBurden
     ? Math.min(72, Math.max(36, height * 0.14))
@@ -143,7 +165,9 @@ export function layoutOncoplot(
   const freqW = opts.showFrequency ? 96 : 0;
   const annCount = opts.showAnnotations ? nAnnotations : 0;
   const annH = annCount > 0 ? ANN_GAP + annCount * ANN_ROW_H : 0;
-  const legendH = opts.showLegend ? 30 : 0;
+  const legendH = opts.showLegend
+    ? 16 + Math.max(1, legendRows) * LEGEND_ROW_H
+    : 0;
   const bottomAxis = 16;
 
   const left = geneLabelW;
@@ -179,9 +203,10 @@ export function columnMax(col: Column | undefined): number {
 }
 
 /**
- * Pick which row labels to draw. Below `maxLabels` every gene is labelled;
- * above it, labels would collide, so none are drawn and the tooltip carries the
- * gene name instead. Returning an explicit set keeps the decision testable.
+ * Pick which row labels to draw. When rows are at least `minSpacing` px tall
+ * every gene is labelled; when they are shorter, every k-th row is, with k
+ * chosen so labelled rows are `minSpacing` apart. The tooltip names every
+ * gene. Returning an explicit set keeps the decision testable.
  */
 export function visibleRowLabels(
   nrows: number,
@@ -189,8 +214,44 @@ export function visibleRowLabels(
   minSpacing = 9,
 ): Set<number> {
   const out = new Set<number>();
-  if (cellH < minSpacing) return out;
-  for (let r = 0; r < nrows; r += 1) out.add(r);
+  if (!(cellH > 0)) return out;
+  const every = Math.max(1, Math.ceil(minSpacing / cellH));
+  for (let r = 0; r < nrows; r += every) out.add(r);
+  return out;
+}
+
+/** One legend entry: a swatch and its text, or a heading with no swatch. */
+export interface LegendEntry {
+  label: string;
+  color: string | null;
+}
+
+/**
+ * Lay legend entries out in rows no wider than `maxWidth`. A group of entries
+ * (the alteration classes, or one annotation's levels) starts a new row.
+ * Returns each entry's x and its row number; `width` measures a label.
+ */
+export function wrapLegend(
+  groups: LegendEntry[][],
+  maxWidth: number,
+  width: (s: string) => number,
+): { entry: LegendEntry; x: number; row: number }[] {
+  const out: { entry: LegendEntry; x: number; row: number }[] = [];
+  let row = -1;
+  for (const group of groups) {
+    if (!group.length) continue;
+    row += 1;
+    let x = 0;
+    for (const entry of group) {
+      const w = (entry.color ? SWATCH + SWATCH_GAP : 0) + width(entry.label);
+      if (x > 0 && x + w > maxWidth) {
+        row += 1;
+        x = 0;
+      }
+      out.push({ entry, x, row });
+      x += w + ENTRY_GAP;
+    }
+  }
   return out;
 }
 
@@ -253,9 +314,57 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     if (given && given.length) return given;
     return classes().map((_, i) => OKABE_ITO[i % OKABE_ITO.length] as string);
   }
-  function annColors(a: OncoplotAnnotation): string[] {
-    if (a.colors && a.colors.length) return a.colors;
-    return a.levels.map((_, i) => OKABE_ITO[i % OKABE_ITO.length] as string);
+  /**
+   * Colors for each annotation strip. Without given colors, the strips use a
+   * lighter palette than the alteration classes, and each strip continues it
+   * after the strips before, so neighbouring strips do not repeat colors.
+   */
+  function annPalettes(): string[][] {
+    let next = 0;
+    return annotations().map((a) => {
+      if (a.colors?.length) return a.colors;
+      const cols = a.levels.map(
+        (_, i) =>
+          ANNOTATION_PALETTE[(next + i) % ANNOTATION_PALETTE.length] as string,
+      );
+      next += a.levels.length;
+      return cols;
+    });
+  }
+
+  /** The legend: the classes, then each shown annotation with its levels. */
+  function legendGroups(): LegendEntry[][] {
+    const cols = classColors();
+    const groups: LegendEntry[][] = [
+      classes().map((c, i) => ({
+        label: c,
+        color: cols[i] ?? theme.foreground,
+      })),
+    ];
+    if (opts.showAnnotations) {
+      const palettes = annPalettes();
+      annotations().forEach((a, k) => {
+        const pal = palettes[k] as string[];
+        groups.push([
+          { label: `${a.name}:`, color: null },
+          ...a.levels.map((lv, i) => ({
+            label: lv,
+            color: pal[i % pal.length] as string,
+          })),
+        ]);
+      });
+    }
+    return groups;
+  }
+
+  const measureCtx = document.createElement("canvas").getContext("2d");
+  function labelWidth(s: string): number {
+    if (!measureCtx) return s.length * 10 * 0.56;
+    measureCtx.font = `10px ${theme.fontFamily}`;
+    return measureCtx.measureText(s).width;
+  }
+  function legendLayout() {
+    return wrapLegend(legendGroups(), Math.max(1, width - 96 - 8), labelWidth);
   }
 
   // ---- pointer ----
@@ -264,15 +373,21 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
     const rect = el.getBoundingClientRect();
-    const hit = hitTest(
-      e.clientX - rect.left,
-      e.clientY - rect.top,
-      layout,
-      nrows(),
-      ncols(),
-    );
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const hit = hitTest(px, py, layout, nrows(), ncols());
     if (!hit) {
-      tooltip.hide();
+      // An annotation strip: name the sample and its value there.
+      const ann = annotationAt(px, py);
+      if (ann) {
+        tooltip.show(
+          `<b>${esc(ann.sample)}</b><br/>${esc(ann.name)}: ${esc(ann.value)}`,
+          lastPointer.x,
+          lastPointer.y,
+        );
+      } else {
+        tooltip.hide();
+      }
       return;
     }
     const codes = data.columns.codes as ArrayLike<number> | undefined;
@@ -285,6 +400,26 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       lastPointer.x,
       lastPointer.y,
     );
+  }
+  /** The annotation cell under a point, if any. */
+  function annotationAt(
+    px: number,
+    py: number,
+  ): { name: string; sample: string; value: string } | null {
+    if (!opts.showAnnotations || layout.annH === 0) return null;
+    const cx = px - layout.left;
+    const cy = py - (layout.top + layout.gridH + ANN_GAP);
+    if (cx < 0 || cx >= layout.gridW || cy < 0) return null;
+    const k = Math.floor(cy / ANN_ROW_H);
+    const a = annotations()[k];
+    const col = Math.floor(cx / layout.cellW);
+    if (!a || col < 0 || col >= ncols()) return null;
+    const code = a.codes[col] as number;
+    const value =
+      code == null || code < 0 || code >= a.levels.length
+        ? "NA"
+        : (a.levels[code] as string);
+    return { name: a.name, sample: samples()[col] ?? `col ${col}`, value };
   }
   function onLeave() {
     tooltip.hide();
@@ -314,7 +449,20 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
 
     const R = nrows();
     const C = ncols();
-    layout = layoutOncoplot(width, height, R, C, annotations().length, opts);
+    const legend = opts.showLegend ? legendLayout() : [];
+    const legendRows = legend.length
+      ? (legend[legend.length - 1]?.row ?? 0) + 1
+      : 1;
+    layout = layoutOncoplot(
+      width,
+      height,
+      R,
+      C,
+      annotations().length,
+      opts,
+      96,
+      legendRows,
+    );
     if (R === 0 || C === 0) {
       renderOverlay();
       return;
@@ -383,9 +531,10 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     // Clinical annotation strips.
     if (opts.showAnnotations && layout.annH > 0) {
       const anns = annotations();
+      const palettes = annPalettes();
       let y = top + layout.gridH + ANN_GAP;
-      for (const a of anns) {
-        const palette = annColors(a);
+      for (const [k, a] of anns.entries()) {
+        const palette = palettes[k] as string[];
         for (let c = 0; c < C; c += 1) {
           const code = (a.codes[c] as number) ?? -1;
           if (code < 0 || code >= a.levels.length) {
@@ -450,7 +599,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       const tmb = data.columns.tmb as ArrayLike<number> | undefined;
       if (tmb) {
         svg.appendChild(
-          text(left - 8, 12, String(columnMax(tmb)), theme.muted, "end", 9),
+          text(left - 8, 12, fmtCount(columnMax(tmb)), theme.muted, "end", 9),
         );
         svg.appendChild(
           text(
@@ -492,23 +641,36 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
   }
 
   function renderLegend() {
-    const cls = classes();
-    if (!cls.length) return;
-    const cols = classColors();
-    const y = height - 10;
-    let x = layout.left;
-    for (let i = 0; i < cls.length; i += 1) {
-      const sw = document.createElementNS(SVG_NS, "rect");
-      sw.setAttribute("x", String(x));
-      sw.setAttribute("y", String(y - 9));
-      sw.setAttribute("width", "9");
-      sw.setAttribute("height", "9");
-      sw.setAttribute("fill", cols[i] ?? theme.foreground);
-      svg.appendChild(sw);
-      svg.appendChild(
-        text(x + 13, y, cls[i] ?? "", theme.foreground, "start", 10),
-      );
-      x += 13 + estimateTextWidth(cls[i] ?? "", 10) + 14;
+    const items = legendLayout();
+    if (!items.length) return;
+    const rows = (items[items.length - 1]?.row ?? 0) + 1;
+    for (const { entry, x: dx, row } of items) {
+      const x = layout.left + dx;
+      const y = height - 6 - (rows - 1 - row) * LEGEND_ROW_H;
+      if (entry.color) {
+        const sw = document.createElementNS(SVG_NS, "rect");
+        sw.setAttribute("x", String(x));
+        sw.setAttribute("y", String(y - SWATCH));
+        sw.setAttribute("width", String(SWATCH));
+        sw.setAttribute("height", String(SWATCH));
+        sw.setAttribute("fill", entry.color);
+        svg.appendChild(sw);
+        svg.appendChild(
+          text(
+            x + SWATCH + SWATCH_GAP,
+            y,
+            entry.label,
+            theme.foreground,
+            "start",
+            10,
+          ),
+        );
+      } else {
+        // An annotation's name heads its levels.
+        const t = text(x, y, entry.label, theme.muted, "start", 10);
+        t.setAttribute("font-weight", "600");
+        svg.appendChild(t);
+      }
     }
   }
 
@@ -590,9 +752,9 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
 function fmtPct(v: number): string {
   return v >= 10 ? String(Math.round(v)) : v.toFixed(1);
 }
-/** Rough advance width for legend layout; avoids a DOM measure per label. */
-function estimateTextWidth(s: string, size: number): number {
-  return s.length * size * 0.56;
+/** A count as a whole number, or with up to two decimals (float32 noise). */
+function fmtCount(v: number): string {
+  return Number.isInteger(v) ? String(v) : String(Number(v.toFixed(2)));
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>

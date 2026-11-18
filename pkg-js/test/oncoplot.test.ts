@@ -4,6 +4,7 @@ import {
   hitTest,
   layoutOncoplot,
   visibleRowLabels,
+  wrapLegend,
 } from "../src/components/oncoplot.js";
 
 const OPTS = {
@@ -106,8 +107,36 @@ describe("oncoplot column helpers", () => {
     expect(columnMax(undefined)).toBe(1);
   });
 
-  it("labels every row when they are far enough apart, none when cramped", () => {
+  it("labels every row when they are far enough apart, every k-th when cramped", () => {
     expect(visibleRowLabels(20, 14).size).toBe(20);
-    expect(visibleRowLabels(400, 1.2).size).toBe(0);
+    // 1.2 px rows: every 8th row keeps labels 9.6 px apart.
+    const thinned = visibleRowLabels(400, 1.2);
+    expect(thinned.size).toBe(50);
+    expect([...thinned].slice(0, 3)).toEqual([0, 8, 16]);
+    expect(visibleRowLabels(10, 0).size).toBe(0);
+  });
+
+  it("wraps the legend and starts each group on a new row", () => {
+    const width = (s: string) => s.length * 6;
+    const items = wrapLegend(
+      [
+        [
+          { label: "Missense", color: "#a" },
+          { label: "Truncating", color: "#b" },
+          { label: "Splice", color: "#c" },
+        ],
+        [
+          { label: "Subtype:", color: null },
+          { label: "LumA", color: "#d" },
+        ],
+      ],
+      150,
+      width,
+    );
+    // Missense (13 + 48) and Truncating (13 + 60) fit in 150; Splice wraps.
+    expect(items.map((i) => i.row)).toEqual([0, 0, 1, 2, 2]);
+    expect(items[0]?.x).toBe(0);
+    expect(items[1]?.x).toBe(13 + 48 + 14);
+    expect(items[3]?.entry.label).toBe("Subtype:");
   });
 });
