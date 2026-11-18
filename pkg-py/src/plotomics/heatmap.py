@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, pack_columns
+from ._base import STATIC, PlotomicsWidget, _as_matrix, _check_labels, pack_columns
 
 
 class Heatmap(PlotomicsWidget):
@@ -20,9 +20,11 @@ class Heatmap(PlotomicsWidget):
     Parameters
     ----------
     matrix:
-        A 2-D ``numpy`` array or a ``pandas`` DataFrame of shape
+        A 2-D ``numpy`` array, nested list or ``pandas`` DataFrame of shape
         ``(nrows, ncols)``. For a DataFrame, the index becomes the row labels
-        and the columns become the column labels.
+        and the columns become the column labels. A missing cell (NaN, or NA
+        in a nullable column) is drawn grey and left out of the colour range
+        and the z-score.
     colormap:
         Color ramp: ``"viridis"`` (sequential) or ``"rdbu"`` (diverging).
     z_score:
@@ -67,13 +69,12 @@ class Heatmap(PlotomicsWidget):
         if colormap not in ("viridis", "rdbu"):
             raise ValueError("`colormap` must be 'viridis' or 'rdbu'.")
 
-        # Pull labels off a DataFrame before coercing to an array.
-        if row_labels is None and hasattr(matrix, "index"):
-            row_labels = [str(v) for v in matrix.index]
-        if col_labels is None and hasattr(matrix, "columns"):
-            col_labels = [str(v) for v in matrix.columns]
-
-        arr = np.asarray(getattr(matrix, "values", matrix), dtype=np.float32)
+        # A DataFrame gives its labels; a nested list or array gives none.
+        arr, inferred_rows, inferred_cols = _as_matrix(matrix)
+        if row_labels is None:
+            row_labels = inferred_rows
+        if col_labels is None:
+            col_labels = inferred_cols
         if arr.ndim != 2:
             raise ValueError("`matrix` must be a 2-D array or DataFrame.")
         nrows, ncols = int(arr.shape[0]), int(arr.shape[1])
@@ -85,18 +86,12 @@ class Heatmap(PlotomicsWidget):
         buffer, schema = pack_columns({"values": values})
 
         meta: dict[str, Any] = {"nrows": nrows, "ncols": ncols}
-        if row_labels is not None:
-            if len(row_labels) != nrows:
-                raise ValueError(
-                    f"`row_labels` has {len(row_labels)} entries; expected {nrows}."
-                )
-            meta["rowLabels"] = [str(v) for v in row_labels]
-        if col_labels is not None:
-            if len(col_labels) != ncols:
-                raise ValueError(
-                    f"`col_labels` has {len(col_labels)} entries; expected {ncols}."
-                )
-            meta["colLabels"] = [str(v) for v in col_labels]
+        rlabels = _check_labels(row_labels, nrows, "row_labels")
+        clabels = _check_labels(col_labels, ncols, "col_labels")
+        if rlabels is not None:
+            meta["rowLabels"] = rlabels
+        if clabels is not None:
+            meta["colLabels"] = clabels
 
         options: dict[str, Any] = {
             "colormap": colormap,

@@ -82,3 +82,24 @@ def test_heatmap_theme_in_options():
 def test_heatmap_rejects_empty_matrix():
     with pytest.raises(ValueError, match="at least one row"):
         Heatmap(np.zeros((0, 5), dtype=np.float32))
+
+
+def test_heatmap_takes_a_nested_list():
+    w = Heatmap([[1, 2], [3, 4]])
+    assert w.data["meta"]["nrows"] == 2
+    assert w.data["meta"]["ncols"] == 2
+    assert "rowLabels" not in w.data["meta"]
+
+
+def test_heatmap_reads_a_nullable_na_as_missing():
+    pd = pytest.importorskip("pandas")
+    df = pd.DataFrame({"a": [1.0, None], "b": [3.0, 4.0]}).astype("Float64")
+    w = Heatmap(df)
+    values = np.frombuffer(w.buffer, dtype=np.float32, count=4)
+    assert np.isnan(values[2])
+    assert w.data["meta"]["rowLabels"] == ["0", "1"]
+
+
+def test_heatmap_rejects_text():
+    with pytest.raises(ValueError, match="must be numeric"):
+        Heatmap([["a", "b"]])
