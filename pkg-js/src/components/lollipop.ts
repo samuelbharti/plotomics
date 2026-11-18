@@ -213,8 +213,14 @@ export function residueTicks(length: number, count = 6): number[] {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createLollipop: PlotomicsFactory<LollipopOptions> = (el, initial) => {
-  let opts: LollipopOptions = mergeOptions(defaultLollipopOptions, initial.options);
+export const createLollipop: PlotomicsFactory<LollipopOptions> = (
+  el,
+  initial,
+) => {
+  let opts: LollipopOptions = mergeOptions(
+    defaultLollipopOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -226,7 +232,8 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (el, initial) =
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -284,7 +291,12 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (el, initial) =
     for (let i = 0; i < pos.length; i += 1) {
       const x = px(pos[i] as number);
       const y = py(cnt[i] as number);
-      const r = headRadius(cnt[i] as number, mc, opts.minHeadRadius, opts.maxHeadRadius);
+      const r = headRadius(
+        cnt[i] as number,
+        mc,
+        opts.minHeadRadius,
+        opts.maxHeadRadius,
+      );
       const d = Math.hypot(mx - x, my - y);
       if (d <= r + 2 && d < bestD) {
         bestD = d;
@@ -404,7 +416,12 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (el, initial) =
     for (let i = 0; i < pos.length; i += 1) {
       const x = px(pos[i] as number);
       const y = py(cnt[i] as number);
-      const r = headRadius(cnt[i] as number, mc, opts.minHeadRadius, opts.maxHeadRadius);
+      const r = headRadius(
+        cnt[i] as number,
+        mc,
+        opts.minHeadRadius,
+        opts.maxHeadRadius,
+      );
       const ci = clsList.indexOf(cls[i] ?? "");
       ctx.fillStyle = ci >= 0 ? (ccols[ci] as string) : theme.foreground;
       ctx.globalAlpha = 0.92;
@@ -424,10 +441,20 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (el, initial) =
 
     // y axis: a tick at 0 and at the maximum recurrence.
     const mc = maxCount();
-    svg.appendChild(text(layout.left - 8, layout.baseline + 3, "0", theme.muted, "end", 9));
-    svg.appendChild(text(layout.left - 8, py(mc) + 3, String(mc), theme.muted, "end", 9));
     svg.appendChild(
-      rotatedText(14, layout.top + layout.stemH / 2, opts.yLabel, theme.muted, 10),
+      text(layout.left - 8, layout.baseline + 3, "0", theme.muted, "end", 9),
+    );
+    svg.appendChild(
+      text(layout.left - 8, py(mc) + 3, String(mc), theme.muted, "end", 9),
+    );
+    svg.appendChild(
+      rotatedText(
+        14,
+        layout.top + layout.stemH / 2,
+        opts.yLabel,
+        theme.muted,
+        10,
+      ),
     );
 
     // Domain names, centred, dropped when the rectangle is too narrow to hold
@@ -440,7 +467,9 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (el, initial) =
         const w = x1 - x0;
         const label = shortDomain(d.name);
         if (w > estimateTextWidth(label, 9) + 6) {
-          svg.appendChild(text((x0 + x1) / 2, midY, label, "#FBF7EF", "middle", 9));
+          svg.appendChild(
+            text((x0 + x1) / 2, midY, label, "#FBF7EF", "middle", 9),
+          );
         }
       });
     }
@@ -458,7 +487,12 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (el, initial) =
       idx.forEach((i, k) => {
         const row = rows[k] as number;
         if (row < 0) return;
-        const r = headRadius(cnt[i] as number, mc2, opts.minHeadRadius, opts.maxHeadRadius);
+        const r = headRadius(
+          cnt[i] as number,
+          mc2,
+          opts.minHeadRadius,
+          opts.maxHeadRadius,
+        );
         const rawY = py(cnt[i] as number) - r - 4 - row * 12;
         // Keep labels inside the panel: the tallest stem's label would
         // otherwise sit above the top edge, and a label on a variant near
@@ -469,7 +503,9 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (el, initial) =
           Math.max(xs[k] as number, layout.left + half),
           width - layout.right - half,
         );
-        svg.appendChild(text(x, y, labs[i] ?? "", theme.foreground, "middle", 10));
+        svg.appendChild(
+          text(x, y, labs[i] ?? "", theme.foreground, "middle", 10),
+        );
       });
     }
 
@@ -477,13 +513,25 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (el, initial) =
     for (const t of residueTicks(L)) {
       const x = px(t);
       svg.appendChild(line(x, layout.axisY - 4, x, layout.axisY, theme.axis));
-      svg.appendChild(text(x, layout.axisY + 12, String(t), theme.muted, "middle", 9));
+      svg.appendChild(
+        text(x, layout.axisY + 12, String(t), theme.muted, "middle", 9),
+      );
     }
     const gene = (data.meta?.gene as string) ?? "";
     const acc = (data.meta?.uniprot as string) ?? "";
-    const title = gene && acc ? `${gene} (${acc}) - amino-acid position` : "amino-acid position";
+    const title =
+      gene && acc
+        ? `${gene} (${acc}) - amino-acid position`
+        : "amino-acid position";
     svg.appendChild(
-      text(layout.left + layout.innerW / 2, layout.axisY + 24, title, theme.muted, "middle", 10),
+      text(
+        layout.left + layout.innerW / 2,
+        layout.axisY + 24,
+        title,
+        theme.muted,
+        "middle",
+        10,
+      ),
     );
 
     if (opts.showLegend) renderLegend();
@@ -502,13 +550,22 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (el, initial) =
       dot.setAttribute("r", "4");
       dot.setAttribute("fill", cols[i] ?? theme.foreground);
       svg.appendChild(dot);
-      svg.appendChild(text(x + 12, y, cls[i] ?? "", theme.foreground, "start", 10));
+      svg.appendChild(
+        text(x + 12, y, cls[i] ?? "", theme.foreground, "start", 10),
+      );
       x += 12 + estimateTextWidth(cls[i] ?? "", 10) + 14;
     }
   }
 
   // ---- SVG helpers ----
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 10) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 10,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -519,12 +576,24 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (el, initial) =
     t.textContent = content;
     return t;
   }
-  function rotatedText(x: number, y: number, content: string, fill: string, size: number) {
+  function rotatedText(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    size: number,
+  ) {
     const t = text(x, y, content, fill, "middle", size);
     t.setAttribute("transform", `rotate(-90 ${x} ${y})`);
     return t;
   }
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -596,10 +665,21 @@ function estimateTextWidth(s: string, size: number): number {
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+    c === "&"
+      ? "&amp;"
+      : c === "<"
+        ? "&lt;"
+        : c === ">"
+          ? "&gt;"
+          : c === '"'
+            ? "&quot;"
+            : "&#39;",
   );
 }
-function mergeOptions(base: LollipopOptions, next?: Partial<LollipopOptions>): LollipopOptions {
+function mergeOptions(
+  base: LollipopOptions,
+  next?: Partial<LollipopOptions>,
+): LollipopOptions {
   if (!next) return { ...base };
   return { ...base, ...next, theme: { ...base.theme, ...(next.theme ?? {}) } };
 }

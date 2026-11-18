@@ -19,8 +19,14 @@ describe("lollipop layout", () => {
   });
 
   it("gives the stems more room when the PTM track and legend are hidden", () => {
-    const withAll = layoutLollipop(900, 540, { showPtms: true, showLegend: true });
-    const bare = layoutLollipop(900, 540, { showPtms: false, showLegend: false });
+    const withAll = layoutLollipop(900, 540, {
+      showPtms: true,
+      showLegend: true,
+    });
+    const bare = layoutLollipop(900, 540, {
+      showPtms: false,
+      showLegend: false,
+    });
     expect(bare.stemH).toBeGreaterThan(withAll.stemH);
   });
 
