@@ -110,3 +110,38 @@ test_that("km() at-risk counts are the number still at risk at each grid time", 
   # events one.
   expect_equal(unlist(w$x$data$meta$riskCounts), c(4L, 3L, 1L))
 })
+
+test_that("km() follows a custom groups order in the risk table", {
+  skip_if_not_installed("survival")
+  d <- data.frame(
+    t = c(1, 2, 3, 4, 5, 6, 1, 2, 3, 4),
+    e = 1,
+    g = c(rep("a", 6), rep("b", 4))
+  )
+  fit <- survival::survfit(survival::Surv(t, e) ~ g, data = d)
+  ab <- km(fit, risk_times = c(0, 2))
+  ba <- km(fit, risk_times = c(0, 2), groups = c("b", "a"))
+  # Row g is read as groups[g]: a has 6 at risk at 0, b has 4.
+  expect_equal(as.integer(ab$x$data$meta$riskCounts), c(6L, 5L, 4L, 3L))
+  expect_equal(as.integer(ba$x$data$meta$riskCounts), c(4L, 3L, 6L, 5L))
+})
+
+test_that("km() takes a single risk time for several strata", {
+  skip_if_not_installed("survival")
+  # Three subjects in a, two in b, so a swap of the strata shows.
+  d <- data.frame(t = c(1, 2, 3, 4, 5), e = 1, g = c("a", "a", "a", "b", "b"))
+  fit <- survival::survfit(survival::Surv(t, e) ~ g, data = d)
+  w <- km(fit, risk_times = 0)
+  expect_equal(as.integer(w$x$data$meta$riskCounts), c(3L, 2L))
+  w <- km(fit, risk_times = 0, groups = c("b", "a"))
+  expect_equal(as.integer(w$x$data$meta$riskCounts), c(2L, 3L))
+})
+
+test_that("km() sends the colour of a single curve", {
+  w <- km(data.frame(time = c(0, 5), surv = c(1, 0.8)), group_colors = "#123456")
+  expect_equal(as.character(w$x$data$meta$groupColors), "#123456")
+  expect_error(
+    km(data.frame(time = c(0, 5), surv = c(1, 0.8)), group_colors = c("#1", "#2")),
+    "one entry per stratum"
+  )
+})

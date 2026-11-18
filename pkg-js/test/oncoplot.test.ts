@@ -4,6 +4,7 @@ import {
   hitTest,
   layoutOncoplot,
   visibleRowLabels,
+  wrapLegend,
 } from "../src/components/oncoplot.js";
 
 const OPTS = {
@@ -28,14 +29,21 @@ describe("oncoplot layout", () => {
   });
 
   it("reclaims the marginal space when those panels are hidden", () => {
-    const off = { showBurden: false, showFrequency: false, showAnnotations: false, showLegend: false };
+    const off = {
+      showBurden: false,
+      showFrequency: false,
+      showAnnotations: false,
+      showLegend: false,
+    };
     const l = layoutOncoplot(1000, 600, 20, 100, 2, off);
     expect(l.burdenH).toBe(0);
     expect(l.freqW).toBe(0);
     expect(l.annH).toBe(0);
     expect(l.top).toBe(0);
     // taller grid than the fully-decorated layout
-    expect(l.gridH).toBeGreaterThan(layoutOncoplot(1000, 600, 20, 100, 2, OPTS).gridH);
+    expect(l.gridH).toBeGreaterThan(
+      layoutOncoplot(1000, 600, 20, 100, 2, OPTS).gridH,
+    );
   });
 
   it("has no annotation band when there are no annotations", () => {
@@ -53,21 +61,37 @@ describe("oncoplot hit testing", () => {
   const layout = layoutOncoplot(1000, 600, 20, 100, 2, OPTS);
 
   it("maps a pixel inside the grid to its cell", () => {
-    const hit = hitTest(layout.left + layout.cellW * 3.5, layout.top + layout.cellH * 2.5,
-      layout, 20, 100);
+    const hit = hitTest(
+      layout.left + layout.cellW * 3.5,
+      layout.top + layout.cellH * 2.5,
+      layout,
+      20,
+      100,
+    );
     expect(hit).toEqual({ row: 2, col: 3 });
   });
 
   it("returns null outside the grid", () => {
     expect(hitTest(0, 0, layout, 20, 100)).toBeNull();
-    expect(hitTest(layout.left - 1, layout.top + 5, layout, 20, 100)).toBeNull();
-    expect(hitTest(layout.left + layout.gridW + 1, layout.top + 5, layout, 20, 100)).toBeNull();
-    expect(hitTest(layout.left + 5, layout.top + layout.gridH + 1, layout, 20, 100)).toBeNull();
+    expect(
+      hitTest(layout.left - 1, layout.top + 5, layout, 20, 100),
+    ).toBeNull();
+    expect(
+      hitTest(layout.left + layout.gridW + 1, layout.top + 5, layout, 20, 100),
+    ).toBeNull();
+    expect(
+      hitTest(layout.left + 5, layout.top + layout.gridH + 1, layout, 20, 100),
+    ).toBeNull();
   });
 
   it("clamps at the far edge rather than reporting an out-of-range cell", () => {
-    const hit = hitTest(layout.left + layout.gridW - 0.5, layout.top + layout.gridH - 0.5,
-      layout, 20, 100);
+    const hit = hitTest(
+      layout.left + layout.gridW - 0.5,
+      layout.top + layout.gridH - 0.5,
+      layout,
+      20,
+      100,
+    );
     expect(hit).toEqual({ row: 19, col: 99 });
   });
 });
@@ -83,8 +107,61 @@ describe("oncoplot column helpers", () => {
     expect(columnMax(undefined)).toBe(1);
   });
 
-  it("labels every row when they are far enough apart, none when cramped", () => {
+  it("labels every row when rows are tall enough, every k-th when cramped", () => {
     expect(visibleRowLabels(20, 14).size).toBe(20);
-    expect(visibleRowLabels(400, 1.2).size).toBe(0);
+    // 1.2 px rows: every 8th row keeps a 9.6 px gap between labels.
+    const thinned = visibleRowLabels(400, 1.2);
+    expect(thinned.size).toBe(50);
+    expect([...thinned].slice(0, 3)).toEqual([0, 8, 16]);
+    expect(visibleRowLabels(10, 0).size).toBe(0);
+  });
+
+  it("wraps the legend and starts each group on a new row", () => {
+    const width = (s: string) => s.length * 6;
+    const items = wrapLegend(
+      [
+        [
+          { label: "Missense", color: "#a" },
+          { label: "Truncating", color: "#b" },
+          { label: "Splice", color: "#c" },
+        ],
+        [
+          { label: "Subtype:", color: null },
+          { label: "LumA", color: "#d" },
+        ],
+      ],
+      150,
+      width,
+    );
+    // Missense (13 + 48) and Truncating (13 + 60) fit in 150; Splice wraps.
+    expect(items.map((i) => i.row)).toEqual([0, 0, 1, 2, 2]);
+    expect(items[0]?.x).toBe(0);
+    expect(items[1]?.x).toBe(13 + 48 + 14);
+    expect(items[3]?.entry.label).toBe("Subtype:");
+  });
+
+  it("caps the legend rows and ends the last row with a count of the rest", () => {
+    const width = (s: string) => s.length * 6;
+    const levels = Array.from({ length: 40 }, (_, i) => ({
+      label: `L${i}`,
+      color: "#a",
+    }));
+    const items = wrapLegend(
+      [[{ label: "Age:", color: null }, ...levels]],
+      150,
+      width,
+      2,
+    );
+    expect(Math.max(...items.map((i) => i.row))).toBe(1);
+    const last = items[items.length - 1];
+    const shown = items.length - 1;
+    expect(last?.entry.label).toBe(`+${41 - shown} more`);
+    expect(last?.entry.color).toBeNull();
+    // The note fits on the row.
+    expect((last?.x ?? 0) + width(last?.entry.label ?? "")).toBeLessThanOrEqual(
+      150,
+    );
+    // Without a cap every entry is laid out.
+    expect(wrapLegend([levels], 150, width)).toHaveLength(40);
   });
 });

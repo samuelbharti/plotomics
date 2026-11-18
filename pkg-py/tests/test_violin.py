@@ -131,3 +131,11 @@ def test_violin_validates_its_input():
         Violin(data, grid=grid, density=density, violin_width=0)
     with pytest.raises(ValueError, match="not present in `features`"):
         Violin(data, grid=grid, density=density, features=["CD3D"])
+
+
+def test_violin_group_colors_without_groups():
+    data, grid, density = make_args()
+    w = Violin(data, grid=grid, density=density, group_colors=["#111", "#222"])
+    # Colours follow the groups in order of first appearance, as in R.
+    assert w.data["meta"]["groups"] == ["T", "B"]
+    assert w.data["meta"]["groupColors"] == ["#111", "#222"]

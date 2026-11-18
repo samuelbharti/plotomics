@@ -100,3 +100,12 @@ test_that("violin() carries per-feature grids", {
   expect_error(violin(a$data, a$grid, a$density, grids = gm[1, , drop = FALSE]),
                "one row per feature")
 })
+
+test_that("violin() sends group_colors without a groups order", {
+  a <- make_args()
+  w <- violin(a$data, grid = a$grid, density = a$density,
+              group_colors = c("#111111", "#222222"))
+  # Colours follow the groups in order of first appearance.
+  expect_equal(as.character(w$x$data$meta$groups), c("T", "B"))
+  expect_equal(as.character(w$x$data$meta$groupColors), c("#111111", "#222222"))
+})
