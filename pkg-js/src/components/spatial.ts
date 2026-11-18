@@ -40,7 +40,7 @@ import {
   measure,
   dpr,
   serializeSVG,
-  canvasToPNG,
+  compositePNG,
   ramp,
   categoricalColors,
 } from "../core/index.js";
@@ -618,7 +618,15 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     },
     async exportPNG(scale = 2) {
       try {
-        return await canvasToPNG(canvas, scale);
+        // The canvas with the legend over it.
+        return await compositePNG({
+          width,
+          height,
+          scale,
+          background: theme.background,
+          layers: [{ canvas, x: 0, y: 0, width, height }],
+          overlay: svg,
+        });
       } catch {
         console.warn(TAINTED);
         return null;

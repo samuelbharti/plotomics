@@ -31,7 +31,7 @@ import {
   dpr,
   ramp,
   serializeSVG,
-  canvasToPNG,
+  compositePNG,
 } from "../core/index.js";
 import { releaseRegl } from "../core/gl.js";
 import { uniqueId } from "../core/dom.js";
@@ -960,8 +960,24 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     },
     async exportPNG(scale = 2) {
       if (!regl || reglBroken) return null;
-      render();
-      return canvasToPNG(canvas, scale);
+      render(); // ensure the backing buffer is current before readback
+      // The matrix at its place, with the axes and colour bar over it.
+      return compositePNG({
+        width,
+        height,
+        scale,
+        background: theme.background,
+        layers: [
+          {
+            canvas,
+            x: margin.left,
+            y: margin.top,
+            width: innerW(),
+            height: innerH(),
+          },
+        ],
+        overlay: svg,
+      });
     },
     destroy() {
       canvas.removeEventListener("wheel", onWheel);

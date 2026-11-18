@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createEmbedding } from "../../src/components/embedding.js";
 import { createVolcano } from "../../src/components/volcano.js";
 import type { PlotomicsInstance } from "../../src/core/index.js";
-import { type MarkBox, drawnPixels, markBox } from "./helpers.js";
+import { type MarkBox, canvasPNG, drawnPixels, markBox } from "./helpers.js";
 
 // The volcano and the embedding draw with regl-scatterplot. These tests check
 // that the first view shows all the data across the plot area, that the axes
@@ -36,8 +36,9 @@ function ticks(el: HTMLElement): { x: number[]; y: number[] } {
 
 const span = (values: number[]) => Math.max(...values) - Math.min(...values);
 
-async function box(instance: PlotomicsInstance<unknown>) {
-  const png = await instance.exportPNG?.(1);
+/** Where the points sit on the canvas (the PNG export adds the axes). */
+async function box(el: HTMLElement) {
+  const png = await canvasPNG(el);
   return png ? markBox(png) : null;
 }
 
@@ -92,7 +93,7 @@ describe("scatter components frame their data", () => {
     });
     instances.push(volcano);
 
-    await expect.poll(() => box(volcano), poll).toSatisfy(fillsPlotArea);
+    await expect.poll(() => box(el), poll).toSatisfy(fillsPlotArea);
     expect(ticks(el).x).toContain(-4);
     expect(ticks(el).x).toContain(4);
     expect(ticks(el).y).toContain(20);
@@ -105,7 +106,7 @@ describe("scatter components frame their data", () => {
       options: { labelTopN: 0 },
     });
     instances.push(volcano);
-    await expect.poll(() => box(volcano), poll).toSatisfy(fillsPlotArea);
+    await expect.poll(() => box(el), poll).toSatisfy(fillsPlotArea);
 
     zoomIn(el);
     await expect
@@ -132,7 +133,7 @@ describe("scatter components frame their data", () => {
       });
       instances.push(embedding);
 
-      await expect.poll(() => box(embedding), poll).toSatisfy(fillsPlotArea);
+      await expect.poll(() => box(el), poll).toSatisfy(fillsPlotArea);
       expect(ticks(el).x).toContain(6);
       expect(ticks(el).x).toContain(14);
       expect(ticks(el).y).toContain(-20);
@@ -150,9 +151,9 @@ describe("scatter components frame their data", () => {
 
     // x spans 20 units across the width, so y spans half of that.
     await expect
-      .poll(() => box(embedding), poll)
+      .poll(() => box(el), poll)
       .toSatisfy((b: MarkBox | null) => b !== null && b.left < 0.06);
-    const b = (await box(embedding)) as MarkBox;
+    const b = (await box(el)) as MarkBox;
     const pxPerUnitX = b.widthPx / 20;
     const pxPerUnitY = b.heightPx / 10;
     expect(Math.abs(pxPerUnitX / pxPerUnitY - 1)).toBeLessThan(0.03);
@@ -164,10 +165,10 @@ describe("scatter components frame their data", () => {
       data: { columns: { x: spread(N, 5, 15, 3), y: spread(N, -20, -10, 4) } },
     });
     instances.push(embedding);
-    await expect.poll(() => box(embedding), poll).toSatisfy(fillsPlotArea);
+    await expect.poll(() => box(el), poll).toSatisfy(fillsPlotArea);
 
     embedding.setOptions({ showAxes: true });
-    await expect.poll(() => box(embedding), poll).toSatisfy(fillsPlotArea);
+    await expect.poll(() => box(el), poll).toSatisfy(fillsPlotArea);
     expect(ticks(el).x).toContain(6);
     expect(ticks(el).x).toContain(14);
   });
@@ -179,11 +180,11 @@ describe("scatter components frame their data", () => {
       options: { showAxes: true },
     });
     instances.push(embedding);
-    await expect.poll(() => box(embedding), poll).toSatisfy(fillsPlotArea);
+    await expect.poll(() => box(el), poll).toSatisfy(fillsPlotArea);
 
     el.style.cssText = "width:500px;height:500px;";
     embedding.resize(500, 500);
-    await expect.poll(() => box(embedding), poll).toSatisfy(fillsPlotArea);
+    await expect.poll(() => box(el), poll).toSatisfy(fillsPlotArea);
     expect(ticks(el).x).toContain(6);
     expect(ticks(el).x).toContain(14);
     expect(ticks(el).y).toContain(-20);
@@ -229,7 +230,7 @@ describe("scatter components frame their data", () => {
     // Five points cover a few dozen pixels. The first 2,000 cover thousands.
     await expect
       .poll(async () => {
-        const png = await embedding.exportPNG?.(1);
+        const png = await canvasPNG(el);
         return png ? drawnPixels(png) : null;
       }, poll)
       .toSatisfy((n: number | null) => n !== null && n > 0 && n < 500);

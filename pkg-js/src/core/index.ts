@@ -42,9 +42,12 @@ export {
 } from "./transport.js";
 
 export {
+  type CompositeOptions,
+  type PNGLayer,
   serializeSVG,
   canvasToPNG,
   canvasToSVGImage,
+  compositePNG,
   downloadBlob,
 } from "./export.js";
 
