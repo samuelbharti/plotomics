@@ -29,8 +29,10 @@ import type { Browser, CreateOpt } from "igv";
 import {
   type IgvOptions,
   assembleConfig,
+  copyForIgv,
   defaultIgvOptions,
   mergeOptions,
+  stableJSON,
   trackKey,
 } from "./igv-config.js";
 
@@ -64,8 +66,9 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
   // was asked for is removed at once.
   let generation = 0;
   // The locus and the tracks the live browser shows. Tracks are compared by
-  // a stable key (name, URL and type), because anywidget hands over freshly
-  // decoded objects on every change.
+  // their content, because anywidget hands over freshly decoded objects on
+  // every change. igv.js gets copies of the configs, since it writes into
+  // them, and the stored options stay as they came.
   let currentLocus: string | null = null;
   let loadedTracks = new Set<string>();
 
@@ -79,7 +82,7 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
       ),
     );
     igv
-      .createBrowser(host, config as unknown as CreateOpt)
+      .createBrowser(host, copyForIgv(config) as unknown as CreateOpt)
       .then((b) => {
         if (destroyed || gen !== generation) {
           // destroy() ran, or a newer browser was asked for, while this one
@@ -110,7 +113,7 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
         const key = trackKey(track);
         if (loadedTracks.has(key)) continue;
         loadedTracks.add(key);
-        void browser.loadTrack(track as never).catch((err) => {
+        void browser.loadTrack(copyForIgv(track) as never).catch((err) => {
           console.error("plotomics igv: failed to load track", err);
         });
       }
@@ -124,8 +127,7 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
     // browser for it.
     const rebuild =
       opts.genome !== prev.genome ||
-      JSON.stringify(opts.config ?? null) !==
-        JSON.stringify(prev.config ?? null);
+      stableJSON(opts.config ?? null) !== stableJSON(prev.config ?? null);
     if (rebuild) {
       if (browser) {
         igv.removeBrowser(browser);

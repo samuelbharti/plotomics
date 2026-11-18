@@ -11,9 +11,10 @@
  * Gosling internally pulls in HiGlass + PixiJS + React and streams/tiles large
  * genomic datasets on the GPU, so this component adds no SVG overlay of its
  * own. The component renders Gosling's own React component into a React root
- * that it owns. A new spec, padding or theme re-renders that root, which
- * Gosling updates in place, and destroy() unmounts it. Unmounting is what lets
- * HiGlass free its WebGL context and its window listeners; Gosling's
+ * that it owns. A new spec re-renders that root, which Gosling updates in
+ * place; a new padding or theme mounts a new Gosling component, since Gosling
+ * keeps its view for those. destroy() unmounts the root. Unmounting is what
+ * lets HiGlass free its WebGL context and its window listeners; Gosling's
  * `embed()` mounts a root it never unmounts, so each update leaked one.
  *
  * The pure option/spec helpers live in `./gosling-spec.ts` so they can be
@@ -90,8 +91,16 @@ export const createGosling: PlotomicsFactory<GoslingOptions> = (
     if (!root) root = createRoot(host);
     root.render(
       createElement(GoslingComponent, {
+        // Gosling keeps its view when only the padding changes, and skips a
+        // new theme for a spec with ids, so either change mounts a new
+        // component (which frees the old one's WebGL context).
+        key: JSON.stringify([opts.padding ?? null, opts.theme ?? null]),
         ref,
         spec,
+        // A reactive component applies a new spec 300 ms later on a timer,
+        // which throws if the view is unmounted first. Without it the new
+        // spec applies at once, as each embed() call did.
+        reactive: false,
         ...embedOptions(opts),
       }),
     );
@@ -122,6 +131,7 @@ export const createGosling: PlotomicsFactory<GoslingOptions> = (
       // down.
     },
     async exportPNG(scale = 2) {
+      if (destroyed || !root) return null;
       const api = ref.current?.api;
       if (!api) return null;
       try {

@@ -9,18 +9,22 @@
 
 /**
  * Options for the genome viewer. `config` is a full igv.js browser config and,
- * if supplied, takes precedence. The convenience top-level fields (`genome`,
- * `locus`, `tracks`) are assembled into a config when `config` is absent.
+ * if supplied, is what the browser is built from. The convenience top-level
+ * fields (`genome`, `locus`, `tracks`) are assembled into a config when
+ * `config` is absent; with a `config`, `locus` and `tracks` still apply on
+ * top of it once the browser is live.
  */
 export interface IgvOptions {
   /** A full igv.js browser config ({ genome|reference, locus, tracks: [...] }).
-   * When present it is used as-is and the convenience fields are ignored. */
+   * When present the browser is built from it and `genome` is not used;
+   * `locus` and `tracks` apply on top of it. */
   config: Record<string, unknown> | null;
   /** Genome identifier (e.g. "hg38") used when `config` is not given. */
   genome: string | null;
   /** Initial locus, e.g. "chr8:127,736,588-127,739,371" or a gene symbol. */
   locus: string | null;
-  /** Initial tracks (igv.js track configs) used when `config` is not given. */
+  /** Tracks (igv.js track configs) to load. The list is additive: a track
+   * already shown is not loaded again, and one left out stays shown. */
   tracks: Record<string, unknown>[];
 }
 
@@ -68,17 +72,43 @@ export function mergeOptions(
 }
 
 /**
- * A stable key for an igv.js track config: its name, URL, index URL, type
- * and format. Two decodings of the same track give the same key, so an
- * option change does not load a track twice.
+ * JSON with the keys of every object in sorted order, so two decodings of
+ * the same value give the same text whatever their key order.
+ */
+export function stableJSON(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJSON).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const parts = Object.keys(obj)
+      .sort()
+      .filter((k) => obj[k] !== undefined && typeof obj[k] !== "function")
+      .map((k) => `${JSON.stringify(k)}:${stableJSON(obj[k])}`);
+    return `{${parts.join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+/**
+ * A key for an igv.js track config: its whole content. Two decodings of the
+ * same track give the same key, so sending a track again does not load it
+ * twice. A track whose config changed (a new colour, say) is a new track to
+ * load, as `tracks` is additive.
  */
 export function trackKey(track: Record<string, unknown>): string {
-  const pick = (k: string) => {
-    const v = track[k];
-    return typeof v === "string" || typeof v === "number" ? String(v) : "";
-  };
-  const key = ["name", "url", "indexURL", "type", "format"].map(pick);
-  // A track without any of those (inline features, say) falls back to its
-  // whole content.
-  return key.some((v) => v !== "") ? key.join("|") : JSON.stringify(track);
+  return stableJSON(track);
+}
+
+/**
+ * A deep copy of a config for igv.js, which writes into the configs it is
+ * given (it adds `type` and `order` to a track and lowercases `format`).
+ * With a copy, the stored options stay as they came and still compare equal
+ * to the next decoding of the same options.
+ */
+export function copyForIgv<T>(value: T): T {
+  try {
+    return structuredClone(value);
+  } catch {
+    // A config that holds a function cannot be copied; igv gets it as is.
+    return value;
+  }
 }

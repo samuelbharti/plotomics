@@ -41,6 +41,44 @@ const emptySpec = rectTrack([]);
 // The three rects add a little over 2,000 pixels at this size.
 const MIN_MARK_PIXELS = 1_000;
 
+// A spec with ids and a title, its marks in one blue, for the theme test.
+// Gosling skips a new theme for a spec with ids that did not change.
+const titled = {
+  id: "root",
+  title: "Gosling title",
+  tracks: [
+    {
+      ...rectTrack([
+        { chrom: "chr1", start: 10_000_000, end: 60_000_000, score: 1 },
+      ]).tracks[0],
+      id: "t1",
+      color: { value: "#0000ff" },
+      x: { field: "start", type: "genomic", axis: "top" },
+    },
+  ],
+};
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Counts of light (all channels over 200) and dark (all under 60) pixels. */
+async function tones(png: Blob) {
+  const bitmap = await createImageBitmap(png);
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+  ctx.drawImage(bitmap, 0, 0);
+  const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  let light = 0;
+  let dark = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const [r, g, b] = [d[i] as number, d[i + 1] as number, d[i + 2] as number];
+    if (r > 200 && g > 200 && b > 200) light += 1;
+    else if (r < 60 && g < 60 && b < 60) dark += 1;
+  }
+  return { light, dark, total: d.length / 4 };
+}
+
 describe("gosling component in a browser", () => {
   let requests: ReturnType<typeof trackRequests>;
   let instances: PlotomicsInstance<GoslingOptions>[];
@@ -138,14 +176,70 @@ describe("gosling component in a browser", () => {
 
     expect(await invalid.instance.exportPNG?.(1)).toBeNull();
     expect(invalid.el.querySelector("canvas")).toBeNull();
-
     // gosling.js also rejects the value, so the two checks above hold with or
-    // without the guard in the factory. The guard is what skips the embed
-    // call, and a rejected embed is what the factory logs.
-    const embedFailures = logged.mock.calls.filter(
-      ([first]) =>
-        typeof first === "string" && first.startsWith("plotomics/gosling"),
-    );
-    expect(embedFailures).toEqual([]);
+    // without the guard in the factory. Without the guard, Gosling's
+    // component mounts and logs the errors it finds in the value.
+    expect(logged).not.toHaveBeenCalled();
+  });
+
+  it("applies a new padding", async () => {
+    const { el, instance } = mount({ spec, padding: 10 });
+    await expect
+      .poll(() => drawn(instance), { timeout: 30_000, interval: 250 })
+      .toBeGreaterThan(MIN_MARK_PIXELS);
+    instance.setOptions({ padding: 80 });
+    // Before the fix Gosling kept its view, and the padding stayed 10 px.
+    await expect
+      .poll(
+        () => {
+          const c = el.querySelector(".gosling-component");
+          return c ? getComputedStyle(c).paddingTop : null;
+        },
+        { timeout: 30_000, interval: 250 },
+      )
+      .toBe("80px");
+  });
+
+  it("draws the text in the new theme for a spec with ids", async () => {
+    const { instance } = mount({ spec: titled, theme: "light" });
+    await expect
+      .poll(() => drawn(instance), { timeout: 30_000, interval: 250 })
+      .not.toBeNull();
+    // Python sends a fresh copy of the spec with the new theme.
+    instance.setOptions({ spec: structuredClone(titled), theme: "dark" });
+    // Once the background is dark, the title and the axis labels are light.
+    // Before the fix they stayed black on the dark background.
+    await expect
+      .poll(
+        async () => {
+          const png = await instance.exportPNG?.(1);
+          if (!png) return null;
+          const t = await tones(png);
+          return t.dark > t.total / 2 ? t.light : null;
+        },
+        { timeout: 30_000, interval: 250 },
+      )
+      .toBeGreaterThan(50);
+  });
+
+  it("raises no error when destroyed just after a spec change", async () => {
+    const errors: string[] = [];
+    const onError = (e: ErrorEvent) => errors.push(e.message);
+    window.addEventListener("error", onError);
+    try {
+      const { instance } = mount({ spec: emptySpec });
+      await expect
+        .poll(() => drawn(instance), { timeout: 30_000, interval: 250 })
+        .not.toBeNull();
+      instance.setOptions({ spec });
+      await wait(60);
+      instance.destroy();
+      // Gosling reads its view 300 ms after a spec change. Before the fix the
+      // view was gone by then, and that read threw a TypeError.
+      await wait(800);
+      expect(errors).toEqual([]);
+    } finally {
+      window.removeEventListener("error", onError);
+    }
   });
 });
