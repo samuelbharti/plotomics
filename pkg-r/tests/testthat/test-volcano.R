@@ -57,3 +57,12 @@ test_that("volcano() omits colors/theme when NULL and defaults threshold on", {
   expect_null(w$x$options$theme)
   expect_true(w$x$options$showThresholdLines)
 })
+
+test_that("volcano() keeps p = 0 rows and warns only about missing values", {
+  df <- data.frame(x = c(1, 2, 3), y = c(2, Inf, 4))
+  expect_silent(w <- volcano(df))
+  # 0-based row of the Inf, since JSON sends Inf as null.
+  expect_equal(as.integer(w$x$data$meta$yInfinite), 1L)
+  expect_null(volcano(data.frame(x = 1:2, y = 1:2))$x$data$meta$yInfinite)
+  expect_warning(volcano(data.frame(x = 1:2, y = c(1, NA))), "non-finite")
+})
