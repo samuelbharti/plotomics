@@ -66,3 +66,28 @@ test_that("spatial() validates its input", {
   expect_error(spatial(df, image = "t.png", img_width = 1, img_height = 1,
                        colormap = "jet"))
 })
+
+test_that("spatial() sends a factor's levels and checks a short colour list", {
+  d <- data.frame(x = 1:3, y = 1:3,
+                  color = factor(c("b", "a", "b"), levels = c("b", "a")))
+  w <- spatial(d, image = "img.png", img_width = 10, img_height = 10)
+  expect_equal(as.character(w$x$data$meta$levels), c("b", "a"))
+  d$color <- c("a", "b", "c")
+  expect_error(
+    spatial(d, image = "img.png", img_width = 10, img_height = 10,
+            colors = "#ff0000"),
+    "one entry per level"
+  )
+})
+
+test_that("spatial() takes extra colours for a factor and stops on too few", {
+  d <- data.frame(x = 1:3, y = 1:3, color = factor(c("a", "b", "a")))
+  w <- spatial(d, image = "img.png", img_width = 10, img_height = 10,
+               colors = c("#ff0000", "#00ff00", "#0000ff"))
+  expect_s3_class(w, "htmlwidget")
+  expect_error(
+    spatial(d, image = "img.png", img_width = 10, img_height = 10,
+            colors = "#ff0000"),
+    "one entry per level"
+  )
+})

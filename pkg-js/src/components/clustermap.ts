@@ -99,9 +99,12 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 // Fixed gutters around the heatmap. Dendrogram bands collapse to 0 when hidden
 // or when the axis is not clustered.
-const DENDRO = 90; // px band for a dendrogram
-const LABEL = 90; // px reserved for tick labels
-const COLORBAR = 54; // px reserved at the bottom for the colorbar
+const DENDRO = 60; // px band for a dendrogram
+const MAX_ROW_LABEL = 140; // widest the row-label gutter gets, in px
+const MAX_COL_LABEL = 120; // tallest the column-label band gets, in px
+const COLORBAR_W = 78; // px on the right for the colour bar and its labels
+const MAX_LABEL_SHARE = 0.3; // a label gutter takes at most this share
+const MIN_HEAT = 60; // a label gutter stays only if the heatmap keeps this
 const PAD = 12;
 const MIN_LABEL_CELL = 9; // hide labels once a cell is smaller than this (px)
 /** Fill for a missing cell, and its colour bar swatch. */
@@ -118,8 +121,16 @@ export interface Layout {
   labelW: number; // right-side row labels reserve
   labelH: number; // bottom col labels reserve
   heat: { x: number; y: number; w: number; h: number };
+  /** Left edge of the colour bar, in the right-hand gutter. */
+  colorbarX: number;
 }
 
+/**
+ * Frame the heatmap. The row and column label gutters take the width of the
+ * longest label (0 when no label is drawn), the dendrogram bands are 60 px,
+ * and the colour bar sits in its own gutter on the right, so the heatmap
+ * keeps the height.
+ */
 export function computeLayout(
   width: number,
   height: number,
@@ -130,21 +141,46 @@ export function computeLayout(
     hasColDendro: boolean;
     showLabels: boolean;
   },
+  /** Width of the longest row label in px; 0 when row labels are not drawn. */
+  rowLabelW = 0,
+  /** Length of the longest column label in px; 0 when they are not drawn. */
+  colLabelH = 0,
 ): Layout {
   const rowDendroW = opts.showRowDendrogram && opts.hasRowDendro ? DENDRO : 0;
   const colDendroH = opts.showColDendrogram && opts.hasColDendro ? DENDRO : 0;
-  const labelW = opts.showLabels ? LABEL : PAD;
-  const labelH = opts.showLabels ? LABEL : PAD;
+  const labelW =
+    opts.showLabels && rowLabelW > 0
+      ? Math.max(
+          PAD,
+          Math.min(
+            MAX_ROW_LABEL,
+            Math.floor(width * MAX_LABEL_SHARE),
+            Math.ceil(rowLabelW) + 10,
+          ),
+        )
+      : PAD;
+  const labelH =
+    opts.showLabels && colLabelH > 0
+      ? Math.max(
+          PAD,
+          Math.min(
+            MAX_COL_LABEL,
+            Math.floor(height * MAX_LABEL_SHARE),
+            Math.ceil(colLabelH) + 10,
+          ),
+        )
+      : PAD;
   const x = PAD + rowDendroW;
   const y = PAD + colDendroH;
-  const w = Math.max(1, width - x - labelW);
-  const h = Math.max(1, height - y - labelH - COLORBAR);
+  const w = Math.max(1, width - x - labelW - COLORBAR_W);
+  const h = Math.max(1, height - y - labelH);
   return {
     rowDendroW,
     colDendroH,
     labelW,
     labelH,
     heat: { x, y, w, h },
+    colorbarX: x + w + labelW + 4,
   };
 }
 
@@ -203,6 +239,9 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
+  // Whether each axis has a label gutter in the current layout.
+  let rowLabelsOn = false;
+  let colLabelsOn = false;
   let layout: Layout = computeLayout(0, 0, {
     showRowDendrogram: false,
     showColDendrogram: false,
@@ -409,15 +448,77 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     );
   }
 
+  const measureCtx = document.createElement("canvas").getContext("2d");
+  function labelWidth(s: string, size = 10): number {
+    if (!measureCtx) return s.length * size * 0.56;
+    measureCtx.font = `${size}px ${theme.fontFamily}`;
+    return measureCtx.measureText(s).width;
+  }
+  // The longest label of each label array, measured once per font.
+  const longestCache = new WeakMap<string[], { font: string; w: number }>();
+  function longest(labels: string[]): number {
+    const font = theme.fontFamily;
+    const hit = longestCache.get(labels);
+    if (hit && hit.font === font) return hit.w;
+    let w = 0;
+    for (const l of labels) w = Math.max(w, labelWidth(l));
+    longestCache.set(labels, { font, w });
+    return w;
+  }
+
   // ---- layout + overlay ----
   function relayout() {
-    layout = computeLayout(width, height, {
+    const flags = {
       showRowDendrogram: opts.showRowDendrogram,
       showColDendrogram: opts.showColDendrogram,
       hasRowDendro: !!rowDendro,
       hasColDendro: !!colDendro,
       showLabels: opts.showLabels,
-    });
+    };
+    // An axis gets a label gutter only when its cells can be tall or wide
+    // enough for a label, so a large matrix measures no label.
+    const rowW =
+      opts.showLabels &&
+      rowLabels.length === nrows &&
+      nrows > 0 &&
+      nrows * MIN_LABEL_CELL <= height
+        ? longest(rowLabels)
+        : 0;
+    const colH =
+      opts.showLabels &&
+      colLabels.length === ncols &&
+      ncols > 0 &&
+      ncols * MIN_LABEL_CELL <= width
+        ? longest(colLabels)
+        : 0;
+    // Take the first layout in which every gutter it keeps has cells big
+    // enough for its labels and leaves the heatmap MIN_HEAT px or more:
+    // both gutters, then the row gutter alone, the column gutter alone, none.
+    const tries: [boolean, boolean][] = [
+      [rowW > 0, colH > 0],
+      [rowW > 0, false],
+      [false, colH > 0],
+      [false, false],
+    ];
+    for (const [rows, cols] of tries) {
+      const l = computeLayout(
+        width,
+        height,
+        flags,
+        rows ? rowW : 0,
+        cols ? colH : 0,
+      );
+      const rowsOk =
+        !rows || (l.heat.h / nrows >= MIN_LABEL_CELL && l.heat.w >= MIN_HEAT);
+      const colsOk =
+        !cols || (l.heat.w / ncols >= MIN_LABEL_CELL && l.heat.h >= MIN_HEAT);
+      if ((rowsOk && colsOk) || (!rows && !cols)) {
+        layout = l;
+        rowLabelsOn = rows;
+        colLabelsOn = cols;
+        break;
+      }
+    }
     svg.setAttribute("width", String(width));
     svg.setAttribute("height", String(height));
     drawCanvas();
@@ -515,10 +616,13 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
 
   function renderLabels(cellW: number, cellH: number) {
     const { heat } = layout;
-    // Column labels below the heatmap (rotated), if they fit.
-    if (colLabels.length === ncols && cellW >= MIN_LABEL_CELL) {
+    // Column labels below the heatmap (rotated), when the layout made room.
+    if (colLabelsOn && colLabels.length === ncols) {
       for (let cx = 0; cx < ncols; cx += 1) {
-        const label = colLabels[colOrder[cx] as number] ?? "";
+        const label = fitLabel(
+          colLabels[colOrder[cx] as number] ?? "",
+          layout.labelH - 8,
+        );
         const x = heat.x + (cx + 0.5) * cellW;
         const y = heat.y + heat.h + 6;
         const t = text(x, y, label, theme.foreground, "end", 10);
@@ -527,9 +631,12 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       }
     }
     // Row labels to the right of the heatmap.
-    if (rowLabels.length === nrows && cellH >= MIN_LABEL_CELL) {
+    if (rowLabelsOn && rowLabels.length === nrows) {
       for (let ry = 0; ry < nrows; ry += 1) {
-        const label = rowLabels[rowOrder[ry] as number] ?? "";
+        const label = fitLabel(
+          rowLabels[rowOrder[ry] as number] ?? "",
+          layout.labelW - 8,
+        );
         const x = heat.x + heat.w + 6;
         const y = heat.y + (ry + 0.5) * cellH + 3;
         svg.appendChild(text(x, y, label, theme.foreground, "start", 10));
@@ -537,22 +644,38 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     }
   }
 
+  /** A label cut with an ellipsis to fit `maxW` px at `size` px. */
+  function fitLabel(label: string, maxW: number, size = 10): string {
+    if (labelWidth(label, size) <= maxW) return label;
+    let lo = 0;
+    let hi = label.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (labelWidth(`${label.slice(0, mid)}\u2026`, size) <= maxW) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo > 0 ? `${label.slice(0, lo)}\u2026` : "";
+  }
+
   function renderColorbar() {
-    // The bar gives up width so the "NA" key still fits a narrow widget.
-    const keyW = anyMissing ? 48 : 0;
-    const barW = Math.max(60, Math.min(180, width - layout.heat.x - keyW - 8));
-    const barH = 10;
+    // A vertical bar in the right-hand gutter, high values at the top, with
+    // the legend title running up beside it.
     const { heat } = layout;
-    const x0 = heat.x;
-    const y0 = height - COLORBAR + 18;
+    const barW = 12;
+    const x0 = layout.colorbarX;
+    const y0 = heat.y + 4;
+    const barH = Math.max(40, Math.min(160, heat.h - (anyMissing ? 30 : 8)));
     const toHex = ramp(opts.colormap);
 
     // Build a gradient from evenly-sampled stops (viridis/rdbu ramp).
     const defs = document.createElementNS(SVG_NS, "defs");
     const grad = document.createElementNS(SVG_NS, "linearGradient");
     grad.setAttribute("id", gradId);
-    grad.setAttribute("x1", "0%");
-    grad.setAttribute("x2", "100%");
+    // Bottom is low, top is high.
+    grad.setAttribute("x1", "0");
+    grad.setAttribute("y1", "1");
+    grad.setAttribute("x2", "0");
+    grad.setAttribute("y2", "0");
     const STOPS = 24;
     for (let i = 0; i <= STOPS; i += 1) {
       const t = i / STOPS;
@@ -567,32 +690,45 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     svg.appendChild(
       rect(x0, y0, barW, barH, `url(#${gradId})`, theme.axis, 0.75),
     );
-    // Min / mid / max ticks.
-    const label = opts.legendTitle + (opts.zScore ? " (row z-score)" : "");
-    svg.appendChild(text(x0, y0 - 6, label, theme.foreground, "start", 11));
+    // Max / mid / min beside the bar.
+    const lx = x0 + barW + 4;
+    // A midpoint within rounding error of 0 (a symmetric range held in
+    // float32) reads 0, not -2.4e-7.
+    const mid = (colorLo + colorHi) / 2;
+    const ticks = [
+      fmt(colorHi),
+      fmt(Math.abs(mid) < (colorHi - colorLo) * 1e-6 ? 0 : mid),
+      fmt(colorLo),
+    ] as const;
+    svg.appendChild(text(lx, y0 + 8, ticks[0], theme.muted, "start", 10));
     svg.appendChild(
-      text(x0, y0 + barH + 12, fmt(colorLo), theme.muted, "start", 10),
+      text(lx, y0 + barH / 2 + 3, ticks[1], theme.muted, "start", 10),
     );
-    svg.appendChild(
-      text(
-        x0 + barW / 2,
-        y0 + barH + 12,
-        fmt((colorLo + colorHi) / 2),
-        theme.muted,
-        "middle",
-        10,
-      ),
+    svg.appendChild(text(lx, y0 + barH, ticks[2], theme.muted, "start", 10));
+    // The title runs up beside the bar, 4 px right of the widest tick label
+    // (once turned, its 11 px letters stand left of its baseline), cut to the
+    // widget height and kept inside the widget.
+    let tickW = 0;
+    for (const t of ticks) tickW = Math.max(tickW, labelWidth(t));
+    const label = fitLabel(
+      opts.legendTitle + (opts.zScore ? " (row z-score)" : ""),
+      height - 8,
+      11,
     );
-    svg.appendChild(
-      text(x0 + barW, y0 + barH + 12, fmt(colorHi), theme.muted, "end", 10),
+    const titleW = labelWidth(label, 11);
+    const tx = Math.min(width - 3, lx + tickW + 16);
+    const ty = Math.min(
+      Math.max(y0 + barH / 2, 4 + titleW / 2),
+      height - 4 - titleW / 2,
     );
+    const title = text(tx, ty, label, theme.foreground, "middle", 11);
+    title.setAttribute("transform", `rotate(-90 ${tx} ${ty})`);
+    svg.appendChild(title);
     // A grey swatch for missing cells, when the matrix has any.
     if (anyMissing) {
-      const sx = x0 + barW + 16;
-      svg.appendChild(rect(sx, y0, 14, barH, MISSING_COLOR, theme.axis, 0.75));
-      svg.appendChild(
-        text(sx + 18, y0 + barH - 1, "NA", theme.foreground, "start", 10),
-      );
+      const sy = y0 + barH + 10;
+      svg.appendChild(rect(x0, sy, barW, 10, MISSING_COLOR, theme.axis, 0.75));
+      svg.appendChild(text(lx, sy + 9, "NA", theme.foreground, "start", 10));
     }
   }
 

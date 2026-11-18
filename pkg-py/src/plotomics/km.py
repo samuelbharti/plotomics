@@ -6,7 +6,15 @@ from typing import Any
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _category_levels,
+    _column,
+    _text_or_none,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Km(PlotomicsWidget):
@@ -114,25 +122,26 @@ class Km(PlotomicsWidget):
 
         json_columns: dict[str, list] = {}
         grp_col = _column(data, "group")
-        grp = [str(v) for v in grp_col] if grp_col is not None else None
+        # A missing group crosses as null (no curve), never as a group "nan".
+        grp = _text_or_none(grp_col) if grp_col is not None else None
         if grp is not None:
             json_columns["group"] = grp
 
         meta: dict[str, Any] = {}
         if groups is None and grp_col is not None:
             # A pandas Categorical is the caller stating the stratum order.
-            cats = getattr(getattr(grp_col, "dtype", None), "categories", None)
+            cats = _category_levels(grp_col)
             if cats is not None:
-                groups = [str(v) for v in cats]
+                groups = cats
             else:
                 seen: list[str] = []
                 for g in grp:
-                    if g not in seen:
+                    if g is not None and g not in seen:
                         seen.append(g)
                 groups = seen
         if groups is not None:
             groups = [str(g) for g in groups]
-            unknown = sorted(set(grp or []) - set(groups))
+            unknown = sorted({g for g in grp or [] if g is not None} - set(groups))
             if unknown:
                 raise ValueError(
                     "stratum/strata not present in `groups`: " + ", ".join(unknown)
@@ -153,7 +162,8 @@ class Km(PlotomicsWidget):
                 meta["censorSurv"] = [float(v) for v in cs]
                 cg = _column(censor, "group")
                 if cg is not None:
-                    meta["censorGroup"] = [str(v) for v in cg]
+                    # A tick with no group is left out, like its curve.
+                    meta["censorGroup"] = _text_or_none(cg)
 
         if risk_times is not None:
             times = [float(v) for v in risk_times]

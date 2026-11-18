@@ -72,8 +72,9 @@ export interface EmbeddingOptions {
   /** Explicit category order for categorical coloring. Categories are assigned
    * palette entries by their position here, and every one of them gets a legend
    * row even if no point carries it, so the colors stay put as the data
-   * changes. `null` (default) falls back to first-appearance order. Categories
-   * found in the data but missing from this list are appended after it. */
+   * changes. `null` (default) sorts text categories in natural order and
+   * numbers by value. Categories found in the data but missing from this list
+   * are added after it, in that order. */
   categories: string[] | null;
   xLabel: string;
   yLabel: string;
@@ -134,6 +135,9 @@ const BARE_MARGIN = { top: 10, right: 10, bottom: 10, left: 10 };
 const CONTINUOUS_STEPS = 256;
 /** Cap on discrete legend rows before collapsing into a "+N more" line. */
 const LEGEND_MAX = 20;
+/** Colour for a point whose colour value is missing, and its legend entry. */
+const MISSING_COLOR = "#BDBDBD";
+const MISSING_LABEL = "NA";
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/embedding.test.ts)
@@ -141,16 +145,21 @@ const LEGEND_MAX = 20;
 
 /** Min/max of a numeric column with symmetric padding (fraction of range).
  * Degenerate/empty input widens to a unit range so scales stay well-defined. */
-export function paddedExtent(col: ArrayLike<number>, pad = 0.04): [number, number] {
+export function paddedExtent(
+  col: ArrayLike<number>,
+  pad = 0.04,
+): [number, number] {
   let min = Infinity;
   let max = -Infinity;
   const n = col.length;
   for (let i = 0; i < n; i += 1) {
     const v = col[i] as number;
+    // R sends NA as null, which compares as 0; skip anything not finite.
+    if (!Number.isFinite(v)) continue;
     if (v < min) min = v;
     if (v > max) max = v;
   }
-  if (!isFinite(min) || !isFinite(max)) return [0, 1];
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 1];
   if (min === max) return [min - 1, max + 1];
   const d = (max - min) * pad;
   return [min - d, max + d];
@@ -184,9 +193,39 @@ export function equalAspectDomains(
   ];
 }
 
-/** True when a column holds strings (categorical) rather than numbers. */
+/**
+ * True when a column holds strings (categorical), not numbers. The first
+ * value that is not missing decides, since R sends a leading NA as null.
+ */
 export function isStringColumn(col: Column): col is string[] {
-  return col.length > 0 && typeof (col as ArrayLike<unknown>)[0] === "string";
+  const values = col as ArrayLike<unknown>;
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i];
+    if (v == null || (typeof v === "number" && Number.isNaN(v))) continue;
+    return typeof v === "string";
+  }
+  return false;
+}
+
+// One collator for every comparison: building the options per call made a
+// sort of 50,000 labels take seconds.
+const COLLATOR = new Intl.Collator(undefined, { numeric: true });
+
+/** Compare category names in natural order, so "cluster 2" < "cluster 10". */
+export function naturalCompare(a: string, b: string): number {
+  return COLLATOR.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
+/**
+ * Sort distinct category values: numbers by value (a numeric column forced to
+ * categories), text in natural order.
+ */
+export function sortCategories(values: Iterable<unknown>): string[] {
+  const all = [...values];
+  if (all.length && all.every((v) => typeof v === "number")) {
+    return (all as number[]).sort((a, b) => a - b).map(String);
+  }
+  return all.map(String).sort(naturalCompare);
 }
 
 /**
@@ -197,51 +236,123 @@ export function isStringColumn(col: Column): col is string[] {
 export function resolveColorMode(
   col: Column | undefined,
   force: EmbeddingColorMode = "auto",
-): "categorical" | "continuous" {
+): "categorical" | "continuous" | null {
+  // A column with no value at all colours nothing, in either mode.
+  if (!col || !hasValue(col)) return null;
   if (force !== "auto") return force;
-  return col && isStringColumn(col) ? "categorical" : "continuous";
+  return isStringColumn(col) ? "categorical" : "continuous";
+}
+
+/** Whether a column holds at least one value that is not missing. */
+function hasValue(col: Column): boolean {
+  const values = col as ArrayLike<unknown>;
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i];
+    if (v != null && !(typeof v === "number" && Number.isNaN(v))) return true;
+  }
+  return false;
 }
 
 /**
  * Map categorical labels to dense integer indices plus the ordered category
- * list (first-appearance order, which is also the palette-assignment order).
+ * list, which is also the palette-assignment order. Text categories are in
+ * natural order ("cluster 2" before "cluster 10"), as ggplot2 and scanpy
+ * sort them.
  *
- * Pass `order` to fix that order yourself. Its entries come first and keep
- * their index whether or not any point carries them, which is what lets a
- * caller pin a specific color to a specific category; labels outside it are
- * appended in first-appearance order behind them.
+ * Pass `order` to fix that order yourself (R sends a factor's levels, Python
+ * a Categorical's categories). Its entries come first and keep their index
+ * whether or not any point carries them, which is what lets a caller pin a
+ * specific color to a specific category; labels outside it follow, in
+ * natural order.
+ *
+ * A missing label (null from R, NaN or null from Python) gets the category
+ * "NA", placed last; `missing` is its index, or -1 when there is none.
  */
 export function categoryToIndex(
-  labels: string[],
+  labels: ArrayLike<unknown>,
   order?: readonly string[] | null,
 ): {
   indices: Int32Array;
   categories: string[];
+  missing: number;
 } {
-  const lookup = new Map<string, number>();
-  const categories: string[] = [];
-  const indices = new Int32Array(labels.length);
+  const isMissing = (v: unknown) =>
+    v == null || (typeof v === "number" && Number.isNaN(v));
+  const given: string[] = [];
+  const seen = new Set<string>();
   if (order) {
     for (const name of order) {
       const key = String(name);
-      if (lookup.has(key)) continue;
-      lookup.set(key, categories.length);
-      categories.push(key);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      given.push(key);
     }
   }
+  const extra = new Map<string, unknown>();
+  let anyMissing = false;
   for (let i = 0; i < labels.length; i += 1) {
+    const v = labels[i];
+    if (isMissing(v)) {
+      anyMissing = true;
+      continue;
+    }
     // Stringify: a numeric column forced to categorical arrives here as numbers,
     // and a number has no `.length`, which would make the legend box width NaN.
-    const key = String(labels[i]);
-    let idx = lookup.get(key);
-    if (idx === undefined) {
-      idx = categories.length;
-      lookup.set(key, idx);
-      categories.push(key);
-    }
-    indices[i] = idx;
+    const key = String(v);
+    if (!seen.has(key) && !extra.has(key)) extra.set(key, v);
   }
-  return { indices, categories };
+  const categories = [...given, ...sortCategories(extra.values())];
+  const lookup = new Map<string, number>();
+  categories.forEach((c, i) => {
+    lookup.set(c, i);
+  });
+  const missing = anyMissing ? categories.length : -1;
+  // A real category may be named "NA" too; the missing one then says so.
+  if (anyMissing) {
+    categories.push(
+      lookup.has(MISSING_LABEL) ? `${MISSING_LABEL} (missing)` : MISSING_LABEL,
+    );
+  }
+  const indices = new Int32Array(labels.length);
+  for (let i = 0; i < labels.length; i += 1) {
+    const v = labels[i];
+    indices[i] = isMissing(v) ? missing : (lookup.get(String(v)) as number);
+  }
+  return { indices, categories, missing };
+}
+
+/**
+ * The rows that have a finite x and y. A missing coordinate (null from R,
+ * NaN from Python) has no place on the plot, so its row is not drawn.
+ */
+export function drawableRows(
+  x: ArrayLike<number | null>,
+  y: ArrayLike<number | null>,
+): Int32Array {
+  const n = Math.min(x.length, y.length);
+  const rows: number[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const a = x[i];
+    const b = y[i];
+    if (a == null || b == null) continue;
+    if (Number.isFinite(a) && Number.isFinite(b)) rows.push(i);
+  }
+  return Int32Array.from(rows);
+}
+
+/** The values of `col` at `rows`, as numbers (null becomes NaN). */
+function pickNumbers(col: ArrayLike<unknown>, rows: Int32Array): Float32Array {
+  const out = new Float32Array(rows.length);
+  for (let k = 0; k < rows.length; k += 1) {
+    const v = col[rows[k] as number];
+    out[k] = v == null ? Number.NaN : Number(v);
+  }
+  return out;
+}
+
+/** The values of `col` at `rows`. */
+function pickValues(col: ArrayLike<unknown>, rows: Int32Array): unknown[] {
+  return Array.from(rows, (i) => col[i]);
 }
 
 /**
@@ -299,7 +410,12 @@ export function niceTicks(domain: [number, number], count = 6): number[] {
 // ---------------------------------------------------------------------------
 
 type LegendState =
-  | { mode: "categorical"; categories: string[]; palette: string[] }
+  | {
+      mode: "categorical";
+      categories: string[];
+      palette: string[];
+      missing: number;
+    }
   | { mode: "continuous"; domain: [number, number] }
   | null;
 
@@ -308,8 +424,14 @@ type LegendState =
 // instance's gradient in document order (silent legend/point mismatch).
 let embeddingSeq = 0;
 
-export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial) => {
-  let opts: EmbeddingOptions = mergeOptions(defaultEmbeddingOptions, initial.options);
+export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
+  el,
+  initial,
+) => {
+  let opts: EmbeddingOptions = mergeOptions(
+    defaultEmbeddingOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -325,6 +447,11 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
   let baseY: [number, number] = [0, 1];
   let legend: LegendState = null;
   let selected: number[] = [];
+  // The data rows that are drawn, in drawing order: the scatterplot's point k
+  // is data row drawn[k]. Rows with a missing coordinate are left out.
+  let drawn: Int32Array = new Int32Array(0);
+  // Whether some drawn point has no colour value (drawn grey, keyed "NA").
+  let missingColor = false;
   const uid = `plotomics-embedding-${embeddingSeq++}`;
 
   const xScale = scaleLinear().domain(xDomain);
@@ -335,7 +462,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -367,10 +495,11 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     if (data.columns.x && isStartView(scatterplot)) applyData(true);
   }, 120);
 
-  scatterplot.subscribe("pointOver", (i: number) => showTip(i));
+  scatterplot.subscribe("pointOver", (k: number) => showTip(drawn[k] ?? k));
   scatterplot.subscribe("pointOut", () => tooltip.hide());
   scatterplot.subscribe("select", ({ points }: { points: number[] }) => {
-    selected = points.slice();
+    // Report data rows, not the scatterplot's point numbers.
+    selected = points.map((k) => drawn[k] ?? k);
     opts.onSelect?.(selected.slice());
   });
   scatterplot.subscribe("deselect", () => {
@@ -398,8 +527,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     const label = str(cols.label, i) ?? `#${i}`;
     const parts = [`<b>${escapeHTML(label)}</b>`, `${fmt(x)}, ${fmt(y)}`];
     if (cols.color) {
-      if (legend?.mode === "continuous") parts.push(`value: ${fmt(num(cols.color, i))}`);
-      else parts.push(escapeHTML(str(cols.color, i) ?? ""));
+      if (legend?.mode === "continuous")
+        parts.push(`value: ${fmt(num(cols.color, i))}`);
+      else parts.push(escapeHTML(str(cols.color, i) ?? MISSING_LABEL));
     }
     tooltip.show(parts.join("<br/>"), lastPointer.x, lastPointer.y);
   }
@@ -411,7 +541,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
   const pxX = (v: number) =>
     margin().left + ((v - xDomain[0]) / (xDomain[1] - xDomain[0])) * innerW();
   const pxY = (v: number) =>
-    margin().top + (1 - (v - yDomain[0]) / (yDomain[1] - yDomain[0])) * innerH();
+    margin().top +
+    (1 - (v - yDomain[0]) / (yDomain[1] - yDomain[0])) * innerH();
 
   function layoutCanvas() {
     const m = margin();
@@ -444,14 +575,18 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
 
   async function render(fit: boolean) {
     const cols = data.columns;
-    const x = cols.x as ArrayLike<number> | undefined;
-    const y = cols.y as ArrayLike<number> | undefined;
-    if (!x || !y || x.length === 0) {
+    const xAll = cols.x as ArrayLike<number> | undefined;
+    const yAll = cols.y as ArrayLike<number> | undefined;
+    drawn = xAll && yAll ? drawableRows(xAll, yAll) : new Int32Array(0);
+    if (!xAll || !yAll || drawn.length === 0) {
       void scatterplot.clear?.();
       legend = null;
+      missingColor = false;
       renderOverlay();
       return;
     }
+    const x = pickNumbers(xAll, drawn);
+    const y = pickNumbers(yAll, drawn);
     const fitW = innerW();
     const fitH = innerH();
     if (fit) {
@@ -470,28 +605,48 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     const py = toNdc(y, yBase);
 
     const color = cols.color;
-    const mode = color && color.length ? resolveColorMode(color, opts.colorMode) : null;
+    const mode =
+      color && color.length ? resolveColorMode(color, opts.colorMode) : null;
     let z: ArrayLike<number>;
-    let zDataType: "categorical" | "continuous" = "categorical";
-    let colorBy: "category" | "valueA" = "category";
+    const zDataType = "categorical" as const;
+    const colorBy = "category" as const;
     let pointColor: string[];
+    missingColor = false;
 
     if (mode === "categorical") {
-      const { indices, categories } = categoryToIndex(
-        color as string[], opts.categories);
+      const { indices, categories, missing } = categoryToIndex(
+        pickValues(color as ArrayLike<unknown>, drawn),
+        opts.categories,
+      );
       pointColor = categoricalPalette(categories.length);
-      legend = { mode, categories, palette: pointColor };
+      if (missing >= 0) {
+        pointColor[missing] = MISSING_COLOR;
+        missingColor = true;
+      }
+      legend = { mode, categories, palette: pointColor, missing };
       // Integer category indices in the z channel; pointColor[z] selects the hue.
       z = indices;
     } else if (mode === "continuous") {
-      const values = color as ArrayLike<number>;
+      const values = pickNumbers(color as ArrayLike<unknown>, drawn);
       const domain = paddedExtent(values, 0);
-      pointColor = sampleRamp(opts.colormap, CONTINUOUS_STEPS);
+      // Level 0 is the grey of a missing value; levels 1 to 256 run along the
+      // ramp. Drawing the levels as categories keeps a missing value from
+      // taking the low end of the ramp.
+      pointColor = [
+        MISSING_COLOR,
+        ...sampleRamp(opts.colormap, CONTINUOUS_STEPS),
+      ];
+      const t = normalizeToUnit(values, domain);
+      const levels = new Int32Array(values.length);
+      for (let k = 0; k < values.length; k += 1) {
+        if (!Number.isFinite(values[k] as number)) {
+          missingColor = true;
+          continue;
+        }
+        levels[k] = 1 + Math.round((t[k] as number) * (CONTINUOUS_STEPS - 1));
+      }
       legend = { mode, domain };
-      // Normalized [0,1] values interpolate across the sampled ramp.
-      z = normalizeToUnit(values, domain);
-      zDataType = "continuous";
-      colorBy = "valueA";
+      z = levels;
     } else {
       // No color column: one flat hue, no legend.
       legend = null;
@@ -542,7 +697,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
       const x = pxX(t);
       if (x < m.left - 1 || x > width - m.right + 1) continue;
       svg.appendChild(line(x, m.top, x, height - m.bottom, gridColor, 1));
-      svg.appendChild(text(x, height - m.bottom + 16, fmt(t), axisColor, "middle"));
+      svg.appendChild(
+        text(x, height - m.bottom + 16, fmt(t), axisColor, "middle"),
+      );
     }
     for (const t of niceTicks(yDomain)) {
       const y = pxY(t);
@@ -551,31 +708,79 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
       svg.appendChild(text(m.left - 8, y + 4, fmt(t), axisColor, "end"));
     }
     svg.appendChild(
-      line(m.left, height - m.bottom, width - m.right, height - m.bottom, axisColor, 1.5),
+      line(
+        m.left,
+        height - m.bottom,
+        width - m.right,
+        height - m.bottom,
+        axisColor,
+        1.5,
+      ),
     );
-    svg.appendChild(line(m.left, m.top, m.left, height - m.bottom, axisColor, 1.5));
     svg.appendChild(
-      text(m.left + innerW() / 2, height - 8, opts.xLabel, theme.foreground, "middle", 13),
+      line(m.left, m.top, m.left, height - m.bottom, axisColor, 1.5),
     );
-    const yTitle = text(16, m.top + innerH() / 2, opts.yLabel, theme.foreground, "middle", 13);
+    svg.appendChild(
+      text(
+        m.left + innerW() / 2,
+        height - 8,
+        opts.xLabel,
+        theme.foreground,
+        "middle",
+        13,
+      ),
+    );
+    const yTitle = text(
+      16,
+      m.top + innerH() / 2,
+      opts.yLabel,
+      theme.foreground,
+      "middle",
+      13,
+    );
     yTitle.setAttribute("transform", `rotate(-90 16 ${m.top + innerH() / 2})`);
     svg.appendChild(yTitle);
   }
 
   function renderLegend() {
     if (legend?.mode === "categorical") {
-      renderCategoricalLegend(legend.categories, legend.palette);
+      renderCategoricalLegend(
+        legend.categories,
+        legend.palette,
+        legend.missing,
+      );
     } else if (legend?.mode === "continuous") {
       renderColorbar(legend.domain);
     }
   }
 
-  function renderCategoricalLegend(categories: string[], palette: string[]) {
+  function renderCategoricalLegend(
+    allCategories: string[],
+    allPalette: string[],
+    missing: number,
+  ) {
     const m = margin();
+    // The NA entry stays in view: with many categories it follows the
+    // "+N more" line, so the grey points are always explained.
+    let categories = allCategories;
+    let palette = allPalette;
+    let tail: { label: string; colour: string } | null = null;
+    if (missing >= 0 && allCategories.length > LEGEND_MAX) {
+      categories = allCategories.filter((_, i) => i !== missing);
+      palette = allPalette.filter((_, i) => i !== missing);
+      tail = {
+        label: allCategories[missing] as string,
+        colour: allPalette[missing] as string,
+      };
+    }
     const shown = Math.min(categories.length, LEGEND_MAX);
     const rows = categories.slice(0, shown);
     const overflow = categories.length - shown;
     const labels = overflow > 0 ? [...rows, `+${overflow} more`] : rows;
+    if (tail) {
+      labels.push(tail.label);
+      palette = [...palette.slice(0, shown), MISSING_COLOR];
+    }
     const rowH = 16;
     const swatch = 10;
     const pad = 8;
@@ -587,9 +792,20 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     svg.appendChild(legendBg(x0, y0, boxW, boxH));
     for (let r = 0; r < labels.length; r += 1) {
       const cy = y0 + pad + r * rowH;
-      const isOverflow = overflow > 0 && r === labels.length - 1;
+      const isOverflow = overflow > 0 && r === shown;
       if (!isOverflow) {
-        svg.appendChild(rect(x0 + pad, cy + 2, swatch, swatch, palette[r] ?? theme.muted, "none", 0));
+        svg.appendChild(
+          rect(
+            x0 + pad,
+            cy + 2,
+            swatch,
+            swatch,
+            (tail && r === labels.length - 1 ? tail.colour : palette[r]) ??
+              theme.muted,
+            "none",
+            0,
+          ),
+        );
       }
       svg.appendChild(
         text(
@@ -633,13 +849,56 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     svg.appendChild(legendBg(x0 - 6, y0 - 8, cbW + 52, cbH + 16));
     svg.appendChild(rect(x0, y0, cbW, cbH, `url(#${gradId})`, theme.axis, 1));
     const mid = (domain[0] + domain[1]) / 2;
-    svg.appendChild(text(x0 + cbW + 5, y0 + 4, fmt(domain[1]), theme.foreground, "start", 10));
-    svg.appendChild(text(x0 + cbW + 5, y0 + cbH / 2 + 3, fmt(mid), theme.foreground, "start", 10));
-    svg.appendChild(text(x0 + cbW + 5, y0 + cbH, fmt(domain[0]), theme.foreground, "start", 10));
+    svg.appendChild(
+      text(x0 + cbW + 5, y0 + 4, fmt(domain[1]), theme.foreground, "start", 10),
+    );
+    svg.appendChild(
+      text(
+        x0 + cbW + 5,
+        y0 + cbH / 2 + 3,
+        fmt(mid),
+        theme.foreground,
+        "start",
+        10,
+      ),
+    );
+    svg.appendChild(
+      text(
+        x0 + cbW + 5,
+        y0 + cbH,
+        fmt(domain[0]),
+        theme.foreground,
+        "start",
+        10,
+      ),
+    );
+    // A grey swatch for points with no value, when there are any.
+    if (missingColor) {
+      const sy = y0 + cbH + 14;
+      svg.appendChild(legendBg(x0 - 6, sy - 4, cbW + 52, 18));
+      svg.appendChild(rect(x0, sy, cbW, 10, MISSING_COLOR, theme.axis, 1));
+      svg.appendChild(
+        text(
+          x0 + cbW + 5,
+          sy + 9,
+          MISSING_LABEL,
+          theme.foreground,
+          "start",
+          10,
+        ),
+      );
+    }
   }
 
   // ---- SVG element helpers ----
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string, w: number) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+    w: number,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -674,7 +933,14 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     r.setAttribute("rx", "4");
     return r;
   }
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 11) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 11,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -703,7 +969,17 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
 
   const instance: EmbeddingInstance = {
     setData(next) {
+      const prevData = data;
       data = next;
+      // A selection names rows of the old data; drop it and say so, so
+      // Shiny's input and Python's trait do not keep stale rows. A Shiny
+      // re-render sends the same points again (a slider moved, say), and
+      // then the selection still holds.
+      if (selected.length && !samePoints(prevData, next)) {
+        scatterplot.deselect({ preventEvent: true });
+        selected = [];
+        opts.onSelect?.([]);
+      }
       applyData();
     },
     setOptions(next) {
@@ -783,7 +1059,7 @@ function str(col: Column | undefined, i: number): string | undefined {
   return v == null ? undefined : String(v);
 }
 function fmt(v: number): string {
-  if (!Number.isFinite(v)) return "—";
+  if (!Number.isFinite(v)) return "NA";
   if (v === 0) return "0";
   const a = Math.abs(v);
   if (a >= 1000 || a < 0.01) return v.toExponential(1);
@@ -802,11 +1078,28 @@ function escapeHTML(s: string): string {
             : "&#39;",
   );
 }
-function mergeOptions(base: EmbeddingOptions, next?: Partial<EmbeddingOptions>): EmbeddingOptions {
+function mergeOptions(
+  base: EmbeddingOptions,
+  next?: Partial<EmbeddingOptions>,
+): EmbeddingOptions {
   if (!next) return { ...base };
   return {
     ...base,
     ...next,
     theme: { ...base.theme, ...(next.theme ?? {}) },
   };
+}
+
+/** Whether two payloads hold the same x and y values, row for row. */
+function samePoints(a: PlotomicsData, b: PlotomicsData): boolean {
+  const same = (p?: Column, q?: Column) => {
+    if (!p || !q || p.length !== q.length) return false;
+    for (let i = 0; i < p.length; i += 1) {
+      const x = (p as ArrayLike<unknown>)[i];
+      const y = (q as ArrayLike<unknown>)[i];
+      if (x !== y && !(Number.isNaN(x) && Number.isNaN(y))) return false;
+    }
+    return true;
+  };
+  return same(a.columns.x, b.columns.x) && same(a.columns.y, b.columns.y);
 }

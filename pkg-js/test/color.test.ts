@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { viridis, rdbu, ltc, ltcdiv, ramp, rgbToHex } from "../src/core/color.js";
+import {
+  viridis,
+  rdbu,
+  ltc,
+  ltcdiv,
+  ramp,
+  rgbToHex,
+} from "../src/core/color.js";
 
 const RAMP_FNS = [
   ["viridis", viridis],
@@ -20,6 +27,10 @@ describe("ramps guard against a non-finite input", () => {
       expect(fn(Number.POSITIVE_INFINITY), name).toEqual(fn(0));
       expect(fn(Number.NEGATIVE_INFINITY), name).toEqual(fn(0));
     }
+  });
+
+  it("names an unknown colormap", () => {
+    expect(() => ramp("magma" as never)).toThrow(/unknown colormap "magma"/);
   });
 
   it("guards the string-keyed ramp() accessor too", () => {

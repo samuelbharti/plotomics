@@ -4,9 +4,17 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-import numpy as np
-
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _category_levels,
+    _check_choice,
+    _column,
+    _numeric_values,
+    _text_or_none,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Embedding(PlotomicsWidget):
@@ -22,9 +30,12 @@ class Embedding(PlotomicsWidget):
         A pandas ``DataFrame`` or a mapping of arrays. Must provide numeric
         ``x`` and ``y`` embedding coordinates. An optional ``color`` column
         drives coloring: a string/categorical column becomes a discrete legend,
-        a numeric column a continuous colormap. A pandas ``Categorical`` color
-        column fixes the legend order and the color assignment to its
-        categories, and keeps unused ones in the legend. An optional ``label``
+        a numeric column a continuous colormap. Text categories are sorted in
+        natural order ("cluster 2" before "cluster 10"); a pandas
+        ``Categorical`` color column fixes the legend order and the color
+        assignment to its categories, and keeps unused ones in the legend. A
+        missing color is drawn grey and keyed "NA", and a row with a missing
+        ``x`` or ``y`` is not drawn. An optional ``label``
         column supplies per-point tooltip text.
     point_scale_mode:
         How ``point_size`` responds to zoom. ``"asinh"`` and ``"linear"``
@@ -102,8 +113,13 @@ class Embedding(PlotomicsWidget):
         y = _column(data, "y")
         if x is None or y is None:
             raise ValueError("`data` must provide `x` and `y` columns.")
-        if mouse_mode not in ("panZoom", "lasso"):
-            raise ValueError("`mouse_mode` must be 'panZoom' or 'lasso'.")
+        _check_choice(mouse_mode, "mouse_mode", ("panZoom", "lasso"))
+        _check_choice(
+            point_scale_mode, "point_scale_mode", ("asinh", "linear", "constant")
+        )
+        _check_choice(color_mode, "color_mode", ("auto", "categorical", "continuous"))
+        _check_choice(colormap, "colormap", ("viridis", "rdbu"))
+        _check_choice(aspect, "aspect", ("fill", "equal"))
 
         x_arr = _to_float32(x, "x")
         y_arr = _to_float32(y, "y")
@@ -118,20 +134,20 @@ class Embedding(PlotomicsWidget):
         if color is not None:
             # A pandas Categorical is the user stating the order they want, so
             # read it before np.asarray() flattens it to plain values.
-            cat_dtype = getattr(getattr(color, "dtype", None), "categories", None)
-            if cat_dtype is not None:
-                categories = [str(v) for v in cat_dtype]
-            arr = np.asarray(color)
-            if categories is None and np.issubdtype(arr.dtype, np.number):
-                # Continuous: transport as a packed numeric column.
-                numeric["color"] = arr.astype(np.float32)
+            categories = _category_levels(color)
+            values = _numeric_values(color) if categories is None else None
+            if values is not None:
+                # Continuous: transport as a packed numeric column, NaN for
+                # a missing value.
+                numeric["color"] = values
             else:
-                # Categorical: transport as a JSON string column.
-                json_columns["color"] = [str(v) for v in color]
+                # Categorical: transport as a JSON string column. A missing
+                # value crosses as null, which the browser keys as "NA".
+                json_columns["color"] = _text_or_none(color)
 
         label = _column(data, "label")
         if label is not None:
-            json_columns["label"] = [str(v) for v in label]
+            json_columns["label"] = _text_or_none(label)
 
         buffer, schema = pack_columns(numeric)
 

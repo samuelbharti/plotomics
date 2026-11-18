@@ -6,7 +6,17 @@ from typing import Any, Literal
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _category_levels,
+    _check_choice,
+    _column,
+    _numeric_values,
+    _text_or_none,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Spatial(PlotomicsWidget):
@@ -40,7 +50,9 @@ class Spatial(PlotomicsWidget):
     data:
         A pandas ``DataFrame`` or mapping of arrays with numeric ``x`` and
         ``y`` columns giving spot centres **in image pixel coordinates**.
-        Optional ``color`` and ``label`` columns.
+        Optional ``color`` and ``label`` columns. A missing ``color`` is drawn
+        grey and keyed "NA", and a spot with a missing ``x`` or ``y`` is not
+        drawn.
     image:
         URL or path of the tissue image, as the browser will fetch it.
     img_width, img_height:
@@ -48,8 +60,11 @@ class Spatial(PlotomicsWidget):
     spot_diameter:
         Spot diameter in image pixels.
     levels, colors:
-        Fix the categorical order and colours. ``None`` derives them from the
-        data and the theme palette.
+        Fix the categorical order and colours. ``None`` takes the categories
+        of a pandas ``Categorical`` color, else the distinct values (text in
+        natural order, "2" before "10"; numbers by value), and the theme
+        palette. With ``levels`` given, ``colors`` needs one entry per level;
+        without, at least one per level.
     color_mode:
         ``"auto"``, ``"categorical"`` or ``"continuous"``.
     colormap:
@@ -110,11 +125,13 @@ class Spatial(PlotomicsWidget):
             raise ValueError("`image` must be a URL or path the browser can fetch.")
         if img_width <= 0 or img_height <= 0:
             raise ValueError("`img_width` and `img_height` must be positive.")
+        _check_choice(colormap, "colormap", ("viridis", "rdbu", "ltc", "ltcdiv"))
         if color_mode not in ("auto", "categorical", "continuous"):
             raise ValueError(
                 "`color_mode` must be 'auto', 'categorical' or 'continuous'."
             )
-        if levels is not None and colors is not None and len(levels) != len(colors):
+        levels_given = levels is not None
+        if levels_given and colors is not None and len(levels) != len(colors):
             raise ValueError("`colors` must have one entry per level.")
 
         x = _to_float32(xc, "x")
@@ -129,16 +146,38 @@ class Spatial(PlotomicsWidget):
 
         col = _column(data, "color")
         if col is not None:
-            arr = np.asarray(col)
+            # A pandas Categorical states the level order.
+            cats = _category_levels(col)
+            if levels is None and cats is not None:
+                levels = cats
+            values = _numeric_values(col)
             # Numeric colours ride the binary transport; categorical ones are
-            # strings and travel as JSON.
-            if np.issubdtype(arr.dtype, np.number):
-                packed["color"] = _to_float32(col, "color")
+            # strings and travel as JSON, a missing value as null. Numbers
+            # read as categories travel as JSON too, at full precision, so
+            # 0.1 matches the level "0.1" as it does from R.
+            if values is not None and color_mode != "categorical":
+                packed["color"] = values
+            elif values is not None:
+                exact = _numeric_values(col, np.float64)
+                json_columns["color"] = [
+                    None if np.isnan(v) else float(v) for v in exact
+                ]
             else:
-                json_columns["color"] = [str(v) for v in col]
+                json_columns["color"] = _text_or_none(col)
+            if not levels_given and colors is not None and values is None:
+                present = (
+                    levels
+                    if levels is not None
+                    else {v for v in json_columns["color"] if v is not None}
+                )
+                if len(colors) < len(present):
+                    raise ValueError(
+                        "`colors` must have one entry per level: "
+                        f"{len(present)} levels, {len(colors)} colours."
+                    )
         lab = _column(data, "label")
         if lab is not None:
-            json_columns["label"] = [str(v) for v in lab]
+            json_columns["label"] = _text_or_none(lab)
 
         buffer, schema = pack_columns(packed)
 

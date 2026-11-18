@@ -103,7 +103,7 @@ class Clustermap(PlotomicsWidget):
         row_linkage: Any | None = None,
         col_linkage: Any | None = None,
         theme: dict | None = None,
-        height: int = 480,
+        height: int = 560,
         **kwargs: Any,
     ) -> None:
         if metric not in _METRICS:

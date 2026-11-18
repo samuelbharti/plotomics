@@ -11,8 +11,11 @@
 #'   factor column is treated as categorical (discrete legend), a numeric column
 #'   as continuous (sequential colormap + colorbar). A **factor** `color` fixes
 #'   the legend order and the color assignment to its levels, and keeps unused
-#'   levels in the legend, the way `drop = FALSE` does in ggplot2. An optional
-#'   `label` column supplies per-point tooltip text.
+#'   levels in the legend, the way `drop = FALSE` does in ggplot2; character
+#'   categories are sorted in natural order ("cluster 2" before "cluster 10").
+#'   A missing `color` is drawn grey and keyed "NA", and a row with a missing
+#'   `x` or `y` is not drawn. An optional `label` column supplies per-point
+#'   tooltip text.
 #' @param point_size Point radius in pixels. Under the default
 #'   `point_scale_mode` the renderer scales this by the camera and clamps it to
 #'   one pixel on a widely-scaled plot, so set `point_scale_mode = "constant"`

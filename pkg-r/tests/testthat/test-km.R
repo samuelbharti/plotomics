@@ -145,3 +145,15 @@ test_that("km() sends the colour of a single curve", {
     "one entry per stratum"
   )
 })
+
+test_that("km() leaves a missing group out of the strata", {
+  df <- data.frame(
+    time = c(0, 2, 0, 2),
+    surv = c(1, 0.9, 1, 0.5),
+    group = c("a", "a", NA, NA)
+  )
+  w <- km(df)
+  expect_equal(as.character(w$x$data$meta$groups), "a")
+  expect_error(km(df, group_colors = c("#f00", "#00f")), "one entry per stratum")
+  expect_silent(km(df, group_colors = "#f00"))
+})
