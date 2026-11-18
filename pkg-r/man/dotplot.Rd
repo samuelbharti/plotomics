@@ -24,7 +24,10 @@ dotplot(
 \arguments{
 \item{data}{A data frame in long form, one row per dot, with \code{gene} and
 \code{cluster} key columns, a \code{pct} column (percent expressing, 0-100) driving
-dot size, and a \code{value} column (expression level) driving dot colour.}
+dot size, and a \code{value} column (expression level) driving dot colour. A
+missing \code{value}, such as the NaN of a scaled gene that is constant across
+groups, is drawn as an open ring and left out of the colour scale. A
+missing \code{pct} draws no dot. Both give a warning.}
 
 \item{genes}{Character vector fixing the row order. A factor \code{gene} column
 supplies it from its levels. Defaults to order of appearance.}

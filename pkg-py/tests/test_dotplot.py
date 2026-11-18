@@ -97,3 +97,17 @@ def test_dotplot_validates_its_input():
         Dotplot(d, clusters=["T"])
     with pytest.raises(ValueError, match="length 2"):
         Dotplot(d, value_domain=(0.0, 1.0, 2.0))
+
+
+def test_dotplot_rejects_a_value_domain_with_a_missing_end():
+    d = {"gene": ["A", "B"], "cluster": ["x", "x"], "pct": [10, 20],
+         "value": [1.0, 2.0]}
+    with pytest.raises(ValueError, match="two finite numbers"):
+        Dotplot(d, value_domain=(float("nan"), 2.0))
+
+
+def test_dotplot_takes_a_missing_pct_and_value():
+    d = {"gene": ["A", "B"], "cluster": ["x", "x"], "pct": [float("nan"), 20],
+         "value": [1.0, float("nan")]}
+    w = Dotplot(d)
+    assert w.options.get("valueDomain") is None

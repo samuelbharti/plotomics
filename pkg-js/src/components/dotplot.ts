@@ -122,17 +122,22 @@ export function layoutDotplot(
  * percent one rather than half.
  */
 export function dotRadius(pct: number, maxRadius: number): number {
-  if (!isFinite(pct) || pct <= 0) return 0;
+  // Number.isFinite, since R sends NA as null and isFinite(null) is true.
+  if (!Number.isFinite(pct) || pct <= 0) return 0;
   return maxRadius * Math.sqrt(Math.min(100, pct) / 100);
 }
 
-/** Min/max of a column, falling back to `[0, 1]` for empty or flat input. */
+/**
+ * Min/max of the finite values of a column, falling back to `[0, 1]` for
+ * empty or flat input. A missing value (null from R, NaN from Python) is
+ * skipped.
+ */
 export function valueExtent(col: ArrayLike<number>): [number, number] {
   let min = Infinity;
   let max = -Infinity;
   for (let i = 0; i < col.length; i += 1) {
     const v = col[i] as number;
-    if (!isFinite(v)) continue;
+    if (!Number.isFinite(v)) continue;
     if (v < min) min = v;
     if (v > max) max = v;
   }
@@ -157,8 +162,14 @@ export function uniqueInOrder(col: readonly string[]): string[] {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createDotplot: PlotomicsFactory<DotplotOptions> = (el, initial) => {
-  let opts: DotplotOptions = mergeOptions(defaultDotplotOptions, initial.options);
+export const createDotplot: PlotomicsFactory<DotplotOptions> = (
+  el,
+  initial,
+) => {
+  let opts: DotplotOptions = mergeOptions(
+    defaultDotplotOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -170,7 +181,8 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (el, initial) => 
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -189,7 +201,14 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (el, initial) => 
     return given && given.length ? given : uniqueInOrder(clusterCol());
   }
   function domain(): [number, number] {
-    return opts.valueDomain ?? valueExtent(valueCol());
+    // A non-finite end of a given domain (null from R's NA or Inf) falls
+    // back to the data's own end, so the colour bar always has numbers.
+    const auto = valueExtent(valueCol());
+    const given = opts.valueDomain;
+    if (!given) return auto;
+    const lo = Number.isFinite(given[0]) ? given[0] : auto[0];
+    const hi = Number.isFinite(given[1]) ? given[1] : auto[1];
+    return [lo, hi];
   }
 
   // ---- pointer ----
@@ -221,10 +240,12 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (el, initial) => 
       return;
     }
     const valueLabel = (data.meta?.valueLabel as string) ?? "value";
+    const pct = pctCol()[i] as number;
+    const value = valueCol()[i] as number;
     tooltip.show(
       `<b>${esc(geneCol()[i] ?? "")}</b> in ${esc(clusterCol()[i] ?? "")}<br/>` +
-        `${(pctCol()[i] as number).toFixed(1)}% expressing<br/>` +
-        `${esc(valueLabel)} ${(valueCol()[i] as number).toFixed(2)}`,
+        `${Number.isFinite(pct) ? `${pct.toFixed(1)}%` : "NA"} expressing<br/>` +
+        `${esc(valueLabel)} ${Number.isFinite(value) ? value.toFixed(2) : "NA"}`,
       lastPointer.x,
       lastPointer.y,
     );
@@ -273,7 +294,11 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (el, initial) => 
     const gIndex = new Map(g.map((v, i) => [v, i]));
     const cIndex = new Map(c.map((v, i) => [v, i]));
     // Cap the radius so dots never overlap regardless of the option.
-    const maxR = Math.min(opts.maxRadius, layout.cellW / 2 - 1, layout.cellH / 2 - 1);
+    const maxR = Math.min(
+      opts.maxRadius,
+      layout.cellW / 2 - 1,
+      layout.cellH / 2 - 1,
+    );
 
     for (let i = 0; i < gc.length; i += 1) {
       const row = gIndex.get(gc[i] as string);
@@ -281,13 +306,24 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (el, initial) => 
       if (row === undefined || col === undefined) continue;
       const r = dotRadius(pct[i] as number, maxR);
       if (r <= 0) continue;
-      const t = hi > lo ? ((val[i] as number) - lo) / (hi - lo) : 0.5;
+      const v = val[i] as number;
       ctx.beginPath();
       ctx.arc(
         layout.left + (col + 0.5) * layout.cellW,
         layout.top + (row + 0.5) * layout.cellH,
-        r, 0, Math.PI * 2,
+        r,
+        0,
+        Math.PI * 2,
       );
+      if (!Number.isFinite(v)) {
+        // No value to colour by: an open ring keeps the size readable
+        // without claiming the lowest colour.
+        ctx.strokeStyle = theme.muted;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        continue;
+      }
+      const t = hi > lo ? (v - lo) / (hi - lo) : 0.5;
       ctx.fillStyle = paint(Math.max(0, Math.min(1, t)));
       ctx.fill();
     }
@@ -304,7 +340,9 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (el, initial) => 
     if (opts.showGrid) {
       for (let r = 0; r < g.length; r += 1) {
         const y = layout.top + (r + 0.5) * layout.cellH;
-        svg.appendChild(line(layout.left, y, layout.left + layout.plotW, y, theme.grid));
+        svg.appendChild(
+          line(layout.left, y, layout.left + layout.plotW, y, theme.grid),
+        );
       }
     }
 
@@ -312,8 +350,14 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (el, initial) => 
     const rowStep = Math.max(1, Math.ceil(9 / layout.cellH));
     for (let r = 0; r < g.length; r += rowStep) {
       svg.appendChild(
-        text(layout.left - 7, layout.top + (r + 0.5) * layout.cellH + 3,
-          g[r] ?? "", theme.foreground, "end", 9),
+        text(
+          layout.left - 7,
+          layout.top + (r + 0.5) * layout.cellH + 3,
+          g[r] ?? "",
+          theme.foreground,
+          "end",
+          9,
+        ),
       );
     }
 
@@ -344,17 +388,41 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (el, initial) => 
       rect.setAttribute("fill", paint(1 - i / steps));
       svg.appendChild(rect);
     }
-    svg.appendChild(text(lx, layout.top + 8,
-      (data.meta?.valueLabel as string) ?? "value", theme.muted, "start", 9));
-    svg.appendChild(text(lx + 14, layout.top + 22, fmt(hi), theme.muted, "start", 8));
-    svg.appendChild(text(lx + 14, layout.top + 18 + barH, fmt(lo), theme.muted, "start", 8));
+    svg.appendChild(
+      text(
+        lx,
+        layout.top + 8,
+        (data.meta?.valueLabel as string) ?? "value",
+        theme.muted,
+        "start",
+        9,
+      ),
+    );
+    svg.appendChild(
+      text(lx + 14, layout.top + 22, fmt(hi), theme.muted, "start", 8),
+    );
+    svg.appendChild(
+      text(lx + 14, layout.top + 18 + barH, fmt(lo), theme.muted, "start", 8),
+    );
 
     // Size legend. Radii come from dotRadius, so the swatches are literally the
     // same scale the dots use rather than a redrawn approximation.
-    const maxR = Math.min(opts.maxRadius, layout.cellW / 2 - 1, layout.cellH / 2 - 1);
+    const maxR = Math.min(
+      opts.maxRadius,
+      layout.cellW / 2 - 1,
+      layout.cellH / 2 - 1,
+    );
     let sy = layout.top + barH + 52;
-    svg.appendChild(text(lx, sy - 12,
-      (data.meta?.sizeLabel as string) ?? "% expressing", theme.muted, "start", 9));
+    svg.appendChild(
+      text(
+        lx,
+        sy - 12,
+        (data.meta?.sizeLabel as string) ?? "% expressing",
+        theme.muted,
+        "start",
+        9,
+      ),
+    );
     for (const p of [100, 50, 25]) {
       const r = dotRadius(p, maxR);
       const circ = document.createElementNS(SVG_NS, "circle");
@@ -363,14 +431,58 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (el, initial) => 
       circ.setAttribute("r", String(r));
       circ.setAttribute("fill", theme.muted);
       svg.appendChild(circ);
-      svg.appendChild(text(lx + opts.maxRadius * 2 + 8, sy + 3, `${p}%`,
-        theme.muted, "start", 8));
+      svg.appendChild(
+        text(
+          lx + opts.maxRadius * 2 + 8,
+          sy + 3,
+          `${p}%`,
+          theme.muted,
+          "start",
+          8,
+        ),
+      );
       sy += Math.max(16, opts.maxRadius * 2 + 6);
+    }
+
+    // An open ring marks a dot with no value, when there is one.
+    const val = valueCol();
+    const pct = pctCol();
+    let anyMissing = false;
+    for (let i = 0; i < val.length && !anyMissing; i += 1) {
+      anyMissing =
+        !Number.isFinite(val[i] as number) &&
+        dotRadius(pct[i] as number, 1) > 0;
+    }
+    if (anyMissing) {
+      const ring = document.createElementNS(SVG_NS, "circle");
+      ring.setAttribute("cx", String(lx + opts.maxRadius));
+      ring.setAttribute("cy", String(sy));
+      ring.setAttribute("r", "4");
+      ring.setAttribute("fill", "none");
+      ring.setAttribute("stroke", theme.muted);
+      svg.appendChild(ring);
+      svg.appendChild(
+        text(
+          lx + opts.maxRadius * 2 + 8,
+          sy + 3,
+          "no value",
+          theme.muted,
+          "start",
+          8,
+        ),
+      );
     }
   }
 
   // ---- SVG helpers ----
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 10) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 10,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -381,7 +493,13 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (el, initial) => 
     t.textContent = content;
     return t;
   }
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -450,10 +568,21 @@ function fmt(v: number): string {
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+    c === "&"
+      ? "&amp;"
+      : c === "<"
+        ? "&lt;"
+        : c === ">"
+          ? "&gt;"
+          : c === '"'
+            ? "&quot;"
+            : "&#39;",
   );
 }
-function mergeOptions(base: DotplotOptions, next?: Partial<DotplotOptions>): DotplotOptions {
+function mergeOptions(
+  base: DotplotOptions,
+  next?: Partial<DotplotOptions>,
+): DotplotOptions {
   if (!next) return { ...base };
   return { ...base, ...next, theme: { ...base.theme, ...(next.theme ?? {}) } };
 }

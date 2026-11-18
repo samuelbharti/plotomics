@@ -55,6 +55,8 @@ export interface ViolinOptions {
   showMedian: boolean;
   /** Draw the per-row feature labels. */
   showFeatureLabels: boolean;
+  /** Draw each row's value axis, with its lowest and highest grid value. */
+  showValueAxis: boolean;
   theme: Partial<PlotomicsTheme>;
 }
 
@@ -63,8 +65,12 @@ export const defaultViolinOptions: ViolinOptions = {
   scalePerViolin: false,
   showMedian: true,
   showFeatureLabels: true,
+  showValueAxis: true,
   theme: {},
 };
+
+/** Right gutter that holds the value axis and its labels. */
+const VALUE_AXIS_W = 44;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -88,13 +94,14 @@ export function layoutViolin(
   height: number,
   nFeatures: number,
   nGroups: number,
-  opts: Pick<ViolinOptions, "showFeatureLabels">,
+  opts: Pick<ViolinOptions, "showFeatureLabels"> &
+    Partial<Pick<ViolinOptions, "showValueAxis">>,
   longestLabel = 8,
 ): ViolinLayout {
   const left = opts.showFeatureLabels
     ? Math.min(150, Math.max(50, longestLabel * 6.4 + 12))
     : 16;
-  const right = 14;
+  const right = opts.showValueAxis ? VALUE_AXIS_W : 14;
   const top = 10;
   const bottom = 70;
   const plotW = Math.max(1, width - left - right);
@@ -197,7 +204,8 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -254,9 +262,14 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       return;
     }
     const med = medians();
-    const medTxt = med && i < med.length
-      ? `<br/>median ${(med[i] as number).toFixed(2)}`
-      : "";
+    // R sends a missing median (a violin with no finite values) as null.
+    const m = med && i < med.length ? (med[i] as number) : undefined;
+    const medTxt =
+      m === undefined
+        ? ""
+        : Number.isFinite(m)
+          ? `<br/>median ${m.toFixed(2)}`
+          : "<br/>no data";
     tooltip.show(
       `<b>${esc(f[row] as string)}</b> in ${esc(g[col] as string)}${medTxt}`,
       lastPointer.x,
@@ -312,7 +325,9 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       for (let c = 0; c < g.length; c += 1) {
         const i = violinIndex(f[r] as string, g[c] as string);
         idx.push(i);
-        rows.push(i < 0 ? new Array(gr.length).fill(0) : densityRow(dens, i, gr.length));
+        rows.push(
+          i < 0 ? new Array(gr.length).fill(0) : densityRow(dens, i, gr.length),
+        );
       }
       const rowMax = maxDensity(rows);
 
@@ -347,7 +362,13 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
         ctx.globalAlpha = 1;
 
         const i = idx[c] as number;
-        if (opts.showMedian && med && i >= 0 && i < med.length) {
+        if (
+          opts.showMedian &&
+          med &&
+          i >= 0 &&
+          i < med.length &&
+          Number.isFinite(med[i] as number)
+        ) {
           const my = toY(med[i] as number);
           ctx.strokeStyle = theme.background;
           ctx.lineWidth = 1.5;
@@ -371,16 +392,53 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     // Row separators, so a tall stack does not read as one continuous field.
     for (let r = 1; r < f.length; r += 1) {
       const y = layout.top + r * layout.rowH;
-      svg.appendChild(line(layout.left, y, layout.left + layout.plotW, y, theme.grid));
+      svg.appendChild(
+        line(layout.left, y, layout.left + layout.plotW, y, theme.grid),
+      );
     }
 
     if (opts.showFeatureLabels) {
       const step = Math.max(1, Math.ceil(9 / layout.rowH));
       for (let r = 0; r < f.length; r += step) {
         svg.appendChild(
-          text(layout.left - 7, layout.top + (r + 0.5) * layout.rowH + 3,
-            f[r] ?? "", theme.foreground, "end", 9),
+          text(
+            layout.left - 7,
+            layout.top + (r + 0.5) * layout.rowH + 3,
+            f[r] ?? "",
+            theme.foreground,
+            "end",
+            9,
+          ),
         );
+      }
+    }
+
+    // A value axis per row on the right: each row can have its own range, so
+    // each gets its own lowest and highest value. The lowest is left out when
+    // the row is too short for both labels, and on rows tighter than the
+    // labels, only every k-th row is labelled, as with the feature labels.
+    const gr = grid();
+    if (opts.showValueAxis && gr.length) {
+      const grs = grids();
+      const x = layout.left + layout.plotW + 4;
+      const step = Math.max(1, Math.ceil(9 / layout.rowH));
+      for (let r = 0; r < f.length; r += step) {
+        const rowGrid = gridForRow(gr, grs, r);
+        const lo = rowGrid[0] as number;
+        const hi = rowGrid[rowGrid.length - 1] as number;
+        const yTop = layout.top + r * layout.rowH + 2;
+        const yBot = layout.top + (r + 1) * layout.rowH - 2;
+        svg.appendChild(line(x, yTop, x, yBot, theme.axis));
+        svg.appendChild(line(x, yTop, x + 3, yTop, theme.axis));
+        svg.appendChild(
+          text(x + 5, yTop + 6, fmtAxis(hi), theme.muted, "start", 8),
+        );
+        if (yBot - yTop >= 20) {
+          svg.appendChild(line(x, yBot, x + 3, yBot, theme.axis));
+          svg.appendChild(
+            text(x + 5, yBot, fmtAxis(lo), theme.muted, "start", 8),
+          );
+        }
       }
     }
 
@@ -395,7 +453,14 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
   }
 
   // ---- SVG helpers ----
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 10) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 10,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -406,7 +471,13 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     t.textContent = content;
     return t;
   }
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -469,6 +540,19 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
 };
 
 // ---- small utilities ----
+/**
+ * An axis value short enough for the right gutter: whole numbers below
+ * 100,000 as they are, very large or very small values in exponent form,
+ * and the rest to three significant digits.
+ */
+function fmtAxis(v: number): string {
+  if (!Number.isFinite(v)) return "";
+  const a = Math.abs(v);
+  if (a >= 1e5 || (a > 0 && a < 1e-3)) return v.toExponential(1);
+  if (Number.isInteger(v)) return String(v);
+  if (a >= 100) return String(Math.round(v));
+  return String(Number(v.toPrecision(3)));
+}
 function uniq(col: readonly string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -481,10 +565,21 @@ function uniq(col: readonly string[]): string[] {
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+    c === "&"
+      ? "&amp;"
+      : c === "<"
+        ? "&lt;"
+        : c === ">"
+          ? "&gt;"
+          : c === '"'
+            ? "&quot;"
+            : "&#39;",
   );
 }
-function mergeOptions(base: ViolinOptions, next?: Partial<ViolinOptions>): ViolinOptions {
+function mergeOptions(
+  base: ViolinOptions,
+  next?: Partial<ViolinOptions>,
+): ViolinOptions {
   if (!next) return { ...base };
   return { ...base, ...next, theme: { ...base.theme, ...(next.theme ?? {}) } };
 }

@@ -109,3 +109,12 @@ test_that("violin() sends group_colors without a groups order", {
   expect_equal(as.character(w$x$data$meta$groups), c("T", "B"))
   expect_equal(as.character(w$x$data$meta$groupColors), c("#111111", "#222222"))
 })
+
+test_that("violin() sends the value axis option", {
+  a <- make_args()
+  w <- violin(a$data, grid = a$grid, density = a$density)
+  expect_true(w$x$options$showValueAxis)
+  w <- violin(a$data, grid = a$grid, density = a$density,
+              show_value_axis = FALSE)
+  expect_false(w$x$options$showValueAxis)
+})

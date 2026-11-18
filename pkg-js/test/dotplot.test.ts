@@ -32,6 +32,12 @@ describe("dotplot helpers", () => {
     expect(valueExtent([Number.NaN, Number.POSITIVE_INFINITY])).toEqual([0, 1]);
   });
 
+  it("skips null, which R sends for NA, in the extent and the radius", () => {
+    const col = [1, null, 3, Number.NaN] as unknown as number[];
+    expect(valueExtent(col)).toEqual([1, 3]);
+    expect(dotRadius(null as unknown as number, 10)).toBe(0);
+  });
+
   it("ignores non-finite values in the extent", () => {
     expect(valueExtent([1, Number.NaN, 4])).toEqual([1, 4]);
   });
