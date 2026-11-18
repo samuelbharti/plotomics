@@ -16,6 +16,9 @@ class Volcano(PlotomicsWidget):
         A pandas ``DataFrame`` or a mapping of arrays. Must provide numeric
         ``x`` (log2 fold change) and ``y`` (``-log10`` p-value); an optional
         ``label`` column supplies gene names for tooltips and top-hit labels.
+        A ``y`` of ``inf`` (p = 0) is drawn just above the highest finite value
+        and counts as significant. Rows with NaN in ``x`` or ``y`` are not
+        drawn.
     fc_threshold:
         Absolute log2 fold-change cutoff for calling a hit.
     p_threshold:

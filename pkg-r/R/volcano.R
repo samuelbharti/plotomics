@@ -7,7 +7,9 @@
 #'
 #' @param data A data frame with numeric columns `x` (log2 fold change) and `y`
 #'   (`-log10` p-value). An optional `label` column supplies gene names for
-#'   tooltips and top-hit labels.
+#'   tooltips and top-hit labels. A `y` of `Inf` (p = 0) is drawn just above
+#'   the highest finite value and counts as significant. Rows with `NA` or
+#'   `NaN` in `x` or `y` are not drawn.
 #' @param fc_threshold Absolute log2 fold-change cutoff for calling a hit.
 #' @param p_threshold P-value cutoff (applied on the `-log10` scale).
 #' @param point_size Point radius in pixels.
@@ -58,12 +60,17 @@ volcano <- function(data,
   x <- bv_require_numeric(data$x, "x")
   bv_check_finite(x, "x")
   y <- bv_require_numeric(data$y, "y")
-  bv_check_finite(y, "y")
+  # -log10(0) is Inf (p = 0). Those genes are kept and drawn at the top. JSON
+  # has no Inf, so their rows go in `meta`; only NA and NaN are warned about.
+  y_inf <- which(is.infinite(y) & y > 0)
+  bv_check_finite(y[!(is.infinite(y) & y > 0)], "y")
 
   columns <- list(x = x, y = y)
   if (!is.null(data$label)) {
     columns$label <- as.character(data$label)
   }
+  meta <- list()
+  if (length(y_inf) > 0L) meta$yInfinite <- I(as.integer(y_inf - 1L))
 
   options <- list(
     fcThreshold = fc_threshold,
@@ -80,6 +87,7 @@ volcano <- function(data,
 
   plotomics_widget(
     "volcano", columns,
+    meta = meta,
     options = options,
     width = width, height = height, element_id = element_id
   )

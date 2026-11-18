@@ -64,18 +64,23 @@ export const defaultVolcanoOptions: VolcanoOptions = {
 
 const MARGIN = { top: 16, right: 18, bottom: 46, left: 60 };
 const SVG_NS = "http://www.w3.org/2000/svg";
+const LABEL_SIZE = 11;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/volcano.test.ts)
 // ---------------------------------------------------------------------------
 
-/** Min/max of a numeric column with symmetric padding (fraction of range). */
+/**
+ * Min/max of the finite values of a numeric column, with symmetric padding
+ * (fraction of range). NaN, null and Infinity are left out.
+ */
 export function paddedExtent(col: Column, pad = 0.04): [number, number] {
   let min = Infinity;
   let max = -Infinity;
   const n = col.length;
   for (let i = 0; i < n; i += 1) {
     const v = (col as ArrayLike<number>)[i] as number;
+    if (v == null || !Number.isFinite(v)) continue;
     if (v < min) min = v;
     if (v > max) max = v;
   }
@@ -94,17 +99,157 @@ export function symmetricExtent(col: Column, pad = 0.04): [number, number] {
 
 export type Category = 0 | 1 | 2; // 0 down, 1 ns, 2 up
 
-/** Classify a point given its log2FC (x), -log10p (y) and cutoffs. */
+/**
+ * Classify a point given its log2FC (x), -log10p (y) and cutoffs. A missing
+ * (NaN) value is never a hit.
+ */
 export function classify(
   x: number,
   y: number,
   fcThreshold: number,
   yThreshold: number,
 ): Category {
-  if (y < yThreshold) return 1;
+  if (!(y >= yThreshold)) return 1;
   if (x >= fcThreshold) return 2;
   if (x <= -fcThreshold) return 0;
   return 1;
+}
+
+/** The points that can be drawn, in row order. */
+export interface VolcanoPoints {
+  /** Data row of each drawn point. */
+  rows: Int32Array;
+  /** log2 fold change of each drawn point. */
+  x: Float64Array;
+  /** -log10 p as given; +Infinity for p = 0. */
+  y: Float64Array;
+  /** The y each point is drawn at: Infinity becomes the top of the plot. */
+  yDraw: Float64Array;
+}
+
+/**
+ * Read the x and y columns into the points that can be drawn. A row with a
+ * missing x or y (null, which is how R's JSON sends NA, or NaN) is left out.
+ * A y of +Infinity (p = 0, common in differential-expression tables) is kept:
+ * it is classified as significant and drawn just above the highest finite y.
+ * `infiniteRows` lists rows whose y is +Infinity even though the column holds
+ * null there; R uses it, because JSON has no Infinity.
+ */
+export function preparePoints(
+  xCol: Column,
+  yCol: Column,
+  infiniteRows?: ArrayLike<number>,
+): VolcanoPoints {
+  const n = Math.min(xCol.length, yCol.length);
+  const inf = new Set<number>();
+  if (infiniteRows) {
+    for (let k = 0; k < infiniteRows.length; k += 1) {
+      inf.add(infiniteRows[k] as number);
+    }
+  }
+  const read = (col: Column, i: number) => {
+    const v = (col as ArrayLike<number | null>)[i];
+    return v == null ? Number.NaN : Number(v);
+  };
+  const rows: number[] = [];
+  const xs: number[] = [];
+  const ys: number[] = [];
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < n; i += 1) {
+    const x = read(xCol, i);
+    const y = inf.has(i) ? Infinity : read(yCol, i);
+    if (!Number.isFinite(x)) continue;
+    if (!Number.isFinite(y) && y !== Infinity) continue;
+    rows.push(i);
+    xs.push(x);
+    ys.push(y);
+    if (Number.isFinite(y)) {
+      if (y < lo) lo = y;
+      if (y > hi) hi = y;
+    }
+  }
+  // 5% of the drawn y range above the highest finite y. The axis starts at
+  // 0, so the range is measured from 0, which keeps p = 0 clear of the top
+  // finite point when the finite values sit in a narrow band.
+  const span = hi - Math.min(0, lo);
+  const top = Number.isFinite(hi) ? hi + 0.05 * (span || 1) : 1;
+  return {
+    rows: Int32Array.from(rows),
+    x: Float64Array.from(xs),
+    y: Float64Array.from(ys),
+    yDraw: Float64Array.from(ys, (y) => (y === Infinity ? top : y)),
+  };
+}
+
+/** Tooltip HTML for one point; the label is escaped. */
+export function tooltipHtml(label: string, x: number, y: number): string {
+  const yText = y === Infinity ? "Inf (p = 0)" : y.toFixed(2);
+  return `<b>${escapeHTML(label)}</b><br/>log2FC: ${x.toFixed(2)}<br/>-log10p: ${yText}`;
+}
+
+/** A label box in pixels, for overlap checks. */
+export interface LabelBox {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/**
+ * Place labels next to their points without overlap. Each label tries the
+ * four corners around its point (right-above first) and takes the first one
+ * that stays inside `bounds` and clears every label placed before it; a label
+ * with no free corner is left out. Labels are placed in the order given, so
+ * pass the most important first.
+ */
+export function placeLabels(
+  items: { x: number; y: number; width: number }[],
+  bounds: LabelBox,
+  fontSize: number,
+): ({ x: number; y: number; anchor: "start" | "end" } | null)[] {
+  const placed: LabelBox[] = [];
+  const gap = 4;
+  // Baseline offsets: above the point, or below it.
+  const above = -gap;
+  const below = gap + fontSize;
+  const tries: [number, number, "start" | "end"][] = [
+    [gap, above, "start"],
+    [-gap, above, "end"],
+    [gap, below, "start"],
+    [-gap, below, "end"],
+  ];
+  return items.map((it) => {
+    for (const [dx, dy, anchor] of tries) {
+      const bx = it.x + dx;
+      const by = it.y + dy;
+      const box: LabelBox = {
+        left: anchor === "start" ? bx : bx - it.width,
+        right: anchor === "start" ? bx + it.width : bx,
+        top: by - fontSize * 0.8,
+        bottom: by + fontSize * 0.2,
+      };
+      if (
+        box.left < bounds.left ||
+        box.right > bounds.right ||
+        box.top < bounds.top ||
+        box.bottom > bounds.bottom
+      ) {
+        continue;
+      }
+      const hit = placed.some(
+        (p) =>
+          box.left < p.right + 1 &&
+          box.right > p.left - 1 &&
+          box.top < p.bottom + 1 &&
+          box.bottom > p.top - 1,
+      );
+      if (hit) continue;
+      placed.push(box);
+      return { x: bx, y: by, anchor };
+    }
+    return null;
+  });
 }
 
 /** Nice axis tick values for a domain. */
@@ -116,8 +261,14 @@ export function niceTicks(domain: [number, number], count = 6): number[] {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => {
-  let opts: VolcanoOptions = mergeOptions(defaultVolcanoOptions, initial.options);
+export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
+  el,
+  initial,
+) => {
+  let opts: VolcanoOptions = mergeOptions(
+    defaultVolcanoOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -137,10 +288,16 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
 
   // DOM: a canvas (GPU points) inset by margins, plus a full-size SVG overlay.
   el.style.position = el.style.position || "relative";
+  // regl-scatterplot leaves the canvas transparent, so the theme background is
+  // painted on the element: the plot panel and the axis margins alike.
+  // destroy() puts back what the element had.
+  const priorBackground = el.style.backgroundColor;
+  el.style.backgroundColor = theme.background;
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -173,13 +330,16 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     renderOverlay();
   });
 
+  // The points drawn last, in drawn order. regl-scatterplot reports drawn
+  // indices, and rows with a missing value are not drawn, so map back here.
+  let pts: VolcanoPoints = preparePoints([], []);
+
   function showTip(i: number) {
-    const cols = data.columns;
-    const x = num(cols.x, i);
-    const y = num(cols.y, i);
-    const label = str(cols.label, i) ?? `#${i}`;
+    const row = pts.rows[i];
+    if (row === undefined) return;
+    const label = str(data.columns.label, row) ?? `#${row}`;
     tooltip.show(
-      `<b>${label}</b><br/>log2FC: ${x.toFixed(2)}<br/>-log10p: ${y.toFixed(2)}`,
+      tooltipHtml(label, pts.x[i] as number, pts.y[i] as number),
       lastPointer.x,
       lastPointer.y,
     );
@@ -222,7 +382,15 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
 
   async function render(fit: boolean) {
     const cols = data.columns;
-    if (!cols.x || !cols.y || cols.x.length === 0) {
+    pts =
+      cols.x && cols.y
+        ? preparePoints(
+            cols.x,
+            cols.y,
+            data.meta?.yInfinite as number[] | undefined,
+          )
+        : preparePoints([], []);
+    if (pts.rows.length === 0) {
       void scatterplot.clear?.();
       renderOverlay();
       return;
@@ -230,22 +398,27 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     const fitW = innerW();
     const fitH = innerH();
     if (fit) {
-      xDomain = symmetricExtent(cols.x);
-      yDomain = paddedExtent(cols.y);
+      xDomain = symmetricExtent(pts.x);
+      yDomain = paddedExtent(pts.yDraw);
       yDomain[0] = Math.min(0, yDomain[0]);
       [baseX, baseY] = baseDomains(xDomain, yDomain, fitW, fitH);
     }
     const [xBase, yBase] = [baseX, baseY];
 
     const yThresh = -Math.log10(opts.pThreshold);
-    const n = cols.x.length;
+    const n = pts.rows.length;
     const z = new Float32Array(n);
     for (let i = 0; i < n; i += 1) {
-      z[i] = classify(num(cols.x, i), num(cols.y, i), opts.fcThreshold, yThresh);
+      z[i] = classify(
+        pts.x[i] as number,
+        pts.y[i] as number,
+        opts.fcThreshold,
+        yThresh,
+      );
     }
     const points = {
-      x: toNdc(cols.x as ArrayLike<number>, xBase),
-      y: toNdc(cols.y as ArrayLike<number>, yBase),
+      x: toNdc(pts.x, xBase),
+      y: toNdc(pts.yDraw, yBase),
       z,
     };
     renderOverlay();
@@ -274,6 +447,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
       pointColor: [opts.colors.down, opts.colors.ns, opts.colors.up],
       pointSize: opts.pointSize,
       opacity: opts.opacity,
+      backgroundColor: theme.background,
     });
   }
 
@@ -289,7 +463,9 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     for (const t of niceTicks(xDomain)) {
       const x = pxX(t);
       if (x < MARGIN.left - 1 || x > width - MARGIN.right + 1) continue;
-      svg.appendChild(line(x, MARGIN.top, x, height - MARGIN.bottom, gridColor, 1));
+      svg.appendChild(
+        line(x, MARGIN.top, x, height - MARGIN.bottom, gridColor, 1),
+      );
       svg.appendChild(
         text(x, height - MARGIN.bottom + 16, fmt(t), axisColor, "middle"),
       );
@@ -298,22 +474,57 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     for (const t of niceTicks(yDomain)) {
       const y = pxY(t);
       if (y < MARGIN.top - 1 || y > height - MARGIN.bottom + 1) continue;
-      svg.appendChild(line(MARGIN.left, y, width - MARGIN.right, y, gridColor, 1));
+      svg.appendChild(
+        line(MARGIN.left, y, width - MARGIN.right, y, gridColor, 1),
+      );
       svg.appendChild(text(MARGIN.left - 8, y + 4, fmt(t), axisColor, "end"));
     }
 
     // axis frame
     svg.appendChild(
-      line(MARGIN.left, height - MARGIN.bottom, width - MARGIN.right, height - MARGIN.bottom, axisColor, 1.5),
+      line(
+        MARGIN.left,
+        height - MARGIN.bottom,
+        width - MARGIN.right,
+        height - MARGIN.bottom,
+        axisColor,
+        1.5,
+      ),
     );
-    svg.appendChild(line(MARGIN.left, MARGIN.top, MARGIN.left, height - MARGIN.bottom, axisColor, 1.5));
+    svg.appendChild(
+      line(
+        MARGIN.left,
+        MARGIN.top,
+        MARGIN.left,
+        height - MARGIN.bottom,
+        axisColor,
+        1.5,
+      ),
+    );
 
     // axis titles
     svg.appendChild(
-      text(MARGIN.left + innerW() / 2, height - 8, opts.xLabel, theme.foreground, "middle", 13),
+      text(
+        MARGIN.left + innerW() / 2,
+        height - 8,
+        opts.xLabel,
+        theme.foreground,
+        "middle",
+        13,
+      ),
     );
-    const yTitle = text(16, MARGIN.top + innerH() / 2, opts.yLabel, theme.foreground, "middle", 13);
-    yTitle.setAttribute("transform", `rotate(-90 16 ${MARGIN.top + innerH() / 2})`);
+    const yTitle = text(
+      16,
+      MARGIN.top + innerH() / 2,
+      opts.yLabel,
+      theme.foreground,
+      "middle",
+      13,
+    );
+    yTitle.setAttribute(
+      "transform",
+      `rotate(-90 16 ${MARGIN.top + innerH() / 2})`,
+    );
     svg.appendChild(yTitle);
 
     if (opts.showThresholdLines) renderThresholds();
@@ -324,44 +535,107 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     const yThresh = -Math.log10(opts.pThreshold);
     const yp = pxY(yThresh);
     if (yp > MARGIN.top && yp < height - MARGIN.bottom) {
-      svg.appendChild(dashed(MARGIN.left, yp, width - MARGIN.right, yp, theme.muted));
+      svg.appendChild(
+        dashed(MARGIN.left, yp, width - MARGIN.right, yp, theme.muted),
+      );
     }
     for (const fx of [-opts.fcThreshold, opts.fcThreshold]) {
       const xp = pxX(fx);
       if (xp > MARGIN.left && xp < width - MARGIN.right) {
-        svg.appendChild(dashed(xp, MARGIN.top, xp, height - MARGIN.bottom, theme.muted));
+        svg.appendChild(
+          dashed(xp, MARGIN.top, xp, height - MARGIN.bottom, theme.muted),
+        );
       }
     }
   }
 
   function renderLabels() {
     const cols = data.columns;
-    if (!opts.labelTopN || !cols.label || !cols.x) return;
+    if (!opts.labelTopN || !cols.label || pts.rows.length === 0) return;
     const yThresh = -Math.log10(opts.pThreshold);
-    const n = cols.x.length;
     const up: number[] = [];
     const down: number[] = [];
-    for (let i = 0; i < n; i += 1) {
-      const c = classify(num(cols.x, i), num(cols.y, i), opts.fcThreshold, yThresh);
+    for (let i = 0; i < pts.rows.length; i += 1) {
+      // A gene with no label (NA from R) takes no label slot or space.
+      if (!str(cols.label, pts.rows[i] as number)) continue;
+      const c = classify(
+        pts.x[i] as number,
+        pts.y[i] as number,
+        opts.fcThreshold,
+        yThresh,
+      );
       if (c === 2) up.push(i);
       else if (c === 0) down.push(i);
     }
-    const byY = (a: number, b: number) => num(cols.y, b) - num(cols.y, a);
+    // Most significant first; p = 0 (Infinity) sorts to the front.
+    const byY = (a: number, b: number) => {
+      const ya = pts.y[a] as number;
+      const yb = pts.y[b] as number;
+      return ya === yb ? 0 : ya < yb ? 1 : -1;
+    };
     const chosen = [
       ...up.sort(byY).slice(0, opts.labelTopN),
       ...down.sort(byY).slice(0, opts.labelTopN),
     ];
+    const bounds = {
+      left: MARGIN.left,
+      right: width - MARGIN.right,
+      top: MARGIN.top,
+      bottom: height - MARGIN.bottom,
+    };
+    const items: {
+      i: number;
+      x: number;
+      y: number;
+      width: number;
+      label: string;
+    }[] = [];
     for (const i of chosen) {
-      const x = pxX(num(cols.x, i));
-      const y = pxY(num(cols.y, i));
-      if (x < MARGIN.left || x > width - MARGIN.right) continue;
-      if (y < MARGIN.top || y > height - MARGIN.bottom) continue;
-      svg.appendChild(text(x + 4, y - 4, str(cols.label, i) ?? "", theme.foreground, "start", 11));
+      const x = pxX(pts.x[i] as number);
+      const y = pxY(pts.yDraw[i] as number);
+      // Points outside the current view keep no label.
+      if (x < bounds.left || x > bounds.right) continue;
+      if (y < bounds.top || y > bounds.bottom) continue;
+      const label = str(cols.label, pts.rows[i] as number) ?? "";
+      items.push({ i, x, y, width: textWidth(label, LABEL_SIZE), label });
     }
+    const spots = placeLabels(items, bounds, LABEL_SIZE);
+    items.forEach((it, k) => {
+      const spot = spots[k];
+      if (!spot) return;
+      const t = text(
+        spot.x,
+        spot.y,
+        it.label,
+        theme.foreground,
+        spot.anchor,
+        LABEL_SIZE,
+      );
+      // Widths are measured at normal weight; a bold page must not widen
+      // the drawn text past its measured box.
+      t.setAttribute("font-weight", "normal");
+      t.setAttribute("letter-spacing", "normal");
+      svg.appendChild(t);
+    });
+  }
+
+  // Text widths for label placement, measured with the label font.
+  const measureCtx = document.createElement("canvas").getContext("2d");
+  function textWidth(s: string, size: number): number {
+    if (!measureCtx) return s.length * size * 0.6;
+    measureCtx.font = `${size}px ${theme.fontFamily}`;
+    return measureCtx.measureText(s).width;
   }
 
   // ---- SVG element helpers ----
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string, w: number) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+    w: number,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -371,12 +645,25 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     l.setAttribute("stroke-width", String(w));
     return l;
   }
-  function dashed(x1: number, y1: number, x2: number, y2: number, stroke: string) {
+  function dashed(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+  ) {
     const l = line(x1, y1, x2, y2, stroke, 1);
     l.setAttribute("stroke-dasharray", "4 3");
     return l;
   }
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 11) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 11,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -411,6 +698,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      el.style.backgroundColor = theme.background;
       // No option changes the data range, so the current pan/zoom stays.
       applyData(false);
     },
@@ -443,6 +731,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
       scatterplot.destroy();
       canvas.remove();
       svg.remove();
+      el.style.backgroundColor = priorBackground;
     },
   };
 
@@ -450,8 +739,14 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
 };
 
 // ---- small utilities ----
-function num(col: Column | undefined, i: number): number {
-  return col ? ((col as ArrayLike<number>)[i] as number) : 0;
+function escapeHTML(s: string): string {
+  return s.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ] as string,
+  );
 }
 function str(col: Column | undefined, i: number): string | undefined {
   if (!col) return undefined;
@@ -464,7 +759,10 @@ function fmt(v: number): string {
   if (a >= 1000 || a < 0.01) return v.toExponential(1);
   return Number(v.toFixed(2)).toString();
 }
-function mergeOptions(base: VolcanoOptions, next?: Partial<VolcanoOptions>): VolcanoOptions {
+function mergeOptions(
+  base: VolcanoOptions,
+  next?: Partial<VolcanoOptions>,
+): VolcanoOptions {
   if (!next) return { ...base };
   return {
     ...base,
