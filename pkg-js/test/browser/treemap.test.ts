@@ -64,7 +64,7 @@ describe("treemap in a browser", () => {
       }),
     );
     const tip = Array.from(el.children).find((c) => c.tagName === "DIV");
-    expect(tip?.textContent).toMatch(/group: Pathway (one|two)/);
+    expect(tip?.textContent).toContain("group: Pathway two");
   });
 
   it("shows a value key when colored by value", () => {
@@ -76,5 +76,61 @@ describe("treemap in a browser", () => {
     instances.push(tm);
     expect(el.querySelector("svg linearGradient")).not.toBeNull();
     expect(texts(el)).toContain("10");
+  });
+
+  it("prints one value on the key when every tile has it", () => {
+    const el = container();
+    const tm = createTreemap(el, {
+      data: { columns: { id: ["r", "a", "b"], parent: ["", "r", "r"] } },
+      options: { colorBy: "value" },
+    });
+    instances.push(tm);
+    expect(texts(el)).toContain("1");
+    expect(texts(el)).not.toContain("2");
+  });
+
+  it("names a group only when it has a header strip", () => {
+    // From a layout where rounding turned a 47.6 px group into 48 px.
+    const id = ["root"];
+    const parent = [""];
+    const value = [0];
+    const groups: [string, number[]][] = [
+      ["G0", [13, 16, 16, 19]],
+      ["G1", [4]],
+      ["G2", [13, 10, 12, 19]],
+      ["G3", [8]],
+      ["G4", [1, 18]],
+    ];
+    for (const [g, leaves] of groups) {
+      id.push(g);
+      parent.push("root");
+      value.push(0);
+      leaves.forEach((v, k) => {
+        id.push(`${g.toLowerCase()}_${k}`);
+        parent.push(g);
+        value.push(v);
+      });
+    }
+    const el = container();
+    const tm = createTreemap(el, { data: { columns: { id, parent, value } } });
+    instances.push(tm);
+    // Every named group label must clear the labels of its own tiles.
+    const all = Array.from(el.querySelectorAll("svg text")) as SVGTextElement[];
+    for (const [g] of groups) {
+      const name = all.find((t) => t.textContent === g);
+      if (!name) continue;
+      const nb = name.getBBox();
+      for (const leaf of all.filter((t) =>
+        t.textContent?.startsWith(`${g.toLowerCase()}_`),
+      )) {
+        const lb = leaf.getBBox();
+        const overlap =
+          nb.x < lb.x + lb.width &&
+          lb.x < nb.x + nb.width &&
+          nb.y < lb.y + lb.height &&
+          lb.y < nb.y + nb.height;
+        expect(overlap).toBe(false);
+      }
+    }
   });
 });

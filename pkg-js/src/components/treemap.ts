@@ -27,6 +27,7 @@ import {
   ramp,
   type RampName,
 } from "../core/index.js";
+import { uniqueId } from "../core/dom.js";
 import {
   stratify,
   treemap,
@@ -65,8 +66,6 @@ const BREADCRUMB_H = 24;
 /** Header strip for a group's name, and the border around a group. */
 const GROUP_HEADER_H = 16;
 const GROUP_PAD = 2;
-
-let treemapSeq = 0;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/treemap.test.ts)
@@ -210,7 +209,10 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
   // meaning after drilling in.
   let topOf = new Map<string, string>();
   let paletteFor = categoricalScale(theme.categorical);
-  const uid = `plotomics-treemap-${treemapSeq++}`;
+  const uid = uniqueId("plotomics-treemap");
+  // Groups given a header strip in the last layout. The decision is made on
+  // the unrounded rect, so it is recorded then and read when labelling.
+  let headerIds = new Set<string>();
 
   /** Assign palette colors to the top-level groups in tree order. */
   function assignPalette() {
@@ -306,19 +308,21 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     // focus's children that have children) get a wider border than the tiles
     // inside them, and a header strip for their name when there is room.
     const sub = focus.copy();
+    const headers = new Set<string>();
     treemap<TreeRow>()
       .tile(tileFn)
       .size([plotW(), plotH()])
       .paddingInner(inner)
       .paddingOuter((d) => (d.depth === 1 && d.children ? GROUP_PAD : 0))
-      .paddingTop((d) =>
-        d.depth === 1 && d.children
-          ? hasHeader(d as HierarchyRectangularNode<TreeRow>)
-            ? GROUP_HEADER_H
-            : GROUP_PAD
-          : 0,
-      )
+      .paddingTop((d) => {
+        if (!(d.depth === 1 && d.children)) return 0;
+        if (!hasHeader(d as HierarchyRectangularNode<TreeRow>))
+          return GROUP_PAD;
+        headers.add(d.data.id);
+        return GROUP_HEADER_H;
+      })
       .round(true)(sub);
+    headerIds = headers;
     const laid = sub as HierarchyRectangularNode<TreeRow>;
     layoutLeaves = laid.leaves();
     layoutGroups = (laid.children ?? []).filter((c) => !!c.children);
@@ -408,8 +412,15 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
   function renderBreadcrumb() {
     // Background strip so tile labels never bleed into the breadcrumb.
     svg.appendChild(rect(0, 0, width, BREADCRUMB_H, theme.background));
-    if (opts.colorBy === "value" && layoutLeaves.length) renderValueKey();
-    if (!focus) return;
+    const crumbsEnd = renderCrumbs();
+    if (opts.colorBy === "value" && layoutLeaves.length) {
+      renderValueKey(crumbsEnd);
+    }
+  }
+
+  /** Draw the breadcrumb; returns the x where it ends. */
+  function renderCrumbs(): number {
+    if (!focus) return 0;
     const chain = focus.ancestors().reverse(); // root -> focus
     let x = 8;
     chain.forEach((node, i) => {
@@ -437,14 +448,26 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       svg.appendChild(t);
       x += approxTextWidth(label, 12) + 6;
     });
+    return x;
   }
 
-  /** Value color key at the right of the breadcrumb strip: min, ramp, max. */
-  function renderValueKey() {
-    const [lo, hi] = valueExtent(layoutLeaves);
+  /**
+   * Value color key at the right of the breadcrumb strip: min, ramp, max.
+   * Left out when the breadcrumb reaches it.
+   */
+  function renderValueKey(crumbsEnd: number) {
+    // The labels state values that tiles have: valueExtent widens an all-
+    // equal range for the color scale, which the key must not print.
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const l of layoutLeaves) {
+      const v = l.value ?? 0;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
     const barW = 90;
     const x = width - barW - 46;
-    if (x < 120) return; // no room next to the breadcrumb
+    if (x - 30 < crumbsEnd) return; // the min label would meet the breadcrumb
     const gid = `${uid}-key`;
     const defs = document.createElementNS(SVG_NS, "defs");
     const grad = document.createElementNS(SVG_NS, "linearGradient");
@@ -460,7 +483,10 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     svg.appendChild(defs);
     svg.appendChild(rect(x, 8, barW, 8, `url(#${gid})`));
     svg.appendChild(text(x - 4, 16, fmt(lo), theme.axis, "end", 10));
-    svg.appendChild(text(x + barW + 4, 16, fmt(hi), theme.axis, "start", 10));
+    // One value only: every tile has it, and it takes the low end of the ramp.
+    if (hi > lo) {
+      svg.appendChild(text(x + barW + 4, 16, fmt(hi), theme.axis, "start", 10));
+    }
   }
 
   /** White text with a dark halo, cut to `maxWidth` px with an ellipsis. */
@@ -488,7 +514,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     const yOff = plotTop();
     // Group names in their header strips.
     for (const g of layoutGroups) {
-      if (!hasHeader(g)) continue;
+      if (!headerIds.has(g.data.id)) continue;
       const label = g.data.label || g.data.id;
       haloText(
         g.x0 + 4,

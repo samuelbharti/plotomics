@@ -13,7 +13,10 @@ export interface Tooltip {
 }
 
 /** A lightweight absolutely-positioned tooltip anchored to a container. */
-export function createTooltip(container: HTMLElement, theme: PlotomicsTheme): Tooltip {
+export function createTooltip(
+  container: HTMLElement,
+  theme: PlotomicsTheme,
+): Tooltip {
   const tip = document.createElement("div");
   Object.assign(tip.style, {
     position: "absolute",
@@ -71,4 +74,18 @@ export function measure(
 export function dpr(max = 2): number {
   if (typeof window === "undefined") return 1;
   return Math.min(window.devicePixelRatio || 1, max);
+}
+
+let idSeq = 0;
+
+/**
+ * An id for an SVG element (such as a gradient) that no other plot on the
+ * page shares. `url(#id)` resolves to the first match in the whole document,
+ * so two plots with one id would paint with the first one's gradient. A
+ * counter alone is not enough: anywidget loads the bundle again for each
+ * widget, which starts the counter again, so a random part is added.
+ */
+export function uniqueId(prefix: string): string {
+  idSeq += 1;
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${idSeq}`;
 }

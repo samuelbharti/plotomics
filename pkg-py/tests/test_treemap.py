@@ -124,3 +124,11 @@ def test_treemap_matches_integer_ids_to_float_parents():
     w = Treemap(df)
     assert w.data["columns"]["parent"] == ["", "1", "1", "2"]
     assert w.data["columns"]["id"] == ["1", "2", "3", "4"]
+
+
+def test_treemap_keeps_text_ids_written_as_floats():
+    pd = pytest.importorskip("pandas")
+    # Ids cast to text from floats keep their ".0"; parents must match them.
+    df = pd.DataFrame({"id": ["1.0", "2.0", "3.0"], "parent": [np.nan, 1.0, 1.0]})
+    w = Treemap(df)
+    assert w.data["columns"]["parent"] == ["", "1.0", "1.0"]

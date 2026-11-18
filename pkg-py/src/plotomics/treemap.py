@@ -87,7 +87,8 @@ class Treemap(PlotomicsWidget):
         # String columns travel as JSON. Missing / NaN parents mark the root and
         # are normalized to empty strings (the JS side treats "" / "NA" as root).
         id_list = [_id_str(v) for v in ids]
-        parent_list = [_parent_str(v) for v in parents]
+        id_set_all = set(id_list)
+        parent_list = [_parent_str(v, id_set_all) for v in parents]
         n = len(id_list)
 
         # Structural integrity: exactly one root, unique ids, no orphan parents.
@@ -172,12 +173,18 @@ def _id_str(v: Any) -> str:
     return str(v)
 
 
-def _parent_str(v: Any) -> str:
-    """Coerce a parent cell to a string, mapping None/NaN to the root marker."""
+def _parent_str(v: Any, ids: set[str]) -> str:
+    """Coerce a parent cell to a string, mapping None/NaN to the root marker.
+
+    A whole-number float parent matches an id written either way: "1" for an
+    integer id column, or "1.0" for ids that were cast to text from floats.
+    """
     if v is None:
         return ""
     # NaN (float) is not equal to itself; also catch pandas' NA-like values.
     if isinstance(v, (float, np.floating)) and np.isnan(v):
         return ""
     s = _id_str(v)
+    if s not in ids and str(v) in ids:
+        s = str(v)
     return "" if s in ("nan", "NA", "None", "<NA>") else s
