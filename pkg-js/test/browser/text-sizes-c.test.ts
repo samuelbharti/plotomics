@@ -83,6 +83,29 @@ function overlaps(texts: Element[]): string[] {
   return out;
 }
 
+/** Where the first canvas of a widget sits, which is its plot area. */
+function plotBox(el: HTMLElement) {
+  const c = el.querySelector("canvas") as HTMLCanvasElement;
+  const { left, top, width, height } = c.style;
+  return { left, top, width, height };
+}
+
+/** Each SVG text with its place and size, in drawing order. */
+const textPlaces = (el: HTMLElement) =>
+  svgTexts(el).map((t) =>
+    ["textContent", "x", "y", "font-size"].map((k) =>
+      k === "textContent" ? t.textContent : t.getAttribute(k),
+    ),
+  );
+
+/** The tooltip of a widget, when it shows. */
+function tipText(el: HTMLElement): string {
+  const tip = Array.from(el.children).find(
+    (c) => (c as HTMLElement).style.zIndex === "10",
+  ) as HTMLElement | undefined;
+  return tip && tip.style.opacity === "1" ? (tip.textContent ?? "") : "";
+}
+
 /** Deterministic values spread over [lo, hi]. */
 function spread(n: number, lo: number, hi: number, seed: number) {
   let s = seed;
@@ -135,7 +158,7 @@ async function volcanoReady(el: HTMLElement) {
 }
 
 describe("volcano text sizes", () => {
-  it("sizes ticks, titles and gene labels from theme.fontSize, and again after setOptions", async () => {
+  it("sizes ticks, titles and gene labels from theme.fontSize, and lays them out again after setOptions", async () => {
     const el = container(800, 400);
     const v = createVolcano(el, { data: volcanoData() });
     instances.push(v);
@@ -153,7 +176,23 @@ describe("volcano text sizes", () => {
       expect(sizesIn(p.genes)).toEqual([s.label]);
       expect(p.titles.length).toBe(2);
       expect(sizesIn(p.titles)).toEqual([s.axisTitle]);
+      expect(outside(el)).toEqual([]);
+      expect(overlaps(p.xTicks)).toEqual([]);
+      expect(overlaps(p.yTicks)).toEqual([]);
+      expect(overlaps([...p.yTicks, ...named(el, "-log10 p-value")])).toEqual(
+        [],
+      );
     }
+    // The margins match those of a chart made at fontSize 16.
+    const fresh = container(800, 400);
+    instances.push(
+      createVolcano(fresh, {
+        data: volcanoData(),
+        options: { theme: { fontSize: 16 } },
+      }),
+    );
+    await volcanoReady(fresh);
+    expect(plotBox(el)).toEqual(plotBox(fresh));
   });
 
   for (const { name, theme } of THEMES) {
@@ -232,7 +271,7 @@ async function embeddingReady(el: HTMLElement) {
 }
 
 describe("embedding text sizes", () => {
-  it("sizes ticks, titles and legend entries from theme.fontSize, and again after setOptions", async () => {
+  it("sizes ticks, titles and legend entries from theme.fontSize, and lays them out again after setOptions", async () => {
     const el = container(600, 400);
     const e = createEmbedding(el, {
       data: embeddingData(false),
@@ -256,7 +295,22 @@ describe("embedding text sizes", () => {
       expect(sizesIn(p.legend)).toEqual([s.label]);
       expect(p.titles.length).toBe(2);
       expect(sizesIn(p.titles)).toEqual([s.axisTitle]);
+      expect(outside(el)).toEqual([]);
+      expect(overlaps(p.xTicks)).toEqual([]);
+      expect(overlaps(p.yTicks)).toEqual([]);
+      expect(overlaps(p.legend)).toEqual([]);
+      expect(overlaps([...p.yTicks, ...named(el, "UMAP 2")])).toEqual([]);
     }
+    // The margins match those of a chart made at fontSize 16.
+    const fresh = container(600, 400);
+    instances.push(
+      createEmbedding(fresh, {
+        data: embeddingData(false),
+        options: { showAxes: true, theme: { fontSize: 16 } },
+      }),
+    );
+    await embeddingReady(fresh);
+    expect(plotBox(el)).toEqual(plotBox(fresh));
   });
 
   for (const { name, theme } of THEMES) {
@@ -338,7 +392,7 @@ function spatialData(continuous: boolean) {
 }
 
 describe("spatial text sizes", () => {
-  it("sizes legend entries from theme.fontSize, and again after setOptions", () => {
+  it("sizes legend entries from theme.fontSize, and lays them out again after setOptions", () => {
     const el = container(600, 400);
     const sp = createSpatial(el, {
       data: spatialData(false),
@@ -352,7 +406,18 @@ describe("spatial text sizes", () => {
         expect.arrayContaining([...REGIONS, "NA"]),
       );
       expect(sizesIn(legend)).toEqual([sizesOf(theme).label]);
+      expect(outside(el)).toEqual([]);
+      expect(overlaps(legend)).toEqual([]);
     }
+    // The legend sits where it does on a chart made at fontSize 16.
+    const fresh = container(600, 400);
+    instances.push(
+      createSpatial(fresh, {
+        data: spatialData(false),
+        options: { showImage: false, theme: { fontSize: 16 } },
+      }),
+    );
+    expect(textPlaces(el)).toEqual(textPlaces(fresh));
   });
 
   for (const { name, theme } of THEMES) {
@@ -423,7 +488,7 @@ function treemapData() {
 }
 
 describe("treemap text sizes", () => {
-  it("sizes tile labels, group names and the breadcrumb from theme.fontSize, and again after setOptions", () => {
+  it("sizes tile labels, group names and the breadcrumb from theme.fontSize, and lays them out again after setOptions", () => {
     const el = container(600, 400);
     const tm = createTreemap(el, {
       data: treemapData(),
@@ -441,7 +506,19 @@ describe("treemap text sizes", () => {
       expect(labels.length).toBeGreaterThan(5);
       expect(sizesIn(labels)).toEqual([s.label]);
       expect(sizesIn(crumb)).toEqual([s.axisTitle]);
+      expect(outside(el)).toEqual([]);
+      expect(overlaps(svgTexts(el))).toEqual([]);
     }
+    // Tiles and labels sit where they do on a chart made at fontSize 16.
+    const fresh = container(600, 400);
+    instances.push(
+      createTreemap(fresh, {
+        data: treemapData(),
+        options: { colorBy: "value", theme: { fontSize: 16 } },
+      }),
+    );
+    expect(plotBox(el)).toEqual(plotBox(fresh));
+    expect(textPlaces(el)).toEqual(textPlaces(fresh));
   });
 
   for (const { name, theme } of THEMES) {
@@ -505,6 +582,10 @@ function recordCanvasText() {
     left: number;
     right: number;
     width: number;
+    layer: string;
+    x: number;
+    y: number;
+    w: number;
   }[] = [];
   const proto = CanvasRenderingContext2D.prototype;
   const real = proto.fillText;
@@ -523,6 +604,11 @@ function recordCanvasText() {
       left: m.a * x + m.e,
       right: m.a * (x + w) + m.e,
       width: this.canvas.width,
+      layer: this.canvas.className,
+      // In the context's own units, which sigma keeps in CSS pixels.
+      x,
+      y,
+      w,
     });
     return maxWidth === undefined
       ? real.call(this, text, x, y)
@@ -560,6 +646,10 @@ describe("network text sizes", () => {
         expect([...new Set(labels.map((c) => pxOf(c.font)))]).toEqual([
           sizesOf(theme).label,
         ]);
+        const clipped = labels
+          .filter((c) => c.left < 0 || c.right > c.width)
+          .map((c) => c.text);
+        expect(clipped).toEqual([]);
       }
     } finally {
       rec.restore();
@@ -597,4 +687,281 @@ describe("network text sizes", () => {
       });
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// Cases from the review of PR #198
+// ---------------------------------------------------------------------------
+
+/**
+ * Hover a network node: move the pointer along the row of its label, out
+ * from both ends of the label, until the tooltip names the node.
+ */
+function hoverNode(
+  el: HTMLElement,
+  label: { left: number; right: number; y: number },
+  name: string,
+) {
+  const mouse = el.querySelector("canvas.sigma-mouse") as HTMLCanvasElement;
+  const box = mouse.getBoundingClientRect();
+  for (let d = 2; d < 60; d += 2) {
+    for (const x of [label.right + d, label.left - d]) {
+      mouse.dispatchEvent(
+        new MouseEvent("mousemove", {
+          clientX: box.left + x,
+          clientY: box.top + label.y,
+          bubbles: true,
+        }),
+      );
+      if (tipText(el).includes(name)) return;
+    }
+  }
+  throw new Error(`no hover on ${name}`);
+}
+
+/**
+ * The labels of a node on sigma's labels layer and on its hover layer, after
+ * hovering it.
+ */
+async function hoverLabels(
+  el: HTMLElement,
+  rec: ReturnType<typeof recordCanvasText>,
+  name: string,
+  labelSize: number,
+) {
+  const onLayer = (layer: string) =>
+    rec.calls.filter((c) => c.text === name && c.layer === `sigma-${layer}`);
+  await expect.poll(() => onLayer("labels").length, poll).toBeGreaterThan(0);
+  const latest = (layer: string) => {
+    const calls = onLayer(layer);
+    return calls[calls.length - 1];
+  };
+  const drawn = latest("labels") as (typeof rec.calls)[number];
+  // The baseline is a third of the label size below the node centre.
+  hoverNode(
+    el,
+    { left: drawn.x, right: drawn.x + drawn.w, y: drawn.y - labelSize / 3 },
+    name,
+  );
+  await expect.poll(() => onLayer("hovers").length, poll).toBeGreaterThan(0);
+  return { label: latest("labels"), hover: latest("hovers") };
+}
+
+describe("review cases", () => {
+  it("draws a hovered node's label once, on its side, at 600 x 480", async () => {
+    const rec = recordCanvasText();
+    try {
+      const el = container(600, 480);
+      instances.push(
+        createNetwork(el, {
+          data: {
+            columns: {
+              id: ["TP53", "CDKN2A-AS1"],
+              x: [0, 10],
+              y: [0, 0],
+              size: [10, 10],
+            },
+            meta: { edges: [["TP53", "CDKN2A-AS1"]] },
+          },
+        }),
+      );
+      const { label, hover } = await hoverLabels(
+        el,
+        rec,
+        "CDKN2A-AS1",
+        sizesOf({}).label,
+      );
+      // Before the fix the hover box drew it again right of the node, from
+      // 575.5 to 640.9 px.
+      expect(hover?.right).toBeLessThanOrEqual(hover?.width ?? 0);
+      expect(hover?.left).toBeCloseTo(label?.left ?? Number.NaN, 0);
+    } finally {
+      rec.restore();
+    }
+  });
+
+  it("draws a hovered node's label once, on its side, on a ring at fontSize 16 and 400 px", async () => {
+    const rec = recordCanvasText();
+    try {
+      const el = container(400, 400);
+      instances.push(
+        createNetwork(el, {
+          data: networkData(),
+          options: { theme: { fontSize: 16 } },
+        }),
+      );
+      const { label, hover } = await hoverLabels(
+        el,
+        rec,
+        "TP53",
+        sizesOf({ fontSize: 16 }).label,
+      );
+      expect(hover?.right).toBeLessThanOrEqual(hover?.width ?? 0);
+      expect(hover?.left).toBeCloseTo(label?.left ?? Number.NaN, 0);
+    } finally {
+      rec.restore();
+    }
+  });
+
+  for (const [width, height, theme] of [
+    [400, 220, {}],
+    [600, 300, { fontSize: 16 }],
+  ] as const) {
+    it(`keeps the NA entry as the last legend row when the list is cut, ${width} x ${height}, fontSize ${theme.fontSize ?? 12}`, async () => {
+      const el = container(width, height);
+      const n = 240;
+      const color = Array.from({ length: n }, (_, i) =>
+        i % 9 === 0 ? null : `cluster ${(i % 12) + 1}`,
+      );
+      instances.push(
+        createEmbedding(el, {
+          data: {
+            columns: {
+              x: spread(n, 0, 10, 7),
+              y: spread(n, 0, 10, 8),
+              color: color as unknown as string[],
+            },
+          },
+          options: { theme },
+        }),
+      );
+      await expect.poll(() => named(el, "cluster 1").length, poll).toBe(1);
+      await wait(200);
+      const rows = svgTexts(el).map((t) => t.textContent);
+      expect(rows[rows.length - 2]).toMatch(/^\+\d+ more$/);
+      expect(rows[rows.length - 1]).toBe("NA");
+      const grey = Array.from(el.querySelectorAll("svg rect")).filter(
+        (r) => r.getAttribute("fill") === "#BDBDBD",
+      );
+      expect(grey.length).toBe(1);
+      expect(outside(el)).toEqual([]);
+    });
+  }
+
+  for (const height of [260, 200]) {
+    it(`keeps the colour bar and its NA key above the x axis, 400 x ${height}, fontSize 16`, async () => {
+      const el = container(400, height);
+      const n = 300;
+      const x = spread(n, 0, 100, 9);
+      const y = spread(n, 0, 90, 10);
+      const color = x.map((v, i) => (i % 13 === 0 ? null : v + (y[i] ?? 0)));
+      instances.push(
+        createEmbedding(el, {
+          data: { columns: { x, y, color: color as unknown as number[] } },
+          options: { showAxes: true, theme: { fontSize: 16 } },
+        }),
+      );
+      await expect.poll(() => named(el, "NA").length, poll).toBe(1);
+      await wait(300);
+      // The x axis is the horizontal line drawn 1.5 px wide.
+      const axis = Array.from(el.querySelectorAll("svg line")).find(
+        (l) =>
+          l.getAttribute("stroke-width") === "1.5" &&
+          l.getAttribute("y1") === l.getAttribute("y2"),
+      ) as SVGLineElement;
+      const axisY = axis.getBoundingClientRect().top;
+      const keyBoxes = Array.from(el.querySelectorAll("svg rect")).filter(
+        (r) => r.getAttribute("rx") === "4",
+      );
+      expect(keyBoxes.length).toBe(2);
+      for (const r of keyBoxes) {
+        expect(r.getBoundingClientRect().bottom).toBeLessThanOrEqual(axisY);
+      }
+      const na = named(el, "NA");
+      expect(na[0]?.getBoundingClientRect().bottom).toBeLessThanOrEqual(axisY);
+      expect(overlaps([...na, ...embeddingParts(el).xTicks])).toEqual([]);
+      expect(outside(el)).toEqual([]);
+    });
+  }
+
+  for (const [width, fontSize] of [
+    [300, 16],
+    [400, 24],
+  ] as const) {
+    it(`fits the breadcrumb after opening a group, ${width} px, fontSize ${fontSize}`, () => {
+      const el = container(width, 480);
+      instances.push(
+        createTreemap(el, {
+          data: treemapData(),
+          options: { theme: { fontSize } },
+        }),
+      );
+      // Find a tile of the group by its tooltip, then open the group.
+      const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+      const r = canvas.getBoundingClientRect();
+      let at: { clientX: number; clientY: number } | null = null;
+      for (let y = 5; y < r.height && !at; y += 10) {
+        for (let x = 5; x < r.width && !at; x += 10) {
+          const pos = { clientX: r.left + x, clientY: r.top + y };
+          canvas.dispatchEvent(
+            new MouseEvent("mousemove", { ...pos, bubbles: true }),
+          );
+          if (tipText(el).includes("group: Interferon gamma response")) {
+            at = pos;
+          }
+        }
+      }
+      expect(at).not.toBeNull();
+      canvas.dispatchEvent(new MouseEvent("click", { ...at, bubbles: true }));
+      const last = svgTexts(el).find(
+        (t) => t.getAttribute("font-weight") === "600",
+      );
+      expect(last?.textContent).toMatch(/^Interferon/);
+      // Before the fix the last crumb ran past the right edge.
+      expect(outside(el)).toEqual([]);
+      expect(overlaps(svgTexts(el))).toEqual([]);
+    });
+  }
+});
+
+describe("treemap breadcrumb on a deep path", () => {
+  it("hides the middle crumbs behind one that opens the nearest of them", () => {
+    const id = ["root", "L1", "L2", "L3"];
+    const parent = ["", "root", "L1", "L2"];
+    const labels = [
+      "All gene sets",
+      "Level one group",
+      "Level two group",
+      "Level three group",
+    ];
+    for (let i = 0; i < 6; i += 1) {
+      id.push(`g${i}`);
+      parent.push("L3");
+      labels.push(`GENE${i}`);
+    }
+    const el = container(300, 400);
+    instances.push(
+      createTreemap(el, {
+        data: {
+          columns: { id, parent, value: id.map(() => 1) },
+          meta: { labels },
+        },
+        options: { theme: { fontSize: 16 } },
+      }),
+    );
+    // A click on a gene opens its group, three levels down.
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const r = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(
+      new MouseEvent("click", {
+        clientX: r.left + r.width / 2,
+        clientY: r.top + r.height / 2,
+        bubbles: true,
+      }),
+    );
+    const crumbs = () =>
+      svgTexts(el)
+        .filter((t) => t.style.cursor === "pointer")
+        .map((t) => t.textContent);
+    // The root and the open group share the strip, each cut to fit.
+    expect(crumbs()[0]).toMatch(/^All/);
+    expect(crumbs()).toContain("…");
+    expect(crumbs()[crumbs().length - 1]).toMatch(/^Level three/);
+    expect(outside(el)).toEqual([]);
+    // The "…" crumb opens the nearest hidden group.
+    const more = svgTexts(el).find((t) => t.textContent === "…");
+    more?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(crumbs()[crumbs().length - 1]).toMatch(/^Level two/);
+    expect(outside(el)).toEqual([]);
+  });
 });

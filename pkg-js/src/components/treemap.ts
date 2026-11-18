@@ -437,18 +437,18 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     const size = sizes.axisTitle;
     // Baseline that centres the crumbs in the strip.
     const y = Math.round(breadcrumbH() / 2 + size * 0.35);
+    const crumbs = fitCrumbs(chain, size);
     let x = 8;
-    chain.forEach((node, i) => {
+    crumbs.forEach((crumb, i) => {
       if (i > 0) {
         svg.appendChild(text(x, y, "›", theme.muted, "start", size));
         x += size;
       }
-      const label = node.data.label || node.data.id;
-      const isLast = i === chain.length - 1;
+      const isLast = i === crumbs.length - 1;
       const t = text(
         x,
         y,
-        label,
+        crumb.label,
         isLast ? theme.foreground : theme.axis,
         "start",
         size,
@@ -457,13 +457,74 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       t.style.pointerEvents = "auto";
       t.style.cursor = "pointer";
       if (isLast) t.setAttribute("font-weight", "600");
-      t.addEventListener("click", () => zoomTo(node));
+      t.addEventListener("click", () => zoomTo(crumb.node));
       svg.appendChild(t);
-      // The last crumb is bold, which sets about 10% wider than the
-      // regular weight that is measured.
-      x += textWidth(label, size, theme.fontFamily) * (isLast ? 1.1 : 1) + 6;
+      x += crumbWidth(crumb.label, size, isLast) + 6;
     });
     return x;
+  }
+
+  /** Width of a crumb. The last crumb is bold, which sets about 10% wider
+   * than the regular weight that is measured. */
+  function crumbWidth(label: string, size: number, bold: boolean): number {
+    return textWidth(label, size, theme.fontFamily) * (bold ? 1.1 : 1);
+  }
+
+  /**
+   * The crumbs that fit the strip, from the root to the focus. When the
+   * whole path is too wide, the ancestors after the root are hidden, oldest
+   * first, behind one "…" crumb that opens the nearest hidden one. When
+   * that is still too wide, the focus crumb is cut with an ellipsis, and so
+   * is the root when it takes more than half the strip.
+   */
+  function fitCrumbs(
+    chain: HierarchyNode<TreeRow>[],
+    size: number,
+  ): { label: string; node: HierarchyNode<TreeRow> }[] {
+    const avail = width - 16;
+    // Width from the first crumb's start to the last crumb's end.
+    const span = (list: { label: string }[], boldLast: boolean) =>
+      list.reduce(
+        (sum, c, i) =>
+          sum +
+          (i > 0 ? size + 6 : 0) +
+          crumbWidth(c.label, size, boldLast && i === list.length - 1),
+        0,
+      );
+    const all = chain.map((node) => ({
+      label: node.data.label || node.data.id,
+      node,
+    }));
+    let crumbs = all;
+    for (
+      let hide = 1;
+      span(crumbs, true) > avail && hide < all.length - 1;
+      hide += 1
+    ) {
+      const nearest = all[hide] as (typeof all)[number];
+      crumbs = [
+        all[0] as (typeof all)[number],
+        { label: "…", node: nearest.node },
+        ...all.slice(hide + 1),
+      ];
+    }
+    if (span(crumbs, true) <= avail) return crumbs;
+    const head = crumbs.slice(0, -1).map((c) => ({ ...c }));
+    const last = { ...(crumbs[crumbs.length - 1] as (typeof all)[number]) };
+    const first = head[0];
+    // The space before the focus crumb, with its separator.
+    const before = () => (head.length ? span(head, false) + 6 + size : 0);
+    if (first && before() > avail / 2) {
+      const cut = before() - avail / 2;
+      first.label = fitLabel(
+        first.label,
+        Math.max(0, crumbWidth(first.label, size, false) - cut),
+        size,
+        1,
+      );
+    }
+    last.label = fitLabel(last.label, Math.max(0, avail - before()), size, 1.1);
+    return [...head, last];
   }
 
   /**

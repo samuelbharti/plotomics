@@ -777,8 +777,8 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         layers: [
           {
             canvas,
-            x: MARGIN.left,
-            y: MARGIN.top,
+            x: margin.left,
+            y: margin.top,
             width: innerW(),
             height: innerH(),
           },
