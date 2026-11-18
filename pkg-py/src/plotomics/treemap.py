@@ -24,9 +24,11 @@ class Treemap(PlotomicsWidget):
         A pandas ``DataFrame`` or a mapping of arrays describing a tree as an
         edge list. Required columns: ``id`` (unique node id) and ``parent``
         (id of the parent; the root's parent is ``None``/``NaN``/``""``). A
-        numeric ``value`` column supplies leaf weights (internal nodes are
-        summed automatically); an optional ``label`` column supplies display
-        names.
+        numeric ``value`` column supplies leaf weights. A group's size is the
+        sum of its leaves; a value given on an internal node is ignored.
+        Without a ``value`` column every leaf weighs 1, so tiles show leaf
+        counts. An optional ``label`` column supplies display names. Top-level
+        groups are named in a header strip when their tile has room.
     tile:
         Tiling algorithm, ``"squarify"`` (golden-ratio rectangles) or
         ``"binary"`` (balanced binary partition).
@@ -84,7 +86,7 @@ class Treemap(PlotomicsWidget):
 
         # String columns travel as JSON. Missing / NaN parents mark the root and
         # are normalized to empty strings (the JS side treats "" / "NA" as root).
-        id_list = [str(v) for v in ids]
+        id_list = [_id_str(v) for v in ids]
         parent_list = [_parent_str(v) for v in parents]
         n = len(id_list)
 
@@ -122,6 +124,7 @@ class Treemap(PlotomicsWidget):
 
         # Numeric leaf weights travel via the binary transport (float32 for
         # consistency with every other component's packed columns).
+        # Without a value column the browser weighs every leaf as 1.
         value = _column(data, "value")
         if value is not None:
             value_arr = _to_float32(value, "value")
@@ -129,9 +132,9 @@ class Treemap(PlotomicsWidget):
                 raise ValueError(
                     f"`value` has {value_arr.size} entries; expected {n}."
                 )
+            buffer, schema = pack_columns({"value": value_arr})
         else:
-            value_arr = np.zeros(n, dtype=np.float32)
-        buffer, schema = pack_columns({"value": value_arr})
+            buffer, schema = b"", {"columns": []}
 
         meta: dict[str, Any] = {}
         label = _column(data, "label")
@@ -158,12 +161,23 @@ class Treemap(PlotomicsWidget):
         )
 
 
+def _id_str(v: Any) -> str:
+    """Text of an id. A whole-number float prints as an integer.
+
+    A parent column that holds None is stored by pandas as float64, so parent
+    1 arrives as 1.0 while the id column still says 1. Both must read "1".
+    """
+    if isinstance(v, (float, np.floating)) and np.isfinite(v) and float(v).is_integer():
+        return str(int(v))
+    return str(v)
+
+
 def _parent_str(v: Any) -> str:
     """Coerce a parent cell to a string, mapping None/NaN to the root marker."""
     if v is None:
         return ""
     # NaN (float) is not equal to itself; also catch pandas' NA-like values.
-    if isinstance(v, float) and np.isnan(v):
+    if isinstance(v, (float, np.floating)) and np.isnan(v):
         return ""
-    s = str(v)
+    s = _id_str(v)
     return "" if s in ("nan", "NA", "None", "<NA>") else s
