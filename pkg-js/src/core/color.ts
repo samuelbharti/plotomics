@@ -4,6 +4,8 @@
  * (viridis) and diverging (RdBu) interpolators plus categorical mapping.
  */
 
+import { OKABE_ITO, PALETTE_20 } from "./theme.js";
+
 export type RGB = [number, number, number];
 
 function clamp01(t: number): number {
@@ -120,6 +122,27 @@ export function ramp(name: RampName = "viridis"): (t: number) => string {
     );
   }
   return (t: number) => rgbToHex(fn(t));
+}
+
+/**
+ * Colours for `n` categories, in order. The default palette (Okabe-Ito, also
+ * used when `palette` is empty) gives way to {@link PALETTE_20} past 8
+ * categories, so category 9 does not take the colour of category 1. Any
+ * other palette is used as given. Colours repeat past the palette's end.
+ */
+export function categoricalColors(
+  palette: readonly string[] | undefined,
+  n: number,
+): string[] {
+  const base = palette?.length ? palette : OKABE_ITO;
+  const isDefault =
+    base.length === OKABE_ITO.length &&
+    base.every((c, i) => c.toLowerCase() === OKABE_ITO[i]?.toLowerCase());
+  const pal = isDefault && n > OKABE_ITO.length ? PALETTE_20 : base;
+  return Array.from(
+    { length: Math.max(0, n) },
+    (_, i) => pal[i % pal.length] as string,
+  );
 }
 
 /** Stable categorical color lookup: maps arbitrary keys to palette entries. */

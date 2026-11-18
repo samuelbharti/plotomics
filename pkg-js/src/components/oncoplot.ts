@@ -43,7 +43,7 @@ import {
   dpr,
   serializeSVG,
   canvasToPNG,
-  OKABE_ITO,
+  categoricalColors,
 } from "../core/index.js";
 
 export interface OncoplotOptions {
@@ -348,11 +348,14 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     if (given?.length) return given;
     // "Multi-hit" is dark grey, and the other classes take the palette in
     // turn, so it never borrows the colour of a real class.
+    const cls = classes();
+    const pal = categoricalColors(
+      theme.categorical,
+      cls.filter((c) => c !== MULTI_HIT).length,
+    );
     let k = 0;
-    return classes().map((c) =>
-      c === MULTI_HIT
-        ? MULTI_HIT_COLOR
-        : (OKABE_ITO[k++ % OKABE_ITO.length] as string),
+    return cls.map((c) =>
+      c === MULTI_HIT ? MULTI_HIT_COLOR : (pal[k++] as string),
     );
   }
   /**
