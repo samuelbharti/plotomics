@@ -703,6 +703,10 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       renderRowTicks(x0, y0, h);
     }
     if (opts.showColorbar) renderColorbar(x0, y0, h);
+    // A label with no room at all is cut to nothing; drop its element.
+    for (const t of Array.from(svg.querySelectorAll("text"))) {
+      if (!t.textContent) t.remove();
+    }
   }
 
   // Columns run left->right; the current view spans [viewX, viewX+viewW].
