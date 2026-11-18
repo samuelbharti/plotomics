@@ -142,3 +142,43 @@ def test_km_risk_counts_follow_a_stratum_index():
     # A default index says nothing about the strata, so rows keep their order.
     w = Km(data, risk_times=[0, 5], risk_counts=pd.DataFrame([[10, 8], [20, 15]]))
     assert w.data["meta"]["riskCounts"] == [10, 8, 20, 15]
+
+
+def test_km_leaves_a_missing_group_out_of_the_strata():
+    d = {"time": [0.0, 5.0, 0.0, 5.0], "surv": [1.0, 0.8, 1.0, 0.6],
+         "group": ["a", "a", float("nan"), float("nan")]}
+    w = Km(d)
+    assert w.data["meta"]["groups"] == ["a"]
+    assert w.data["columns"]["group"] == ["a", "a", None, None]
+
+
+def test_km_leaves_out_a_censor_tick_without_a_group():
+    d = {"time": [0.0, 2.0, 0.0, 2.0], "surv": [1.0, 0.9, 1.0, 0.5],
+         "group": ["a", "a", float("nan"), float("nan")]}
+    w = Km(d, censor={"time": [4, 4], "surv": [0.9, 0.5],
+                      "group": ["a", float("nan")]})
+    assert w.data["meta"]["censorGroup"] == ["a", None]
+
+
+def test_km_with_every_group_missing_has_no_strata():
+    w = Km({"time": [0.0, 2.0], "surv": [1.0, 0.5],
+            "group": [float("nan"), float("nan")]})
+    assert w.data["meta"]["groups"] == []
+    assert w.data["columns"]["group"] == [None, None]
+
+
+def test_km_reads_a_polars_categorical_by_its_own_values():
+    pl = pytest.importorskip("polars")
+    # polars lists every string that a live Categorical holds, from any
+    # column, in each Categorical's categories.
+    other = pl.Series(["liver", "lung", "kidney"], dtype=pl.Categorical)
+    group = pl.Series(["treated", "treated", "control", "control"],
+                      dtype=pl.Categorical)
+    d = pl.DataFrame({"time": [0.0, 5.0, 0.0, 5.0],
+                      "surv": [1.0, 0.8, 1.0, 0.6], "group": group})
+    assert Km(d).data["meta"]["groups"] == ["treated", "control"]
+    assert other.len() == 3
+    # An Enum states its own levels, in its order.
+    enum = pl.Enum(["control", "treated"])
+    d = d.with_columns(pl.col("group").cast(pl.String).cast(enum))
+    assert Km(d).data["meta"]["groups"] == ["control", "treated"]

@@ -107,9 +107,18 @@ export function ltcdiv(t: number): RGB {
 export const RAMPS = { viridis, rdbu, ltc, ltcdiv } as const;
 export type RampName = keyof typeof RAMPS;
 
-/** Build a [0,1] -> hex function from a named ramp. */
+/**
+ * Build a [0,1] -> hex function from a named ramp. An unknown name stops
+ * with a message that names it, where it used to fail later as
+ * "fn is not a function".
+ */
 export function ramp(name: RampName = "viridis"): (t: number) => string {
   const fn = RAMPS[name];
+  if (typeof fn !== "function") {
+    throw new Error(
+      `plotomics: unknown colormap ${JSON.stringify(name)}; use one of ${Object.keys(RAMPS).join(", ")}.`,
+    );
+  }
   return (t: number) => rgbToHex(fn(t));
 }
 
@@ -129,10 +138,7 @@ export function categoricalScale(palette: string[]): (key: string) => string {
 }
 
 /** Map a numeric domain to N evenly-sampled hex swatches from a ramp. */
-export function sampleRamp(
-  name: RampName,
-  n: number,
-): string[] {
+export function sampleRamp(name: RampName, n: number): string[] {
   const fn = ramp(name);
   if (n <= 1) return [fn(0.5)];
   return Array.from({ length: n }, (_, i) => fn(i / (n - 1)));

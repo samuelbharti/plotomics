@@ -6,7 +6,14 @@ from typing import Any
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _category_levels,
+    _column,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Violin(PlotomicsWidget):
@@ -111,14 +118,10 @@ class Violin(PlotomicsWidget):
             "group": [str(v) for v in group],
         }
 
-        def categories_of(col: Any) -> list[str] | None:
-            cats = getattr(getattr(col, "dtype", None), "categories", None)
-            return None if cats is None else [str(v) for v in cats]
-
         if features is None:
-            features = categories_of(feature)
+            features = _category_levels(feature)
         if groups is None:
-            groups = categories_of(group)
+            groups = _category_levels(group)
 
         meta: dict[str, Any] = {
             # Sent as float64, as R sends it: the axis labels the grid ends,

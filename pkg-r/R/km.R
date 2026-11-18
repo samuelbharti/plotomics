@@ -93,12 +93,14 @@ km <- function(data,
 
   meta <- list()
   # A factor group column is the caller stating the stratum order; honour it.
+  # A missing group (NA) is no stratum: its rows draw no curve.
+  present <- unique(grp[!is.na(grp)])
   if (is.null(groups) && !is.null(data$group)) {
-    groups <- if (is.factor(data$group)) levels(data$group) else unique(grp)
+    groups <- if (is.factor(data$group)) levels(data$group) else present
   }
   if (!is.null(groups)) {
     groups <- as.character(groups)
-    unknown <- setdiff(unique(grp), groups)
+    unknown <- setdiff(present, groups)
     if (length(unknown) > 0L) {
       stop(sprintf(
         "stratum/strata not present in `groups`: %s",

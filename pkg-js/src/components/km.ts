@@ -316,9 +316,12 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   function groups(): string[] {
     const given = data.meta?.groups as string[] | undefined;
     if (given && given.length) return given;
+    const gc = groupCol();
+    if (!gc.length) return ["all"];
+    // A row with a missing group (null) is in no stratum and draws no curve.
     const seen: string[] = [];
-    for (const g of groupCol()) if (!seen.includes(g)) seen.push(g);
-    return seen.length ? seen : ["all"];
+    for (const g of gc) if (g != null && !seen.includes(g)) seen.push(g);
+    return seen;
   }
   function groupColors(): string[] {
     const given = data.meta?.groupColors as string[] | undefined;
@@ -595,6 +598,8 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     if (opts.showCensors && ct && cs) {
       ctx.lineWidth = 1;
       for (let i = 0; i < ct.length; i += 1) {
+        // A tick with a missing group belongs to no curve.
+        if (cg && cg[i] == null) continue;
         const gi = cg ? gl.indexOf(cg[i] as string) : 0;
         ctx.strokeStyle = gi >= 0 ? (cols[gi] as string) : theme.foreground;
         const x = sx(ct[i] as number, tmax);
@@ -867,8 +872,8 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
 function pick(col: ArrayLike<number>, rows: readonly number[]): number[] {
   return rows.map((r) => col[r] as number);
 }
-function esc(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
+function esc(s: string | null | undefined): string {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
     c === "&"
       ? "&amp;"
       : c === "<"

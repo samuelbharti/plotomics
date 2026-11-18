@@ -60,10 +60,10 @@ def test_dotplot_omits_order_when_not_given():
 
 
 def test_dotplot_value_domain_and_options():
-    w = Dotplot(make_data(), colormap="magma", max_radius=12.0,
+    w = Dotplot(make_data(), colormap="ltc", max_radius=12.0,
                 value_domain=(0.0, 3.0), show_grid=False, show_legend=False,
                 theme={"background": "#000"})
-    assert w.options["colormap"] == "magma"
+    assert w.options["colormap"] == "ltc"
     assert w.options["maxRadius"] == 12.0
     assert w.options["valueDomain"] == [0.0, 3.0]
     assert w.options["showGrid"] is False
@@ -111,3 +111,8 @@ def test_dotplot_takes_a_missing_pct_and_value():
          "value": [1.0, float("nan")]}
     w = Dotplot(d)
     assert w.options.get("valueDomain") is None
+
+
+def test_dotplot_rejects_an_unknown_colormap():
+    with pytest.raises(ValueError, match="must be one of"):
+        Dotplot(make_data(), colormap="magma")

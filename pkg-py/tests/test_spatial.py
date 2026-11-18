@@ -57,12 +57,12 @@ def test_spatial_label_column():
 
 
 def test_spatial_options_passthrough():
-    w = Spatial(make_data(), color_mode="continuous", colormap="magma",
+    w = Spatial(make_data(), color_mode="continuous", colormap="ltc",
                 spot_scale=1.5, spot_opacity=0.5, image_opacity=0.3,
                 show_image=False, show_legend=False,
                 theme={"background": "#000"}, **IMG)
     assert w.options["colorMode"] == "continuous"
-    assert w.options["colormap"] == "magma"
+    assert w.options["colormap"] == "ltc"
     assert w.options["spotScale"] == 1.5
     assert w.options["spotOpacity"] == 0.5
     assert w.options["imageOpacity"] == 0.3
@@ -139,3 +139,8 @@ def test_spatial_sends_numbers_read_as_categories_at_full_precision():
                 color_mode="categorical", levels=["0.1", "0.2"],
                 colors=["#ff0000", "#0000ff"])
     assert w.data["columns"]["color"] == [0.1, 0.2]
+
+
+def test_spatial_rejects_an_unknown_colormap():
+    with pytest.raises(ValueError, match="must be one of"):
+        Spatial(make_data(), colormap="magma", **IMG)
