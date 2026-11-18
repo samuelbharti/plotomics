@@ -130,3 +130,23 @@ def test_lollipop_takes_a_numpy_length():
     # A pandas lookup returns np.int64, which is not a Python int.
     w = Lollipop(make_data(), length=np.int64(393))
     assert w.data["meta"]["length"] == 393.0
+
+
+def test_lollipop_rejects_a_negative_count():
+    d = make_data()
+    d["count"] = [21, -1, 13, 4]
+    with pytest.raises(ValueError, match="zero or more"):
+        Lollipop(d, length=393)
+
+
+def test_lollipop_orders_tied_classes_by_name_as_r_does():
+    d = {"position": [1, 2], "count": [1, 1], "class": ["Nonsense", "Missense"]}
+    w = Lollipop(d, length=10)
+    assert w.data["meta"]["classes"] == ["Missense", "Nonsense"]
+
+
+def test_lollipop_sends_a_missing_label_as_null():
+    d = make_data()
+    d["label"] = ["R175H", float("nan"), None, "R282W"]
+    w = Lollipop(d, length=393)
+    assert w.data["columns"]["label"] == ["R175H", None, None, "R282W"]

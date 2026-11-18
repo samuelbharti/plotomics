@@ -12,8 +12,9 @@
 #' stays responsive; labels, axis and legend are a vector overlay.
 #'
 #' @param variants A data frame with columns `position` (amino-acid position,
-#'   1-based) and `count` (recurrence). Optional `class` (variant class) and
-#'   `label` (e.g. `"R175H"`) columns drive the colour and the text labels.
+#'   1-based) and `count` (recurrence, zero or more; a variant with a missing
+#'   count is not drawn). Optional `class` (variant class) and `label` (e.g.
+#'   `"R175H"`) columns drive the colour and the text labels.
 #' @param length Protein length in residues.
 #' @param gene,uniprot Identifiers shown on the axis title.
 #' @param domains Optional data frame of domain rectangles with columns `name`,
@@ -80,7 +81,8 @@ lollipop <- function(variants,
     )
   }
   bv_require_nonempty(nrow(variants), "variants")
-  if (!is.numeric(length) || base::length(length) != 1L || length < 1) {
+  if (!is.numeric(length) || base::length(length) != 1L ||
+      !is.finite(length) || length < 1) {
     stop("`length` must be a single positive protein length.", call. = FALSE)
   }
 
@@ -88,7 +90,10 @@ lollipop <- function(variants,
   count <- bv_require_numeric(variants$count, "count")
   bv_check_finite(position, "position")
   bv_check_finite(count, "count")
-  if (any(position < 1 | position > length)) {
+  if (any(count < 0, na.rm = TRUE)) {
+    stop("`count` must be zero or more.", call. = FALSE)
+  }
+  if (any(position < 1 | position > length, na.rm = TRUE)) {
     stop("`position` must fall within 1..length.", call. = FALSE)
   }
 

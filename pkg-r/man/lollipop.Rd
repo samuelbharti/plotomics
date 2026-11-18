@@ -31,8 +31,9 @@ lollipop(
 }
 \arguments{
 \item{variants}{A data frame with columns \code{position} (amino-acid position,
-1-based) and \code{count} (recurrence). Optional \code{class} (variant class) and
-\code{label} (e.g. \code{"R175H"}) columns drive the colour and the text labels.}
+1-based) and \code{count} (recurrence, zero or more; a variant with a missing
+count is not drawn). Optional \code{class} (variant class) and \code{label} (e.g.
+\code{"R175H"}) columns drive the colour and the text labels.}
 
 \item{length}{Protein length in residues.}
 

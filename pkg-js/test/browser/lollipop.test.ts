@@ -153,6 +153,139 @@ describe("lollipop in a browser", () => {
     expect(hoverAt(el, x, y1)).toContain("R248Q");
   });
 
+  it("labels a head low in a stack beside itself", () => {
+    const el = container(900, 440);
+    instances.push(
+      createLollipop(el, {
+        data: {
+          columns: {
+            position: [175, 248, 248, 248, 248, 248],
+            count: [25, 20, 1, 1, 1, 1],
+            class: [
+              "Missense",
+              "Missense",
+              "Nonsense",
+              "Nonsense",
+              "Nonsense",
+              "Nonsense",
+            ],
+            label: ["R175H", "R248Q", "R248*", "R248fs", "R248X", "R248Y"],
+          },
+          meta: {
+            length: 393,
+            classes: ["Missense", "Nonsense"],
+            classColors: ["#ff0000", "#0000ff"],
+            labelIndex: [0, 1],
+          },
+        },
+      }),
+    );
+    const texts = svgTexts(el);
+    const r248q = texts.find(
+      (t) => t.textContent === "R248Q",
+    ) as SVGTextElement;
+    expect(texts.some((t) => t.textContent === "R175H")).toBe(true);
+    expect(r248q).toBeDefined();
+    // Its baseline sits by its own head (count 20), not above the stack.
+    const zero = texts.find((t) => t.textContent === "0") as SVGTextElement;
+    const top = texts.find((t) => t.textContent === "25") as SVGTextElement;
+    const y0 = Number(zero.getAttribute("y")) - 3;
+    const y25 = Number(top.getAttribute("y")) - 3;
+    const head = y0 - (20 / 25) * (y0 - y25);
+    expect(Math.abs(Number(r248q.getAttribute("y")) - 3 - head)).toBeLessThan(
+      4,
+    );
+    expect(["start", "end"]).toContain(r248q.getAttribute("text-anchor"));
+  });
+
+  it("names the head drawn on top wherever it shows", () => {
+    const el = container(900, 440);
+    instances.push(
+      createLollipop(el, {
+        data: {
+          columns: {
+            position: [175, 248, 248],
+            count: [100, 20, 1],
+            class: ["Missense", "Missense", "Nonsense"],
+            label: ["R175H", "R248Q", "R248*"],
+          },
+          meta: {
+            length: 393,
+            classes: ["Missense", "Nonsense"],
+            classColors: ["#ff0000", "#0000ff"],
+          },
+        },
+      }),
+    );
+    const x = 52 + ((248 - 1) / (393 - 1)) * (900 - 52 - 16);
+    let blue = 0;
+    for (let y = 200; y < 420; y += 1) {
+      if (!isBlue(pixel(el, x, y))) continue;
+      blue += 1;
+      expect(hoverAt(el, x, y)).toContain("R248*");
+    }
+    expect(blue).toBeGreaterThan(0);
+  });
+
+  it("draws the other variants at a residue when one count is missing", () => {
+    const el = container(900, 440);
+    instances.push(
+      createLollipop(el, {
+        data: {
+          columns: {
+            position: [248, 248, 175],
+            count: [Number.NaN, 5, 3],
+            class: ["Missense", "Missense", "Missense"],
+            label: ["R248Q", "R248W", "R175H"],
+          },
+          meta: {
+            length: 393,
+            classes: ["Missense"],
+            classColors: ["#ff0000"],
+            labelIndex: [0, 1, 2],
+          },
+        },
+      }),
+    );
+    const x = 52 + ((248 - 1) / (393 - 1)) * (900 - 52 - 16);
+    let red = 0;
+    for (let y = 0; y < 440; y += 1) if (isRed(pixel(el, x, y))) red += 1;
+    expect(red).toBeGreaterThan(0);
+    const ys = svgTexts(el).map((t) => t.getAttribute("y"));
+    expect(ys).not.toContain("NaN");
+    expect(svgTexts(el).some((t) => t.textContent === "R248Q")).toBe(false);
+  });
+
+  it("caps the legend in a small widget and keeps room for the stems", () => {
+    const classes = Array.from({ length: 10 }, (_, i) => `Variant_Class_${i}`);
+    const el = container(250, 200);
+    instances.push(
+      createLollipop(el, {
+        data: {
+          columns: {
+            position: [10, 20],
+            count: [10, 1],
+            class: [classes[0] as string, classes[1] as string],
+          },
+          meta: { length: 100, classes },
+        },
+      }),
+    );
+    const texts = svgTexts(el);
+    expect(texts.some((t) => /^\+\d+ more$/.test(t.textContent ?? ""))).toBe(
+      true,
+    );
+    const zero = texts.find((t) => t.textContent === "0") as SVGTextElement;
+    const ten = texts.find((t) => t.textContent === "10") as SVGTextElement;
+    expect(
+      Number(zero.getAttribute("y")) - Number(ten.getAttribute("y")),
+    ).toBeGreaterThan(30);
+    for (const t of texts) {
+      const b = t.getBBox();
+      expect(b.y + b.height).toBeLessThanOrEqual(200);
+    }
+  });
+
   it("keeps the axis text clear of a wrapped legend, inside the element", () => {
     const classes = [
       "Missense_Mutation",

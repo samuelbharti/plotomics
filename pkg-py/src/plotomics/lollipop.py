@@ -9,7 +9,14 @@ from typing import Any
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _column,
+    _text_or_none,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Lollipop(PlotomicsWidget):
@@ -30,7 +37,8 @@ class Lollipop(PlotomicsWidget):
     ----------
     data:
         A pandas ``DataFrame`` or mapping of arrays with ``position``
-        (amino-acid position, 1-based) and ``count`` (recurrence). Optional
+        (amino-acid position, 1-based) and ``count`` (recurrence, zero or
+        more; a variant with a missing count is not drawn). Optional
         ``class`` and ``label`` columns drive the colour and the text labels.
     length:
         Protein length in residues.
@@ -126,14 +134,19 @@ class Lollipop(PlotomicsWidget):
             raise ValueError("`position` and `count` must be the same length.")
         if np.any(position < 1) or np.any(position > length):
             raise ValueError("`position` must fall within 1..length.")
+        if np.any(count < 0):
+            raise ValueError("`count` must be zero or more.")
 
         cls_col = _column(data, "class")
         lab_col = _column(data, "label")
         cls = [str(v) for v in cls_col] if cls_col is not None else None
-        lab = [str(v) for v in lab_col] if lab_col is not None else None
+        # A missing label crosses as null, so the browser draws no text for it.
+        lab = _text_or_none(lab_col) if lab_col is not None else None
 
         if classes is None and cls is not None:
-            classes = [c for c, _ in Counter(cls).most_common()]
+            # Most frequent first, ties by name, as R orders them.
+            counted = Counter(cls)
+            classes = sorted(counted, key=lambda c: (-counted[c], c))
         if classes is not None:
             classes = [str(c) for c in classes]
             unknown = sorted(set(cls or []) - set(classes))

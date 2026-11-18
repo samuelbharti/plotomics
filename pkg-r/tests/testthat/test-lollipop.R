@@ -67,6 +67,10 @@ test_that("lollipop() validates its input", {
   expect_error(lollipop(list(position = 1), length = 10), "must be a data frame")
   expect_error(lollipop(data.frame(a = 1), length = 10), "must contain columns")
   expect_error(lollipop(v, length = 0), "positive protein length")
+  expect_error(lollipop(v, length = Inf), "positive protein length")
+  neg <- v
+  neg$count[1] <- -1
+  expect_error(lollipop(neg, length = 393), "zero or more")
   expect_error(lollipop(v, length = 100), "within 1..length")
   expect_error(
     lollipop(v, length = 393, classes = "Missense"),

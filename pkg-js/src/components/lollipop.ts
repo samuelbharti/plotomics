@@ -197,11 +197,14 @@ export function stackVariants(
   counts: ArrayLike<number>,
 ): { base: number[]; top: number[]; order: number[] } {
   const n = Math.min(positions.length, counts.length);
+  // A missing (null or NaN) or negative count weighs nothing, so it cannot
+  // turn the rest of its stem into NaN.
+  const w = (i: number) => countOf(counts[i]);
   const order = Array.from({ length: n }, (_, i) => i);
   order.sort(
     (a, b) =>
       (positions[a] as number) - (positions[b] as number) ||
-      (counts[b] as number) - (counts[a] as number) ||
+      w(b) - w(a) ||
       a - b,
   );
   const base = new Array<number>(n).fill(0);
@@ -215,10 +218,15 @@ export function stackVariants(
       sum = 0;
     }
     base[i] = sum;
-    sum += Math.max(0, counts[i] as number);
+    sum += w(i);
     top[i] = sum;
   }
   return { base, top, order };
+}
+
+/** A count as a number of samples: missing or negative counts are 0. */
+function countOf(v: number | null | undefined): number {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0;
 }
 
 /** A box in px, used for labels and the heads they must not cover. */
@@ -229,47 +237,87 @@ export interface Box {
   y1: number;
 }
 
-/** A label to place: its centre x, preferred baseline y and width. */
-export interface LabelCandidate {
+/**
+ * One place a label may go: the text anchor point (x by `anchor`, y the
+ * baseline) and, for a label away from its head, where its leader line ends.
+ */
+export interface LabelSpot {
   x: number;
   y: number;
+  anchor: "middle" | "start" | "end";
+  leader?: { x: number; y: number };
+}
+
+/** A label to place: its width and the spots to try, best first. */
+export interface LabelCandidate {
   width: number;
+  spots: LabelSpot[];
+}
+
+/** The box a label of `width` takes at `spot`. */
+function labelBox(spot: LabelSpot, width: number): Box {
+  const x0 =
+    spot.anchor === "middle"
+      ? spot.x - width / 2
+      : spot.anchor === "start"
+        ? spot.x
+        : spot.x - width;
+  // A 10 px label: the box runs from its cap height to its descent.
+  return { x0, y0: spot.y - LABEL_H + 2, x1: x0 + width, y1: spot.y + 2 };
 }
 
 /**
- * Place variant labels so none overlaps another label or any head. Labels are
- * placed in the order given (most important first). Each tries its preferred
- * baseline, then climbs one row at a time, up to `maxRows` rows; a label with
- * no free spot inside `bounds` is dropped (null). x is clamped so the label
- * stays inside the bounds. Deterministic, so a redraw and an export agree.
+ * Place variant labels so none overlaps another label, a leader line or any
+ * head. Labels are placed in the order given (most important first), each at
+ * the first of its spots that is free and inside `bounds`; a centred label is
+ * first moved sideways to fit the bounds. A label with no free spot is
+ * dropped (null). Deterministic, so a redraw and an export agree.
  */
 export function placeLabels(
   candidates: LabelCandidate[],
   obstacles: Box[],
   bounds: { left: number; right: number; top: number },
-  maxRows = LABEL_MAX_ROWS,
-): ({ x: number; y: number } | null)[] {
+): (LabelSpot | null)[] {
   const placed: Box[] = [];
   const hits = (b: Box, others: Box[]) =>
     others.some(
       (o) => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0,
     );
   return candidates.map((c) => {
-    const half = c.width / 2;
-    const x = Math.min(Math.max(c.x, bounds.left + half), bounds.right - half);
-    for (let row = 0; row < maxRows; row += 1) {
-      const y = c.y - row * LABEL_H;
-      // A 10 px label: the box runs from its cap height to its descent.
-      const box = {
-        x0: x - half,
-        y0: y - LABEL_H + 2,
-        x1: x + half,
-        y1: y + 2,
-      };
-      if (box.y0 < bounds.top) break;
+    for (const s of c.spots) {
+      const spot =
+        s.anchor === "middle"
+          ? {
+              ...s,
+              x: Math.min(
+                Math.max(s.x, bounds.left + c.width / 2),
+                bounds.right - c.width / 2,
+              ),
+            }
+          : s;
+      const box = labelBox(spot, c.width);
+      if (
+        box.y0 < bounds.top ||
+        box.x0 < bounds.left - 0.5 ||
+        box.x1 > bounds.right + 0.5
+      ) {
+        continue;
+      }
       if (hits(box, placed) || hits(box, obstacles)) continue;
+      // A leader line must not cross a label already placed.
+      let lead: Box | null = null;
+      if (spot.leader) {
+        lead = {
+          x0: Math.min(spot.leader.x, spot.x) - 1,
+          y0: Math.min(spot.leader.y, spot.y + 2),
+          x1: Math.max(spot.leader.x, spot.x) + 1,
+          y1: Math.max(spot.leader.y, spot.y + 2),
+        };
+        if (hits(lead, placed)) continue;
+      }
       placed.push(box);
-      return { x, y };
+      if (lead) placed.push(lead);
+      return spot;
     }
     return null;
   });
@@ -357,26 +405,35 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     if (given && given.length) return given;
     return domains().map((_, i) => OKABE_ITO[i % OKABE_ITO.length] as string);
   }
-  /** The largest single-variant count, which sets the head size scale. */
-  function maxCount(): number {
-    const c = counts();
-    let m = 0;
-    for (let i = 0; i < c.length; i += 1) {
-      const v = c[i] as number;
-      if (v > m) m = v;
-    }
-    return m > 0 ? m : 1;
-  }
-  // Variants at one residue share a stem; see stackVariants.
+  // Variants at one residue share a stem; see stackVariants. The largest
+  // single count (the head size scale) and the tallest stem (the y scale)
+  // are kept with the stack, so each draw reads them once.
   let stack = stackVariants([], []);
+  let countMax = 1;
+  let stackMax = 1;
   function restack() {
     stack = stackVariants(positions(), counts());
+    const c = counts();
+    countMax = 0;
+    for (let i = 0; i < c.length; i += 1) {
+      countMax = Math.max(countMax, countOf(c[i]));
+    }
+    stackMax = 0;
+    for (const t of stack.top) stackMax = Math.max(stackMax, t);
+    if (!(countMax > 0)) countMax = 1;
+    if (!(stackMax > 0)) stackMax = 1;
+  }
+  /** The largest single-variant count, which sets the head size scale. */
+  function maxCount(): number {
+    return countMax;
   }
   /** The tallest stem, which sets the y scale. */
   function maxStack(): number {
-    let m = 0;
-    for (const t of stack.top) if (t > m) m = t;
-    return m > 0 ? m : 1;
+    return stackMax;
+  }
+  /** A variant whose count is missing (null from R, NaN from Python). */
+  function missing(i: number): boolean {
+    return !Number.isFinite(counts()[i] as number);
   }
   /** Total count of the variants at one residue. */
   function residueTotal(residue: number): number {
@@ -391,7 +448,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   }
   function radius(i: number, mc: number): number {
     return headRadius(
-      counts()[i] as number,
+      countOf(counts()[i]),
       mc,
       opts.minHeadRadius,
       opts.maxHeadRadius,
@@ -404,13 +461,35 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     measureCtx.font = `${size}px ${theme.fontFamily}`;
     return measureCtx.measureText(s).width;
   }
-  /** Each legend entry's x and row; the legend wraps to the panel width. */
-  function legendLayout(): { x: number; row: number }[] {
+  /**
+   * Each shown legend entry's x and row, and a "+N more" note when the
+   * entries need more rows than the legend may take (a fifth of the height).
+   */
+  function legendLayout(): {
+    items: { x: number; row: number }[];
+    note: { x: number; row: number; text: string } | null;
+  } {
     const widths = classes().map((c) => 12 + textWidth(c, 10));
-    return wrapRows(widths, Math.max(1, width - 52 - 16));
+    const maxW = Math.max(1, width - 52 - 16);
+    const maxRows = Math.max(1, Math.floor((height * 0.2) / LEGEND_ROW_H));
+    const all = wrapRows(widths, maxW);
+    const items = all.filter((it) => it.row < maxRows);
+    if (items.length === all.length) return { items, note: null };
+    const last = maxRows - 1;
+    for (;;) {
+      const text = `+${all.length - items.length} more`;
+      const tail = items[items.length - 1];
+      const i = items.length - 1;
+      const x = tail && tail.row === last ? tail.x + (widths[i] ?? 0) + 14 : 0;
+      if (x + textWidth(text, 10) <= maxW || !tail || tail.row !== last) {
+        return { items, note: { x, row: last, text } };
+      }
+      items.pop();
+    }
   }
   function legendRows(): number {
-    const items = legendLayout();
+    const { items, note } = legendLayout();
+    if (note) return note.row + 1;
     return items.length ? (items[items.length - 1]?.row ?? 0) + 1 : 0;
   }
 
@@ -428,22 +507,27 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
-    // Nearest stem head within its own radius. Heads are visited in drawing
-    // order and a tie goes to the later one, which is the head on top.
+    // The head drawn on top wins: of the heads under the cursor, the last in
+    // drawing order. Near a head but on none, the nearest within 2 px.
     const pos = positions();
     const cnt = counts();
     const mc = maxCount();
     let best = -1;
-    let bestD = Infinity;
+    let near = -1;
+    let nearD = Infinity;
     for (const i of stack.order) {
+      if (missing(i)) continue;
       const x = px(pos[i] as number);
       const y = py(stack.top[i] as number);
       const d = Math.hypot(mx - x, my - y);
-      if (d <= radius(i, mc) + 2 && d <= bestD) {
-        bestD = d;
-        best = i;
+      const r = radius(i, mc);
+      if (d <= r) best = i;
+      else if (d <= r + 2 && d < nearD) {
+        nearD = d;
+        near = i;
       }
     }
+    if (best < 0) best = near;
     if (best >= 0) {
       const p = pos[best] as number;
       const lab = labels()[best] ?? `p.${p}`;
@@ -559,6 +643,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (const i of stack.order) {
+      if (missing(i)) continue;
       const x = px(pos[i] as number);
       ctx.moveTo(x, py(stack.base[i] as number));
       ctx.lineTo(x, py(stack.top[i] as number));
@@ -567,6 +652,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
 
     // Bottom head first, so a stacked head is drawn over the one below.
     for (const i of stack.order) {
+      if (missing(i)) continue;
       const x = px(pos[i] as number);
       const y = py(stack.top[i] as number);
       const r = radius(i, mc);
@@ -622,52 +708,85 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       });
     }
 
-    // Variant labels for the stems the caller selected. Each starts just
-    // above its own head and climbs only as far as it must to clear the other
-    // labels and every head; the most recurrent variants are placed first,
-    // and a label with no free spot is dropped.
+    // Variant labels for the stems the caller selected, most recurrent
+    // first. The head on top of a stem is labelled just above itself, then
+    // beside itself, then up to three rows higher with a leader line. A head
+    // lower in a stack is labelled only beside itself, since a label above
+    // it would sit over another variant's head. A label with no free spot is
+    // dropped.
     const pos = positions();
     const cnt = counts();
     const labs = labels();
     const idx = labelIndex().filter(
-      (i) => i >= 0 && i < pos.length && (labs[i] ?? "") !== "",
+      (i) => i >= 0 && i < pos.length && (labs[i] ?? "") !== "" && !missing(i),
     );
     if (idx.length) {
       const mc = maxCount();
-      const headTop = (i: number) => py(stack.top[i] as number) - radius(i, mc);
       idx.sort(
         (a, b) =>
-          (cnt[b] as number) - (cnt[a] as number) ||
+          countOf(cnt[b]) - countOf(cnt[a]) ||
           (pos[a] as number) - (pos[b] as number),
       );
       const heads: Box[] = [];
+      const stemTop = new Map<number, number>();
       for (let i = 0; i < pos.length; i += 1) {
+        if (missing(i)) continue;
         const x = px(pos[i] as number);
         const y = py(stack.top[i] as number);
         const r = radius(i, mc);
         heads.push({ x0: x - r, y0: y - r, x1: x + r, y1: y + r });
+        const p = pos[i] as number;
+        stemTop.set(p, Math.max(stemTop.get(p) ?? 0, stack.top[i] as number));
       }
-      const spots = placeLabels(
-        idx.map((i) => ({
-          x: px(pos[i] as number),
-          y: headTop(i) - 4,
+      const candidates: LabelCandidate[] = idx.map((i) => {
+        const hx = px(pos[i] as number);
+        const hy = py(stack.top[i] as number);
+        const r = radius(i, mc);
+        const headTop = hy - r;
+        const beside: LabelSpot[] = [
+          { x: hx + r + 3, y: hy + 3, anchor: "start" },
+          { x: hx - r - 3, y: hy + 3, anchor: "end" },
+        ];
+        const onTop =
+          (stack.top[i] as number) >= (stemTop.get(pos[i] as number) ?? 0);
+        const above: LabelSpot[] = [];
+        for (let row = 0; row < LABEL_MAX_ROWS; row += 1) {
+          above.push({
+            x: hx,
+            y: headTop - 4 - row * LABEL_H,
+            anchor: "middle",
+            leader: row > 0 ? { x: hx, y: headTop - 1 } : undefined,
+          });
+        }
+        return {
           width: textWidth(labs[i] ?? "", 10) + 4,
-        })),
-        heads,
-        { left: layout.left, right: width - layout.right, top: 2 },
-      );
+          spots: onTop
+            ? [above[0] as LabelSpot, ...beside, ...above.slice(1)]
+            : beside,
+        };
+      });
+      const spots = placeLabels(candidates, heads, {
+        left: layout.left,
+        right: width - layout.right,
+        top: 2,
+      });
       idx.forEach((i, k) => {
         const spot = spots[k];
         if (!spot) return;
-        const hx = px(pos[i] as number);
-        // A label that climbed gets a leader line down to its head.
-        if (spot.y < headTop(i) - 4 - 1) {
+        if (spot.leader) {
           svg.appendChild(
-            line(hx, headTop(i) - 1, spot.x, spot.y + 2, theme.muted),
+            line(spot.leader.x, spot.leader.y, spot.x, spot.y + 2, theme.muted),
           );
         }
         svg.appendChild(
-          text(spot.x, spot.y, labs[i] ?? "", theme.foreground, "middle", 10),
+          text(
+            spot.x,
+            spot.y,
+            labs[i] ?? "",
+            theme.foreground,
+            spot.anchor,
+            10,
+          ),
         );
       });
     }
@@ -703,9 +822,21 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     const cls = classes();
     if (!cls.length) return;
     const cols = classColors();
-    const items = legendLayout();
+    const { items, note } = legendLayout();
     // Rows start under the axis title.
     const firstY = layout.axisY + AXIS_TEXT_H + 11;
+    if (note) {
+      svg.appendChild(
+        text(
+          layout.left + note.x,
+          firstY + note.row * LEGEND_ROW_H,
+          note.text,
+          theme.muted,
+          "start",
+          10,
+        ),
+      );
+    }
     items.forEach(({ x: dx, row }, i) => {
       const x = layout.left + dx;
       const y = firstY + row * LEGEND_ROW_H;

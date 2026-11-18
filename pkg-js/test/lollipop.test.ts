@@ -110,72 +110,156 @@ describe("lollipop variant stacking", () => {
   it("handles empty input", () => {
     expect(stackVariants([], [])).toEqual({ base: [], top: [], order: [] });
   });
+
+  it("gives a missing or negative count no height on the stem", () => {
+    // R sends NA as null; Python sends NaN.
+    const s = stackVariants(
+      [248, 248, 248, 248],
+      [Number.NaN, 5, null as unknown as number, -2],
+    );
+    expect(s.top[1]).toBe(5);
+    expect(s.base[1]).toBe(0);
+    expect(s.top.every((t) => Number.isFinite(t))).toBe(true);
+    expect(Math.max(...s.top)).toBe(5);
+  });
 });
 
 describe("lollipop label placement", () => {
   const bounds = { left: 0, right: 1000, top: 0 };
+  const above = (x: number, y: number) => ({
+    x,
+    y,
+    anchor: "middle" as const,
+  });
+  /** Spots straight above a head, climbing `rows` rows with a leader. */
+  const climb = (x: number, y: number, rows = 4) =>
+    Array.from({ length: rows }, (_, row) => ({
+      x,
+      y: y - row * 12,
+      anchor: "middle" as const,
+      leader: row > 0 ? { x, y: y + 3 } : undefined,
+    }));
 
-  it("puts well-separated labels at their preferred spot", () => {
+  it("puts well-separated labels at their first spot", () => {
     const spots = placeLabels(
       [
-        { x: 100, y: 100, width: 30 },
-        { x: 300, y: 80, width: 30 },
+        { width: 30, spots: [above(100, 100)] },
+        { width: 30, spots: [above(300, 80)] },
       ],
       [],
       bounds,
     );
-    expect(spots).toEqual([
-      { x: 100, y: 100 },
-      { x: 300, y: 80 },
+    expect(spots.map((s) => s && [s.x, s.y])).toEqual([
+      [100, 100],
+      [300, 80],
     ]);
   });
 
-  it("lifts a label that would overlap one already placed", () => {
-    // Two heads at nearly the same height and x: one row up still overlaps
-    // the first label by 2 px, so the second climbs two rows.
+  it("climbs past a label already placed", () => {
+    // The first label blocks the second one's first spot and the row above
+    // (by 2 px), but not its leader path, so the second climbs two rows.
     const spots = placeLabels(
       [
-        { x: 576, y: 40, width: 40 },
-        { x: 576, y: 42, width: 40 },
+        { width: 40, spots: [above(560, 40)] },
+        { width: 40, spots: climb(595, 42) },
       ],
       [],
-      { left: 0, right: 1000, top: 0 },
+      bounds,
     );
-    expect(spots[0]).toEqual({ x: 576, y: 40 });
+    expect(spots[0]?.y).toBe(40);
     expect(spots[1]?.y).toBe(42 - 2 * 12);
+    expect(spots[1]?.leader).toBeDefined();
   });
 
   it("never covers a head", () => {
     const head = { x0: 90, y0: 88, x1: 110, y1: 108 };
-    const spots = placeLabels([{ x: 100, y: 100, width: 30 }], [head], bounds);
+    const spots = placeLabels(
+      [{ width: 30, spots: climb(100, 100) }],
+      [head],
+      bounds,
+    );
     // Baseline 100 and 88 overlap the head; 76 clears it.
     expect(spots[0]?.y).toBe(76);
+  });
+
+  it("takes a spot beside the head, measured from its anchor", () => {
+    const head = { x0: 90, y0: 90, x1: 110, y1: 110 };
+    const spots = placeLabels(
+      [
+        {
+          width: 30,
+          spots: [
+            { x: 113, y: 103, anchor: "start" },
+            { x: 87, y: 103, anchor: "end" },
+          ],
+        },
+        // Same spots again: the right is taken now, so the left is used.
+        {
+          width: 30,
+          spots: [
+            { x: 113, y: 103, anchor: "start" },
+            { x: 87, y: 103, anchor: "end" },
+          ],
+        },
+      ],
+      [head],
+      bounds,
+    );
+    expect(spots[0]?.anchor).toBe("start");
+    expect(spots[1]?.anchor).toBe("end");
+  });
+
+  it("keeps a leader line from crossing a label already placed", () => {
+    // A narrow label right above the head: every higher spot would run the
+    // leader line through it.
+    const blocked = placeLabels(
+      [
+        { width: 10, spots: [above(100, 95)] },
+        { width: 30, spots: climb(100, 100).slice(1) },
+      ],
+      [],
+      bounds,
+    );
+    expect(blocked[0]?.y).toBe(95);
+    expect(blocked[1]).toBeNull();
+    // Moved off the path, the same label leaves the climb free.
+    const clear = placeLabels(
+      [
+        { width: 10, spots: [above(130, 95)] },
+        { width: 30, spots: climb(100, 100).slice(1) },
+      ],
+      [],
+      bounds,
+    );
+    expect(clear[1]?.y).toBe(88);
   });
 
   it("drops a label with no free spot inside the bounds", () => {
     const spots = placeLabels(
       [
-        { x: 50, y: 14, width: 30 },
-        { x: 50, y: 14, width: 30 },
+        { width: 30, spots: climb(50, 14) },
+        { width: 30, spots: climb(50, 14) },
       ],
       [],
       { left: 0, right: 1000, top: 2 },
     );
-    expect(spots[0]).toEqual({ x: 50, y: 14 });
+    expect(spots[0]?.y).toBe(14);
     expect(spots[1]).toBeNull();
   });
 
-  it("clamps x so a label near either end stays inside", () => {
+  it("clamps a centred label near either end and skips a side spot past it", () => {
     const spots = placeLabels(
       [
-        { x: 2, y: 100, width: 40 },
-        { x: 998, y: 100, width: 40 },
+        { width: 40, spots: [above(2, 100)] },
+        { width: 40, spots: [above(998, 100)] },
+        { width: 40, spots: [{ x: 990, y: 50, anchor: "start" }] },
       ],
       [],
       bounds,
     );
     expect(spots[0]?.x).toBe(20);
     expect(spots[1]?.x).toBe(980);
+    expect(spots[2]).toBeNull();
   });
 });
 
