@@ -84,6 +84,9 @@ violin <- function(data,
 
   if (is.null(features) && is.factor(data$feature)) features <- levels(data$feature)
   if (is.null(groups) && is.factor(data$group)) groups <- levels(data$group)
+  # Colours need an order to match: without `groups`, use the groups in order
+  # of first appearance, which is the order the browser uses.
+  if (is.null(groups) && !is.null(group_colors)) groups <- unique(columns$group)
 
   meta <- list(
     grid = I(as.numeric(grid)),

@@ -100,7 +100,7 @@ def test_km_defaults():
     assert w.options["showCI"] is True
     assert w.options["showRiskTable"] is True
     assert w.options["yFromZero"] is True
-    assert w.options["xLabel"] == "months"
+    assert w.options["xLabel"] == "time"
 
 
 def test_km_validates_its_input():
@@ -123,3 +123,22 @@ def test_km_validates_its_input():
     with pytest.raises(ValueError, match="one row per stratum"):
         Km(data, groups=["treated", "control"], risk_times=[0, 5],
            risk_counts=np.array([[30, 20]]))
+
+
+def test_km_sends_the_colour_of_a_single_curve():
+    w = Km({"time": [0, 5], "surv": [1.0, 0.8]}, group_colors=["#123456"])
+    assert w.data["meta"]["groupColors"] == ["#123456"]
+    with pytest.raises(ValueError, match="one entry per stratum"):
+        Km({"time": [0, 5], "surv": [1.0, 0.8]}, group_colors=["#1", "#2"])
+
+
+def test_km_risk_counts_follow_a_stratum_index():
+    pd = pytest.importorskip("pandas")
+    data = {"time": [0, 5, 0, 5], "surv": [1, 0.8, 1, 0.6],
+            "group": ["a", "a", "b", "b"]}
+    counts = pd.DataFrame([[10, 8], [20, 15]], index=["b", "a"])
+    w = Km(data, risk_times=[0, 5], risk_counts=counts)
+    assert w.data["meta"]["riskCounts"] == [20, 15, 10, 8]
+    # A default index says nothing about the strata, so rows keep their order.
+    w = Km(data, risk_times=[0, 5], risk_counts=pd.DataFrame([[10, 8], [20, 15]]))
+    assert w.data["meta"]["riskCounts"] == [10, 8, 20, 15]
