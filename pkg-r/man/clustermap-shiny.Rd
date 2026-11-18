@@ -6,7 +6,7 @@
 \alias{renderClustermap}
 \title{Shiny bindings for clustermap}
 \usage{
-clustermapOutput(output_id, width = "100\%", height = "480px")
+clustermapOutput(output_id, width = "100\%", height = "560px")
 
 renderClustermap(expr, env = parent.frame(), quoted = FALSE)
 }

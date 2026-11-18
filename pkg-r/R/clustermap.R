@@ -159,7 +159,7 @@ clustermap <- function(mat,
 #' }
 #' @name clustermap-shiny
 #' @export
-clustermapOutput <- function(output_id, width = "100%", height = "480px") {
+clustermapOutput <- function(output_id, width = "100%", height = "560px") {
   htmlwidgets::shinyWidgetOutput(output_id, "clustermap", width, height,
     package = "plotomics"
   )
