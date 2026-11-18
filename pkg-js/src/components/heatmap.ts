@@ -75,6 +75,8 @@ const MIN_LABEL_MARGIN = 40;
 const MAX_LABEL_MARGIN = 120;
 /** Right margin for the colour bar, at the least. */
 const MIN_RIGHT_MARGIN = 84;
+/** The largest share of the widget's width or height that a margin takes. */
+const MAX_MARGIN_SHARE = 0.35;
 /** Fill for a missing cell, and its colour bar swatch. */
 const MISSING_COLOR = "#CCCCCC";
 
@@ -459,51 +461,81 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     return w;
   }
   const colorbarTitle = () => (opts.zScore ? "z-score" : "value");
+  /** The colour bar's values: high end, middle, low end. */
+  const colorbarValues = (): [number, number, number] => [
+    domain[1],
+    (domain[0] + domain[1]) / 2,
+    domain[0],
+  ];
   /** The colour bar's tick labels: high end, middle, low end. */
-  function colorbarTicks(): [string, string, string] {
-    return [fmt(domain[1]), fmt((domain[0] + domain[1]) / 2), fmt(domain[0])];
+  function colorbarTicks(): string[] {
+    return colorbarValues().map(fmt);
+  }
+  /**
+   * `v` as text that fits `maxW` px: as the colour bar writes it, else to
+   * three significant digits or whole, and cut only when none fits.
+   */
+  function fitValue(v: number, maxW: number): string {
+    const forms = [fmt(v)];
+    if (Number.isFinite(v) && Math.abs(v) >= 1) {
+      forms.push(String(Number(v.toPrecision(3))), String(Math.round(v)));
+    }
+    for (const s of forms) if (labelWidth(s) <= maxW) return s;
+    return fitLabel(forms[forms.length - 1] as string, maxW);
   }
   /**
    * Size the left and bottom margins from the longest labels, and the right
    * margin from the colour bar: the 24 px gap, the bar, its tick labels 5 px
-   * right of it, and its title centred over it.
+   * right of it, and its title centred over it. A margin takes at most a
+   * share of the widget, so the matrix keeps the rest; the labels are cut to
+   * fit.
    */
   function fitMargins() {
     const k = sizes.label / DEFAULT_SIZES.label;
     const lo = Math.round(MIN_LABEL_MARGIN * k);
     const hi = Math.round(MAX_LABEL_MARGIN * k);
-    const clampM = (v: number) => Math.min(hi, Math.max(lo, Math.ceil(v)));
-    margin.left = clampM(longestLabel(shape.rowLabels, shape.nrows) + 12);
-    margin.bottom = clampM(longestLabel(shape.colLabels, shape.ncols) + 20);
-    margin.right = MIN_RIGHT_MARGIN;
+    const capW = Math.floor(width * MAX_MARGIN_SHARE);
+    const capH = Math.floor(height * MAX_MARGIN_SHARE);
+    const clampM = (v: number, cap: number) =>
+      Math.min(cap, hi, Math.max(lo, Math.ceil(v)));
+    margin.left = clampM(longestLabel(shape.rowLabels, shape.nrows) + 12, capW);
+    margin.bottom = clampM(
+      longestLabel(shape.colLabels, shape.ncols) + 20,
+      capH,
+    );
+    margin.right = Math.min(capW, MIN_RIGHT_MARGIN);
     if (!opts.showColorbar) return;
     let tickW = anyMissing ? labelWidth("NA") : 0;
     for (const t of colorbarTicks()) tickW = Math.max(tickW, labelWidth(t));
     const titleW = labelWidth(colorbarTitle(), sizes.axisTitle);
-    margin.right = Math.max(
-      MIN_RIGHT_MARGIN,
-      Math.ceil(24 + COLORBAR_W + 5 + tickW + 4),
-      Math.ceil(24 + COLORBAR_W / 2 + titleW / 2 + 4),
+    margin.right = Math.min(
+      capW,
+      Math.max(
+        MIN_RIGHT_MARGIN,
+        Math.ceil(24 + COLORBAR_W + 5 + tickW + 4),
+        Math.ceil(24 + COLORBAR_W / 2 + titleW / 2 + 4),
+      ),
     );
   }
   /**
-   * A label cut with an ellipsis to fit `maxW` px. The cut point is found by
-   * bisection and kept, so a long label is measured a few times, once.
+   * A label cut with an ellipsis to fit `maxW` px at `size` px. The cut
+   * point is found by bisection and kept, so a long label is measured a few
+   * times, once.
    */
-  function fitLabel(label: string, maxW: number): string {
-    const key = `${maxW}\u0000${label}`;
+  function fitLabel(label: string, maxW: number, size = sizes.label): string {
+    const key = `${maxW}\u0000${size}\u0000${label}`;
     const hit = fitted.get(key);
     if (hit !== undefined) return hit;
     let out = label;
-    if (labelWidth(label) > maxW) {
-      let lo = 1;
+    if (labelWidth(label, size) > maxW) {
+      let lo = 0;
       let hi = label.length;
       while (lo < hi) {
         const mid = Math.ceil((lo + hi) / 2);
-        if (labelWidth(`${label.slice(0, mid)}\u2026`) <= maxW) lo = mid;
+        if (labelWidth(`${label.slice(0, mid)}\u2026`, size) <= maxW) lo = mid;
         else hi = mid - 1;
       }
-      out = `${label.slice(0, lo)}\u2026`;
+      out = lo > 0 ? `${label.slice(0, lo)}\u2026` : "";
     }
     fitted.set(key, out);
     return out;
@@ -721,9 +753,10 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     const { label, axisTitle } = sizes;
     const cbX = x0 + innerW() + 24;
     // The title stands over the bar, so the bar starts low enough for it.
+    // The bar is tall enough that its three labels do not touch.
     const titleGap = 0.4 * label + 6;
     const minY = Math.ceil(1.1 * axisTitle + titleGap);
-    const cbH = Math.max(1, Math.min(220, y0 + h - Math.max(y0, minY)));
+    const cbH = Math.max(3 * label, Math.min(220, y0 + h - Math.max(y0, minY)));
     const cbY = Math.max(minY, y0 + (h - cbH) / 2);
     const fn = ramp(opts.colormap);
     const defs = document.createElementNS(SVG_NS, "defs");
@@ -748,8 +781,11 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       rect(cbX, cbY, COLORBAR_W, cbH, `url(#${gradId})`, theme.axis, 1),
     );
 
-    const [hiTick, midTick, loTick] = colorbarTicks();
+    // The labels and the title are cut to the widget.
     const tx = cbX + COLORBAR_W + 5;
+    const [hiTick, midTick, loTick] = colorbarValues().map((v) =>
+      fitValue(v, width - 2 - tx),
+    ) as [string, string, string];
     svg.appendChild(
       text(tx, cbY + 0.4 * label, hiTick, theme.foreground, "start", label),
     );
@@ -770,7 +806,11 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       text(
         cbX + COLORBAR_W / 2,
         cbY - titleGap,
-        colorbarTitle(),
+        fitLabel(
+          colorbarTitle(),
+          2 * (width - 2 - cbX - COLORBAR_W / 2),
+          axisTitle,
+        ),
         theme.muted,
         "middle",
         axisTitle,
@@ -783,7 +823,14 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         rect(cbX, sy, COLORBAR_W, 10, MISSING_COLOR, theme.axis, 1),
       );
       svg.appendChild(
-        text(tx, sy + 5 + 0.36 * label, "NA", theme.foreground, "start", label),
+        text(
+          tx,
+          sy + 5 + 0.36 * label,
+          fitLabel("NA", width - 2 - tx),
+          theme.foreground,
+          "start",
+          label,
+        ),
       );
     }
   }
@@ -929,6 +976,8 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   function doResize(w: number, h: number) {
     width = w;
     height = h;
+    // The margins take at most a share of the widget.
+    fitMargins();
     layoutCanvas();
     render();
   }

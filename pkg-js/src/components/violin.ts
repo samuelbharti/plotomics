@@ -137,7 +137,8 @@ export function layoutViolin(
   const right = opts.showValueAxis
     ? Math.max(VALUE_AXIS_W, Math.ceil((text.valueLabel ?? 0) + 13))
     : 14;
-  const top = 10;
+  // Room above the first row for the top of its label when rows are tight.
+  const top = Math.max(10, Math.ceil(0.8 * size));
   const colLabel = text.colLabel ?? guess;
   const bottom = Math.min(
     Math.ceil((colLabel + 0.3 * size) * Math.SQRT1_2) + 12,
@@ -545,17 +546,33 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
           ),
         );
         if (yBot - yTop >= 2 * label + 2) {
+          // Large text sits a little higher, clear of the next row's top
+          // label 4 px under it.
           svg.appendChild(line(x, yBot, x + 3, yBot, theme.axis));
           svg.appendChild(
-            text(x + 5, yBot, fmtAxis(lo), theme.muted, "start", label),
+            text(
+              x + 5,
+              yBot - Math.max(0, 0.3 * label - 3.5),
+              fmtAxis(lo),
+              theme.muted,
+              "start",
+              label,
+            ),
           );
         }
       }
     }
 
     // Group labels, rotated: cluster names are long and would collide flat.
+    // Turned 45 degrees, the lines of two neighbours are cellW / sqrt(2)
+    // from each other; when that is less than the label size, only every
+    // k-th label is drawn.
     const colRoom = colLabelRoom(layout.bottom, label);
-    for (let c = 0; c < g.length; c += 1) {
+    const colStep = Math.max(
+      1,
+      Math.ceil(label / (layout.cellW * Math.SQRT1_2) - 1e-9),
+    );
+    for (let c = 0; c < g.length; c += colStep) {
       const x = layout.left + (c + 0.5) * layout.cellW;
       const y = layout.top + layout.plotH + 8;
       const t = text(

@@ -80,6 +80,8 @@ export const defaultHicOptions: HicOptions = {
 
 /** Margins at the least; the text of the axes and colour bar can widen them. */
 const MARGIN = { top: 16, right: 96, bottom: 46, left: 60 };
+/** The largest share of the widget's width or height that a margin takes. */
+const MAX_MARGIN_SHARE = 0.35;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const COLORBAR_W = 14;
 const COLORMAP_SIZE = 256;
@@ -600,6 +602,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     buildMatrix();
     viewLo = 0;
     viewHi = n > 0 ? n : 1;
+    tickRoom = 0;
     render();
   }
 
@@ -609,45 +612,109 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     opts.label || (data.meta?.chrom ? String(data.meta.chrom) : "");
   const colorbarTitle = () =>
     opts.transform === "log" ? "contacts (log)" : "contacts";
-  /** The colour bar's labels: the top and the bottom of the scale. */
-  const colorbarTicks = () => [
-    fmtVal(vmaxResolved),
-    fmtVal(opts.transform === "log" ? Math.max(0, opts.vmin) : opts.vmin),
+  /** The colour bar's values: the top and the bottom of the scale. */
+  const colorbarValues = () => [
+    vmaxResolved,
+    opts.transform === "log" ? Math.max(0, opts.vmin) : opts.vmin,
   ];
+  const colorbarTicks = () => colorbarValues().map(fmtVal);
+  /** `s` cut with an ellipsis to fit `maxW` px at `size` px. */
+  function fit(s: string, maxW: number, size: number): string {
+    if (tw(s, size) <= maxW) return s;
+    let lo = 0;
+    let hi = s.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (tw(`${s.slice(0, mid)}\u2026`, size) <= maxW) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo > 0 ? `${s.slice(0, lo)}\u2026` : "";
+  }
   /**
-   * Width of the widest tick label a view can show: the last coordinate, at
-   * the finest tick step a zoom reaches. It does not change on pan or zoom,
-   * so neither does the plot.
+   * `v` as text that fits `maxW` px at `size` px: as the colour bar writes
+   * it, else to three significant digits or whole, and cut only when none
+   * fits.
+   */
+  function fitValue(v: number, maxW: number, size: number): string {
+    const forms = [fmtVal(v)];
+    if (Number.isFinite(v) && Math.abs(v) >= 1) {
+      forms.push(String(Number(v.toPrecision(3))), String(Math.round(v)));
+    }
+    for (const s of forms) if (tw(s, size) <= maxW) return s;
+    return fit(forms[forms.length - 1] as string, maxW, size);
+  }
+  /** The label of tick `t` (in bins) on an axis ticked every `stepBp`. */
+  const tickLabel = (t: number, stepBp: number) =>
+    binSize > 1 ? formatCoord(t * binSize, stepBp) : String(Math.round(t));
+  /**
+   * Width of the widest tick label of the view at the finest step the axis
+   * uses, which has the most decimals.
    */
   function widestTick(): number {
     if (n === 0) return 0;
-    if (binSize <= 1) return tw(String(n), sizes.label);
-    const fine = tickStep(0, Math.min(MIN_VIEW_BINS, n), 6, 0) * binSize;
-    return tw(formatCoord(n * binSize, fine), sizes.label);
+    const minStep = binSize > 1 ? 0 : 1;
+    const stepBp = tickStep(viewLo, viewHi, 6, minStep) * binSize;
+    let w = 0;
+    for (const t of axisTicks(viewLo, viewHi, 6, minStep)) {
+      w = Math.max(w, tw(tickLabel(t, stepBp), sizes.label));
+    }
+    return w;
   }
+  // The widest tick label since the data, the options or the size last
+  // changed. The left margin follows it and only grows on pan and zoom, so
+  // the plot does not shift back and forth as the labels change.
+  let tickRoom = 0;
   const margin = { ...MARGIN };
+  // Whether each margin has room for its title.
+  const titleOn = { left: false, bottom: false, right: false };
   /**
    * Widen the margins for the text: the left one for the tick labels, 8 px
    * from the plot, with the axis title upright left of them; the bottom one
    * for the tick labels and the axis title under them; the right one for the
-   * colour bar, its labels and its title, upright right of them.
+   * colour bar, its labels and its title, upright right of them. A margin
+   * takes at most a share of the widget, so the map keeps the rest. A title
+   * that would pass that share is left out, and labels that still do not fit
+   * are cut.
    */
   function fitMargins() {
     const { label, axisTitle: titleSize } = sizes;
     const titled = axisTitle() !== "";
-    margin.left = Math.max(
+    tickRoom = Math.max(tickRoom, widestTick());
+    const capW = Math.floor(width * MAX_MARGIN_SHARE);
+    const capH = Math.floor(height * MAX_MARGIN_SHARE);
+    // A margin for `bare` px of text, and `title` px more when that fits.
+    const withTitle = (
+      least: number,
+      cap: number,
+      bare: number,
+      title: number,
+    ) => {
+      const on = title > 0 && bare + title <= cap;
+      const px = Math.min(
+        cap,
+        Math.max(least, Math.ceil(on ? bare + title : bare)),
+      );
+      return [px, on] as const;
+    };
+    [margin.left, titleOn.left] = withTitle(
       MARGIN.left,
-      Math.ceil(widestTick() + 8 + (titled ? 1.4 * titleSize + 6 : 2)),
+      capW,
+      tickRoom + 10,
+      titled ? 1.4 * titleSize + 4 : 0,
     );
-    margin.bottom = Math.max(
+    [margin.bottom, titleOn.bottom] = withTitle(
       MARGIN.bottom,
-      Math.ceil(7 + 1.3 * label + (titled ? 8 + 1.15 * titleSize : 0) + 2),
+      capH,
+      9 + 1.3 * label,
+      titled ? 8 + 1.15 * titleSize : 0,
     );
     let valueW = 0;
     for (const t of colorbarTicks()) valueW = Math.max(valueW, tw(t, label));
-    margin.right = Math.max(
+    [margin.right, titleOn.right] = withTitle(
       MARGIN.right,
-      Math.ceil(22 + COLORBAR_W + 4 + valueW + 4 + 1.4 * titleSize + 2),
+      capW,
+      22 + COLORBAR_W + 4 + valueW + 2,
+      1.4 * titleSize + 4,
     );
   }
 
@@ -759,25 +826,29 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     if (n > 0) {
       // Bin-index axes tick whole bins only; genomic axes may tick inside a bin.
       const minStep = binSize > 1 ? 0 : 1;
-      // Fewer ticks when the labels are wider than the gaps between them.
+      // Fewer ticks when the labels are wider than the gaps between them: a
+      // coarser step first, then every k-th tick of the coarsest step.
       let ticks: number[] = [];
       let labels: string[] = [];
+      let gap = 0;
+      let need = 0;
       for (let target = 6; target >= 2; target -= 1) {
         const step = tickStep(viewLo, viewHi, target, minStep);
-        const stepBp = step * binSize;
         ticks = axisTicks(viewLo, viewHi, target, minStep).filter(
           (t) => t >= viewLo - 1e-6 && t <= viewHi + 1e-6,
         );
-        labels = ticks.map((t) =>
-          binSize > 1
-            ? formatCoord(t * binSize, stepBp)
-            : String(Math.round(t)),
-        );
+        labels = ticks.map((t) => tickLabel(t, step * binSize));
         let widest = 0;
         for (const s of labels) widest = Math.max(widest, tw(s, labelSize));
-        if ((step / (viewHi - viewLo)) * size >= widest + 8) break;
+        gap = (step / (viewHi - viewLo)) * size;
+        need = widest + 8;
+        if (gap >= need) break;
       }
-      for (let i = 0; i < ticks.length; i += 1) {
+      const every = gap >= need ? 1 : Math.ceil(need / Math.max(gap, 1e-9));
+      // The tick labels on the left stop 2 px from the edge, or from the
+      // axis title when it is drawn.
+      const yRoom = left - 10 - (titleOn.left ? 1.4 * titleSize + 4 : 0);
+      for (let i = 0; i < ticks.length; i += every) {
         const t = ticks[i] as number;
         const label = labels[i] as string;
         // bottom axis
@@ -788,27 +859,46 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
         const y = top + ((t - viewLo) / (viewHi - viewLo)) * size;
         svg.appendChild(line(left - 5, y, left, y, ax, 1));
         svg.appendChild(
-          text(left - 8, y + 0.35 * labelSize, label, ax, "end", labelSize),
+          text(
+            left - 8,
+            y + 0.35 * labelSize,
+            fit(label, yRoom, labelSize),
+            ax,
+            "end",
+            labelSize,
+          ),
         );
       }
     }
 
-    // Axis titles, under the bottom tick labels and upright at the left edge.
+    // Axis titles, under the bottom tick labels and upright at the left edge,
+    // each where its margin made room for it, cut to the widget.
     const title = axisTitle();
-    if (title) {
+    if (title && titleOn.bottom) {
+      const cx = left + size / 2;
       svg.appendChild(
         text(
-          left + size / 2,
+          cx,
           tickY + 0.3 * labelSize + 8 + 0.85 * titleSize,
-          title,
+          fit(title, 2 * Math.min(cx, width - cx) - 4, titleSize),
           fg,
           "middle",
           titleSize,
         ),
       );
+    }
+    if (title && titleOn.left) {
       const tx = 2 + 1.1 * titleSize;
-      const yTitle = text(tx, top + size / 2, title, fg, "middle", titleSize);
-      yTitle.setAttribute("transform", `rotate(-90 ${tx} ${top + size / 2})`);
+      const cy = top + size / 2;
+      const yTitle = text(
+        tx,
+        cy,
+        fit(title, 2 * Math.min(cy, height - cy) - 4, titleSize),
+        fg,
+        "middle",
+        titleSize,
+      );
+      yTitle.setAttribute("transform", `rotate(-90 ${tx} ${cy})`);
       svg.appendChild(yTitle);
     }
 
@@ -848,27 +938,31 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     bar.setAttribute("stroke-width", "1");
     svg.appendChild(bar);
 
-    // vmin at bottom, vmax at top.
+    // vmin at bottom, vmax at top, cut to the widget.
     const { label, axisTitle: titleSize } = sizes;
-    const [hiTick, loTick] = colorbarTicks() as [string, string];
     const vx = x + COLORBAR_W + 4;
+    const [hiTick, loTick] = colorbarValues().map((v) =>
+      fitValue(v, width - 2 - vx, label),
+    ) as [string, string];
     svg.appendChild(
       text(vx, top + 0.75 * label, hiTick, theme.axis, "start", label),
     );
     svg.appendChild(text(vx, top + h, loTick, theme.axis, "start", label));
+    if (!titleOn.right) return;
     // The title is turned to read downward, so its letters stand right of
     // its baseline; it starts 4 px right of the wider label.
     const valueW = Math.max(tw(hiTick, label), tw(loTick, label));
     const tx = vx + valueW + 4 + 0.3 * titleSize;
+    const cy = top + h / 2;
     const cbTitle = text(
       tx,
-      top + h / 2,
-      colorbarTitle(),
+      cy,
+      fit(colorbarTitle(), 2 * Math.min(cy, height - cy) - 4, titleSize),
       theme.foreground,
       "middle",
       titleSize,
     );
-    cbTitle.setAttribute("transform", `rotate(90 ${tx} ${top + h / 2})`);
+    cbTitle.setAttribute("transform", `rotate(90 ${tx} ${cy})`);
     svg.appendChild(cbTitle);
   }
 
@@ -973,6 +1067,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   function doResize(w: number, h: number) {
     width = w;
     height = h;
+    tickRoom = 0;
     layoutCanvas();
     render();
   }
@@ -1049,6 +1144,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       sizes = textSizes(theme);
+      tickRoom = 0;
       if (regl && cmapTex && opts.colormap !== prev.colormap) {
         cmapTex.subimage({
           data: colormapLUT(opts.colormap),
