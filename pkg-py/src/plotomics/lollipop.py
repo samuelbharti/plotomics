@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from collections import Counter
+from numbers import Real
 from typing import Any
 
 import numpy as np
@@ -15,7 +17,9 @@ class Lollipop(PlotomicsWidget):
 
     A backbone spanning the sequence with domain rectangles on it, mutation
     stems whose head area is proportional to recurrence, and an optional
-    post-translational modification track below. Hotspots inside a functional
+    post-translational modification track below. Variants at one residue
+    stack on one stem, most recurrent at the bottom, so the top of a stem is
+    the residue's total. Hotspots inside a functional
     domain read very differently from truncating variants scattered across one,
     which is what this figure exists to show.
 
@@ -104,7 +108,14 @@ class Lollipop(PlotomicsWidget):
         cnt = _column(data, "count")
         if pos is None or cnt is None:
             raise ValueError("`data` must provide `position` and `count` columns.")
-        if not isinstance(length, (int, float)) or length < 1:
+        # numbers.Real covers numpy scalars, such as the np.int64 a pandas
+        # lookup returns.
+        if (
+            isinstance(length, bool)
+            or not isinstance(length, Real)
+            or not math.isfinite(length)
+            or length < 1
+        ):
             raise ValueError("`length` must be a positive protein length.")
 
         position = _to_float32(pos, "position")

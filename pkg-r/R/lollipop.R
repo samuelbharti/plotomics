@@ -5,7 +5,8 @@
 #' area is proportional to recurrence, and an optional post-translational
 #' modification track below. Hotspots inside a functional domain read very
 #' differently from truncating variants scattered across one, which is what this
-#' figure exists to show.
+#' figure exists to show. Variants at one residue stack on one stem, most
+#' recurrent at the bottom, so the top of a stem is the residue's total.
 #'
 #' Stems and domains are canvas-drawn so a protein with thousands of variants
 #' stays responsive; labels, axis and legend are a vector overlay.
