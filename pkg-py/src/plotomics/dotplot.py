@@ -30,7 +30,10 @@ class Dotplot(PlotomicsWidget):
         A pandas ``DataFrame`` or mapping of arrays in long form, one row per
         dot, with ``gene`` and ``cluster`` key columns, a ``pct`` column
         (percent expressing, 0-100) driving dot size, and a ``value`` column
-        (expression level) driving dot colour.
+        (expression level) driving dot colour. A missing ``value``, such as
+        the NaN of a scaled gene that is constant across groups, is drawn as
+        an open ring and left out of the colour scale. A missing ``pct`` draws
+        no dot.
     genes, clusters:
         Fix the row and column order. A pandas Categorical supplies it from its
         categories. Defaults to order of appearance.

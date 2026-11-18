@@ -56,3 +56,10 @@ test_that("dotplot() validates its input", {
   expect_error(dotplot(make_df(), clusters = "T"), "not present in `clusters`")
   expect_error(dotplot(make_df(), value_domain = 1), "length 2")
 })
+
+test_that("dotplot() warns, but draws, when pct is NA", {
+  d <- data.frame(gene = c("A", "B"), cluster = "x", pct = c(NA, 50),
+                  value = c(1, 2))
+  expect_warning(w <- dotplot(d), "non-finite")
+  expect_s3_class(w, "htmlwidget")
+})

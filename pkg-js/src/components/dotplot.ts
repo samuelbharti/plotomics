@@ -122,17 +122,22 @@ export function layoutDotplot(
  * percent one rather than half.
  */
 export function dotRadius(pct: number, maxRadius: number): number {
-  if (!isFinite(pct) || pct <= 0) return 0;
+  // Number.isFinite, since R sends NA as null and isFinite(null) is true.
+  if (!Number.isFinite(pct) || pct <= 0) return 0;
   return maxRadius * Math.sqrt(Math.min(100, pct) / 100);
 }
 
-/** Min/max of a column, falling back to `[0, 1]` for empty or flat input. */
+/**
+ * Min/max of the finite values of a column, falling back to `[0, 1]` for
+ * empty or flat input. A missing value (null from R, NaN from Python) is
+ * skipped.
+ */
 export function valueExtent(col: ArrayLike<number>): [number, number] {
   let min = Infinity;
   let max = -Infinity;
   for (let i = 0; i < col.length; i += 1) {
     const v = col[i] as number;
-    if (!isFinite(v)) continue;
+    if (!Number.isFinite(v)) continue;
     if (v < min) min = v;
     if (v > max) max = v;
   }
@@ -228,10 +233,12 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
       return;
     }
     const valueLabel = (data.meta?.valueLabel as string) ?? "value";
+    const pct = pctCol()[i] as number;
+    const value = valueCol()[i] as number;
     tooltip.show(
       `<b>${esc(geneCol()[i] ?? "")}</b> in ${esc(clusterCol()[i] ?? "")}<br/>` +
-        `${(pctCol()[i] as number).toFixed(1)}% expressing<br/>` +
-        `${esc(valueLabel)} ${(valueCol()[i] as number).toFixed(2)}`,
+        `${Number.isFinite(pct) ? `${pct.toFixed(1)}%` : "NA"} expressing<br/>` +
+        `${esc(valueLabel)} ${Number.isFinite(value) ? value.toFixed(2) : "NA"}`,
       lastPointer.x,
       lastPointer.y,
     );
@@ -292,7 +299,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
       if (row === undefined || col === undefined) continue;
       const r = dotRadius(pct[i] as number, maxR);
       if (r <= 0) continue;
-      const t = hi > lo ? ((val[i] as number) - lo) / (hi - lo) : 0.5;
+      const v = val[i] as number;
       ctx.beginPath();
       ctx.arc(
         layout.left + (col + 0.5) * layout.cellW,
@@ -301,6 +308,15 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
         0,
         Math.PI * 2,
       );
+      if (!Number.isFinite(v)) {
+        // No value to colour by: an open ring keeps the size readable
+        // without claiming the lowest colour.
+        ctx.strokeStyle = theme.muted;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        continue;
+      }
+      const t = hi > lo ? (v - lo) / (hi - lo) : 0.5;
       ctx.fillStyle = paint(Math.max(0, Math.min(1, t)));
       ctx.fill();
     }
@@ -419,6 +435,35 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
         ),
       );
       sy += Math.max(16, opts.maxRadius * 2 + 6);
+    }
+
+    // An open ring marks a dot with no value, when there is one.
+    const val = valueCol();
+    const pct = pctCol();
+    let anyMissing = false;
+    for (let i = 0; i < val.length && !anyMissing; i += 1) {
+      anyMissing =
+        !Number.isFinite(val[i] as number) &&
+        dotRadius(pct[i] as number, 1) > 0;
+    }
+    if (anyMissing) {
+      const ring = document.createElementNS(SVG_NS, "circle");
+      ring.setAttribute("cx", String(lx + opts.maxRadius));
+      ring.setAttribute("cy", String(sy));
+      ring.setAttribute("r", "4");
+      ring.setAttribute("fill", "none");
+      ring.setAttribute("stroke", theme.muted);
+      svg.appendChild(ring);
+      svg.appendChild(
+        text(
+          lx + opts.maxRadius * 2 + 8,
+          sy + 3,
+          "no value",
+          theme.muted,
+          "start",
+          8,
+        ),
+      );
     }
   }
 

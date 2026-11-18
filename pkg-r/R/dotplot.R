@@ -15,7 +15,10 @@
 #'
 #' @param data A data frame in long form, one row per dot, with `gene` and
 #'   `cluster` key columns, a `pct` column (percent expressing, 0-100) driving
-#'   dot size, and a `value` column (expression level) driving dot colour.
+#'   dot size, and a `value` column (expression level) driving dot colour. A
+#'   missing `value`, such as the NaN of a scaled gene that is constant across
+#'   groups, is drawn as an open ring and left out of the colour scale. A
+#'   missing `pct` draws no dot. Both give a warning.
 #' @param genes Character vector fixing the row order. A factor `gene` column
 #'   supplies it from its levels. Defaults to order of appearance.
 #' @param clusters Character vector fixing the column order, likewise.
@@ -65,7 +68,7 @@ dotplot <- function(data,
 
   pct <- bv_require_numeric(data$pct, "pct")
   bv_check_finite(pct, "pct")
-  if (any(pct < 0 | pct > 100)) {
+  if (any(pct < 0 | pct > 100, na.rm = TRUE)) {
     stop("`pct` must be a percentage in [0, 100].", call. = FALSE)
   }
   value <- bv_require_numeric(data$value, "value")
