@@ -82,3 +82,50 @@ def test_heatmap_theme_in_options():
 def test_heatmap_rejects_empty_matrix():
     with pytest.raises(ValueError, match="at least one row"):
         Heatmap(np.zeros((0, 5), dtype=np.float32))
+
+
+def test_heatmap_takes_a_nested_list():
+    w = Heatmap([[1, 2], [3, 4]])
+    assert w.data["meta"]["nrows"] == 2
+    assert w.data["meta"]["ncols"] == 2
+    assert "rowLabels" not in w.data["meta"]
+
+
+def test_heatmap_reads_a_nullable_na_as_missing():
+    pd = pytest.importorskip("pandas")
+    df = pd.DataFrame({"a": [1.0, None], "b": [3.0, 4.0]}).astype("Float64")
+    w = Heatmap(df)
+    values = np.frombuffer(w.buffer, dtype=np.float32, count=4)
+    assert np.isnan(values[2])
+    assert w.data["meta"]["rowLabels"] == ["0", "1"]
+
+
+def test_heatmap_rejects_text():
+    with pytest.raises(ValueError, match="must be numeric"):
+        Heatmap([["a", "b"]])
+
+
+def test_heatmap_rejects_a_date_column():
+    pd = pytest.importorskip("pandas")
+    df = pd.DataFrame({"a": pd.to_datetime(["2020-01-01", "2020-01-02"]),
+                       "b": [1.0, 2.0]})
+    with pytest.raises(ValueError, match="must be numeric"):
+        Heatmap(df)
+
+
+def test_heatmap_names_ragged_rows():
+    with pytest.raises(ValueError, match="same length"):
+        Heatmap([[1, 2], [3]])
+
+
+def test_heatmap_takes_a_frame_like_object_with_a_plain_to_numpy():
+    class FrameLike:
+        index = ["r1", "r2"]
+        columns = ["c1", "c2"]
+        values = np.array([[1.0, 2.0], [3.0, 4.0]])
+
+        def to_numpy(self):
+            return self.values
+
+    w = Heatmap(FrameLike())
+    assert w.data["meta"]["rowLabels"] == ["r1", "r2"]

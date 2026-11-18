@@ -232,3 +232,46 @@ def _text_or_none(values: Any) -> list[str | None]:
         )
         out.append(None if missing else str(v))
     return out
+
+
+def _as_matrix(matrix: Any) -> tuple[np.ndarray, list | None, list | None]:
+    """Coerce a matrix to a 2-D float32 array, with labels from a DataFrame.
+
+    Returns ``(array, row_labels_or_None, col_labels_or_None)``. A DataFrame
+    is read through ``to_numpy`` with NA as NaN, so nullable ``Int64`` and
+    ``Float64`` columns with a missing value work. Anything else, a nested
+    list included, goes through ``np.asarray``.
+    """
+    # A list has an ``index`` method too, so a frame needs ``columns`` as well.
+    is_frame = hasattr(matrix, "index") and hasattr(matrix, "columns")
+    if is_frame:
+        # Dates and durations convert to large numbers without complaint;
+        # R rejects them, so Python does too.
+        kinds = {getattr(dt, "kind", "") for dt in getattr(matrix, "dtypes", [])}
+        if kinds & {"m", "M"}:
+            raise ValueError("`matrix` must be numeric; it has a date column.")
+    try:
+        if is_frame:
+            try:
+                arr = matrix.to_numpy(dtype=np.float32, na_value=np.nan)
+            except (AttributeError, TypeError):
+                # A frame-like object without pandas' to_numpy keywords.
+                arr = np.asarray(getattr(matrix, "values", matrix), dtype=np.float32)
+            return arr, list(matrix.index), list(matrix.columns)
+        return np.asarray(matrix, dtype=np.float32), None, None
+    except (TypeError, ValueError) as err:
+        if "inhomogeneous" in str(err):
+            raise ValueError(
+                "`matrix` rows must all have the same length."
+            ) from None
+        raise ValueError("`matrix` must be numeric.") from None
+
+
+def _check_labels(labels: Any, n: int, name: str) -> list[str] | None:
+    """Labels as text, checked to have one entry per row or column."""
+    if labels is None:
+        return None
+    out = [str(v) for v in labels]
+    if len(out) != n:
+        raise ValueError(f"`{name}` has {len(out)} entries; expected {n}.")
+    return out

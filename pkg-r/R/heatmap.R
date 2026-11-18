@@ -4,13 +4,18 @@
 #' The matrix is uploaded to the GPU as a single texture and colormapped in a
 #' fragment shader (via `regl`), so matrices with a million or more cells pan
 #' and zoom smoothly. The colorbar legend and row/column tick labels are drawn
-#' as crisp vector overlays; ticks appear only when few enough to be legible.
+#' as crisp vector overlays; when rows or columns are too tight for every
+#' label, every second, third or fourth one is drawn, and zooming in shows
+#' the rest. A matrix larger than the GPU's texture limit is averaged down to
+#' the limit for drawing.
 #'
 #' The function is exported as `bioheatmap()` (and aliased as `heatmap_plotomics()`)
 #' to avoid masking [stats::heatmap()].
 #'
 #' @param mat A numeric matrix (rows x columns). `rownames(mat)` and
-#'   `colnames(mat)`, when present, are used as row/column tick labels.
+#'   `colnames(mat)`, when present, are used as row/column tick labels. A
+#'   missing cell (`NA`, `NaN` or an infinite value) is drawn grey and left
+#'   out of the colour range and the z-score, with a warning.
 #' @param colormap Color ramp: `"viridis"` (sequential) or `"rdbu"` (diverging).
 #' @param z_score Logical; if `TRUE`, each row is z-score normalized before
 #'   coloring (a row-centered heatmap).

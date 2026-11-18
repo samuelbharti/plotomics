@@ -31,8 +31,9 @@ lollipop(
 }
 \arguments{
 \item{variants}{A data frame with columns \code{position} (amino-acid position,
-1-based) and \code{count} (recurrence). Optional \code{class} (variant class) and
-\code{label} (e.g. \code{"R175H"}) columns drive the colour and the text labels.}
+1-based) and \code{count} (recurrence, zero or more; a variant with a missing
+count is not drawn). Optional \code{class} (variant class) and \code{label} (e.g.
+\code{"R175H"}) columns drive the colour and the text labels.}
 
 \item{length}{Protein length in residues.}
 
@@ -81,7 +82,8 @@ spanning the sequence with domain rectangles on it, mutation stems whose head
 area is proportional to recurrence, and an optional post-translational
 modification track below. Hotspots inside a functional domain read very
 differently from truncating variants scattered across one, which is what this
-figure exists to show.
+figure exists to show. Variants at one residue stack on one stem, most
+recurrent at the bottom, so the top of a stem is the residue's total.
 }
 \details{
 Stems and domains are canvas-drawn so a protein with thousands of variants
