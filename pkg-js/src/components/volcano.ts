@@ -116,8 +116,14 @@ export function niceTicks(domain: [number, number], count = 6): number[] {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => {
-  let opts: VolcanoOptions = mergeOptions(defaultVolcanoOptions, initial.options);
+export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
+  el,
+  initial,
+) => {
+  let opts: VolcanoOptions = mergeOptions(
+    defaultVolcanoOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -140,7 +146,8 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -241,7 +248,12 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     const n = cols.x.length;
     const z = new Float32Array(n);
     for (let i = 0; i < n; i += 1) {
-      z[i] = classify(num(cols.x, i), num(cols.y, i), opts.fcThreshold, yThresh);
+      z[i] = classify(
+        num(cols.x, i),
+        num(cols.y, i),
+        opts.fcThreshold,
+        yThresh,
+      );
     }
     const points = {
       x: toNdc(cols.x as ArrayLike<number>, xBase),
@@ -289,7 +301,9 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     for (const t of niceTicks(xDomain)) {
       const x = pxX(t);
       if (x < MARGIN.left - 1 || x > width - MARGIN.right + 1) continue;
-      svg.appendChild(line(x, MARGIN.top, x, height - MARGIN.bottom, gridColor, 1));
+      svg.appendChild(
+        line(x, MARGIN.top, x, height - MARGIN.bottom, gridColor, 1),
+      );
       svg.appendChild(
         text(x, height - MARGIN.bottom + 16, fmt(t), axisColor, "middle"),
       );
@@ -298,22 +312,57 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     for (const t of niceTicks(yDomain)) {
       const y = pxY(t);
       if (y < MARGIN.top - 1 || y > height - MARGIN.bottom + 1) continue;
-      svg.appendChild(line(MARGIN.left, y, width - MARGIN.right, y, gridColor, 1));
+      svg.appendChild(
+        line(MARGIN.left, y, width - MARGIN.right, y, gridColor, 1),
+      );
       svg.appendChild(text(MARGIN.left - 8, y + 4, fmt(t), axisColor, "end"));
     }
 
     // axis frame
     svg.appendChild(
-      line(MARGIN.left, height - MARGIN.bottom, width - MARGIN.right, height - MARGIN.bottom, axisColor, 1.5),
+      line(
+        MARGIN.left,
+        height - MARGIN.bottom,
+        width - MARGIN.right,
+        height - MARGIN.bottom,
+        axisColor,
+        1.5,
+      ),
     );
-    svg.appendChild(line(MARGIN.left, MARGIN.top, MARGIN.left, height - MARGIN.bottom, axisColor, 1.5));
+    svg.appendChild(
+      line(
+        MARGIN.left,
+        MARGIN.top,
+        MARGIN.left,
+        height - MARGIN.bottom,
+        axisColor,
+        1.5,
+      ),
+    );
 
     // axis titles
     svg.appendChild(
-      text(MARGIN.left + innerW() / 2, height - 8, opts.xLabel, theme.foreground, "middle", 13),
+      text(
+        MARGIN.left + innerW() / 2,
+        height - 8,
+        opts.xLabel,
+        theme.foreground,
+        "middle",
+        13,
+      ),
     );
-    const yTitle = text(16, MARGIN.top + innerH() / 2, opts.yLabel, theme.foreground, "middle", 13);
-    yTitle.setAttribute("transform", `rotate(-90 16 ${MARGIN.top + innerH() / 2})`);
+    const yTitle = text(
+      16,
+      MARGIN.top + innerH() / 2,
+      opts.yLabel,
+      theme.foreground,
+      "middle",
+      13,
+    );
+    yTitle.setAttribute(
+      "transform",
+      `rotate(-90 16 ${MARGIN.top + innerH() / 2})`,
+    );
     svg.appendChild(yTitle);
 
     if (opts.showThresholdLines) renderThresholds();
@@ -324,12 +373,16 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     const yThresh = -Math.log10(opts.pThreshold);
     const yp = pxY(yThresh);
     if (yp > MARGIN.top && yp < height - MARGIN.bottom) {
-      svg.appendChild(dashed(MARGIN.left, yp, width - MARGIN.right, yp, theme.muted));
+      svg.appendChild(
+        dashed(MARGIN.left, yp, width - MARGIN.right, yp, theme.muted),
+      );
     }
     for (const fx of [-opts.fcThreshold, opts.fcThreshold]) {
       const xp = pxX(fx);
       if (xp > MARGIN.left && xp < width - MARGIN.right) {
-        svg.appendChild(dashed(xp, MARGIN.top, xp, height - MARGIN.bottom, theme.muted));
+        svg.appendChild(
+          dashed(xp, MARGIN.top, xp, height - MARGIN.bottom, theme.muted),
+        );
       }
     }
   }
@@ -342,7 +395,12 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     const up: number[] = [];
     const down: number[] = [];
     for (let i = 0; i < n; i += 1) {
-      const c = classify(num(cols.x, i), num(cols.y, i), opts.fcThreshold, yThresh);
+      const c = classify(
+        num(cols.x, i),
+        num(cols.y, i),
+        opts.fcThreshold,
+        yThresh,
+      );
       if (c === 2) up.push(i);
       else if (c === 0) down.push(i);
     }
@@ -356,12 +414,28 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
       const y = pxY(num(cols.y, i));
       if (x < MARGIN.left || x > width - MARGIN.right) continue;
       if (y < MARGIN.top || y > height - MARGIN.bottom) continue;
-      svg.appendChild(text(x + 4, y - 4, str(cols.label, i) ?? "", theme.foreground, "start", 11));
+      svg.appendChild(
+        text(
+          x + 4,
+          y - 4,
+          str(cols.label, i) ?? "",
+          theme.foreground,
+          "start",
+          11,
+        ),
+      );
     }
   }
 
   // ---- SVG element helpers ----
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string, w: number) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+    w: number,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -371,12 +445,25 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     l.setAttribute("stroke-width", String(w));
     return l;
   }
-  function dashed(x1: number, y1: number, x2: number, y2: number, stroke: string) {
+  function dashed(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+  ) {
     const l = line(x1, y1, x2, y2, stroke, 1);
     l.setAttribute("stroke-dasharray", "4 3");
     return l;
   }
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 11) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 11,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -464,7 +551,10 @@ function fmt(v: number): string {
   if (a >= 1000 || a < 0.01) return v.toExponential(1);
   return Number(v.toFixed(2)).toString();
 }
-function mergeOptions(base: VolcanoOptions, next?: Partial<VolcanoOptions>): VolcanoOptions {
+function mergeOptions(
+  base: VolcanoOptions,
+  next?: Partial<VolcanoOptions>,
+): VolcanoOptions {
   if (!next) return { ...base };
   return {
     ...base,
