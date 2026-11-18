@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { page } from "vitest/browser";
 import { createClustermap } from "../../src/components/clustermap.js";
 import { createDotplot } from "../../src/components/dotplot.js";
 import { createEmbedding } from "../../src/components/embedding.js";
@@ -13,7 +14,7 @@ import { createTreemap } from "../../src/components/treemap.js";
 import { createUpset } from "../../src/components/upset.js";
 import { createViolin } from "../../src/components/violin.js";
 import { createVolcano } from "../../src/components/volcano.js";
-import type { PlotomicsInstance } from "../../src/core/index.js";
+import { type PlotomicsInstance, compositePNG } from "../../src/core/index.js";
 
 // exportPNG should give the view the screen shows: the marks on the canvas
 // and the axes, labels and legends in the SVG over it. Before the fix 13
@@ -271,6 +272,44 @@ async function textInk(el: HTMLElement, png: Blob, k: number) {
   return { total, inked };
 }
 
+/** RGBA pixels of an image, drawn at `w` x `h`. */
+async function pixelsOf(source: Blob, w: number, h: number) {
+  const bitmap = await createImageBitmap(source);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  return ctx.getImageData(0, 0, w, h).data;
+}
+
+/**
+ * Share of the PNG's pixels that differ from a screenshot of the widget by
+ * more than 40 in a channel. The marks, the labels and the background all
+ * count, so a PNG that leaves out a layer differs in many pixels.
+ */
+async function differsFromScreen(el: HTMLElement, png: Blob) {
+  const shot = await page.screenshot({ element: el, save: false });
+  const bytes = Uint8Array.from(atob(shot), (c) => c.charCodeAt(0));
+  const bitmap = await createImageBitmap(png);
+  const w = bitmap.width;
+  const h = bitmap.height;
+  bitmap.close();
+  const a = await pixelsOf(png, w, h);
+  const b = await pixelsOf(new Blob([bytes], { type: "image/png" }), w, h);
+  let differ = 0;
+  for (let i = 0; i < a.length; i += 4) {
+    const far = Math.max(
+      Math.abs((a[i] as number) - (b[i] as number)),
+      Math.abs((a[i + 1] as number) - (b[i + 1] as number)),
+      Math.abs((a[i + 2] as number) - (b[i + 2] as number)),
+    );
+    if (far > 40) differ += 1;
+  }
+  return differ / (w * h);
+}
+
 let instances: PlotomicsInstance<unknown>[] = [];
 afterEach(() => {
   for (const i of instances) i.destroy();
@@ -302,8 +341,45 @@ describe("PNG export", () => {
           size: [Math.round(W * k), Math.round(H * k)],
           share: expect.toSatisfy((v: number) => v >= 0.8),
         });
+      // The PNG is what the screen shows: marks, labels and background.
+      const png = (await instance.exportPNG?.(1)) as Blob;
+      expect(await differsFromScreen(el, png)).toBeLessThan(0.01);
     });
   }
+
+  it("draws an overlay whose text holds half of a surrogate pair", async () => {
+    // A label cut inside an emoji with slice can end in half of the pair.
+    // Before the fix encodeURIComponent threw "URI malformed" and the
+    // export rejected.
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    const rect = document.createElementNS(NS, "rect");
+    rect.setAttribute("width", "40");
+    rect.setAttribute("height", "40");
+    rect.setAttribute("fill", "#ff0000");
+    const label = document.createElementNS(NS, "text");
+    label.setAttribute("x", "50");
+    label.setAttribute("y", "20");
+    label.textContent = "cut \uD83D";
+    svg.append(rect, label);
+    const png = await compositePNG({
+      width: 100,
+      height: 50,
+      background: "#ffffff",
+      layers: [],
+      overlay: svg,
+      scale: 1,
+    });
+    expect(png).toBeInstanceOf(Blob);
+    // The overlay is in the PNG: its red square is there.
+    const k = Math.min(window.devicePixelRatio || 1, 2);
+    const d = await pixelsOf(
+      png as Blob,
+      Math.round(100 * k),
+      Math.round(50 * k),
+    );
+    expect([d[0], d[1], d[2]]).toEqual([255, 0, 0]);
+  });
 
   it("scales the whole widget", async () => {
     const el = container();

@@ -74,6 +74,10 @@ export interface CompositeOptions {
  * Resolves to null without a 2D context. Rejects when a layer holds a
  * cross-origin image served without CORS headers, since the browser then
  * refuses to encode the canvas.
+ *
+ * The overlay is drawn as an SVG image, and an SVG image cannot use a font
+ * the page loaded with `@font-face`: with such a font in the theme, the
+ * PNG's text falls back to the next font in the family list.
  */
 export async function compositePNG(
   opts: CompositeOptions,
@@ -131,6 +135,10 @@ export async function compositePNG(
   });
 }
 
+/** Half of a UTF-16 surrogate pair with no other half next to it. */
+const LONE_SURROGATE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
 /**
  * An SVG element as an image `outW` x `outH` px. The vector overlay is drawn
  * at the output size, so its text stays sharp at any scale.
@@ -148,10 +156,11 @@ async function svgImage(
   clone.setAttribute("width", String(outW));
   clone.setAttribute("height", String(outH));
   const image = new Image();
-  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
-    serializeSVG(clone),
-  )}`;
   try {
+    // A label cut inside an emoji can end in half of a surrogate pair, which
+    // encodeURIComponent refuses; it becomes U+FFFD, as in a Blob.
+    const xml = serializeSVG(clone).replace(LONE_SURROGATE, "\uFFFD");
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
     await image.decode();
     return image;
   } catch {
