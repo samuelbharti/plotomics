@@ -40,7 +40,10 @@ describe("upset helpers", () => {
   });
 
   it("splits the height between bars and matrix", () => {
-    const l = layoutUpset(900, 600, 5, 12, { barFraction: 0.5, showSetSizes: true });
+    const l = layoutUpset(900, 600, 5, 12, {
+      barFraction: 0.5,
+      showSetSizes: true,
+    });
     expect(l.barH).toBeGreaterThan(0);
     expect(l.matrixH).toBeGreaterThan(0);
     expect(l.rowH).toBeCloseTo(l.matrixH / 5, 10);
@@ -48,8 +51,14 @@ describe("upset helpers", () => {
   });
 
   it("clamps an extreme bar fraction so neither panel vanishes", () => {
-    const tiny = layoutUpset(900, 600, 4, 8, { barFraction: 0.01, showSetSizes: true });
-    const huge = layoutUpset(900, 600, 4, 8, { barFraction: 0.99, showSetSizes: true });
+    const tiny = layoutUpset(900, 600, 4, 8, {
+      barFraction: 0.01,
+      showSetSizes: true,
+    });
+    const huge = layoutUpset(900, 600, 4, 8, {
+      barFraction: 0.99,
+      showSetSizes: true,
+    });
     expect(tiny.barH).toBeGreaterThan(0);
     expect(tiny.matrixH).toBeGreaterThan(0);
     expect(huge.barH).toBeGreaterThan(0);
@@ -57,21 +66,44 @@ describe("upset helpers", () => {
   });
 
   it("reclaims the set-size gutter when it is hidden", () => {
-    const on = layoutUpset(900, 600, 4, 8, { barFraction: 0.5, showSetSizes: true });
-    const off = layoutUpset(900, 600, 4, 8, { barFraction: 0.5, showSetSizes: false });
+    const on = layoutUpset(900, 600, 4, 8, {
+      barFraction: 0.5,
+      showSetSizes: true,
+    });
+    const off = layoutUpset(900, 600, 4, 8, {
+      barFraction: 0.5,
+      showSetSizes: false,
+    });
     expect(off.left).toBeLessThan(on.left);
     expect(off.setPanelW).toBe(0);
   });
 
   it("widens the name gutter for long set names", () => {
-    const short = layoutUpset(900, 600, 4, 8, { barFraction: 0.5, showSetSizes: true }, 4);
-    const long = layoutUpset(900, 600, 4, 8, { barFraction: 0.5, showSetSizes: true }, 40);
+    const short = layoutUpset(
+      900,
+      600,
+      4,
+      8,
+      { barFraction: 0.5, showSetSizes: true },
+      4,
+    );
+    const long = layoutUpset(
+      900,
+      600,
+      4,
+      8,
+      { barFraction: 0.5, showSetSizes: true },
+      40,
+    );
     expect(long.left).toBeGreaterThan(short.left);
     expect(long.colW).toBeGreaterThan(0);
   });
 
   it("stays well-defined with no sets or intersections", () => {
-    const l = layoutUpset(400, 300, 0, 0, { barFraction: 0.5, showSetSizes: true });
+    const l = layoutUpset(400, 300, 0, 0, {
+      barFraction: 0.5,
+      showSetSizes: true,
+    });
     expect(l.rowH).toBeGreaterThan(0);
     expect(l.colW).toBeGreaterThan(0);
   });

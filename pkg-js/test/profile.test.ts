@@ -57,7 +57,10 @@ describe("profile axis maximum", () => {
 
 describe("profile layout", () => {
   it("stacks banner, plot and label band top to bottom", () => {
-    const l = layoutProfile(1000, 400, 96, { showHeader: true, showBarLabels: true });
+    const l = layoutProfile(1000, 400, 96, {
+      showHeader: true,
+      showBarLabels: true,
+    });
     expect(l.headerTop).toBeLessThan(l.plotTop);
     expect(l.plotTop).toBeLessThan(l.baseline);
     expect(l.baseline).toBe(l.axisY);
@@ -66,14 +69,23 @@ describe("profile layout", () => {
   });
 
   it("reclaims the banner and label bands when hidden", () => {
-    const withAll = layoutProfile(1000, 400, 96, { showHeader: true, showBarLabels: true });
-    const bare = layoutProfile(1000, 400, 96, { showHeader: false, showBarLabels: false });
+    const withAll = layoutProfile(1000, 400, 96, {
+      showHeader: true,
+      showBarLabels: true,
+    });
+    const bare = layoutProfile(1000, 400, 96, {
+      showHeader: false,
+      showBarLabels: false,
+    });
     expect(bare.plotH).toBeGreaterThan(withAll.plotH);
     expect(bare.headerTop).toBe(0);
   });
 
   it("never returns a degenerate plot area", () => {
-    const l = layoutProfile(20, 20, 96, { showHeader: true, showBarLabels: true });
+    const l = layoutProfile(20, 20, 96, {
+      showHeader: true,
+      showBarLabels: true,
+    });
     expect(l.plotH).toBeGreaterThan(0);
     expect(l.slot).toBeGreaterThan(0);
   });

@@ -113,7 +113,10 @@ export function layoutUpset(
     barBaseline: top + barH,
     barH,
     rowH: nSets > 0 ? matrixH / nSets : matrixH,
-    colW: nIntersections > 0 ? Math.max(1, (width - left - 12) / nIntersections) : 1,
+    colW:
+      nIntersections > 0
+        ? Math.max(1, (width - left - 12) / nIntersections)
+        : 1,
     matrixH,
     setPanelW,
   };
@@ -148,7 +151,8 @@ export function membershipRow(
   if (!membership || nSets <= 0 || index < 0) return out;
   const base = index * nSets;
   if (base + nSets > membership.length) return out;
-  for (let s = 0; s < nSets; s += 1) out[s] = (membership[base + s] as number) === 1;
+  for (let s = 0; s < nSets; s += 1)
+    out[s] = (membership[base + s] as number) === 1;
   return out;
 }
 
@@ -169,7 +173,8 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -178,7 +183,8 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
   const sizes = () => (data.columns.size as ArrayLike<number>) ?? [];
   const sets = () => (data.meta?.sets as string[]) ?? [];
   const setSizes = () => data.meta?.setSizes as ArrayLike<number> | undefined;
-  const membership = () => data.meta?.membership as ArrayLike<number> | undefined;
+  const membership = () =>
+    data.meta?.membership as ArrayLike<number> | undefined;
   const barFill = () => opts.barColor ?? theme.foreground;
   const emptyFill = () => opts.emptyDotColor ?? theme.grid;
 
@@ -200,7 +206,9 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       .map((v, k) => (v ? names[k] : null))
       .filter(Boolean);
     const total = data.meta?.total as number | undefined;
-    const pct = total ? ` (${((100 * (s[i] as number)) / total).toFixed(1)}%)` : "";
+    const pct = total
+      ? ` (${((100 * (s[i] as number)) / total).toFixed(1)}%)`
+      : "";
     tooltip.show(
       `<b>${(s[i] as number).toLocaleString()}</b>${pct}<br/>` +
         `${inSet.length ? esc(inSet.join(" + ")) : "none"}`,
@@ -261,11 +269,19 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       if (r % 2 === 1) continue;
       ctx.fillStyle = theme.grid;
       ctx.globalAlpha = 0.25;
-      ctx.fillRect(layout.left, layout.barBaseline + r * layout.rowH,
-        width - layout.left - 12, layout.rowH);
+      ctx.fillRect(
+        layout.left,
+        layout.barBaseline + r * layout.rowH,
+        width - layout.left - 12,
+        layout.rowH,
+      );
       ctx.globalAlpha = 1;
     }
-    const r = Math.min(opts.dotRadius, layout.colW / 2 - 1, layout.rowH / 2 - 1);
+    const r = Math.min(
+      opts.dotRadius,
+      layout.colW / 2 - 1,
+      layout.rowH / 2 - 1,
+    );
     for (let i = 0; i < s.length; i += 1) {
       const cx = layout.left + (i + 0.5) * layout.colW;
       const row = membershipRow(mem, i, names.length);
@@ -286,7 +302,13 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       }
       for (let k = 0; k < names.length; k += 1) {
         ctx.beginPath();
-        ctx.arc(cx, layout.barBaseline + (k + 0.5) * layout.rowH, Math.max(1, r), 0, Math.PI * 2);
+        ctx.arc(
+          cx,
+          layout.barBaseline + (k + 0.5) * layout.rowH,
+          Math.max(1, r),
+          0,
+          Math.PI * 2,
+        );
         ctx.fillStyle = row[k] ? barFill() : emptyFill();
         ctx.fill();
       }
@@ -319,17 +341,31 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       const v = (t / 4) * max;
       const y = layout.barBaseline - (t / 4) * (layout.barH - 6);
       svg.appendChild(line(layout.left, y, width - 12, y, theme.grid));
-      svg.appendChild(text(layout.left - 6, y + 3, fmtInt(v), theme.muted, "end", 9));
+      svg.appendChild(
+        text(layout.left - 6, y + 3, fmtInt(v), theme.muted, "end", 9),
+      );
     }
     svg.appendChild(
-      rotatedText(14, layout.top + layout.barH / 2, opts.yLabel, theme.muted, 10),
+      rotatedText(
+        14,
+        layout.top + layout.barH / 2,
+        opts.yLabel,
+        theme.muted,
+        10,
+      ),
     );
 
     // Set names, between the total bars and the matrix.
     for (let k = 0; k < names.length; k += 1) {
       svg.appendChild(
-        text(layout.left - 10, layout.barBaseline + (k + 0.5) * layout.rowH + 3,
-          names[k] ?? "", theme.foreground, "end", 10),
+        text(
+          layout.left - 10,
+          layout.barBaseline + (k + 0.5) * layout.rowH + 3,
+          names[k] ?? "",
+          theme.foreground,
+          "end",
+          10,
+        ),
       );
     }
 
@@ -340,8 +376,14 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       );
       for (let k = 0; k < names.length; k += 1) {
         svg.appendChild(
-          text(layout.setPanelW + 3, layout.barBaseline + (k + 0.5) * layout.rowH + 3,
-            fmtInt(ss[k] as number), theme.muted, "start", 8),
+          text(
+            layout.setPanelW + 3,
+            layout.barBaseline + (k + 0.5) * layout.rowH + 3,
+            fmtInt(ss[k] as number),
+            theme.muted,
+            "start",
+            8,
+          ),
         );
       }
     }
@@ -349,14 +391,27 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     const total = data.meta?.total as number | undefined;
     if (total) {
       svg.appendChild(
-        text(width - 12, layout.top + 2, `${total.toLocaleString()} total`,
-          theme.muted, "end", 9),
+        text(
+          width - 12,
+          layout.top + 2,
+          `${total.toLocaleString()} total`,
+          theme.muted,
+          "end",
+          9,
+        ),
       );
     }
   }
 
   // ---- SVG helpers ----
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 10) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 10,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -367,12 +422,24 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     t.textContent = content;
     return t;
   }
-  function rotatedText(x: number, y: number, content: string, fill: string, size: number) {
+  function rotatedText(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    size: number,
+  ) {
     const t = text(x, y, content, fill, "middle", size);
     t.setAttribute("transform", `rotate(-90 ${x} ${y})`);
     return t;
   }
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -441,10 +508,21 @@ function fmtInt(v: number): string {
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+    c === "&"
+      ? "&amp;"
+      : c === "<"
+        ? "&lt;"
+        : c === ">"
+          ? "&gt;"
+          : c === '"'
+            ? "&quot;"
+            : "&#39;",
   );
 }
-function mergeOptions(base: UpsetOptions, next?: Partial<UpsetOptions>): UpsetOptions {
+function mergeOptions(
+  base: UpsetOptions,
+  next?: Partial<UpsetOptions>,
+): UpsetOptions {
   if (!next) return { ...base };
   return { ...base, ...next, theme: { ...base.theme, ...(next.theme ?? {}) } };
 }

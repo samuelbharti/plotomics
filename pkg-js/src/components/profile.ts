@@ -154,8 +154,14 @@ export function layoutProfile(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => {
-  let opts: ProfileOptions = mergeOptions(defaultProfileOptions, initial.options);
+export const createProfile: PlotomicsFactory<ProfileOptions> = (
+  el,
+  initial,
+) => {
+  let opts: ProfileOptions = mergeOptions(
+    defaultProfileOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -167,7 +173,8 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -299,13 +306,28 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
     for (let t = 0; t <= 4; t += 1) {
       const val = (t / 4) * max;
       const y = layout.baseline - (t / 4) * layout.plotH;
-      svg.appendChild(line(layout.left, y, width - layout.right, y, theme.grid));
       svg.appendChild(
-        text(layout.left - 8, y + 3, fmtTick(val, opts.asFraction), theme.muted, "end", 9),
+        line(layout.left, y, width - layout.right, y, theme.grid),
+      );
+      svg.appendChild(
+        text(
+          layout.left - 8,
+          y + 3,
+          fmtTick(val, opts.asFraction),
+          theme.muted,
+          "end",
+          9,
+        ),
       );
     }
     svg.appendChild(
-      rotatedText(14, layout.plotTop + layout.plotH / 2, opts.yLabel, theme.muted, 10),
+      rotatedText(
+        14,
+        layout.plotTop + layout.plotH / 2,
+        opts.yLabel,
+        theme.muted,
+        10,
+      ),
     );
 
     // Group names on the banner, in a colour that reads on the block.
@@ -317,8 +339,14 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
         const bg = gi >= 0 ? (gcols[gi] as string) : theme.foreground;
         if (x1 - x0 > estimateTextWidth(run.group, 10) + 8) {
           svg.appendChild(
-            text((x0 + x1) / 2, layout.headerTop + HEADER_H - 5, run.group,
-              readableOn(bg), "middle", 10),
+            text(
+              (x0 + x1) / 2,
+              layout.headerTop + HEADER_H - 5,
+              run.group,
+              readableOn(bg),
+              "middle",
+              10,
+            ),
           );
         }
       }
@@ -330,7 +358,14 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
       const every = Math.max(1, Math.ceil(7 / layout.slot));
       for (let i = 0; i < labs.length; i += every) {
         const x = layout.left + i * layout.slot + layout.slot / 2;
-        const t = text(x, layout.axisY + 6, labs[i] ?? "", theme.muted, "end", 7);
+        const t = text(
+          x,
+          layout.axisY + 6,
+          labs[i] ?? "",
+          theme.muted,
+          "end",
+          7,
+        );
         t.setAttribute("transform", `rotate(-90 ${x} ${layout.axisY + 6})`);
         svg.appendChild(t);
       }
@@ -338,12 +373,28 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
 
     const title = data.meta?.title as string | undefined;
     if (title) {
-      svg.appendChild(text(layout.left, layout.headerTop - 2, title, theme.foreground, "start", 11));
+      svg.appendChild(
+        text(
+          layout.left,
+          layout.headerTop - 2,
+          title,
+          theme.foreground,
+          "start",
+          11,
+        ),
+      );
     }
   }
 
   // ---- SVG helpers ----
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 10) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 10,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -354,12 +405,24 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (el, initial) => 
     t.textContent = content;
     return t;
   }
-  function rotatedText(x: number, y: number, content: string, fill: string, size: number) {
+  function rotatedText(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    size: number,
+  ) {
     const t = text(x, y, content, fill, "middle", size);
     t.setAttribute("transform", `rotate(-90 ${x} ${y})`);
     return t;
   }
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -446,10 +509,21 @@ function estimateTextWidth(s: string, size: number): number {
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+    c === "&"
+      ? "&amp;"
+      : c === "<"
+        ? "&lt;"
+        : c === ">"
+          ? "&gt;"
+          : c === '"'
+            ? "&quot;"
+            : "&#39;",
   );
 }
-function mergeOptions(base: ProfileOptions, next?: Partial<ProfileOptions>): ProfileOptions {
+function mergeOptions(
+  base: ProfileOptions,
+  next?: Partial<ProfileOptions>,
+): ProfileOptions {
   if (!next) return { ...base };
   return { ...base, ...next, theme: { ...base.theme, ...(next.theme ?? {}) } };
 }
