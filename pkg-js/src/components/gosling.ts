@@ -1,5 +1,5 @@
 /**
- * Gosling — declarative genomics figures.
+ * Gosling: declarative genomics figures.
  *
  * A config-driven wrapper around Gosling.js (grammar of scalable, linked,
  * interactive nucleotide graphics). Unlike the other components, which consume
@@ -10,10 +10,11 @@
  *
  * Gosling internally pulls in HiGlass + PixiJS + React and streams/tiles large
  * genomic datasets on the GPU, so this component adds no SVG overlay of its
- * own. `embed()` is asynchronous (it mounts a React tree), so the factory
- * returns a `PlotomicsInstance` synchronously and defers work until the embed
- * promise resolves. Because Gosling's API exposes no in-place spec update,
- * replacing the spec re-embeds from scratch.
+ * own. The component renders Gosling's own React component into a React root
+ * that it owns. A new spec, padding or theme re-renders that root, which
+ * Gosling updates in place, and destroy() unmounts it. Unmounting is what lets
+ * HiGlass free its WebGL context and its window listeners; Gosling's
+ * `embed()` mounts a root it never unmounts, so each update leaked one.
  *
  * The pure option/spec helpers live in `./gosling-spec.ts` so they can be
  * unit-tested without importing `gosling.js` (which is browser-only).
@@ -24,8 +25,9 @@ import type {
   PlotomicsInstance,
 } from "../core/index.js";
 import { canvasToPNG } from "../core/index.js";
-import { embed } from "gosling.js";
-import type { GoslingSpec } from "gosling.js";
+import { GoslingComponent } from "gosling.js";
+import { createElement, createRef } from "react";
+import { type Root, createRoot } from "react-dom/client";
 import {
   type GoslingOptions,
   defaultGoslingOptions,
@@ -42,8 +44,8 @@ export {
   mergeGoslingOptions,
 } from "./gosling-spec.js";
 
-/** The awaited return of Gosling's `embed()`. Kept structural so we don't have
- * to import Gosling's internal `GoslingApi`/`HiGlassApi` types. */
+/** The API Gosling's component exposes through its ref. Kept structural so we
+ * don't have to import Gosling's internal `GoslingApi`/`HiGlassApi` types. */
 export interface GoslingApiLike {
   getCanvas(options?: {
     resolution?: number;
@@ -71,66 +73,56 @@ export const createGosling: PlotomicsFactory<GoslingOptions> = (
   host.style.cssText = "position:relative;width:100%;height:100%;";
   el.appendChild(host);
 
-  // Async embed state.
-  let api: GoslingApiLike | null = null;
+  let root: Root | null = null;
   let destroyed = false;
-  // A monotonically increasing token guards against races: only the newest
-  // embed may install its API. It is bumped on every re-embed and on destroy,
-  // so any in-flight embed that resolves late is ignored.
-  let embedToken = 0;
+  // Gosling's component hands its API out through this ref once mounted.
+  const ref = createRef<{ api: GoslingApiLike }>();
 
-  function teardownView() {
-    api = null;
-    // Gosling's embed() has no destroy(); unmounting the React tree it created
-    // is done by clearing the host element.
-    while (host.firstChild) host.removeChild(host.firstChild);
-  }
-
-  function doEmbed() {
-    teardownView();
+  /** Render the current spec into the root, or clear it for no valid spec. */
+  function render() {
+    if (destroyed) return;
     const spec = opts.spec;
-    if (!isValidSpec(spec)) return; // nothing valid to render yet
-    const token = ++embedToken;
-    // embed() mounts a React tree into `host` and resolves once ready.
-    embed(host, spec as unknown as GoslingSpec, embedOptions(opts))
-      .then((resolved) => {
-        if (destroyed || token !== embedToken) return; // superseded / gone
-        api = resolved as unknown as GoslingApiLike;
-      })
-      .catch((err) => {
-        if (destroyed || token !== embedToken) return;
-        // Surface embed failures without throwing across the async boundary.
-        // eslint-disable-next-line no-console
-        console.error("plotomics/gosling: embed failed", err);
-      });
+    if (!isValidSpec(spec)) {
+      root?.unmount();
+      root = null;
+      return;
+    }
+    if (!root) root = createRoot(host);
+    root.render(
+      createElement(GoslingComponent, {
+        ref,
+        spec,
+        ...embedOptions(opts),
+      }),
+    );
   }
 
-  // Initial render.
-  doEmbed();
+  render();
 
   const instance: PlotomicsInstance<GoslingOptions> = {
-    // Gosling is spec-driven; columnar data is not used. Kept for contract
-    // parity (the host adapters always call it).
+    // Gosling is spec-driven; columnar data is not used. The host adapters
+    // always call it, so it stays as a no-op.
     setData(_next: PlotomicsData) {
       /* no-op: data flows through options.spec */
     },
     setOptions(next) {
-      const prevSpec = opts.spec;
+      const prev = opts;
       opts = mergeGoslingOptions(opts, next);
-      // Gosling exposes no in-place spec update, so any change to the spec or
-      // embed options means tearing down and mounting afresh.
-      const specChanged = next.spec !== undefined && opts.spec !== prevSpec;
-      const embedChanged =
-        next.padding !== undefined || next.theme !== undefined;
-      if (specChanged || embedChanged) doEmbed();
+      if (
+        opts.spec !== prev.spec ||
+        opts.padding !== prev.padding ||
+        opts.theme !== prev.theme
+      ) {
+        render();
+      }
     },
     resize(_w, _h) {
       // Gosling/HiGlass track their size from the container via a
       // ResizeObserver, and `host` fills `el`, so there is nothing to push
-      // down. Any resize arriving before the embed resolves is absorbed once
-      // HiGlass observes the container — no buffering needed.
+      // down.
     },
     async exportPNG(scale = 2) {
+      const api = ref.current?.api;
       if (!api) return null;
       try {
         const { canvas } = api.getCanvas({ resolution: scale });
@@ -141,8 +133,10 @@ export const createGosling: PlotomicsFactory<GoslingOptions> = (
     },
     destroy() {
       destroyed = true;
-      embedToken += 1; // invalidate any in-flight embed
-      teardownView();
+      // Unmounting runs HiGlass's own teardown, which frees its WebGL context
+      // and its window and document listeners.
+      root?.unmount();
+      root = null;
       host.remove();
     },
   };

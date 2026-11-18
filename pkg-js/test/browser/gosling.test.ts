@@ -104,6 +104,26 @@ describe("gosling component in a browser", () => {
     expect(el.childElementCount).toBe(0);
   });
 
+  it("keeps one view when the spec changes at once, and clears it on destroy", async () => {
+    const { el, instance } = mount({ spec: emptySpec });
+    // Before anything has mounted: the old embed() path mounted both.
+    instance.setOptions({ spec });
+    await expect
+      .poll(() => drawn(instance), { timeout: 30_000, interval: 250 })
+      .toBeGreaterThan(MIN_MARK_PIXELS);
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    expect(el.querySelectorAll("canvas").length).toBe(1);
+    // The context HiGlass drew with: unmounting the React tree frees it.
+    const gl = (canvas.getContext("webgl2") ??
+      canvas.getContext("webgl")) as WebGLRenderingContext;
+    expect(gl.isContextLost()).toBe(false);
+    instance.destroy();
+    expect(el.childElementCount).toBe(0);
+    await expect
+      .poll(() => gl.isContextLost(), { timeout: 5_000, interval: 50 })
+      .toBe(true);
+  });
+
   it("does not embed a value that is not a spec", async () => {
     const logged = vi.spyOn(console, "error");
 
