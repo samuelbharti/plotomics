@@ -27,6 +27,7 @@ Roxygen: list(markdown = TRUE)
 Imports:
     htmlwidgets
 Suggests:
+    jsonlite,
     knitr,
     rmarkdown,
     shiny,
