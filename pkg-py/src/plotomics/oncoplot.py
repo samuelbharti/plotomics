@@ -78,20 +78,20 @@ class Oncoplot(PlotomicsWidget):
         Alteration classes, fixing both legend order and colour assignment.
         Defaults to the classes present, most frequent first. A gene and
         sample with two or more different classes is drawn as
-        ``"Multi-hit"``, which is added to the classes when it occurs.
+        ``"Multi-hit"``, in dark grey, which is added to the classes when it
+        occurs.
     class_colors:
         One hex colour per entry of ``classes``. ``None`` uses the component's
-        categorical palette. When ``"Multi-hit"`` is added, it is drawn in
-        dark grey.
+        categorical palette.
     burden:
         One value per sample for the top barplot. Defaults to the number of
         altered genes per sample.
     annotations:
         Optional clinical strips, each a mapping with ``name``, ``values`` and
-        optional ``colors``. ``values`` keyed by sample (a dict or a pandas
-        Series indexed by sample) are matched to the columns by name. A plain
-        list, or a Series with a default index, is read in the order of
-        ``samples``, so it needs ``samples``.
+        optional ``colors``. ``values`` keyed by sample (a dict, or a pandas
+        Series whose index names samples) are matched to the columns by name.
+        A plain list, or a Series indexed by row number, is read in the order
+        of ``samples``, so it needs ``samples``.
     show_burden, show_frequency, show_annotations, show_legend:
         Toggle the surrounding panels.
     empty_color:
@@ -278,24 +278,31 @@ def _annotation(
 ) -> dict[str, Any]:
     """Encode one clinical strip as levels plus 0-based codes.
 
-    Values keyed by sample (a dict or a pandas Series) are matched to the
-    columns by name. A plain sequence, or a Series with a default index, is
-    read in the order of ``samples``, so it needs ``samples`` to have been
-    given.
+    Values keyed by sample (a dict, or a pandas Series whose index names
+    samples) are matched to the columns by name. A plain sequence, or a
+    Series indexed by row number, is read in the order of ``samples``, so it
+    needs ``samples`` to have been given.
     """
     name = a.get("name")
     values = a.get("values")
     if name is None or values is None:
         raise ValueError("each annotation needs `name` and `values`.")
-    keyed = values if isinstance(values, Mapping) else None
-    if (
-        keyed is None
-        and hasattr(values, "to_dict")
-        and type(getattr(values, "index", None)).__name__ != "RangeIndex"
-    ):
-        keyed = values.to_dict()  # a pandas Series indexed by sample
+    keyed = None
+    if isinstance(values, Mapping):
+        keyed = {str(k): v for k, v in values.items()}
+    elif hasattr(values, "to_dict") and hasattr(values, "index"):
+        # A pandas Series is keyed when its index names samples. A row-number
+        # index, as left by filtering a table, is read by position.
+        index = [str(k) for k in values.index]
+        if set(index) & set(samples):
+            dup = sorted({k for k in index if index.count(k) > 1})
+            if dup:
+                raise ValueError(
+                    f"annotation '{name}' has more than one value for "
+                    "sample(s): " + ", ".join(dup[:5])
+                )
+            keyed = dict(zip(index, values.tolist()))
     if keyed is not None:
-        keyed = {str(k): v for k, v in keyed.items()}
         missing = [s for s in samples if s not in keyed]
         if missing:
             raise ValueError(

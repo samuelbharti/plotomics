@@ -163,3 +163,13 @@ test_that("genes rank by samples altered, and two classes make a Multi-hit", {
   expect_equal(as.integer(w2$x$data$columns$codes), length(classes))
   expect_equal(length(w2$x$data$meta$classColors), length(classes))
 })
+
+test_that("an annotation with two values for one sample fails", {
+  expect_error(
+    oncoplot(alt_fixture(), annotations = list(list(
+      name = "Subtype",
+      values = c(S1 = "a", S2 = "b", S1 = "c", S3 = "d", S4 = "e")
+    ))),
+    "more than one value for sample"
+  )
+})

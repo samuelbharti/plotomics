@@ -103,7 +103,8 @@ describe("oncoplot in a browser", () => {
     const rowH =
       Number(kras.getAttribute("y")) - Number(tp53.getAttribute("y"));
     const gridBottom = Number(kras.getAttribute("y")) + rowH / 2;
-    const left = Number(tp53.getAttribute("x")) + 6;
+    // The grid starts after the 96 px gene label column.
+    const left = 96;
     // The swatches beside "Basal" and "LumA" give the strip's colours.
     const swatch = (label: string) => {
       const t = svgTexts(el).find(
@@ -133,6 +134,82 @@ describe("oncoplot in a browser", () => {
     expect(hoverAt(el, left + gridW * (2.5 / 3), gridBottom + 12)).toContain(
       "Subtype: NA",
     );
+  });
+
+  it("draws a Multi-hit cell in dark grey without given colours", () => {
+    const el = container(600, 400);
+    const data = smallData();
+    // Eight classes fill the palette; Multi-hit comes ninth.
+    data.meta.classes = [...CLASSES, "Multi-hit"];
+    data.columns.codes = [9, 1, 9, 1, 9, 1];
+    instances.push(createOncoplot(el, { data }));
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+    const ratio = canvas.width / canvas.clientWidth;
+    const tp53 = svgTexts(el).find(
+      (t) => t.textContent === "TP53",
+    ) as SVGTextElement;
+    // Centre of the first cell: TP53 in S1.
+    const left = 96;
+    const gridW = 600 - left - 96;
+    const x = left + gridW / 6;
+    const y = Number(tp53.getAttribute("y")) - 3;
+    const [r, g, b] = ctx.getImageData(
+      Math.floor(x * ratio),
+      Math.floor(y * ratio),
+      1,
+      1,
+    ).data;
+    expect([r, g, b]).toEqual([0x3a, 0x3a, 0x3a]);
+  });
+
+  it("keeps a legend with hundreds of levels inside the element", () => {
+    const n = 1000;
+    const samples = Array.from({ length: n }, (_, i) => `S${i}`);
+    const genes = Array.from({ length: 20 }, (_, i) => `G${i}`);
+    const el = container(800, 560);
+    instances.push(
+      createOncoplot(el, {
+        data: {
+          columns: {
+            codes: new Array(20 * n).fill(1),
+            tmb: new Array(n).fill(20),
+            freq: new Array(20).fill(100),
+          },
+          meta: {
+            nrows: 20,
+            ncols: n,
+            genes,
+            samples,
+            classes: ["Missense"],
+            annotations: [
+              {
+                name: "Age",
+                levels: samples.map((_, i) => String(30 + i)),
+                codes: samples.map((_, i) => i),
+              },
+            ],
+          },
+        },
+      }),
+    );
+    for (const t of svgTexts(el))
+      expect(t.getBBox().y).toBeGreaterThanOrEqual(0);
+    // Every gene keeps its label, so the grid kept its height.
+    const shown = svgTexts(el).filter((t) =>
+      /^G\d+$/.test(t.textContent ?? ""),
+    );
+    expect(shown).toHaveLength(20);
+    expect(
+      svgTexts(el).some((t) => /^\+\d+ more$/.test(t.textContent ?? "")),
+    ).toBe(true);
+  });
+
+  it("prints a small float burden maximum without rounding it to 0", () => {
+    const el = container();
+    const tmb = Float32Array.from([0.004, 0.002, 0.001]);
+    instances.push(createOncoplot(el, { data: smallData(Array.from(tmb)) }));
+    expect(svgTexts(el).map((t) => t.textContent)).toContain("0.004");
   });
 
   it("prints a float burden maximum without float32 noise", () => {

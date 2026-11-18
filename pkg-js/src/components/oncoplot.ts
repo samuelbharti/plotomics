@@ -108,6 +108,9 @@ const ENTRY_GAP = 14;
  * Default colors for annotation strips (ColorBrewer Set2). They are lighter
  * than the Okabe-Ito class colors, so a strip does not read as an alteration.
  */
+/** The class for a gene and sample altered in two or more different ways. */
+const MULTI_HIT = "Multi-hit";
+const MULTI_HIT_COLOR = "#3A3A3A";
 const ANNOTATION_PALETTE = [
   "#66C2A5",
   "#FC8D62",
@@ -235,21 +238,52 @@ export function wrapLegend(
   groups: LegendEntry[][],
   maxWidth: number,
   width: (s: string) => number,
+  /**
+   * Most rows to use. Entries past the last row are left out, and a
+   * "+N more" note ends the last row, so a strip with hundreds of levels
+   * cannot push the grid out of the element.
+   */
+  maxRows = Number.POSITIVE_INFINITY,
 ): { entry: LegendEntry; x: number; row: number }[] {
   const out: { entry: LegendEntry; x: number; row: number }[] = [];
+  const entryW = (e: LegendEntry) =>
+    (e.color ? SWATCH + SWATCH_GAP : 0) + width(e.label);
   let row = -1;
+  let total = 0;
+  for (const group of groups) total += group.length;
   for (const group of groups) {
     if (!group.length) continue;
     row += 1;
     let x = 0;
     for (const entry of group) {
-      const w = (entry.color ? SWATCH + SWATCH_GAP : 0) + width(entry.label);
+      const w = entryW(entry);
       if (x > 0 && x + w > maxWidth) {
         row += 1;
         x = 0;
       }
+      if (row >= maxRows) break;
       out.push({ entry, x, row });
       x += w + ENTRY_GAP;
+    }
+    if (row >= maxRows) break;
+  }
+  if (out.length < total) {
+    // Make room on the last row for the note, dropping entries from its end.
+    const last = Math.min(row, maxRows - 1);
+    const note = (n: number): LegendEntry => ({
+      label: `+${n} more`,
+      color: null,
+    });
+    for (;;) {
+      const tail = out[out.length - 1];
+      const end = tail && tail.row === last ? tail.x + entryW(tail.entry) : 0;
+      const x = end > 0 ? end + ENTRY_GAP : 0;
+      const n = total - out.length;
+      if (x + entryW(note(n)) <= maxWidth || !tail || tail.row !== last) {
+        out.push({ entry: note(n), x, row: last });
+        break;
+      }
+      out.pop();
     }
   }
   return out;
@@ -311,13 +345,21 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     (data.meta?.annotations as OncoplotAnnotation[]) ?? [];
   function classColors(): string[] {
     const given = data.meta?.classColors as string[] | undefined;
-    if (given && given.length) return given;
-    return classes().map((_, i) => OKABE_ITO[i % OKABE_ITO.length] as string);
+    if (given?.length) return given;
+    // "Multi-hit" is dark grey, and the other classes take the palette in
+    // turn, so it never borrows the colour of a real class.
+    let k = 0;
+    return classes().map((c) =>
+      c === MULTI_HIT
+        ? MULTI_HIT_COLOR
+        : (OKABE_ITO[k++ % OKABE_ITO.length] as string),
+    );
   }
   /**
    * Colors for each annotation strip. Without given colors, the strips use a
    * lighter palette than the alteration classes, and each strip continues it
-   * after the strips before, so neighbouring strips do not repeat colors.
+   * after the strips before. Strips with eight levels or fewer in total
+   * therefore share no color; past eight, the palette starts again.
    */
   function annPalettes(): string[][] {
     let next = 0;
@@ -364,7 +406,14 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     return measureCtx.measureText(s).width;
   }
   function legendLayout() {
-    return wrapLegend(legendGroups(), Math.max(1, width - 96 - 8), labelWidth);
+    // The legend gets at most a fifth of the height.
+    const maxRows = Math.max(1, Math.floor((height * 0.2) / LEGEND_ROW_H));
+    return wrapLegend(
+      legendGroups(),
+      Math.max(1, width - 96 - 8),
+      labelWidth,
+      maxRows,
+    );
   }
 
   // ---- pointer ----
@@ -753,8 +802,15 @@ function fmtPct(v: number): string {
   return v >= 10 ? String(Math.round(v)) : v.toFixed(1);
 }
 /** A count as a whole number, or with up to two decimals (float32 noise). */
+/**
+ * A count for the burden axis: whole numbers as they are, values of 100 or
+ * more rounded, and smaller ones to three significant digits, which drops
+ * float32 noise without rounding 0.004 to 0.
+ */
 function fmtCount(v: number): string {
-  return Number.isInteger(v) ? String(v) : String(Number(v.toFixed(2)));
+  if (Number.isInteger(v)) return String(v);
+  if (Math.abs(v) >= 100) return String(Math.round(v));
+  return String(Number(v.toPrecision(3)));
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>

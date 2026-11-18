@@ -45,11 +45,11 @@ to count unaltered samples of the cohort too.}
 \item{classes}{Character vector of alteration classes, which fixes both the
 legend order and the colour assignment. Defaults to the classes present.
 A gene and sample with two or more different classes is drawn as
-\code{"Multi-hit"}, which is added to the classes when it occurs.}
+\code{"Multi-hit"}, in dark grey, which is added to the classes when it
+occurs.}
 
 \item{class_colors}{Character vector of hex colours, one per entry of
-\code{classes}. \code{NULL} uses the component's categorical palette. When
-\code{"Multi-hit"} is added, it is drawn in dark grey.}
+\code{classes}. \code{NULL} uses the component's categorical palette.}
 
 \item{burden}{Numeric vector, one value per sample, for the top barplot.
 Defaults to the number of altered genes per sample.}

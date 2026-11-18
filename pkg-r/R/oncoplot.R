@@ -25,10 +25,10 @@
 #' @param classes Character vector of alteration classes, which fixes both the
 #'   legend order and the colour assignment. Defaults to the classes present.
 #'   A gene and sample with two or more different classes is drawn as
-#'   `"Multi-hit"`, which is added to the classes when it occurs.
+#'   `"Multi-hit"`, in dark grey, which is added to the classes when it
+#'   occurs.
 #' @param class_colors Character vector of hex colours, one per entry of
-#'   `classes`. `NULL` uses the component's categorical palette. When
-#'   `"Multi-hit"` is added, it is drawn in dark grey.
+#'   `classes`. `NULL` uses the component's categorical palette.
 #' @param burden Numeric vector, one value per sample, for the top barplot.
 #'   Defaults to the number of altered genes per sample.
 #' @param annotations Optional list of clinical strips. Each element is a list
@@ -173,6 +173,13 @@ oncoplot <- function(alterations,
       values <- a$values
       if (!is.null(names(values))) {
         # Named by sample: match to the columns, whatever order they are in.
+        dup <- unique(names(values)[duplicated(names(values))])
+        if (length(dup) > 0L) {
+          stop(sprintf(
+            "annotation '%s' has more than one value for sample(s): %s",
+            a$name, paste(utils::head(dup, 5), collapse = ", ")
+          ), call. = FALSE)
+        }
         missing <- setdiff(samples, names(values))
         if (length(missing) > 0L) {
           stop(sprintf(

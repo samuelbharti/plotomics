@@ -139,4 +139,29 @@ describe("oncoplot column helpers", () => {
     expect(items[1]?.x).toBe(13 + 48 + 14);
     expect(items[3]?.entry.label).toBe("Subtype:");
   });
+
+  it("caps the legend rows and ends the last row with a count of the rest", () => {
+    const width = (s: string) => s.length * 6;
+    const levels = Array.from({ length: 40 }, (_, i) => ({
+      label: `L${i}`,
+      color: "#a",
+    }));
+    const items = wrapLegend(
+      [[{ label: "Age:", color: null }, ...levels]],
+      150,
+      width,
+      2,
+    );
+    expect(Math.max(...items.map((i) => i.row))).toBe(1);
+    const last = items[items.length - 1];
+    const shown = items.length - 1;
+    expect(last?.entry.label).toBe(`+${41 - shown} more`);
+    expect(last?.entry.color).toBeNull();
+    // The note fits on the row.
+    expect((last?.x ?? 0) + width(last?.entry.label ?? "")).toBeLessThanOrEqual(
+      150,
+    );
+    // Without a cap every entry is laid out.
+    expect(wrapLegend([levels], 150, width)).toHaveLength(40);
+  });
 });

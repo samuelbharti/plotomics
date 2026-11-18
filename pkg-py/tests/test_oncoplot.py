@@ -233,3 +233,33 @@ def test_annotation_needs_sample_names():
     with pytest.raises(ValueError, match="no value for sample"):
         Oncoplot(make_data(),
                  annotations=[{"name": "stage", "values": {"S1": "I"}}])
+
+
+def test_series_indexed_by_row_number_is_read_by_position():
+    pd = pytest.importorskip("pandas")
+    clin = pd.DataFrame({"sample": ["S0", "S3", "S1", "S2"],
+                         "subtype": ["X", "Her2", "LumA", "Basal"]})
+    # Filtering leaves the row numbers 1, 2, 3, which name no sample.
+    keep = clin[clin["sample"] != "S0"]
+    w = Oncoplot(make_data(), samples=list(keep["sample"]),
+                 annotations=[{"name": "subtype", "values": keep["subtype"]}])
+    ann = w.data["meta"]["annotations"][0]
+    assert [ann["levels"][c] for c in ann["codes"]] == ["Her2", "LumA", "Basal"]
+
+
+def test_annotation_with_two_values_for_a_sample_fails():
+    pd = pytest.importorskip("pandas")
+    values = pd.Series(["a", "b", "c"], index=["S1", "S2", "S1"])
+    with pytest.raises(ValueError, match="more than one value"):
+        Oncoplot(make_data(),
+                 annotations=[{"name": "subtype", "values": values}])
+
+
+def test_multi_hit_without_given_colours_sends_no_colours():
+    d = make_data()
+    d = {k: [*v, extra] for (k, v), extra in
+         zip(d.items(), ["TP53", "S1", "Truncating"])}
+    w = Oncoplot(d)
+    # The browser draws Multi-hit in dark grey when no colours are sent.
+    assert w.data["meta"]["classes"][-1] == "Multi-hit"
+    assert "classColors" not in w.data["meta"]
