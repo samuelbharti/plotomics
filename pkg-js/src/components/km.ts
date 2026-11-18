@@ -74,7 +74,7 @@ export const defaultKmOptions: KmOptions = {
   showLegend: true,
   yFromZero: true,
   lineWidth: 2,
-  xLabel: "months",
+  xLabel: "time",
   yLabel: "overall survival",
   theme: {},
 };
@@ -82,8 +82,16 @@ export const defaultKmOptions: KmOptions = {
 const SVG_NS = "http://www.w3.org/2000/svg";
 /** Height of one row in the at-risk table. */
 const RISK_ROW_H = 16;
-/** Gap between the axis and the top of the risk table. */
-const RISK_GAP = 34;
+/**
+ * Gap between the axis and the first risk-table row: room for the tick
+ * labels (axis + 15), the x title (axis + 28) and the "number at risk"
+ * heading (axis + 44).
+ */
+const RISK_GAP = 58;
+/** Space between a risk-table name and the column of counts at time 0. */
+const RISK_LABEL_GAP = 18;
+/** Smallest left gutter, which fits the y tick labels. */
+const MIN_LEFT = 58;
 /** Length of a censoring tick, in pixels either side of the curve. */
 const CENSOR_TICK = 4;
 
@@ -114,11 +122,19 @@ export function layoutKm(
   height: number,
   nGroups: number,
   opts: Pick<KmOptions, "showRiskTable">,
+  /** Whether risk counts were given; without them no table is drawn. */
+  hasCounts = true,
+  /** Width in px of the longest stratum name in the table. */
+  labelWidth = 0,
 ): KmLayout {
-  const left = 58;
+  const showTable = opts.showRiskTable && nGroups > 0 && hasCounts;
+  // The stratum names sit left of the counts at time 0, so the gutter grows
+  // to fit the longest one.
+  const left = showTable
+    ? Math.max(MIN_LEFT, Math.ceil(labelWidth) + RISK_LABEL_GAP + 8)
+    : MIN_LEFT;
   const right = 16;
   const top = 14;
-  const showTable = opts.showRiskTable && nGroups > 0;
   // Room for the axis labels alone when there is no table.
   const riskH = showTable ? RISK_GAP + nGroups * RISK_ROW_H : 30;
   // Never let the table starve the curves: the panel keeps at least half the
@@ -165,8 +181,35 @@ export function stepPoints(
 }
 
 /**
+ * The rows of each group, ordered by time (ties keep their row order).
+ * Returns them in `groups` order, skipping absent groups. Rows of different
+ * groups may be interleaved, as in a table sorted by time overall.
+ */
+export function groupRows(
+  groupCol: ArrayLike<string>,
+  groups: readonly string[],
+  times: ArrayLike<number>,
+): { group: string; rows: number[] }[] {
+  const byGroup = new Map<string, number[]>();
+  for (const g of groups) byGroup.set(g, []);
+  for (let i = 0; i < groupCol.length; i += 1) {
+    byGroup.get(groupCol[i] as string)?.push(i);
+  }
+  const out: { group: string; rows: number[] }[] = [];
+  for (const g of groups) {
+    const rows = byGroup.get(g) ?? [];
+    if (!rows.length) continue;
+    // Array.prototype.sort is stable, so equal times keep their row order.
+    rows.sort((a, b) => (times[a] as number) - (times[b] as number));
+    out.push({ group: g, rows });
+  }
+  return out;
+}
+
+/**
  * Indices at which each group's points start and end, assuming a group's points
  * are contiguous. Returns them in `groups` order, skipping absent groups.
+ * The component uses {@link groupRows}, which does not need contiguous rows.
  */
 export function groupSlices(
   groupCol: ArrayLike<string>,
@@ -184,6 +227,24 @@ export function groupSlices(
     if (start >= 0) out.push({ group: g, start, end });
   }
   return out;
+}
+
+/**
+ * Format a time label with the decimals its tick step needs, so 12.5 reads
+ * "12.5" and not "13". Without a step, whole numbers print as they are and
+ * other values keep up to two decimals.
+ */
+export function formatTime(v: number, step = 0): string {
+  if (step > 0) {
+    for (let d = 0; d < 6; d += 1) {
+      const s = step * 10 ** d;
+      if (Math.abs(s - Math.round(s)) < 1e-6 * Math.max(1, s)) {
+        return v.toFixed(d);
+      }
+    }
+    return v.toFixed(6);
+  }
+  return Number.isInteger(v) ? String(v) : String(Number(v.toFixed(2)));
 }
 
 /** Round `max` up to a readable axis bound and produce evenly spaced ticks. */
@@ -241,13 +302,33 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     if (given && given.length) return given;
     return groups().map((_, i) => OKABE_ITO[i % OKABE_ITO.length] as string);
   }
-  function slices() {
+  /** Each stratum's rows, in time order. */
+  function strata(): { group: string; rows: number[] }[] {
     const gc = groupCol();
-    if (!gc.length)
-      return [
-        { group: groups()[0] ?? "all", start: 0, end: times().length - 1 },
-      ];
-    return groupSlices(gc, groups());
+    const t = times();
+    if (!gc.length) {
+      const rows = Array.from({ length: t.length }, (_, i) => i);
+      rows.sort((a, b) => (t[a] as number) - (t[b] as number));
+      return [{ group: groups()[0] ?? "all", rows }];
+    }
+    return groupRows(gc, groups(), t);
+  }
+  /**
+   * Where a stratum's curve ends: its last given point, or its last
+   * censoring tick when that comes later. A table of event times alone stops
+   * at the last event, while follow-up runs on to the last censored subject.
+   */
+  function curveEnd(group: string, lastTime: number): number {
+    const ct = data.meta?.censorTime as number[] | undefined;
+    const cg = data.meta?.censorGroup as string[] | undefined;
+    let end = lastTime;
+    if (ct) {
+      for (let i = 0; i < ct.length; i += 1) {
+        if (cg && cg[i] !== group) continue;
+        if ((ct[i] as number) > end) end = ct[i] as number;
+      }
+    }
+    return end;
   }
   function maxTime(): number {
     const t = times();
@@ -256,15 +337,36 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       if ((t[i] as number) > m) m = t[i] as number;
     const risk = data.meta?.riskTimes as number[] | undefined;
     if (risk) for (const r of risk) if (r > m) m = r;
+    const ct = data.meta?.censorTime as number[] | undefined;
+    if (ct) for (const c of ct) if (c > m) m = c;
     return m > 0 ? m : 1;
   }
   function yMin(): number {
     if (opts.yFromZero) return 0;
-    const s = survs();
     let m = 1;
-    for (let i = 0; i < s.length; i += 1)
-      if ((s[i] as number) < m) m = s[i] as number;
+    const scan = (col: ArrayLike<number> | undefined) => {
+      if (!col) return;
+      for (let i = 0; i < col.length; i += 1) {
+        const v = col[i] as number;
+        if (Number.isFinite(v) && v < m) m = v;
+      }
+    };
+    scan(survs());
+    // The band is drawn too, so its lower edge must fit on the axis.
+    if (opts.showCI) scan(lowers());
     return Math.max(0, Math.floor(m * 10) / 10 - 0.05);
+  }
+  /** Width of the widest stratum name in the risk table, in px. */
+  function riskLabelWidth(): number {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return 0;
+    ctx.font = `9px ${theme.fontFamily}`;
+    let w = 0;
+    for (const g of groups()) w = Math.max(w, ctx.measureText(g).width);
+    return w;
+  }
+  function hasRiskCounts(): boolean {
+    return Boolean(data.meta?.riskCounts && data.meta?.riskTimes);
   }
 
   // ---- scales ----
@@ -303,13 +405,16 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     const rows: string[] = [];
     const cols = groupColors();
     const gl = groups();
-    for (const sl of slices()) {
+    for (const sl of strata()) {
       let idx = -1;
-      for (let i = sl.start; i <= sl.end; i += 1) {
+      for (const i of sl.rows) {
         if ((tArr[i] as number) <= t) idx = i;
         else break;
       }
       if (idx < 0) continue;
+      // Past the end of the curve there is no estimate to show.
+      const last = sl.rows[sl.rows.length - 1] as number;
+      if (t > curveEnd(sl.group, tArr[last] as number)) continue;
       const gi = gl.indexOf(sl.group);
       const col = gi >= 0 ? (cols[gi] as string) : theme.foreground;
       rows.push(
@@ -322,7 +427,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       return;
     }
     tooltip.show(
-      `<b>${fmtTime(t)} ${esc(opts.xLabel)}</b><br/>${rows.join("<br/>")}`,
+      `<b>${formatTime(t)} ${esc(opts.xLabel)}</b><br/>${rows.join("<br/>")}`,
       lastPointer.x,
       lastPointer.y,
     );
@@ -351,7 +456,14 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     const ctx = canvas.getContext("2d");
     if (!ctx || !width || !height) return;
     const gl = groups();
-    layout = layoutKm(width, height, gl.length, opts);
+    layout = layoutKm(
+      width,
+      height,
+      gl.length,
+      opts,
+      hasRiskCounts(),
+      riskLabelWidth(),
+    );
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, width, height);
@@ -366,16 +478,44 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     const cols = groupColors();
     const lower = lowers();
     const upper = uppers();
+    const sArr = survs();
+
+    // Nothing is drawn outside the plot panel, so a band or a curve that
+    // reaches below the axis floor stops at the axis.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(
+      layout.left,
+      layout.top,
+      width - layout.left - layout.right,
+      layout.plotH,
+    );
+    ctx.clip();
+
+    // Each stratum's points in time order, with a flat step added out to the
+    // end of follow-up when it runs past the last given point.
+    const series = strata().map((sl) => {
+      const rows = sl.rows;
+      const t = pick(tArr, rows);
+      const end = curveEnd(sl.group, t[t.length - 1] as number);
+      const extend = <T>(v: T[]) =>
+        end > (t[t.length - 1] as number) ? [...v, v[v.length - 1] as T] : v;
+      return {
+        group: sl.group,
+        t: extend(t).map((x, k) => (k === t.length ? end : x)),
+        s: extend(pick(sArr, rows)),
+        lo: lower ? extend(pick(lower, rows)) : null,
+        up: upper ? extend(pick(upper, rows)) : null,
+      };
+    });
 
     // Confidence bands first, so the curves read on top of them.
     if (opts.showCI && lower && upper) {
-      for (const sl of slices()) {
-        const gi = gl.indexOf(sl.group);
+      for (const sr of series) {
+        const gi = gl.indexOf(sr.group);
         const col = gi >= 0 ? (cols[gi] as string) : theme.foreground;
-        const n = sl.end - sl.start + 1;
-        const t = sliceOf(tArr, sl.start, n);
-        const up = stepPoints(t, sliceOf(upper, sl.start, n));
-        const dn = stepPoints(t, sliceOf(lower, sl.start, n));
+        const up = stepPoints(sr.t, sr.up as number[]);
+        const dn = stepPoints(sr.t, sr.lo as number[]);
         if (!up.length || !dn.length) continue;
         ctx.beginPath();
         ctx.moveTo(sx(up[0] as number, tmax), sy(up[1] as number, lo));
@@ -396,14 +536,10 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     // Curves.
     ctx.lineWidth = opts.lineWidth;
     ctx.lineJoin = "round";
-    for (const sl of slices()) {
-      const gi = gl.indexOf(sl.group);
+    for (const sr of series) {
+      const gi = gl.indexOf(sr.group);
       ctx.strokeStyle = gi >= 0 ? (cols[gi] as string) : theme.foreground;
-      const n = sl.end - sl.start + 1;
-      const pts = stepPoints(
-        sliceOf(tArr, sl.start, n),
-        sliceOf(survs(), sl.start, n),
-      );
+      const pts = stepPoints(sr.t, sr.s);
       if (!pts.length) continue;
       ctx.beginPath();
       ctx.moveTo(sx(pts[0] as number, tmax), sy(pts[1] as number, lo));
@@ -430,6 +566,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
         ctx.stroke();
       }
     }
+    ctx.restore();
 
     renderOverlay();
   }
@@ -482,12 +619,24 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     );
     const ticks =
       (data.meta?.riskTimes as number[] | undefined) ?? timeTicks(tmax);
+    // Decimals come from the tick step, so 12.5 reads "12.5", not "13".
+    const step =
+      ticks.length > 1
+        ? Math.abs((ticks[1] as number) - (ticks[0] as number))
+        : 0;
     for (const t of ticks) {
       if (t > tmax) continue;
       const x = sx(t, tmax);
       svg.appendChild(line(x, layout.axisY, x, layout.axisY + 4, theme.axis));
       svg.appendChild(
-        text(x, layout.axisY + 15, fmtTime(t), theme.muted, "middle", 9),
+        text(
+          x,
+          layout.axisY + 15,
+          formatTime(t, step),
+          theme.muted,
+          "middle",
+          9,
+        ),
       );
     }
     svg.appendChild(
@@ -508,7 +657,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       svg.appendChild(
         text(
           layout.left,
-          layout.riskTop - 12,
+          layout.riskTop - 14,
           "number at risk",
           theme.foreground,
           "start",
@@ -517,9 +666,11 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       );
       for (let g = 0; g < gl.length; g += 1) {
         const y = layout.riskTop + g * layout.riskRowH;
+        // The names end short of the counts at time 0, which are centred on
+        // the left edge of the panel.
         svg.appendChild(
           text(
-            layout.left - 8,
+            layout.left - RISK_LABEL_GAP,
             y + 3,
             gl[g] ?? "",
             cols[g] ?? theme.foreground,
@@ -675,14 +826,9 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
 };
 
 // ---- small utilities ----
-/** A window of a column as a plain array, so helpers stay array-agnostic. */
-function sliceOf(col: ArrayLike<number>, start: number, n: number): number[] {
-  const out = new Array<number>(n);
-  for (let i = 0; i < n; i += 1) out[i] = col[start + i] as number;
-  return out;
-}
-function fmtTime(v: number): string {
-  return Number.isInteger(v) ? String(v) : v.toFixed(v < 10 ? 1 : 0);
+/** The values of a column at the given rows, as a plain array. */
+function pick(col: ArrayLike<number>, rows: readonly number[]): number[] {
+  return rows.map((r) => col[r] as number);
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
