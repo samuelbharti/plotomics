@@ -191,9 +191,11 @@ export function timeTicks(max: number, target = 6): number[] {
   if (!isFinite(max) || max <= 0) return [0];
   const raw = max / target;
   const mag = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? mag * 10;
+  const step =
+    [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? mag * 10;
   const out: number[] = [];
-  for (let t = 0; t <= max + step * 0.001; t += step) out.push(Number(t.toFixed(6)));
+  for (let t = 0; t <= max + step * 0.001; t += step)
+    out.push(Number(t.toFixed(6)));
   return out;
 }
 
@@ -214,7 +216,8 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -240,13 +243,17 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   }
   function slices() {
     const gc = groupCol();
-    if (!gc.length) return [{ group: groups()[0] ?? "all", start: 0, end: times().length - 1 }];
+    if (!gc.length)
+      return [
+        { group: groups()[0] ?? "all", start: 0, end: times().length - 1 },
+      ];
     return groupSlices(gc, groups());
   }
   function maxTime(): number {
     const t = times();
     let m = 0;
-    for (let i = 0; i < t.length; i += 1) if ((t[i] as number) > m) m = t[i] as number;
+    for (let i = 0; i < t.length; i += 1)
+      if ((t[i] as number) > m) m = t[i] as number;
     const risk = data.meta?.riskTimes as number[] | undefined;
     if (risk) for (const r of risk) if (r > m) m = r;
     return m > 0 ? m : 1;
@@ -255,7 +262,8 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     if (opts.yFromZero) return 0;
     const s = survs();
     let m = 1;
-    for (let i = 0; i < s.length; i += 1) if ((s[i] as number) < m) m = s[i] as number;
+    for (let i = 0; i < s.length; i += 1)
+      if ((s[i] as number) < m) m = s[i] as number;
     return Math.max(0, Math.floor(m * 10) / 10 - 0.05);
   }
 
@@ -275,13 +283,19 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     const rect = el.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    if (my < layout.top || my > layout.axisY || mx < layout.left || mx > width - layout.right) {
+    if (
+      my < layout.top ||
+      my > layout.axisY ||
+      mx < layout.left ||
+      mx > width - layout.right
+    ) {
       tooltip.hide();
       return;
     }
     const tmax = maxTime();
     const lo = yMin();
-    const t = ((mx - layout.left) / (width - layout.left - layout.right)) * tmax;
+    const t =
+      ((mx - layout.left) / (width - layout.left - layout.right)) * tmax;
     const tArr = times();
     const sArr = survs();
     // Per stratum, the estimate in force at time t is the last step at or
@@ -386,7 +400,10 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       const gi = gl.indexOf(sl.group);
       ctx.strokeStyle = gi >= 0 ? (cols[gi] as string) : theme.foreground;
       const n = sl.end - sl.start + 1;
-      const pts = stepPoints(sliceOf(tArr, sl.start, n), sliceOf(survs(), sl.start, n));
+      const pts = stepPoints(
+        sliceOf(tArr, sl.start, n),
+        sliceOf(survs(), sl.start, n),
+      );
       if (!pts.length) continue;
       ctx.beginPath();
       ctx.moveTo(sx(pts[0] as number, tmax), sy(pts[1] as number, lo));
@@ -429,25 +446,59 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     for (let k = 0; k <= 4; k += 1) {
       const v = lo + (k / 4) * (1 - lo);
       const y = sy(v, lo);
-      svg.appendChild(line(layout.left, y, width - layout.right, y, theme.grid));
-      svg.appendChild(text(layout.left - 8, y + 3, `${Math.round(v * 100)}%`, theme.muted, "end", 9));
+      svg.appendChild(
+        line(layout.left, y, width - layout.right, y, theme.grid),
+      );
+      svg.appendChild(
+        text(
+          layout.left - 8,
+          y + 3,
+          `${Math.round(v * 100)}%`,
+          theme.muted,
+          "end",
+          9,
+        ),
+      );
     }
     svg.appendChild(
-      rotatedText(14, layout.top + layout.plotH / 2, opts.yLabel, theme.muted, 10),
+      rotatedText(
+        14,
+        layout.top + layout.plotH / 2,
+        opts.yLabel,
+        theme.muted,
+        10,
+      ),
     );
 
     // x axis.
-    svg.appendChild(line(layout.left, layout.axisY, width - layout.right, layout.axisY, theme.axis));
-    const ticks = (data.meta?.riskTimes as number[] | undefined) ?? timeTicks(tmax);
+    svg.appendChild(
+      line(
+        layout.left,
+        layout.axisY,
+        width - layout.right,
+        layout.axisY,
+        theme.axis,
+      ),
+    );
+    const ticks =
+      (data.meta?.riskTimes as number[] | undefined) ?? timeTicks(tmax);
     for (const t of ticks) {
       if (t > tmax) continue;
       const x = sx(t, tmax);
       svg.appendChild(line(x, layout.axisY, x, layout.axisY + 4, theme.axis));
-      svg.appendChild(text(x, layout.axisY + 15, fmtTime(t), theme.muted, "middle", 9));
+      svg.appendChild(
+        text(x, layout.axisY + 15, fmtTime(t), theme.muted, "middle", 9),
+      );
     }
     svg.appendChild(
-      text((layout.left + width - layout.right) / 2, layout.axisY + 28, opts.xLabel,
-        theme.muted, "middle", 10),
+      text(
+        (layout.left + width - layout.right) / 2,
+        layout.axisY + 28,
+        opts.xLabel,
+        theme.muted,
+        "middle",
+        10,
+      ),
     );
 
     // Number at risk, one row per stratum on the same time grid as the ticks.
@@ -455,12 +506,26 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     const riskTimes = data.meta?.riskTimes as number[] | undefined;
     if (opts.showRiskTable && counts && riskTimes) {
       svg.appendChild(
-        text(layout.left, layout.riskTop - 12, "number at risk", theme.foreground, "start", 10),
+        text(
+          layout.left,
+          layout.riskTop - 12,
+          "number at risk",
+          theme.foreground,
+          "start",
+          10,
+        ),
       );
       for (let g = 0; g < gl.length; g += 1) {
         const y = layout.riskTop + g * layout.riskRowH;
         svg.appendChild(
-          text(layout.left - 8, y + 3, gl[g] ?? "", cols[g] ?? theme.foreground, "end", 9),
+          text(
+            layout.left - 8,
+            y + 3,
+            gl[g] ?? "",
+            cols[g] ?? theme.foreground,
+            "end",
+            9,
+          ),
         );
         for (let j = 0; j < riskTimes.length; j += 1) {
           const t = riskTimes[j] as number;
@@ -487,7 +552,9 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
         sw.setAttribute("height", "8");
         sw.setAttribute("fill", cols[g] ?? theme.foreground);
         svg.appendChild(sw);
-        svg.appendChild(text(x - 12, y, gl[g] ?? "", theme.foreground, "end", 10));
+        svg.appendChild(
+          text(x - 12, y, gl[g] ?? "", theme.foreground, "end", 10),
+        );
         y += 15;
       }
     }
@@ -497,13 +564,27 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     const pLabel = data.meta?.pLabel as string | undefined;
     if (pLabel) {
       svg.appendChild(
-        text(layout.left + 10, layout.axisY - 10, pLabel, theme.foreground, "start", 11),
+        text(
+          layout.left + 10,
+          layout.axisY - 10,
+          pLabel,
+          theme.foreground,
+          "start",
+          11,
+        ),
       );
     }
   }
 
   // ---- SVG helpers ----
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 10) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 10,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -514,12 +595,24 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     t.textContent = content;
     return t;
   }
-  function rotatedText(x: number, y: number, content: string, fill: string, size: number) {
+  function rotatedText(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    size: number,
+  ) {
     const t = text(x, y, content, fill, "middle", size);
     t.setAttribute("transform", `rotate(-90 ${x} ${y})`);
     return t;
   }
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -593,7 +686,15 @@ function fmtTime(v: number): string {
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+    c === "&"
+      ? "&amp;"
+      : c === "<"
+        ? "&lt;"
+        : c === ">"
+          ? "&gt;"
+          : c === '"'
+            ? "&quot;"
+            : "&#39;",
   );
 }
 function mergeOptions(base: KmOptions, next?: Partial<KmOptions>): KmOptions {
