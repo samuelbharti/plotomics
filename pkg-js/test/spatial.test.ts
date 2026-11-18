@@ -23,12 +23,20 @@ describe("spatial fit transform", () => {
   });
 
   it("keeps the whole image inside the container", () => {
-    for (const [w, h] of [[300, 700], [1200, 200], [500, 500]]) {
+    for (const [w, h] of [
+      [300, 700],
+      [1200, 200],
+      [500, 500],
+    ]) {
       const f = fitTransform(w as number, h as number, 600, 450);
       expect(f.offsetX).toBeGreaterThanOrEqual(-1e-9);
       expect(f.offsetY).toBeGreaterThanOrEqual(-1e-9);
-      expect(f.offsetX + 600 * f.scale).toBeLessThanOrEqual((w as number) + 1e-9);
-      expect(f.offsetY + 450 * f.scale).toBeLessThanOrEqual((h as number) + 1e-9);
+      expect(f.offsetX + 600 * f.scale).toBeLessThanOrEqual(
+        (w as number) + 1e-9,
+      );
+      expect(f.offsetY + 450 * f.scale).toBeLessThanOrEqual(
+        (h as number) + 1e-9,
+      );
     }
   });
 
@@ -39,8 +47,16 @@ describe("spatial fit transform", () => {
   });
 
   it("degrades safely on zero-sized input", () => {
-    expect(fitTransform(0, 0, 600, 600)).toEqual({ scale: 1, offsetX: 0, offsetY: 0 });
-    expect(fitTransform(100, 100, 0, 0)).toEqual({ scale: 1, offsetX: 0, offsetY: 0 });
+    expect(fitTransform(0, 0, 600, 600)).toEqual({
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+    });
+    expect(fitTransform(100, 100, 0, 0)).toEqual({
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+    });
   });
 });
 

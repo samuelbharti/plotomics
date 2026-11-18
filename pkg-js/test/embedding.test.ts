@@ -27,7 +27,9 @@ describe("embedding helpers", () => {
   it("resolves color mode from the column type, honoring a forced mode", () => {
     expect(resolveColorMode(["cl1", "cl2"], "auto")).toBe("categorical");
     expect(resolveColorMode([0.1, 0.2], "auto")).toBe("continuous");
-    expect(resolveColorMode(new Float32Array([1, 2]), "auto")).toBe("continuous");
+    expect(resolveColorMode(new Float32Array([1, 2]), "auto")).toBe(
+      "continuous",
+    );
     // Force overrides detection.
     expect(resolveColorMode(["cl1"], "continuous")).toBe("continuous");
     expect(resolveColorMode([1, 2], "categorical")).toBe("categorical");
@@ -45,7 +47,9 @@ describe("embedding helpers", () => {
 
   it("honors an explicit category order", () => {
     const { indices, categories } = categoryToIndex(
-      ["b", "a", "b", "c", "a"], ["a", "b", "c"]);
+      ["b", "a", "b", "c", "a"],
+      ["a", "b", "c"],
+    );
     expect(categories).toEqual(["a", "b", "c"]);
     expect(Array.from(indices)).toEqual([1, 0, 1, 2, 0]);
   });
@@ -53,21 +57,28 @@ describe("embedding helpers", () => {
   it("keeps ordered categories that no point carries", () => {
     // The whole point of pinning an order: a category can vanish from the data
     // (filtered out, or a facet with none of it) without the colors shuffling.
-    const { indices, categories } = categoryToIndex(["c", "a"], ["a", "b", "c"]);
+    const { indices, categories } = categoryToIndex(
+      ["c", "a"],
+      ["a", "b", "c"],
+    );
     expect(categories).toEqual(["a", "b", "c"]);
     expect(Array.from(indices)).toEqual([2, 0]);
   });
 
   it("appends categories missing from the explicit order", () => {
     const { indices, categories } = categoryToIndex(
-      ["a", "z", "y", "z"], ["a", "b"]);
+      ["a", "z", "y", "z"],
+      ["a", "b"],
+    );
     expect(categories).toEqual(["a", "b", "z", "y"]);
     expect(Array.from(indices)).toEqual([0, 2, 3, 2]);
   });
 
   it("ignores duplicates in the explicit order", () => {
-    expect(categoryToIndex(["a"], ["a", "a", "b"]).categories)
-      .toEqual(["a", "b"]);
+    expect(categoryToIndex(["a"], ["a", "a", "b"]).categories).toEqual([
+      "a",
+      "b",
+    ]);
   });
 
   it("falls back to first-appearance order for a null/empty order", () => {
@@ -142,7 +153,13 @@ describe("equalAspectDomains", () => {
   });
 
   it("returns the inputs untouched while the box is still degenerate", () => {
-    expect(equalAspectDomains([0, 1], [0, 1], 0, 0)).toEqual([[0, 1], [0, 1]]);
-    expect(equalAspectDomains([0, 0], [0, 1], 100, 100)).toEqual([[0, 0], [0, 1]]);
+    expect(equalAspectDomains([0, 1], [0, 1], 0, 0)).toEqual([
+      [0, 1],
+      [0, 1],
+    ]);
+    expect(equalAspectDomains([0, 0], [0, 1], 100, 100)).toEqual([
+      [0, 0],
+      [0, 1],
+    ]);
   });
 });

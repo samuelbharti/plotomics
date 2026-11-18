@@ -113,7 +113,11 @@ export function fitTransform(
 }
 
 /** Spot radius in screen pixels, never below 1 so spots stay visible zoomed out. */
-export function spotRadius(diameter: number, scale: number, spotScale: number): number {
+export function spotRadius(
+  diameter: number,
+  scale: number,
+  spotScale: number,
+): number {
   return Math.max(1, (diameter * scale * spotScale) / 2);
 }
 
@@ -147,8 +151,14 @@ export function isCategorical(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createSpatial: PlotomicsFactory<SpatialOptions> = (el, initial) => {
-  let opts: SpatialOptions = mergeOptions(defaultSpatialOptions, initial.options);
+export const createSpatial: PlotomicsFactory<SpatialOptions> = (
+  el,
+  initial,
+) => {
+  let opts: SpatialOptions = mergeOptions(
+    defaultSpatialOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -162,7 +172,8 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (el, initial) => 
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -399,8 +410,14 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (el, initial) => 
       }
       if (legend.levels.length > shown.length) {
         svg.appendChild(
-          text(width - 114, y, `+${legend.levels.length - shown.length} more`,
-            theme.muted, "start", 10),
+          text(
+            width - 114,
+            y,
+            `+${legend.levels.length - shown.length} more`,
+            theme.muted,
+            "start",
+            10,
+          ),
         );
       }
     } else {
@@ -432,12 +449,23 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (el, initial) => 
       rect.setAttribute("height", String(barH));
       rect.setAttribute("fill", `url(#${id})`);
       svg.appendChild(rect);
-      svg.appendChild(text(x0 - 4, y0 + 8, fmt(legend.hi), theme.muted, "end", 9));
-      svg.appendChild(text(x0 - 4, y0 + barH, fmt(legend.lo), theme.muted, "end", 9));
+      svg.appendChild(
+        text(x0 - 4, y0 + 8, fmt(legend.hi), theme.muted, "end", 9),
+      );
+      svg.appendChild(
+        text(x0 - 4, y0 + barH, fmt(legend.lo), theme.muted, "end", 9),
+      );
     }
   }
 
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 10) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 10,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -516,10 +544,21 @@ function fmt(v: number): string {
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+    c === "&"
+      ? "&amp;"
+      : c === "<"
+        ? "&lt;"
+        : c === ">"
+          ? "&gt;"
+          : c === '"'
+            ? "&quot;"
+            : "&#39;",
   );
 }
-function mergeOptions(base: SpatialOptions, next?: Partial<SpatialOptions>): SpatialOptions {
+function mergeOptions(
+  base: SpatialOptions,
+  next?: Partial<SpatialOptions>,
+): SpatialOptions {
   if (!next) return { ...base };
   return { ...base, ...next, theme: { ...base.theme, ...(next.theme ?? {}) } };
 }

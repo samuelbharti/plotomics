@@ -141,7 +141,10 @@ const LEGEND_MAX = 20;
 
 /** Min/max of a numeric column with symmetric padding (fraction of range).
  * Degenerate/empty input widens to a unit range so scales stay well-defined. */
-export function paddedExtent(col: ArrayLike<number>, pad = 0.04): [number, number] {
+export function paddedExtent(
+  col: ArrayLike<number>,
+  pad = 0.04,
+): [number, number] {
   let min = Infinity;
   let max = -Infinity;
   const n = col.length;
@@ -308,8 +311,14 @@ type LegendState =
 // instance's gradient in document order (silent legend/point mismatch).
 let embeddingSeq = 0;
 
-export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial) => {
-  let opts: EmbeddingOptions = mergeOptions(defaultEmbeddingOptions, initial.options);
+export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
+  el,
+  initial,
+) => {
+  let opts: EmbeddingOptions = mergeOptions(
+    defaultEmbeddingOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -335,7 +344,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -398,7 +408,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     const label = str(cols.label, i) ?? `#${i}`;
     const parts = [`<b>${escapeHTML(label)}</b>`, `${fmt(x)}, ${fmt(y)}`];
     if (cols.color) {
-      if (legend?.mode === "continuous") parts.push(`value: ${fmt(num(cols.color, i))}`);
+      if (legend?.mode === "continuous")
+        parts.push(`value: ${fmt(num(cols.color, i))}`);
       else parts.push(escapeHTML(str(cols.color, i) ?? ""));
     }
     tooltip.show(parts.join("<br/>"), lastPointer.x, lastPointer.y);
@@ -411,7 +422,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
   const pxX = (v: number) =>
     margin().left + ((v - xDomain[0]) / (xDomain[1] - xDomain[0])) * innerW();
   const pxY = (v: number) =>
-    margin().top + (1 - (v - yDomain[0]) / (yDomain[1] - yDomain[0])) * innerH();
+    margin().top +
+    (1 - (v - yDomain[0]) / (yDomain[1] - yDomain[0])) * innerH();
 
   function layoutCanvas() {
     const m = margin();
@@ -470,7 +482,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     const py = toNdc(y, yBase);
 
     const color = cols.color;
-    const mode = color && color.length ? resolveColorMode(color, opts.colorMode) : null;
+    const mode =
+      color && color.length ? resolveColorMode(color, opts.colorMode) : null;
     let z: ArrayLike<number>;
     let zDataType: "categorical" | "continuous" = "categorical";
     let colorBy: "category" | "valueA" = "category";
@@ -478,7 +491,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
 
     if (mode === "categorical") {
       const { indices, categories } = categoryToIndex(
-        color as string[], opts.categories);
+        color as string[],
+        opts.categories,
+      );
       pointColor = categoricalPalette(categories.length);
       legend = { mode, categories, palette: pointColor };
       // Integer category indices in the z channel; pointColor[z] selects the hue.
@@ -542,7 +557,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
       const x = pxX(t);
       if (x < m.left - 1 || x > width - m.right + 1) continue;
       svg.appendChild(line(x, m.top, x, height - m.bottom, gridColor, 1));
-      svg.appendChild(text(x, height - m.bottom + 16, fmt(t), axisColor, "middle"));
+      svg.appendChild(
+        text(x, height - m.bottom + 16, fmt(t), axisColor, "middle"),
+      );
     }
     for (const t of niceTicks(yDomain)) {
       const y = pxY(t);
@@ -551,13 +568,36 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
       svg.appendChild(text(m.left - 8, y + 4, fmt(t), axisColor, "end"));
     }
     svg.appendChild(
-      line(m.left, height - m.bottom, width - m.right, height - m.bottom, axisColor, 1.5),
+      line(
+        m.left,
+        height - m.bottom,
+        width - m.right,
+        height - m.bottom,
+        axisColor,
+        1.5,
+      ),
     );
-    svg.appendChild(line(m.left, m.top, m.left, height - m.bottom, axisColor, 1.5));
     svg.appendChild(
-      text(m.left + innerW() / 2, height - 8, opts.xLabel, theme.foreground, "middle", 13),
+      line(m.left, m.top, m.left, height - m.bottom, axisColor, 1.5),
     );
-    const yTitle = text(16, m.top + innerH() / 2, opts.yLabel, theme.foreground, "middle", 13);
+    svg.appendChild(
+      text(
+        m.left + innerW() / 2,
+        height - 8,
+        opts.xLabel,
+        theme.foreground,
+        "middle",
+        13,
+      ),
+    );
+    const yTitle = text(
+      16,
+      m.top + innerH() / 2,
+      opts.yLabel,
+      theme.foreground,
+      "middle",
+      13,
+    );
     yTitle.setAttribute("transform", `rotate(-90 16 ${m.top + innerH() / 2})`);
     svg.appendChild(yTitle);
   }
@@ -589,7 +629,17 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
       const cy = y0 + pad + r * rowH;
       const isOverflow = overflow > 0 && r === labels.length - 1;
       if (!isOverflow) {
-        svg.appendChild(rect(x0 + pad, cy + 2, swatch, swatch, palette[r] ?? theme.muted, "none", 0));
+        svg.appendChild(
+          rect(
+            x0 + pad,
+            cy + 2,
+            swatch,
+            swatch,
+            palette[r] ?? theme.muted,
+            "none",
+            0,
+          ),
+        );
       }
       svg.appendChild(
         text(
@@ -633,13 +683,40 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     svg.appendChild(legendBg(x0 - 6, y0 - 8, cbW + 52, cbH + 16));
     svg.appendChild(rect(x0, y0, cbW, cbH, `url(#${gradId})`, theme.axis, 1));
     const mid = (domain[0] + domain[1]) / 2;
-    svg.appendChild(text(x0 + cbW + 5, y0 + 4, fmt(domain[1]), theme.foreground, "start", 10));
-    svg.appendChild(text(x0 + cbW + 5, y0 + cbH / 2 + 3, fmt(mid), theme.foreground, "start", 10));
-    svg.appendChild(text(x0 + cbW + 5, y0 + cbH, fmt(domain[0]), theme.foreground, "start", 10));
+    svg.appendChild(
+      text(x0 + cbW + 5, y0 + 4, fmt(domain[1]), theme.foreground, "start", 10),
+    );
+    svg.appendChild(
+      text(
+        x0 + cbW + 5,
+        y0 + cbH / 2 + 3,
+        fmt(mid),
+        theme.foreground,
+        "start",
+        10,
+      ),
+    );
+    svg.appendChild(
+      text(
+        x0 + cbW + 5,
+        y0 + cbH,
+        fmt(domain[0]),
+        theme.foreground,
+        "start",
+        10,
+      ),
+    );
   }
 
   // ---- SVG element helpers ----
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string, w: number) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+    w: number,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -674,7 +751,14 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     r.setAttribute("rx", "4");
     return r;
   }
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 11) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 11,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -802,7 +886,10 @@ function escapeHTML(s: string): string {
             : "&#39;",
   );
 }
-function mergeOptions(base: EmbeddingOptions, next?: Partial<EmbeddingOptions>): EmbeddingOptions {
+function mergeOptions(
+  base: EmbeddingOptions,
+  next?: Partial<EmbeddingOptions>,
+): EmbeddingOptions {
   if (!next) return { ...base };
   return {
     ...base,
