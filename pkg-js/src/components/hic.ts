@@ -26,6 +26,8 @@ import {
   type PlotomicsInstance,
   type PlotomicsTheme,
   resolveTheme,
+  textSizes,
+  textWidth,
   createTooltip,
   type Tooltip,
   measure,
@@ -76,6 +78,7 @@ export const defaultHicOptions: HicOptions = {
   theme: {},
 };
 
+/** Margins at the least; the text of the axes and colour bar can widen them. */
 const MARGIN = { top: 16, right: 96, bottom: 46, left: 60 };
 const SVG_NS = "http://www.w3.org/2000/svg";
 const COLORBAR_W = 14;
@@ -390,6 +393,7 @@ interface Level {
 export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   let opts: HicOptions = mergeOptions(defaultHicOptions, initial.options);
   let theme = resolveTheme(opts.theme);
+  let sizes = textSizes(theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   // Matrix state.
@@ -599,13 +603,61 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     render();
   }
 
+  // ---- text and margins ----
+  const tw = (s: string, size: number) => textWidth(s, size, theme.fontFamily);
+  const axisTitle = () =>
+    opts.label || (data.meta?.chrom ? String(data.meta.chrom) : "");
+  const colorbarTitle = () =>
+    opts.transform === "log" ? "contacts (log)" : "contacts";
+  /** The colour bar's labels: the top and the bottom of the scale. */
+  const colorbarTicks = () => [
+    fmtVal(vmaxResolved),
+    fmtVal(opts.transform === "log" ? Math.max(0, opts.vmin) : opts.vmin),
+  ];
+  /**
+   * Width of the widest tick label a view can show: the last coordinate, at
+   * the finest tick step a zoom reaches. It does not change on pan or zoom,
+   * so neither does the plot.
+   */
+  function widestTick(): number {
+    if (n === 0) return 0;
+    if (binSize <= 1) return tw(String(n), sizes.label);
+    const fine = tickStep(0, Math.min(MIN_VIEW_BINS, n), 6, 0) * binSize;
+    return tw(formatCoord(n * binSize, fine), sizes.label);
+  }
+  const margin = { ...MARGIN };
+  /**
+   * Widen the margins for the text: the left one for the tick labels, 8 px
+   * from the plot, with the axis title upright left of them; the bottom one
+   * for the tick labels and the axis title under them; the right one for the
+   * colour bar, its labels and its title, upright right of them.
+   */
+  function fitMargins() {
+    const { label, axisTitle: titleSize } = sizes;
+    const titled = axisTitle() !== "";
+    margin.left = Math.max(
+      MARGIN.left,
+      Math.ceil(widestTick() + 8 + (titled ? 1.4 * titleSize + 6 : 2)),
+    );
+    margin.bottom = Math.max(
+      MARGIN.bottom,
+      Math.ceil(7 + 1.3 * label + (titled ? 8 + 1.15 * titleSize : 0) + 2),
+    );
+    let valueW = 0;
+    for (const t of colorbarTicks()) valueW = Math.max(valueW, tw(t, label));
+    margin.right = Math.max(
+      MARGIN.right,
+      Math.ceil(22 + COLORBAR_W + 4 + valueW + 4 + 1.4 * titleSize + 2),
+    );
+  }
+
   // ---- pixel <-> bin mapping for the plot region ----
-  const innerW = () => Math.max(1, width - MARGIN.left - MARGIN.right);
-  const innerH = () => Math.max(1, height - MARGIN.top - MARGIN.bottom);
+  const innerW = () => Math.max(1, width - margin.left - margin.right);
+  const innerH = () => Math.max(1, height - margin.top - margin.bottom);
   // Square plot area (Hi-C maps are square); center within the inner box.
   const plotSize = () => Math.max(1, Math.min(innerW(), innerH()));
-  const plotLeft = () => MARGIN.left + (innerW() - plotSize()) / 2;
-  const plotTop = () => MARGIN.top + (innerH() - plotSize()) / 2;
+  const plotLeft = () => margin.left + (innerW() - plotSize()) / 2;
+  const plotTop = () => margin.top + (innerH() - plotSize()) / 2;
 
   function binToPx(b: number): number {
     return plotLeft() + ((b - viewLo) / (viewHi - viewLo)) * plotSize();
@@ -628,6 +680,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
 
   function render() {
     initGL();
+    fitMargins();
     drawMatrix();
     renderOverlay();
   }
@@ -696,6 +749,9 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     const left = plotLeft();
     const top = plotTop();
     const size = plotSize();
+    const { label: labelSize, axisTitle: titleSize } = sizes;
+    // Baseline of the bottom tick labels: under the 5 px ticks, with a gap.
+    const tickY = top + size + 7 + labelSize;
 
     // Plot frame.
     svg.appendChild(rectStroke(left, top, size, size, ax, 1.5));
@@ -703,33 +759,56 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     if (n > 0) {
       // Bin-index axes tick whole bins only; genomic axes may tick inside a bin.
       const minStep = binSize > 1 ? 0 : 1;
-      const stepBp = tickStep(viewLo, viewHi, 6, minStep) * binSize;
-      for (const t of axisTicks(viewLo, viewHi, 6, minStep)) {
-        if (t < viewLo - 1e-6 || t > viewHi + 1e-6) continue;
-        const label =
+      // Fewer ticks when the labels are wider than the gaps between them.
+      let ticks: number[] = [];
+      let labels: string[] = [];
+      for (let target = 6; target >= 2; target -= 1) {
+        const step = tickStep(viewLo, viewHi, target, minStep);
+        const stepBp = step * binSize;
+        ticks = axisTicks(viewLo, viewHi, target, minStep).filter(
+          (t) => t >= viewLo - 1e-6 && t <= viewHi + 1e-6,
+        );
+        labels = ticks.map((t) =>
           binSize > 1
             ? formatCoord(t * binSize, stepBp)
-            : String(Math.round(t));
+            : String(Math.round(t)),
+        );
+        let widest = 0;
+        for (const s of labels) widest = Math.max(widest, tw(s, labelSize));
+        if ((step / (viewHi - viewLo)) * size >= widest + 8) break;
+      }
+      for (let i = 0; i < ticks.length; i += 1) {
+        const t = ticks[i] as number;
+        const label = labels[i] as string;
         // bottom axis
         const x = binToPx(t);
         svg.appendChild(line(x, top + size, x, top + size + 5, ax, 1));
-        svg.appendChild(text(x, top + size + 18, label, ax, "middle"));
+        svg.appendChild(text(x, tickY, label, ax, "middle", labelSize));
         // left axis
         const y = top + ((t - viewLo) / (viewHi - viewLo)) * size;
         svg.appendChild(line(left - 5, y, left, y, ax, 1));
-        svg.appendChild(text(left - 8, y + 4, label, ax, "end"));
+        svg.appendChild(
+          text(left - 8, y + 0.35 * labelSize, label, ax, "end", labelSize),
+        );
       }
     }
 
-    // Axis titles.
-    const title =
-      opts.label || (data.meta?.chrom ? String(data.meta.chrom) : "");
+    // Axis titles, under the bottom tick labels and upright at the left edge.
+    const title = axisTitle();
     if (title) {
       svg.appendChild(
-        text(left + size / 2, top + size + 40, title, fg, "middle", 13),
+        text(
+          left + size / 2,
+          tickY + 0.3 * labelSize + 8 + 0.85 * titleSize,
+          title,
+          fg,
+          "middle",
+          titleSize,
+        ),
       );
-      const yTitle = text(16, top + size / 2, title, fg, "middle", 13);
-      yTitle.setAttribute("transform", `rotate(-90 16 ${top + size / 2})`);
+      const tx = 2 + 1.1 * titleSize;
+      const yTitle = text(tx, top + size / 2, title, fg, "middle", titleSize);
+      yTitle.setAttribute("transform", `rotate(-90 ${tx} ${top + size / 2})`);
       svg.appendChild(yTitle);
     }
 
@@ -770,38 +849,26 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     svg.appendChild(bar);
 
     // vmin at bottom, vmax at top.
+    const { label, axisTitle: titleSize } = sizes;
+    const [hiTick, loTick] = colorbarTicks() as [string, string];
+    const vx = x + COLORBAR_W + 4;
     svg.appendChild(
-      text(
-        x + COLORBAR_W + 4,
-        top + 8,
-        fmtVal(vmaxResolved),
-        theme.axis,
-        "start",
-        10,
-      ),
+      text(vx, top + 0.75 * label, hiTick, theme.axis, "start", label),
     );
-    svg.appendChild(
-      text(
-        x + COLORBAR_W + 4,
-        top + h,
-        fmtVal(opts.transform === "log" ? Math.max(0, opts.vmin) : opts.vmin),
-        theme.axis,
-        "start",
-        10,
-      ),
-    );
+    svg.appendChild(text(vx, top + h, loTick, theme.axis, "start", label));
+    // The title is turned to read downward, so its letters stand right of
+    // its baseline; it starts 4 px right of the wider label.
+    const valueW = Math.max(tw(hiTick, label), tw(loTick, label));
+    const tx = vx + valueW + 4 + 0.3 * titleSize;
     const cbTitle = text(
-      x + COLORBAR_W + 22,
+      tx,
       top + h / 2,
-      opts.transform === "log" ? "contacts (log)" : "contacts",
+      colorbarTitle(),
       theme.foreground,
       "middle",
-      11,
+      titleSize,
     );
-    cbTitle.setAttribute(
-      "transform",
-      `rotate(90 ${x + COLORBAR_W + 22} ${top + h / 2})`,
-    );
+    cbTitle.setAttribute("transform", `rotate(90 ${tx} ${top + h / 2})`);
     svg.appendChild(cbTitle);
   }
 
@@ -952,7 +1019,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     content: string,
     fill: string,
     anchor: string,
-    size = 11,
+    size: number,
   ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
@@ -981,6 +1048,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       const prev = opts;
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      sizes = textSizes(theme);
       if (regl && cmapTex && opts.colormap !== prev.colormap) {
         cmapTex.subimage({
           data: colormapLUT(opts.colormap),

@@ -33,8 +33,12 @@ import {
   type PlotomicsInstance,
   type PlotomicsTheme,
   type RampName,
+  type TextSizes,
   ramp,
   resolveTheme,
+  defaultTheme,
+  textSizes,
+  textWidth,
   createTooltip,
   type Tooltip,
   measure,
@@ -67,8 +71,19 @@ export const defaultDotplotOptions: DotplotOptions = {
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-/** Width reserved on the right for the two legends. */
-const LEGEND_W = 96;
+/** Gap between the grid and the legends. */
+const LEGEND_GAP = 18;
+/**
+ * Right gutter for the legends: it may always grow to this width, and has it
+ * when the legends were not measured.
+ */
+const LEGEND_RIGHT = 104;
+/** Bounds of the left gutter; the upper one is for the default text size. */
+const MIN_LEFT = 52;
+const MAX_LEFT = 150;
+/** The largest share of the widget's width or height that a gutter takes. */
+const MAX_GUTTER_SHARE = 0.35;
+const DEFAULT_SIZES = textSizes(defaultTheme);
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/dotplot.test.ts)
@@ -85,9 +100,24 @@ export interface DotplotLayout {
   bottom: number;
 }
 
+/** Widths in px of the text that sets the gutters of {@link layoutDotplot}. */
+export interface DotplotText {
+  /** Text sizes of the plot; the default theme's when absent. */
+  sizes?: TextSizes;
+  /** The longest row label. */
+  rowLabel?: number;
+  /** The longest column label. */
+  colLabel?: number;
+  /** The widest line of the two legends. */
+  legend?: number;
+}
+
 /**
- * Frame the grid. The left gutter scales with the longest row label so gene
- * names are never clipped, and the right gutter holds the legends.
+ * Frame the grid. The left gutter takes the longest row label, the bottom
+ * gutter the longest column label turned 45 degrees, and the right gutter
+ * the legends, all measured at the theme's text size, so the labels are not
+ * clipped. A gutter takes at most a share of the widget; the plot cuts a
+ * longer label to fit.
  */
 export function layoutDotplot(
   width: number,
@@ -95,12 +125,41 @@ export function layoutDotplot(
   nGenes: number,
   nClusters: number,
   opts: Pick<DotplotOptions, "showLegend">,
-  longestLabel = 8,
+  text: DotplotText = {},
 ): DotplotLayout {
-  const left = Math.min(150, Math.max(52, longestLabel * 6.4 + 12));
-  const right = (opts.showLegend ? LEGEND_W : 12) + 8;
+  const size = (text.sizes ?? DEFAULT_SIZES).label;
+  // Eight characters of a label, for a width that was not measured.
+  const guess = 8 * 0.58 * size;
+  const right = opts.showLegend
+    ? Math.min(
+        LEGEND_GAP + (text.legend ?? LEGEND_RIGHT - LEGEND_GAP - 8) + 8,
+        Math.max(LEGEND_RIGHT, Math.floor(width * MAX_GUTTER_SHARE)),
+      )
+    : 20;
   const top = 12;
-  const bottom = 76;
+  const colLabel = text.colLabel ?? guess;
+  const bottom = Math.min(
+    Math.ceil((colLabel + 0.3 * size) * Math.SQRT1_2) + 12,
+    Math.floor(height * MAX_GUTTER_SHARE),
+  );
+  const maxLeft = Math.min(
+    (MAX_LEFT * size) / DEFAULT_SIZES.label,
+    Math.floor(width * MAX_GUTTER_SHARE),
+  );
+  let left = Math.min(
+    Math.max(MIN_LEFT, (text.rowLabel ?? guess) + 12),
+    Math.max(MIN_LEFT, maxLeft),
+  );
+  // The first column label runs down and to the left of its column; widen
+  // the gutter until that label stays inside the widget.
+  if (nClusters > 0) {
+    const reach =
+      (Math.min(colLabel, colLabelRoom(bottom, size)) + 1.1 * size) *
+        Math.SQRT1_2 +
+      2;
+    const half = 1 / (2 * nClusters);
+    left = Math.max(left, (reach - (width - right) * half) / (1 - half));
+  }
   const plotW = Math.max(1, width - left - right);
   const plotH = Math.max(1, height - top - bottom);
   return {
@@ -112,6 +171,14 @@ export function layoutDotplot(
     plotH,
     bottom,
   };
+}
+
+/**
+ * Length in px a column label may take, turned 45 degrees under the grid in
+ * a gutter `bottom` px tall, at `size` px.
+ */
+function colLabelRoom(bottom: number, size: number): number {
+  return Math.max(0, (bottom - 12) * Math.SQRT2 - 0.3 * size);
 }
 
 /**
@@ -171,11 +238,12 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     initial.options,
   );
   let theme = resolveTheme(opts.theme);
+  let sizes = textSizes(theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   let width = 0;
   let height = 0;
-  let layout = layoutDotplot(0, 0, 0, 0, opts);
+  let layout = layoutDotplot(0, 0, 0, 0, opts, { sizes });
 
   el.style.position = el.style.position || "relative";
   const canvas = document.createElement("canvas");
@@ -209,6 +277,50 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     const lo = Number.isFinite(given[0]) ? given[0] : auto[0];
     const hi = Number.isFinite(given[1]) ? given[1] : auto[1];
     return [lo, hi];
+  }
+  const valueTitle = () => (data.meta?.valueLabel as string) ?? "value";
+  const sizeTitle = () => (data.meta?.sizeLabel as string) ?? "% expressing";
+  /** Whether a drawn dot has no value, so the legend keys the open ring. */
+  function anyMissing(): boolean {
+    const val = valueCol();
+    const pct = pctCol();
+    for (let i = 0; i < val.length; i += 1) {
+      if (
+        !Number.isFinite(val[i] as number) &&
+        dotRadius(pct[i] as number, 1) > 0
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // ---- text ----
+  const tw = (s: string, size: number) => textWidth(s, size, theme.fontFamily);
+  /** `s` cut with an ellipsis to fit `maxW` px at `size` px. */
+  function fit(s: string, maxW: number, size: number): string {
+    if (tw(s, size) <= maxW) return s;
+    let lo = 0;
+    let hi = s.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (tw(`${s.slice(0, mid)}\u2026`, size) <= maxW) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo > 0 ? `${s.slice(0, lo)}\u2026` : "";
+  }
+  /** Width of the widest line of the two legends. */
+  function legendWidth(): number {
+    const { label, axisTitle } = sizes;
+    const [lo, hi] = domain();
+    const entry = opts.maxRadius * 2 + 8;
+    return Math.max(
+      tw(valueTitle(), axisTitle),
+      tw(sizeTitle(), axisTitle),
+      14 + Math.max(tw(fmt(hi), label), tw(fmt(lo), label)),
+      entry + tw("100%", label),
+      anyMissing() ? entry + tw("no value", label) : 0,
+    );
   }
 
   // ---- pointer ----
@@ -274,8 +386,14 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     if (!ctx || !width || !height) return;
     const g = genes();
     const c = clusters();
-    const longest = g.reduce((m, s) => Math.max(m, s.length), 4);
-    layout = layoutDotplot(width, height, g.length, c.length, opts, longest);
+    const longest = (labels: string[]) =>
+      labels.reduce((m, s) => Math.max(m, tw(s, sizes.label)), 0);
+    layout = layoutDotplot(width, height, g.length, c.length, opts, {
+      sizes,
+      rowLabel: longest(g),
+      colLabel: longest(c),
+      legend: opts.showLegend ? legendWidth() : 0,
+    });
 
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
@@ -346,42 +464,56 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
       }
     }
 
-    // Row labels, thinned when the rows are tighter than the type.
-    const rowStep = Math.max(1, Math.ceil(9 / layout.cellH));
+    // Row labels, thinned when the rows are tighter than the type, and cut
+    // to the gutter.
+    const { label, axisTitle } = sizes;
+    const rowStep = Math.max(1, Math.ceil(label / layout.cellH));
     for (let r = 0; r < g.length; r += rowStep) {
       svg.appendChild(
         text(
           layout.left - 7,
-          layout.top + (r + 0.5) * layout.cellH + 3,
-          g[r] ?? "",
+          layout.top + (r + 0.5) * layout.cellH + 0.35 * label,
+          fit(g[r] ?? "", layout.left - 9, label),
           theme.foreground,
           "end",
-          9,
+          label,
         ),
       );
     }
 
     // Column labels, rotated: group names are long and would collide flat.
+    const colRoom = colLabelRoom(layout.bottom, label);
     for (let k = 0; k < c.length; k += 1) {
       const x = layout.left + (k + 0.5) * layout.cellW;
       const y = layout.top + layout.plotH + 8;
-      const t = text(x, y, c[k] ?? "", theme.foreground, "end", 9);
+      const t = text(
+        x,
+        y,
+        fit(c[k] ?? "", colRoom, label),
+        theme.foreground,
+        "end",
+        label,
+      );
       t.setAttribute("transform", `rotate(-45 ${x} ${y})`);
       svg.appendChild(t);
     }
 
     if (!opts.showLegend) return;
-    const lx = layout.left + layout.plotW + 18;
+    const lx = layout.left + layout.plotW + LEGEND_GAP;
+    // Room for a legend line before the right edge of the widget.
+    const room = width - lx - 8;
 
-    // Colourbar, built from the same ramp the dots use.
+    // Colourbar, built from the same ramp the dots use, under its title.
     const paint = ramp(opts.colormap);
     const [lo, hi] = domain();
+    const titleY = layout.top + Math.round(0.8 * axisTitle);
+    const barTop = titleY + Math.round(0.3 * axisTitle) + 6;
     const barH = Math.min(120, layout.plotH * 0.4);
     const steps = 40;
     for (let i = 0; i < steps; i += 1) {
       const rect = document.createElementNS(SVG_NS, "rect");
       rect.setAttribute("x", String(lx));
-      rect.setAttribute("y", String(layout.top + 16 + (i / steps) * barH));
+      rect.setAttribute("y", String(barTop + (i / steps) * barH));
       rect.setAttribute("width", "10");
       rect.setAttribute("height", String(barH / steps + 0.6));
       // Top of the bar is the high end, which is how a colourbar reads.
@@ -391,18 +523,25 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     svg.appendChild(
       text(
         lx,
-        layout.top + 8,
-        (data.meta?.valueLabel as string) ?? "value",
+        titleY,
+        fit(valueTitle(), room, axisTitle),
         theme.muted,
         "start",
-        9,
+        axisTitle,
       ),
     );
     svg.appendChild(
-      text(lx + 14, layout.top + 22, fmt(hi), theme.muted, "start", 8),
+      text(
+        lx + 14,
+        barTop + 0.75 * label,
+        fmt(hi),
+        theme.muted,
+        "start",
+        label,
+      ),
     );
     svg.appendChild(
-      text(lx + 14, layout.top + 18 + barH, fmt(lo), theme.muted, "start", 8),
+      text(lx + 14, barTop + barH + 2, fmt(lo), theme.muted, "start", label),
     );
 
     // Size legend. Radii come from dotRadius, so the swatches are literally the
@@ -412,17 +551,20 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
       layout.cellW / 2 - 1,
       layout.cellH / 2 - 1,
     );
-    let sy = layout.top + barH + 52;
+    const sizeTitleY =
+      barTop + barH + 2 + Math.round(0.3 * label + 10 + 0.8 * axisTitle);
     svg.appendChild(
       text(
         lx,
-        sy - 12,
-        (data.meta?.sizeLabel as string) ?? "% expressing",
+        sizeTitleY,
+        fit(sizeTitle(), room, axisTitle),
         theme.muted,
         "start",
-        9,
+        axisTitle,
       ),
     );
+    let sy = sizeTitleY + Math.round(0.3 * axisTitle) + 2 + opts.maxRadius;
+    const entryStep = Math.max(opts.maxRadius * 2 + 6, 1.5 * label);
     for (const p of [100, 50, 25]) {
       const r = dotRadius(p, maxR);
       const circ = document.createElementNS(SVG_NS, "circle");
@@ -434,26 +576,18 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
       svg.appendChild(
         text(
           lx + opts.maxRadius * 2 + 8,
-          sy + 3,
+          sy + 0.35 * label,
           `${p}%`,
           theme.muted,
           "start",
-          8,
+          label,
         ),
       );
-      sy += Math.max(16, opts.maxRadius * 2 + 6);
+      sy += entryStep;
     }
 
     // An open ring marks a dot with no value, when there is one.
-    const val = valueCol();
-    const pct = pctCol();
-    let anyMissing = false;
-    for (let i = 0; i < val.length && !anyMissing; i += 1) {
-      anyMissing =
-        !Number.isFinite(val[i] as number) &&
-        dotRadius(pct[i] as number, 1) > 0;
-    }
-    if (anyMissing) {
+    if (anyMissing()) {
       const ring = document.createElementNS(SVG_NS, "circle");
       ring.setAttribute("cx", String(lx + opts.maxRadius));
       ring.setAttribute("cy", String(sy));
@@ -464,11 +598,11 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
       svg.appendChild(
         text(
           lx + opts.maxRadius * 2 + 8,
-          sy + 3,
+          sy + 0.35 * label,
           "no value",
           theme.muted,
           "start",
-          8,
+          label,
         ),
       );
     }
@@ -481,7 +615,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     content: string,
     fill: string,
     anchor: string,
-    size = 10,
+    size: number,
   ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
@@ -530,6 +664,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      sizes = textSizes(theme);
       render();
     },
     resize(w, h) {

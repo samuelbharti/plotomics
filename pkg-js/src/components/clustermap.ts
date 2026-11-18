@@ -28,7 +28,11 @@ import {
   type PlotomicsInstance,
   type PlotomicsTheme,
   type RampName,
+  type TextSizes,
   resolveTheme,
+  defaultTheme,
+  textSizes,
+  textWidth,
   ramp,
   viridis,
   rdbu,
@@ -97,16 +101,17 @@ export const defaultClustermapOptions: ClustermapOptions = {
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-// Fixed gutters around the heatmap. Dendrogram bands collapse to 0 when hidden
-// or when the axis is not clustered.
+// Gutters around the heatmap. Dendrogram bands collapse to 0 when hidden
+// or when the axis is not clustered. The label caps are for the default
+// text size and scale with it.
 const DENDRO = 60; // px band for a dendrogram
 const MAX_ROW_LABEL = 140; // widest the row-label gutter gets, in px
 const MAX_COL_LABEL = 120; // tallest the column-label band gets, in px
-const COLORBAR_W = 78; // px on the right for the colour bar and its labels
+const COLORBAR_W = 78; // px on the right for the colour bar, at the least
 const MAX_LABEL_SHARE = 0.3; // a label gutter takes at most this share
 const MIN_HEAT = 60; // a label gutter stays only if the heatmap keeps this
 const PAD = 12;
-const MIN_LABEL_CELL = 9; // hide labels once a cell is smaller than this (px)
+const DEFAULT_SIZES = textSizes(defaultTheme);
 /** Fill for a missing cell, and its colour bar swatch. */
 const MISSING_RGB: [number, number, number] = [0xcc, 0xcc, 0xcc];
 const MISSING_COLOR = "#CCCCCC";
@@ -129,7 +134,8 @@ export interface Layout {
  * Frame the heatmap. The row and column label gutters take the width of the
  * longest label (0 when no label is drawn), the dendrogram bands are 60 px,
  * and the colour bar sits in its own gutter on the right, so the heatmap
- * keeps the height.
+ * keeps the height. The caps on the label gutters scale with the label size
+ * in `sizes`.
  */
 export function computeLayout(
   width: number,
@@ -145,7 +151,11 @@ export function computeLayout(
   rowLabelW = 0,
   /** Length of the longest column label in px; 0 when they are not drawn. */
   colLabelH = 0,
+  /** Width of the colour bar gutter: the bar, its tick labels and title. */
+  colorbarW = COLORBAR_W,
+  sizes: TextSizes = DEFAULT_SIZES,
 ): Layout {
+  const k = sizes.label / DEFAULT_SIZES.label;
   const rowDendroW = opts.showRowDendrogram && opts.hasRowDendro ? DENDRO : 0;
   const colDendroH = opts.showColDendrogram && opts.hasColDendro ? DENDRO : 0;
   const labelW =
@@ -153,7 +163,7 @@ export function computeLayout(
       ? Math.max(
           PAD,
           Math.min(
-            MAX_ROW_LABEL,
+            Math.round(MAX_ROW_LABEL * k),
             Math.floor(width * MAX_LABEL_SHARE),
             Math.ceil(rowLabelW) + 10,
           ),
@@ -164,7 +174,7 @@ export function computeLayout(
       ? Math.max(
           PAD,
           Math.min(
-            MAX_COL_LABEL,
+            Math.round(MAX_COL_LABEL * k),
             Math.floor(height * MAX_LABEL_SHARE),
             Math.ceil(colLabelH) + 10,
           ),
@@ -172,7 +182,7 @@ export function computeLayout(
       : PAD;
   const x = PAD + rowDendroW;
   const y = PAD + colDendroH;
-  const w = Math.max(1, width - x - labelW - COLORBAR_W);
+  const w = Math.max(1, width - x - labelW - colorbarW);
   const h = Math.max(1, height - y - labelH);
   return {
     rowDendroW,
@@ -197,6 +207,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     initial.options,
   );
   let theme = resolveTheme(opts.theme);
+  let sizes = textSizes(theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   let width = 0;
@@ -448,22 +459,45 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     );
   }
 
-  const measureCtx = document.createElement("canvas").getContext("2d");
-  function labelWidth(s: string, size = 10): number {
-    if (!measureCtx) return s.length * size * 0.56;
-    measureCtx.font = `${size}px ${theme.fontFamily}`;
-    return measureCtx.measureText(s).width;
+  function labelWidth(s: string, size = sizes.label): number {
+    return textWidth(s, size, theme.fontFamily);
   }
   // The longest label of each label array, measured once per font.
   const longestCache = new WeakMap<string[], { font: string; w: number }>();
   function longest(labels: string[]): number {
-    const font = theme.fontFamily;
+    const font = `${sizes.label}px ${theme.fontFamily}`;
     const hit = longestCache.get(labels);
     if (hit && hit.font === font) return hit.w;
     let w = 0;
     for (const l of labels) w = Math.max(w, labelWidth(l));
     longestCache.set(labels, { font, w });
     return w;
+  }
+  /** The colour bar's tick labels: high end, middle, low end. */
+  function colorbarTicks(): [string, string, string] {
+    // A midpoint within rounding error of 0 (a symmetric range held in
+    // float32) reads 0, not -2.4e-7.
+    const mid = (colorLo + colorHi) / 2;
+    return [
+      fmt(colorHi),
+      fmt(Math.abs(mid) < (colorHi - colorLo) * 1e-6 ? 0 : mid),
+      fmt(colorLo),
+    ];
+  }
+  /** Width of the widest tick label of the colour bar, or of its NA key. */
+  function colorbarTickWidth(): number {
+    let w = anyMissing ? labelWidth("NA") : 0;
+    for (const t of colorbarTicks()) w = Math.max(w, labelWidth(t));
+    return w;
+  }
+  /**
+   * Width of the colour bar gutter: 4 px, the 12 px bar, 4 px, the tick
+   * labels, 4 px, then the title turned upright, whose letters stand 1.1
+   * times its size left of its baseline and 0.3 times right of it.
+   */
+  function colorbarWidth(): number {
+    const need = 4 + 12 + 4 + colorbarTickWidth() + 4 + 1.4 * sizes.axisTitle;
+    return Math.max(COLORBAR_W, Math.ceil(need + 2));
   }
 
   // ---- layout + overlay ----
@@ -475,22 +509,24 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       hasColDendro: !!colDendro,
       showLabels: opts.showLabels,
     };
-    // An axis gets a label gutter only when its cells can be tall or wide
-    // enough for a label, so a large matrix measures no label.
+    // An axis gets a label gutter only when its cells can be at least as
+    // tall or wide as the label size, so a large matrix measures no label.
+    const minCell = sizes.label;
     const rowW =
       opts.showLabels &&
       rowLabels.length === nrows &&
       nrows > 0 &&
-      nrows * MIN_LABEL_CELL <= height
+      nrows * minCell <= height
         ? longest(rowLabels)
         : 0;
     const colH =
       opts.showLabels &&
       colLabels.length === ncols &&
       ncols > 0 &&
-      ncols * MIN_LABEL_CELL <= width
+      ncols * minCell <= width
         ? longest(colLabels)
         : 0;
+    const cbW = colorbarWidth();
     // Take the first layout in which every gutter it keeps has cells big
     // enough for its labels and leaves the heatmap MIN_HEAT px or more:
     // both gutters, then the row gutter alone, the column gutter alone, none.
@@ -507,11 +543,13 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
         flags,
         rows ? rowW : 0,
         cols ? colH : 0,
+        cbW,
+        sizes,
       );
       const rowsOk =
-        !rows || (l.heat.h / nrows >= MIN_LABEL_CELL && l.heat.w >= MIN_HEAT);
+        !rows || (l.heat.h / nrows >= minCell && l.heat.w >= MIN_HEAT);
       const colsOk =
-        !cols || (l.heat.w / ncols >= MIN_LABEL_CELL && l.heat.h >= MIN_HEAT);
+        !cols || (l.heat.w / ncols >= minCell && l.heat.h >= MIN_HEAT);
       if ((rowsOk && colsOk) || (!rows && !cols)) {
         layout = l;
         rowLabelsOn = rows;
@@ -536,7 +574,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
           "No data",
           theme.muted,
           "middle",
-          theme.fontSize,
+          sizes.label,
         ),
       );
       return;
@@ -616,6 +654,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
 
   function renderLabels(cellW: number, cellH: number) {
     const { heat } = layout;
+    const size = sizes.label;
     // Column labels below the heatmap (rotated), when the layout made room.
     if (colLabelsOn && colLabels.length === ncols) {
       for (let cx = 0; cx < ncols; cx += 1) {
@@ -625,7 +664,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
         );
         const x = heat.x + (cx + 0.5) * cellW;
         const y = heat.y + heat.h + 6;
-        const t = text(x, y, label, theme.foreground, "end", 10);
+        const t = text(x, y, label, theme.foreground, "end", size);
         t.setAttribute("transform", `rotate(-90 ${x} ${y})`);
         svg.appendChild(t);
       }
@@ -638,14 +677,14 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
           layout.labelW - 8,
         );
         const x = heat.x + heat.w + 6;
-        const y = heat.y + (ry + 0.5) * cellH + 3;
-        svg.appendChild(text(x, y, label, theme.foreground, "start", 10));
+        const y = heat.y + (ry + 0.5) * cellH + 0.35 * size;
+        svg.appendChild(text(x, y, label, theme.foreground, "start", size));
       }
     }
   }
 
   /** A label cut with an ellipsis to fit `maxW` px at `size` px. */
-  function fitLabel(label: string, maxW: number, size = 10): string {
+  function fitLabel(label: string, maxW: number, size = sizes.label): string {
     if (labelWidth(label, size) <= maxW) return label;
     let lo = 0;
     let hi = label.length;
@@ -661,10 +700,16 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     // A vertical bar in the right-hand gutter, high values at the top, with
     // the legend title running up beside it.
     const { heat } = layout;
+    const { label: size, axisTitle } = sizes;
     const barW = 12;
     const x0 = layout.colorbarX;
     const y0 = heat.y + 4;
-    const barH = Math.max(40, Math.min(160, heat.h - (anyMissing ? 30 : 8)));
+    // Tall enough that the three tick labels do not touch.
+    const barH = Math.max(
+      40,
+      3 * size,
+      Math.min(160, heat.h - (anyMissing ? 30 : 8)),
+    );
     const toHex = ramp(opts.colormap);
 
     // Build a gradient from evenly-sampled stops (viridis/rdbu ramp).
@@ -692,43 +737,49 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     );
     // Max / mid / min beside the bar.
     const lx = x0 + barW + 4;
-    // A midpoint within rounding error of 0 (a symmetric range held in
-    // float32) reads 0, not -2.4e-7.
-    const mid = (colorLo + colorHi) / 2;
-    const ticks = [
-      fmt(colorHi),
-      fmt(Math.abs(mid) < (colorHi - colorLo) * 1e-6 ? 0 : mid),
-      fmt(colorLo),
-    ] as const;
-    svg.appendChild(text(lx, y0 + 8, ticks[0], theme.muted, "start", 10));
+    const ticks = colorbarTicks();
     svg.appendChild(
-      text(lx, y0 + barH / 2 + 3, ticks[1], theme.muted, "start", 10),
+      text(lx, y0 + 0.75 * size, ticks[0], theme.muted, "start", size),
     );
-    svg.appendChild(text(lx, y0 + barH, ticks[2], theme.muted, "start", 10));
+    svg.appendChild(
+      text(
+        lx,
+        y0 + barH / 2 + 0.3 * size,
+        ticks[1],
+        theme.muted,
+        "start",
+        size,
+      ),
+    );
+    svg.appendChild(text(lx, y0 + barH, ticks[2], theme.muted, "start", size));
     // The title runs up beside the bar, 4 px right of the widest tick label
-    // (once turned, its 11 px letters stand left of its baseline), cut to the
-    // widget height and kept inside the widget.
-    let tickW = 0;
-    for (const t of ticks) tickW = Math.max(tickW, labelWidth(t));
+    // (once turned, its letters stand 1.1 times its size left of its
+    // baseline), cut to the widget height and kept inside the widget.
+    const tickW = colorbarTickWidth();
     const label = fitLabel(
       opts.legendTitle + (opts.zScore ? " (row z-score)" : ""),
       height - 8,
-      11,
+      axisTitle,
     );
-    const titleW = labelWidth(label, 11);
-    const tx = Math.min(width - 3, lx + tickW + 16);
+    const titleW = labelWidth(label, axisTitle);
+    const tx = Math.min(
+      width - 0.3 * axisTitle - 1,
+      lx + tickW + 4 + 1.1 * axisTitle,
+    );
     const ty = Math.min(
       Math.max(y0 + barH / 2, 4 + titleW / 2),
       height - 4 - titleW / 2,
     );
-    const title = text(tx, ty, label, theme.foreground, "middle", 11);
+    const title = text(tx, ty, label, theme.foreground, "middle", axisTitle);
     title.setAttribute("transform", `rotate(-90 ${tx} ${ty})`);
     svg.appendChild(title);
     // A grey swatch for missing cells, when the matrix has any.
     if (anyMissing) {
       const sy = y0 + barH + 10;
       svg.appendChild(rect(x0, sy, barW, 10, MISSING_COLOR, theme.axis, 0.75));
-      svg.appendChild(text(lx, sy + 9, "NA", theme.foreground, "start", 10));
+      svg.appendChild(
+        text(lx, sy + 5 + 0.36 * size, "NA", theme.foreground, "start", size),
+      );
     }
   }
 
@@ -818,7 +869,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     content: string,
     fill: string,
     anchor: string,
-    size = 11,
+    size: number,
   ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
@@ -855,6 +906,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       const prev = opts;
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      sizes = textSizes(theme);
       // R and Python send every option on each update, so compare values:
       // clustering again costs seconds on a large matrix.
       const recluster =
