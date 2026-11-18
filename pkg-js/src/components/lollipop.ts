@@ -49,13 +49,13 @@ import {
   dpr,
   serializeSVG,
   canvasToPNG,
-  OKABE_ITO,
   rangeTicks,
   spaceTicks,
   defaultTheme,
   type TextSizes,
   textSizes,
   textWidth as measureText,
+  categoricalColors,
 } from "../core/index.js";
 
 export interface LollipopOptions {
@@ -465,12 +465,12 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   function classColors(): string[] {
     const given = data.meta?.classColors as string[] | undefined;
     if (given && given.length) return given;
-    return classes().map((_, i) => OKABE_ITO[i % OKABE_ITO.length] as string);
+    return categoricalColors(theme.categorical, classes().length);
   }
   function domainColors(): string[] {
     const given = data.meta?.domainColors as string[] | undefined;
     if (given && given.length) return given;
-    return domains().map((_, i) => OKABE_ITO[i % OKABE_ITO.length] as string);
+    return categoricalColors(theme.categorical, domains().length);
   }
   // Variants at one residue share a stem; see stackVariants. The largest
   // single count (the head size scale) and the tallest stem (the y scale)

@@ -43,11 +43,12 @@ import {
   dpr,
   serializeSVG,
   canvasToPNG,
-  OKABE_ITO,
   defaultTheme,
   type TextSizes,
   textSizes,
   textWidth,
+  categoricalColors,
+  PALETTE_20,
 } from "../core/index.js";
 
 export interface OncoplotOptions {
@@ -117,13 +118,14 @@ const DEFAULT_SIZES = textSizes(defaultTheme);
 const SWATCH = 9;
 const SWATCH_GAP = 4;
 const ENTRY_GAP = 14;
-/**
- * Default colors for annotation strips (ColorBrewer Set2). They are lighter
- * than the Okabe-Ito class colors, so a strip does not read as an alteration.
- */
 /** The class for a gene and sample altered in two or more different ways. */
 const MULTI_HIT = "Multi-hit";
 const MULTI_HIT_COLOR = "#3A3A3A";
+/**
+ * Default colors for annotation strips: ColorBrewer Set2, then the pale half
+ * of PALETTE_20, 17 light colors in all. They are lighter than the class
+ * colors, so a strip does not read as an alteration.
+ */
 const ANNOTATION_PALETTE = [
   "#66C2A5",
   "#FC8D62",
@@ -133,6 +135,7 @@ const ANNOTATION_PALETTE = [
   "#FFD92F",
   "#E5C494",
   "#B3B3B3",
+  ...PALETTE_20.slice(9, 18),
 ];
 
 /** How far below a line a text's baseline goes to centre the text on it. */
@@ -405,18 +408,21 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     if (given?.length) return given;
     // "Multi-hit" is dark grey, and the other classes take the palette in
     // turn, so it never borrows the colour of a real class.
+    const cls = classes();
+    const pal = categoricalColors(
+      theme.categorical,
+      cls.filter((c) => c !== MULTI_HIT).length,
+    );
     let k = 0;
-    return classes().map((c) =>
-      c === MULTI_HIT
-        ? MULTI_HIT_COLOR
-        : (OKABE_ITO[k++ % OKABE_ITO.length] as string),
+    return cls.map((c) =>
+      c === MULTI_HIT ? MULTI_HIT_COLOR : (pal[k++] as string),
     );
   }
   /**
    * Colors for each annotation strip. Without given colors, the strips use a
    * lighter palette than the alteration classes, and each strip continues it
-   * after the strips before. Strips with eight levels or fewer in total
-   * therefore share no color; past eight, the palette starts again.
+   * after the strips before. Strips with 17 levels or fewer in total
+   * therefore share no color; past 17, the palette starts again.
    */
   function annPalettes(): string[][] {
     let next = 0;

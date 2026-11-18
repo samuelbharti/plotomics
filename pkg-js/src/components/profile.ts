@@ -37,7 +37,6 @@ import {
   dpr,
   serializeSVG,
   canvasToPNG,
-  OKABE_ITO,
   zeroTicks,
   fitZeroTicks,
   formatTick,
@@ -45,6 +44,7 @@ import {
   type TextSizes,
   textSizes,
   textWidth as measureText,
+  categoricalColors,
 } from "../core/index.js";
 
 export interface ProfileOptions {
@@ -252,7 +252,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
   function groupColors(): string[] {
     const given = data.meta?.groupColors as string[] | undefined;
     if (given && given.length) return given;
-    return groups().map((_, i) => OKABE_ITO[i % OKABE_ITO.length] as string);
+    return categoricalColors(theme.categorical, groups().length);
   }
   function textWidth(s: string, size: number): number {
     return measureText(s, size, theme.fontFamily);

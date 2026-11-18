@@ -28,6 +28,7 @@ import {
   categoricalScale,
   ramp,
   type RampName,
+  categoricalColors,
 } from "../core/index.js";
 import { uniqueId } from "../core/dom.js";
 import {
@@ -217,8 +218,12 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
 
   /** Assign palette colors to the top-level groups in tree order. */
   function assignPalette() {
-    paletteFor = categoricalScale(theme.categorical);
-    for (const top of root?.children ?? []) paletteFor(top.data.id);
+    const tops = root?.children ?? [];
+    // A tree that is a lone root still colours that root.
+    paletteFor = categoricalScale(
+      categoricalColors(theme.categorical, Math.max(1, tops.length)),
+    );
+    for (const top of tops) paletteFor(top.data.id);
   }
 
   /** Breadcrumb strip reserved at the top of the container: 24 px at the

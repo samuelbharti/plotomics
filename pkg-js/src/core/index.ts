@@ -20,6 +20,7 @@ export {
   OKABE_ITO,
   type TextSizes,
   textSizes,
+  PALETTE_20,
 } from "./theme.js";
 
 export {
@@ -30,6 +31,7 @@ export {
   ramp,
   RAMPS,
   rgbToHex,
+  categoricalColors,
   categoricalScale,
   sampleRamp,
 } from "./color.js";
