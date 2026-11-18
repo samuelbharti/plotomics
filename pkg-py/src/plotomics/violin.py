@@ -51,8 +51,8 @@ class Violin(PlotomicsWidget):
     show_median, show_feature_labels:
         Toggle the median tick and the row labels.
     show_value_axis:
-        Draw each row's value axis on the right, with the lowest and highest
-        value of its grid.
+        Draw each row's value axis on the right, with the highest value of
+        its grid and, on rows tall enough for two labels, the lowest.
     theme:
         Optional theme overrides forwarded to the JS renderer.
     height:
@@ -121,7 +121,9 @@ class Violin(PlotomicsWidget):
             groups = categories_of(group)
 
         meta: dict[str, Any] = {
-            "grid": [float(v) for v in g],
+            # Sent as float64, as R sends it: the axis labels the grid ends,
+            # and float32 would turn 99.95 into 99.9499969.
+            "grid": [float(v) for v in np.asarray(grid, dtype=np.float64).reshape(-1)],
             # Row-major: the component indexes it as violin * gridLen + k.
             "density": [float(v) for v in dm.reshape(-1)],
         }
@@ -150,7 +152,7 @@ class Violin(PlotomicsWidget):
                 raise ValueError("`group_colors` must have one entry per group.")
             meta["groupColors"] = [str(c) for c in group_colors]
         if grids is not None:
-            gm = np.atleast_2d(np.asarray(grids, dtype=np.float32))
+            gm = np.atleast_2d(np.asarray(grids, dtype=np.float64))
             if gm.shape[1] != g.size:
                 raise ValueError("`grids` must have one column per `grid` entry.")
             n_feat = len(features) if features is not None else len(set(json_columns["feature"]))

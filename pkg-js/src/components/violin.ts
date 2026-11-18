@@ -415,12 +415,14 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
 
     // A value axis per row on the right: each row can have its own range, so
     // each gets its own lowest and highest value. The lowest is left out when
-    // the row is too short for both labels.
+    // the row is too short for both labels, and on rows tighter than the
+    // labels, only every k-th row is labelled, as with the feature labels.
     const gr = grid();
     if (opts.showValueAxis && gr.length) {
       const grs = grids();
       const x = layout.left + layout.plotW + 4;
-      for (let r = 0; r < f.length; r += 1) {
+      const step = Math.max(1, Math.ceil(9 / layout.rowH));
+      for (let r = 0; r < f.length; r += step) {
         const rowGrid = gridForRow(gr, grs, r);
         const lo = rowGrid[0] as number;
         const hi = rowGrid[rowGrid.length - 1] as number;
@@ -538,11 +540,17 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
 };
 
 // ---- small utilities ----
-/** An axis value: whole numbers as they are, others to three digits. */
+/**
+ * An axis value short enough for the right gutter: whole numbers below
+ * 100,000 as they are, very large or very small values in exponent form,
+ * and the rest to three significant digits.
+ */
 function fmtAxis(v: number): string {
   if (!Number.isFinite(v)) return "";
+  const a = Math.abs(v);
+  if (a >= 1e5 || (a > 0 && a < 1e-3)) return v.toExponential(1);
   if (Number.isInteger(v)) return String(v);
-  if (Math.abs(v) >= 100) return String(Math.round(v));
+  if (a >= 100) return String(Math.round(v));
   return String(Number(v.toPrecision(3)));
 }
 function uniq(col: readonly string[]): string[] {

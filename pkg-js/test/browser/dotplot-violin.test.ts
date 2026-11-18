@@ -78,7 +78,37 @@ describe("dotplot with missing values", () => {
     const cy = Number(b.getAttribute("y")) - 3;
     const cx = Number(x.getAttribute("x"));
     expect(pixel(el, cx, cy)).toEqual([255, 255, 255]);
+    // The rim of the ring carries ink: scan right from the centre.
+    let rim = false;
+    for (let dx = 1; dx < 30 && !rim; dx += 1) {
+      const [r, g, b] = pixel(el, cx + dx, cy);
+      rim = !(r === 255 && g === 255 && b === 255);
+    }
+    expect(rim).toBe(true);
     expect(hoverAt(el, cx, cy)).toContain("value NA");
+  });
+});
+
+describe("dotplot with a given domain that has a missing end", () => {
+  it("falls back to the data for that end and still draws", () => {
+    const el = container();
+    const data = {
+      columns: {
+        gene: ["A", "B"],
+        cluster: ["x", "x"],
+        pct: [80, 100],
+        value: [1, 3],
+      },
+    };
+    instances.push(
+      createDotplot(el, {
+        data,
+        options: { valueDomain: [null, 5] as unknown as [number, number] },
+      }),
+    );
+    const texts = svgTexts(el);
+    expect(texts).toContain("1.0");
+    expect(texts).toContain("5.0");
   });
 });
 
@@ -120,6 +150,61 @@ describe("violin value axis and missing medians", () => {
     );
     expect(tip).toContain("CD3E");
     expect(tip).toContain("no data");
+  });
+
+  it("draws no median tick for a missing median", () => {
+    // A null median used to draw a background-coloured tick at value 0,
+    // the bottom of the row. The bottom of B's violin must keep its colour.
+    const el = container(400, 300);
+    const one = {
+      columns: { feature: ["CD3E", "CD3E"], group: ["T", "B"] },
+      meta: {
+        grid: [0, 1, 2],
+        density: [1, 1, 1, 1, 1, 1],
+        median: [1, null] as unknown as number[],
+      },
+    };
+    instances.push(createViolin(el, { data: one }));
+    const svg = el.querySelector("svg") as SVGSVGElement;
+    const labels = Array.from(svg.querySelectorAll("text"));
+    const b = labels.find((n) => n.textContent === "B") as SVGTextElement;
+    const zero = labels.find((n) => n.textContent === "0") as SVGTextElement;
+    const yBot = Number(zero.getAttribute("y"));
+    const xb = Number(b.getAttribute("x"));
+    const inside = pixel(el, xb, yBot - 20);
+    const bottom = pixel(el, xb, yBot - 1);
+    for (let k = 0; k < 3; k += 1) {
+      expect(
+        Math.abs((bottom[k] as number) - (inside[k] as number)),
+      ).toBeLessThan(30);
+    }
+  });
+
+  it("keeps long axis values inside the element and thins tight rows", () => {
+    const n = 100;
+    const feats = Array.from({ length: n }, (_, i) => `G${i}`);
+    const el = container(800, 480);
+    instances.push(
+      createViolin(el, {
+        data: {
+          columns: { feature: feats, group: feats.map(() => "T") },
+          meta: {
+            grid: [-0.0000456, 123456789],
+            density: feats.flatMap(() => [1, 1]),
+          },
+        },
+      }),
+    );
+    const axis = Array.from(el.querySelectorAll("svg text")).filter((t) =>
+      /e[+-]/.test(t.textContent ?? ""),
+    ) as SVGTextElement[];
+    expect(axis.length).toBeGreaterThan(0);
+    for (const t of axis) {
+      const b = t.getBBox();
+      expect(b.x + b.width).toBeLessThanOrEqual(800);
+    }
+    // 100 rows of 4 px: labels only on every 3rd row.
+    expect(axis.length).toBeLessThanOrEqual(Math.ceil(n / 3));
   });
 
   it("can hide the value axis", () => {

@@ -116,6 +116,12 @@ dotplot <- function(data,
     if (length(value_domain) != 2L) {
       stop("`value_domain` must be length 2.", call. = FALSE)
     }
+    if (!all(is.finite(value_domain))) {
+      stop(paste0(
+        "`value_domain` must be two finite numbers; for a column with ",
+        "missing values, use range(x, na.rm = TRUE)."
+      ), call. = FALSE)
+    }
     options$valueDomain <- I(as.numeric(value_domain))
   }
   if (!is.null(theme)) options$theme <- theme

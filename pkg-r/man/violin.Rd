@@ -52,7 +52,8 @@ row's. Per-row is the default so groups stay comparable within a feature.}
 \item{show_median, show_feature_labels}{Toggle the median tick and row labels.}
 
 \item{show_value_axis}{Draw each row's value axis on the right, with the
-lowest and highest value of its grid.}
+highest value of its grid and, on rows tall enough for two labels, the
+lowest.}
 
 \item{theme}{Optional named list of theme overrides.}
 

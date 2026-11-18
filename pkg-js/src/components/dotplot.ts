@@ -201,7 +201,14 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     return given && given.length ? given : uniqueInOrder(clusterCol());
   }
   function domain(): [number, number] {
-    return opts.valueDomain ?? valueExtent(valueCol());
+    // A non-finite end of a given domain (null from R's NA or Inf) falls
+    // back to the data's own end, so the colour bar always has numbers.
+    const auto = valueExtent(valueCol());
+    const given = opts.valueDomain;
+    if (!given) return auto;
+    const lo = Number.isFinite(given[0]) ? given[0] : auto[0];
+    const hi = Number.isFinite(given[1]) ? given[1] : auto[1];
+    return [lo, hi];
   }
 
   // ---- pointer ----

@@ -147,3 +147,10 @@ def test_violin_sends_the_value_axis_option():
     assert w.options["showValueAxis"] is True
     w = Violin(data, grid=grid, density=density, show_value_axis=False)
     assert w.options["showValueAxis"] is False
+
+
+def test_violin_sends_the_grid_without_float32_rounding():
+    data, _, density = make_args()
+    grid = np.linspace(0.0, 99.95, 8)
+    w = Violin(data, grid=grid, density=density)
+    assert w.data["meta"]["grid"][-1] == 99.95

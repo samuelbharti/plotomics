@@ -63,3 +63,12 @@ test_that("dotplot() warns, but draws, when pct is NA", {
   expect_warning(w <- dotplot(d), "non-finite")
   expect_s3_class(w, "htmlwidget")
 })
+
+test_that("dotplot() rejects a value_domain with a missing end", {
+  d <- data.frame(gene = c("A", "B"), cluster = "x", pct = c(10, 20),
+                  value = c(1, NaN))
+  expect_error(
+    suppressWarnings(dotplot(d, value_domain = range(d$value))),
+    "two finite numbers"
+  )
+})

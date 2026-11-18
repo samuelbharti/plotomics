@@ -152,6 +152,11 @@ class Dotplot(PlotomicsWidget):
         if value_domain is not None:
             if len(value_domain) != 2:
                 raise ValueError("`value_domain` must be length 2.")
+            if not np.all(np.isfinite(np.asarray(value_domain, dtype=float))):
+                raise ValueError(
+                    "`value_domain` must be two finite numbers; for a column "
+                    "with missing values, use np.nanmin and np.nanmax."
+                )
             options["valueDomain"] = [float(v) for v in value_domain]
         if theme is not None:
             options["theme"] = theme
