@@ -23,7 +23,12 @@ describe("violin helpers", () => {
   });
 
   it("takes the largest density across rows", () => {
-    expect(maxDensity([[1, 5], [3, 2]])).toBe(5);
+    expect(
+      maxDensity([
+        [1, 5],
+        [3, 2],
+      ]),
+    ).toBe(5);
     // Degenerate input must not divide by zero downstream.
     expect(maxDensity([])).toBe(1);
     expect(maxDensity([[0, 0]])).toBe(1);

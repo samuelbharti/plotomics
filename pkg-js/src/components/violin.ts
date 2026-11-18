@@ -197,7 +197,8 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -254,9 +255,10 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       return;
     }
     const med = medians();
-    const medTxt = med && i < med.length
-      ? `<br/>median ${(med[i] as number).toFixed(2)}`
-      : "";
+    const medTxt =
+      med && i < med.length
+        ? `<br/>median ${(med[i] as number).toFixed(2)}`
+        : "";
     tooltip.show(
       `<b>${esc(f[row] as string)}</b> in ${esc(g[col] as string)}${medTxt}`,
       lastPointer.x,
@@ -312,7 +314,9 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       for (let c = 0; c < g.length; c += 1) {
         const i = violinIndex(f[r] as string, g[c] as string);
         idx.push(i);
-        rows.push(i < 0 ? new Array(gr.length).fill(0) : densityRow(dens, i, gr.length));
+        rows.push(
+          i < 0 ? new Array(gr.length).fill(0) : densityRow(dens, i, gr.length),
+        );
       }
       const rowMax = maxDensity(rows);
 
@@ -371,15 +375,23 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     // Row separators, so a tall stack does not read as one continuous field.
     for (let r = 1; r < f.length; r += 1) {
       const y = layout.top + r * layout.rowH;
-      svg.appendChild(line(layout.left, y, layout.left + layout.plotW, y, theme.grid));
+      svg.appendChild(
+        line(layout.left, y, layout.left + layout.plotW, y, theme.grid),
+      );
     }
 
     if (opts.showFeatureLabels) {
       const step = Math.max(1, Math.ceil(9 / layout.rowH));
       for (let r = 0; r < f.length; r += step) {
         svg.appendChild(
-          text(layout.left - 7, layout.top + (r + 0.5) * layout.rowH + 3,
-            f[r] ?? "", theme.foreground, "end", 9),
+          text(
+            layout.left - 7,
+            layout.top + (r + 0.5) * layout.rowH + 3,
+            f[r] ?? "",
+            theme.foreground,
+            "end",
+            9,
+          ),
         );
       }
     }
@@ -395,7 +407,14 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
   }
 
   // ---- SVG helpers ----
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 10) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 10,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -406,7 +425,13 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     t.textContent = content;
     return t;
   }
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -481,10 +506,21 @@ function uniq(col: readonly string[]): string[] {
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+    c === "&"
+      ? "&amp;"
+      : c === "<"
+        ? "&lt;"
+        : c === ">"
+          ? "&gt;"
+          : c === '"'
+            ? "&quot;"
+            : "&#39;",
   );
 }
-function mergeOptions(base: ViolinOptions, next?: Partial<ViolinOptions>): ViolinOptions {
+function mergeOptions(
+  base: ViolinOptions,
+  next?: Partial<ViolinOptions>,
+): ViolinOptions {
   if (!next) return { ...base };
   return { ...base, ...next, theme: { ...base.theme, ...(next.theme ?? {}) } };
 }
