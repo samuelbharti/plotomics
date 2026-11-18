@@ -17,7 +17,7 @@ test_that("a one-row data frame sends each column as an array", {
 test_that("an oncoplot with one class and one sample sends arrays", {
   w <- oncoplot(
     data.frame(gene = c("TP53", "KRAS"), sample = c("S1", "S1"), class = "missense"),
-    annotations = list(list(name = "Subtype", values = "LumA"))
+    annotations = list(list(name = "Subtype", values = c(S1 = "LumA")))
   )
   json <- rendered_json(w)
   expect_match(json, '"classes":["missense"]', fixed = TRUE)
