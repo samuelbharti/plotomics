@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   groupRuns,
   layoutProfile,
-  niceMax,
+  finiteMax,
 } from "../src/components/profile.js";
 
 describe("profile group runs", () => {
@@ -36,22 +36,10 @@ describe("profile group runs", () => {
 });
 
 describe("profile axis maximum", () => {
-  it("rounds up to a 1/2/5 x power of ten", () => {
-    expect(niceMax([0, 3, 7])).toBe(10);
-    expect(niceMax([120])).toBe(200);
-    expect(niceMax([45])).toBe(50);
-    expect(niceMax([0.03])).toBe(0.05);
-  });
-
-  it("is always at least the data maximum", () => {
-    for (const v of [[1], [9], [11], [99], [101], [999]]) {
-      expect(niceMax(v)).toBeGreaterThanOrEqual(v[0] as number);
-    }
-  });
-
-  it("never returns zero", () => {
-    expect(niceMax([0, 0])).toBe(1);
-    expect(niceMax([])).toBe(1);
+  it("takes the largest finite value", () => {
+    expect(finiteMax([0, 3, 7])).toBe(7);
+    expect(finiteMax([Number.NaN, 2])).toBe(2);
+    expect(finiteMax([])).toBe(0);
   });
 });
 
@@ -88,5 +76,31 @@ describe("profile layout", () => {
     });
     expect(l.plotH).toBeGreaterThan(0);
     expect(l.slot).toBeGreaterThan(0);
+  });
+});
+
+describe("profile title and bar labels", () => {
+  it("gives a title its own row above the strip", () => {
+    const opts = { showHeader: true, showBarLabels: true };
+    const plain = layoutProfile(1000, 400, 96, opts);
+    const titled = layoutProfile(1000, 400, 96, opts, true);
+    expect(titled.headerTop).toBeGreaterThanOrEqual(18);
+    expect(titled.plotTop - plain.plotTop).toBe(18);
+    // Without the strip the title still sits above the plot.
+    const bare = layoutProfile(
+      1000,
+      400,
+      96,
+      { ...opts, showHeader: false },
+      true,
+    );
+    expect(bare.plotTop).toBeGreaterThan(18);
+  });
+
+  it("makes room under the axis for the longest bar label", () => {
+    const opts = { showHeader: true, showBarLabels: true };
+    const short = layoutProfile(1000, 400, 96, opts, false, 20);
+    const long = layoutProfile(1000, 400, 96, opts, false, 40);
+    expect(short.axisY - long.axisY).toBe(20);
   });
 });
