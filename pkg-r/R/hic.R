@@ -1,12 +1,11 @@
 #' Hi-C contact matrix
 #'
-#' A GPU-accelerated Hi-C chromatin contact map. The matrix is uploaded once as
-#' a single-channel float texture and drawn as one WebGL quad (via `regl`), with
-#' the colormap and log/linear transform applied in the fragment shader, so
-#' pan/zoom stays smooth on very large matrices. A precomputed level-of-detail
-#' pyramid keeps interaction fast when zoomed out. Axes (genomic coordinate
-#' ticks) and the colorbar are drawn as crisp vector overlays. No tile server is
-#' required.
+#' A GPU-accelerated Hi-C chromatin contact map. The matrix is normalized to an
+#' 8-bit texture and drawn as one WebGL quad (via `regl`), with the colormap
+#' applied in the fragment shader, so pan/zoom stays smooth on very large
+#' matrices. A precomputed level-of-detail pyramid keeps interaction fast when
+#' zoomed out. Axes (genomic coordinate ticks) and the colorbar are drawn as
+#' crisp vector overlays. No tile server is required.
 #'
 #' @param mat Either a square numeric matrix of contact counts, or a data frame
 #'   / list giving a sparse COO triplet with integer columns `i`, `j` and a
@@ -17,13 +16,17 @@
 #' @param bin_size Genomic bin size in base pairs; used to label axes in
 #'   bp/kb/Mb. `NULL` labels axes by bin index.
 #' @param chrom Optional chromosome name shown as the axis title.
-#' @param colormap Sequential colormap for intensity: `"viridis"` or `"rdbu"`.
+#' @param colormap Colormap for intensity: sequential `"viridis"` or diverging
+#'   `"rdbu"`.
 #' @param transform Intensity transform, `"log"` (default) or `"linear"`.
 #' @param vmax Upper clip of the intensity scale; `NULL` auto-picks a high
 #'   percentile.
 #' @param vmax_percentile Percentile in `(0, 1]` used to auto-pick `vmax` when
 #'   `vmax` is `NULL`. `NULL` uses the component default.
-#' @param vmin Lower clip of the intensity scale.
+#' @param vmin Lower clip of the intensity scale. With the log transform, or
+#'   when `vmin` is 0 or more, values at or below it are drawn as background.
+#'   With the linear transform and a negative `vmin` (for example
+#'   observed/expected log2 ratios), values below it take the lowest color.
 #' @param symmetric Mirror sparse `i`/`j`/`v` entries across the diagonal.
 #' @param label Axis title (overrides `chrom` when set).
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
