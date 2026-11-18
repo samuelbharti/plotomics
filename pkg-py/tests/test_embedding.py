@@ -129,3 +129,15 @@ def test_embedding_carries_the_fit_padding():
     # Zero is meaningful (fit tight to the data), so it must survive rather
     # than being dropped as a falsy value.
     assert Embedding(d, padding=0).options["padding"] == 0
+
+
+def test_embedding_sends_a_missing_category_as_null():
+    d = {"x": [0, 1, 2], "y": [0, 1, 2], "color": [float("nan"), "B", "T"]}
+    w = Embedding(d)
+    assert w.data["columns"]["color"] == [None, "B", "T"]
+
+
+def test_embedding_keeps_a_numeric_colour_with_none_numeric():
+    d = {"x": [0, 1, 2], "y": [0, 1, 2], "color": [None, 1.5, 2.5]}
+    w = Embedding(d)
+    assert "color" not in w.data["columns"]

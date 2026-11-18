@@ -4,9 +4,15 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-import numpy as np
-
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _column,
+    _numeric_values,
+    _text_or_none,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Embedding(PlotomicsWidget):
@@ -22,9 +28,12 @@ class Embedding(PlotomicsWidget):
         A pandas ``DataFrame`` or a mapping of arrays. Must provide numeric
         ``x`` and ``y`` embedding coordinates. An optional ``color`` column
         drives coloring: a string/categorical column becomes a discrete legend,
-        a numeric column a continuous colormap. A pandas ``Categorical`` color
-        column fixes the legend order and the color assignment to its
-        categories, and keeps unused ones in the legend. An optional ``label``
+        a numeric column a continuous colormap. Text categories are sorted in
+        natural order ("cluster 2" before "cluster 10"); a pandas
+        ``Categorical`` color column fixes the legend order and the color
+        assignment to its categories, and keeps unused ones in the legend. A
+        missing color is drawn grey and keyed "NA", and a row with a missing
+        ``x`` or ``y`` is not drawn. An optional ``label``
         column supplies per-point tooltip text.
     point_scale_mode:
         How ``point_size`` responds to zoom. ``"asinh"`` and ``"linear"``
@@ -121,13 +130,15 @@ class Embedding(PlotomicsWidget):
             cat_dtype = getattr(getattr(color, "dtype", None), "categories", None)
             if cat_dtype is not None:
                 categories = [str(v) for v in cat_dtype]
-            arr = np.asarray(color)
-            if categories is None and np.issubdtype(arr.dtype, np.number):
-                # Continuous: transport as a packed numeric column.
-                numeric["color"] = arr.astype(np.float32)
+            values = _numeric_values(color) if categories is None else None
+            if values is not None:
+                # Continuous: transport as a packed numeric column, NaN for
+                # a missing value.
+                numeric["color"] = values
             else:
-                # Categorical: transport as a JSON string column.
-                json_columns["color"] = [str(v) for v in color]
+                # Categorical: transport as a JSON string column. A missing
+                # value crosses as null, which the browser keys as "NA".
+                json_columns["color"] = _text_or_none(color)
 
         label = _column(data, "label")
         if label is not None:

@@ -30,8 +30,11 @@ coordinates). An optional \code{color} column drives coloring: a character or
 factor column is treated as categorical (discrete legend), a numeric column
 as continuous (sequential colormap + colorbar). A \strong{factor} \code{color} fixes
 the legend order and the color assignment to its levels, and keeps unused
-levels in the legend, the way \code{drop = FALSE} does in ggplot2. An optional
-\code{label} column supplies per-point tooltip text.}
+levels in the legend, the way \code{drop = FALSE} does in ggplot2; character
+categories are sorted in natural order ("cluster 2" before "cluster 10").
+A missing \code{color} is drawn grey and keyed "NA", and a row with a missing
+\code{x} or \code{y} is not drawn. An optional \code{label} column supplies per-point
+tooltip text.}
 
 \item{point_size}{Point radius in pixels. Under the default
 \code{point_scale_mode} the renderer scales this by the camera and clamps it to

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   categoryToIndex,
+  drawableRows,
   equalAspectDomains,
   isStringColumn,
   niceTicks,
@@ -27,25 +28,29 @@ describe("embedding helpers", () => {
   it("resolves color mode from the column type, honoring a forced mode", () => {
     expect(resolveColorMode(["cl1", "cl2"], "auto")).toBe("categorical");
     expect(resolveColorMode([0.1, 0.2], "auto")).toBe("continuous");
-    expect(resolveColorMode(new Float32Array([1, 2]), "auto")).toBe("continuous");
+    expect(resolveColorMode(new Float32Array([1, 2]), "auto")).toBe(
+      "continuous",
+    );
     // Force overrides detection.
     expect(resolveColorMode(["cl1"], "continuous")).toBe("continuous");
     expect(resolveColorMode([1, 2], "categorical")).toBe("categorical");
-    // No column defaults to continuous under "auto".
-    expect(resolveColorMode(undefined, "auto")).toBe("continuous");
+    // No column, or no value in it, colours nothing.
+    expect(resolveColorMode(undefined, "auto")).toBeNull();
   });
 
   it("maps categorical labels to dense indices + ordered categories", () => {
     const { indices, categories } = categoryToIndex(["b", "a", "b", "c", "a"]);
-    // First-appearance order: b=0, a=1, c=2.
-    expect(categories).toEqual(["b", "a", "c"]);
-    expect(Array.from(indices)).toEqual([0, 1, 0, 2, 1]);
+    // Sorted: a=0, b=1, c=2.
+    expect(categories).toEqual(["a", "b", "c"]);
+    expect(Array.from(indices)).toEqual([1, 0, 1, 2, 0]);
     expect(indices).toBeInstanceOf(Int32Array);
   });
 
   it("honors an explicit category order", () => {
     const { indices, categories } = categoryToIndex(
-      ["b", "a", "b", "c", "a"], ["a", "b", "c"]);
+      ["b", "a", "b", "c", "a"],
+      ["a", "b", "c"],
+    );
     expect(categories).toEqual(["a", "b", "c"]);
     expect(Array.from(indices)).toEqual([1, 0, 1, 2, 0]);
   });
@@ -53,26 +58,84 @@ describe("embedding helpers", () => {
   it("keeps ordered categories that no point carries", () => {
     // The whole point of pinning an order: a category can vanish from the data
     // (filtered out, or a facet with none of it) without the colors shuffling.
-    const { indices, categories } = categoryToIndex(["c", "a"], ["a", "b", "c"]);
+    const { indices, categories } = categoryToIndex(
+      ["c", "a"],
+      ["a", "b", "c"],
+    );
     expect(categories).toEqual(["a", "b", "c"]);
     expect(Array.from(indices)).toEqual([2, 0]);
   });
 
   it("appends categories missing from the explicit order", () => {
     const { indices, categories } = categoryToIndex(
-      ["a", "z", "y", "z"], ["a", "b"]);
-    expect(categories).toEqual(["a", "b", "z", "y"]);
-    expect(Array.from(indices)).toEqual([0, 2, 3, 2]);
+      ["a", "z", "y", "z"],
+      ["a", "b"],
+    );
+    // Labels outside the order follow it, sorted.
+    expect(categories).toEqual(["a", "b", "y", "z"]);
+    expect(Array.from(indices)).toEqual([0, 3, 2, 3]);
   });
 
   it("ignores duplicates in the explicit order", () => {
-    expect(categoryToIndex(["a"], ["a", "a", "b"]).categories)
-      .toEqual(["a", "b"]);
+    expect(categoryToIndex(["a"], ["a", "a", "b"]).categories).toEqual([
+      "a",
+      "b",
+    ]);
   });
 
-  it("falls back to first-appearance order for a null/empty order", () => {
-    expect(categoryToIndex(["b", "a"], null).categories).toEqual(["b", "a"]);
-    expect(categoryToIndex(["b", "a"], []).categories).toEqual(["b", "a"]);
+  it("sorts text categories for a null or empty order", () => {
+    expect(categoryToIndex(["b", "a"], null).categories).toEqual(["a", "b"]);
+    expect(categoryToIndex(["b", "a"], []).categories).toEqual(["a", "b"]);
+  });
+
+  it("sorts categories in natural order, so 2 comes before 10", () => {
+    const labels = ["cluster 10", "cluster 2", "cluster 1"];
+    expect(categoryToIndex(labels).categories).toEqual([
+      "cluster 1",
+      "cluster 2",
+      "cluster 10",
+    ]);
+    expect(categoryToIndex([10, 2, 0, 1]).categories).toEqual([
+      "0",
+      "1",
+      "2",
+      "10",
+    ]);
+  });
+
+  it("puts a missing label last as NA", () => {
+    const { indices, categories, missing } = categoryToIndex([
+      null,
+      "B cell",
+      Number.NaN,
+      "T cell",
+    ]);
+    expect(categories).toEqual(["B cell", "T cell", "NA"]);
+    expect(missing).toBe(2);
+    expect(Array.from(indices)).toEqual([2, 0, 2, 1]);
+    expect(categoryToIndex(["a"]).missing).toBe(-1);
+  });
+
+  it("decides the colour type from the first value that is not missing", () => {
+    expect(
+      isStringColumn([null, "B cell", "T cell"] as unknown as string[]),
+    ).toBe(true);
+    expect(isStringColumn([Number.NaN, 2, 3])).toBe(false);
+    expect(isStringColumn([null, null] as unknown as string[])).toBe(false);
+  });
+
+  it("draws only rows with a finite x and y", () => {
+    const rows = drawableRows(
+      [1, null, 3, Number.NaN, 5] as unknown as number[],
+      [1, 2, null, 4, 5] as unknown as number[],
+    );
+    expect(Array.from(rows)).toEqual([0, 4]);
+  });
+
+  it("leaves a missing value out of the padded extent", () => {
+    expect(paddedExtent([10, null, 14] as unknown as number[], 0)).toEqual([
+      10, 14,
+    ]);
   });
 
   it("normalizes a column to [0,1] over its own extent", () => {
@@ -142,7 +205,38 @@ describe("equalAspectDomains", () => {
   });
 
   it("returns the inputs untouched while the box is still degenerate", () => {
-    expect(equalAspectDomains([0, 1], [0, 1], 0, 0)).toEqual([[0, 1], [0, 1]]);
-    expect(equalAspectDomains([0, 0], [0, 1], 100, 100)).toEqual([[0, 0], [0, 1]]);
+    expect(equalAspectDomains([0, 1], [0, 1], 0, 0)).toEqual([
+      [0, 1],
+      [0, 1],
+    ]);
+    expect(equalAspectDomains([0, 0], [0, 1], 100, 100)).toEqual([
+      [0, 0],
+      [0, 1],
+    ]);
+  });
+});
+
+describe("embedding category edge cases", () => {
+  it("sorts numbers forced to categories by value", () => {
+    expect(categoryToIndex([0.5, 0.25, 1, -2, -10]).categories).toEqual([
+      "-10",
+      "-2",
+      "0.25",
+      "0.5",
+      "1",
+    ]);
+  });
+
+  it("names the missing entry so it differs from a real NA category", () => {
+    expect(categoryToIndex(["A", "NA", null]).categories).toEqual([
+      "A",
+      "NA",
+      "NA (missing)",
+    ]);
+  });
+
+  it("colours nothing for a column with no value", () => {
+    expect(resolveColorMode([null, null] as unknown as string[])).toBeNull();
+    expect(resolveColorMode([Number.NaN], "categorical")).toBeNull();
   });
 });
