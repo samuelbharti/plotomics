@@ -15,8 +15,11 @@
 #'   (node radius in px), `group` (categorical, mapped to a palette color) and
 #'   `label` (display name; defaults to `id`).
 #' @param edges A data frame of edges with columns `source` and `target` holding
-#'   node ids, an optional numeric `weight` column (mapped to edge width), and an
-#'   optional `color` column giving a per-edge color (else `default_edge_color`).
+#'   node ids, an optional numeric `weight` column, and an optional `color`
+#'   column giving a per-edge color (else `default_edge_color`). Edge width
+#'   follows the absolute weight, scaled over the weights in the graph to 1.7-6
+#'   px, and the layout pulls nodes together by the absolute weight, so a
+#'   negative weight (as in a correlation network) counts by its size.
 #' @param layout Either `"forceatlas2"` (run a layout when coordinates are
 #'   missing) or `"precomputed"` (require and use `x`/`y` from `nodes`).
 #' @param iterations Number of ForceAtlas2 iterations (bounded internally).
