@@ -152,4 +152,123 @@ describe("km in a browser", () => {
     expect(nb.x).toBeGreaterThanOrEqual(0);
     expect(nb.x + nb.width).toBeLessThan(cb.x);
   });
+
+  it("shortens a stratum name too long for the gutter", () => {
+    const el = container(300, 420);
+    const long =
+      "a very long stratum name, as survfit makes with two variables";
+    const km = createKm(el, {
+      data: {
+        columns: {
+          time: [0, 10, 0, 10],
+          surv: [1, 0.5, 1, 0.8],
+          group: [long, long, "b", "b"],
+        },
+        meta: { riskTimes: [0, 5, 10], riskCounts: [10, 8, 5, 10, 9, 7] },
+      },
+    });
+    instances.push(km);
+    const name = Array.from(el.querySelectorAll("svg text")).find((t) =>
+      t.textContent?.endsWith("…"),
+    ) as SVGTextElement;
+    expect(name).toBeDefined();
+    expect(name.getBBox().x).toBeGreaterThanOrEqual(0);
+    // The panel keeps most of the width: ticks 0 and 10 are far apart.
+    expect(tickX(el, "10") - tickX(el, "0")).toBeGreaterThan(150);
+  });
+
+  it("draws the full stroke on the 100% line and a tick on the right edge", () => {
+    const el = container();
+    const km = createKm(el, {
+      data: {
+        columns: { time: [0, 10], surv: [1, 0.5] },
+        meta: { censorTime: [3, 10], censorSurv: [1, 0.5] },
+      },
+      options: { showCI: false },
+    });
+    instances.push(km);
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+    const ratio = canvas.width / canvas.clientWidth;
+    const inked = (x: number, y: number) => {
+      const [r, g, b] = ctx.getImageData(
+        Math.floor(x * ratio),
+        Math.floor(y * ratio),
+        1,
+        1,
+      ).data;
+      return !(r === 255 && g === 255 && b === 255);
+    };
+    const top = tickY(el, "100%");
+    // The upper half of the 2 px line sits above the panel's top edge.
+    expect(inked(tickX(el, "6"), top - 0.5)).toBe(true);
+    // The upper half of the censoring tick at t = 3, on the 100% line.
+    const x3 = tickX(el, "0") + ((tickX(el, "10") - tickX(el, "0")) * 3) / 10;
+    expect(inked(x3, top - 3)).toBe(true);
+    // The right half of the censoring tick at t = 10, the right edge.
+    const y50 = tickY(el, "50%");
+    expect(inked(tickX(el, "10") + 0.25, y50 - 3)).toBe(true);
+  });
+
+  it("prints uneven risk times in full", () => {
+    const el = container();
+    const km = createKm(el, {
+      data: {
+        columns: { time: [0, 10], surv: [1, 0.5] },
+        meta: { riskTimes: [0, 1, 2.5, 5, 10] },
+      },
+    });
+    instances.push(km);
+    const labels = Array.from(
+      el.querySelectorAll('svg text[text-anchor="middle"]'),
+    )
+      .map((t) => t.textContent)
+      .filter((s) => s && /^[0-9.]+$/.test(s));
+    expect(labels).toEqual(["0.0", "1.0", "2.5", "5.0", "10.0"]);
+  });
+
+  it("ignores a lower edge without an upper one for the y floor", () => {
+    const el = container();
+    const km = createKm(el, {
+      data: {
+        columns: {
+          time: [0, 5, 10],
+          surv: [1, 0.8, 0.7],
+          lower: [1, 0.4, 0.2],
+        },
+      },
+      options: { yFromZero: false },
+    });
+    instances.push(km);
+    const percents = Array.from(
+      el.querySelectorAll('svg text[text-anchor="end"]'),
+    )
+      .map((t) => t.textContent ?? "")
+      .filter((s) => s.endsWith("%"))
+      .map((s) => Number(s.slice(0, -1)));
+    // No band is drawn, so the axis fits the curve (70%) alone.
+    expect(Math.min(...percents)).toBeGreaterThan(50);
+  });
+
+  it("does not run every curve on to censoring ticks without a stratum", () => {
+    const el = container();
+    const km = createKm(el, {
+      data: {
+        columns: {
+          time: [0, 5, 0, 10],
+          surv: [1, 0.9, 1, 0.8],
+          group: ["T", "T", "C", "C"],
+        },
+        meta: {
+          censorTime: [20],
+          censorSurv: [0.8],
+          riskTimes: [0, 5, 10, 15, 20],
+        },
+      },
+    });
+    instances.push(km);
+    const tip = hoverAt(el, tickX(el, "15"), tickY(el, "50%"));
+    // T's rows end at 5, so there is no T estimate to show at 15.
+    expect(tip).not.toContain("T 90%");
+  });
 });

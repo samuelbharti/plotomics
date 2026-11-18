@@ -128,10 +128,13 @@ test_that("km() follows a custom groups order in the risk table", {
 
 test_that("km() takes a single risk time for several strata", {
   skip_if_not_installed("survival")
-  d <- data.frame(t = c(1, 2, 3, 4), e = 1, g = c("a", "a", "b", "b"))
+  # Three subjects in a, two in b, so a swap of the strata shows.
+  d <- data.frame(t = c(1, 2, 3, 4, 5), e = 1, g = c("a", "a", "a", "b", "b"))
   fit <- survival::survfit(survival::Surv(t, e) ~ g, data = d)
   w <- km(fit, risk_times = 0)
-  expect_equal(as.integer(w$x$data$meta$riskCounts), c(2L, 2L))
+  expect_equal(as.integer(w$x$data$meta$riskCounts), c(3L, 2L))
+  w <- km(fit, risk_times = 0, groups = c("b", "a"))
+  expect_equal(as.integer(w$x$data$meta$riskCounts), c(2L, 3L))
 })
 
 test_that("km() sends the colour of a single curve", {

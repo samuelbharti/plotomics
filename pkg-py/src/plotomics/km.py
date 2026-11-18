@@ -168,6 +168,17 @@ class Km(PlotomicsWidget):
                     raise ValueError(
                         "`risk_counts` must have one row per stratum."
                     )
+                # A DataFrame indexed by stratum is put in `groups` order, as
+                # R does with a matrix that has row names.
+                index = getattr(risk_counts, "index", None)
+                if (
+                    groups is not None
+                    and hasattr(risk_counts, "iloc")
+                    and type(index).__name__ != "RangeIndex"
+                ):
+                    labels = [str(v) for v in index]
+                    if len(set(labels)) == len(labels) and set(labels) == set(groups):
+                        counts = counts[[labels.index(g) for g in groups]]
                 # Row-major: the component indexes it as group * ntimes + j.
                 meta["riskCounts"] = [int(v) for v in counts.reshape(-1)]
 

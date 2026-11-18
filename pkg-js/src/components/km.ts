@@ -92,6 +92,10 @@ const RISK_GAP = 58;
 const RISK_LABEL_GAP = 18;
 /** Smallest left gutter, which fits the y tick labels. */
 const MIN_LEFT = 58;
+/** Widest left gutter, as a share of the element width. */
+const MAX_LEFT_SHARE = 0.35;
+/** Smallest risk-table row; below this the 9 px counts would overlap. */
+const MIN_RISK_ROW_H = 8;
 /** Length of a censoring tick, in pixels either side of the curve. */
 const CENSOR_TICK = 4;
 
@@ -116,6 +120,8 @@ export interface KmLayout {
  * Frame the curve panel, leaving room under the axis for one risk-table row per
  * stratum. The panel shrinks to fit the table rather than the table overflowing
  * the element, so a five-stratum plot in a short container still shows both.
+ * The left gutter grows with the longest stratum name, up to a share of the
+ * width; longer names are shortened when drawn.
  */
 export function layoutKm(
   width: number,
@@ -131,19 +137,30 @@ export function layoutKm(
   // The stratum names sit left of the counts at time 0, so the gutter grows
   // to fit the longest one.
   const left = showTable
-    ? Math.max(MIN_LEFT, Math.ceil(labelWidth) + RISK_LABEL_GAP + 8)
+    ? Math.max(
+        MIN_LEFT,
+        Math.min(
+          Math.ceil(labelWidth) + RISK_LABEL_GAP + 8,
+          Math.floor(width * MAX_LEFT_SHARE),
+        ),
+      )
     : MIN_LEFT;
   const right = 16;
   const top = 14;
   // Room for the axis labels alone when there is no table.
   const riskH = showTable ? RISK_GAP + nGroups * RISK_ROW_H : 30;
-  // Never let the table starve the curves: the panel keeps at least half the
-  // element, and if that leaves the table short its rows tighten rather than
-  // running off the bottom.
-  const axisY = Math.max(top + 40, height * 0.5, height - riskH);
+  // Never let the table starve the curves: the panel keeps half the element
+  // and the table rows tighten to fit below it. When even the tightest rows
+  // do not fit, the panel gives up the room they need.
+  const tightest = showTable ? RISK_GAP + nGroups * MIN_RISK_ROW_H : riskH;
+  const axisY = Math.max(
+    top + 40,
+    height - riskH,
+    Math.min(height * 0.5, height - tightest),
+  );
   const avail = height - axisY - RISK_GAP;
   const riskRowH = showTable
-    ? Math.min(RISK_ROW_H, Math.max(8, avail / nGroups))
+    ? Math.min(RISK_ROW_H, Math.max(MIN_RISK_ROW_H, avail / nGroups))
     : RISK_ROW_H;
   return {
     left,
@@ -230,21 +247,27 @@ export function groupSlices(
 }
 
 /**
- * Format a time label with the decimals its tick step needs, so 12.5 reads
- * "12.5" and not "13". Without a step, whole numbers print as they are and
- * other values keep up to two decimals.
+ * Format a time for the tooltip: whole numbers print as they are and other
+ * values keep up to two decimals.
  */
-export function formatTime(v: number, step = 0): string {
-  if (step > 0) {
-    for (let d = 0; d < 6; d += 1) {
-      const s = step * 10 ** d;
-      if (Math.abs(s - Math.round(s)) < 1e-6 * Math.max(1, s)) {
-        return v.toFixed(d);
-      }
-    }
-    return v.toFixed(6);
-  }
+export function formatTime(v: number): string {
   return Number.isInteger(v) ? String(v) : String(Number(v.toFixed(2)));
+}
+
+/**
+ * Decimals that show every value of `ticks` in full, so uneven risk times such
+ * as 1, 2.5 and 5 print as "1.0", "2.5" and "5.0" and not "1", "3", "5".
+ */
+export function tickDecimals(ticks: readonly number[]): number {
+  let d = 0;
+  for (const t of ticks) {
+    while (d < 6) {
+      const s = Math.abs(t) * 10 ** d;
+      if (Math.abs(s - Math.round(s)) < 1e-6 * Math.max(1, s)) break;
+      d += 1;
+    }
+  }
+  return d;
 }
 
 /** Round `max` up to a readable axis bound and produce evenly spaced ticks. */
@@ -322,7 +345,8 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     const ct = data.meta?.censorTime as number[] | undefined;
     const cg = data.meta?.censorGroup as string[] | undefined;
     let end = lastTime;
-    if (ct) {
+    // Ticks without a stratum belong to a curve only when there is one.
+    if (ct && (cg || strata().length === 1)) {
       for (let i = 0; i < ct.length; i += 1) {
         if (cg && cg[i] !== group) continue;
         if ((ct[i] as number) > end) end = ct[i] as number;
@@ -352,8 +376,9 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       }
     };
     scan(survs());
-    // The band is drawn too, so its lower edge must fit on the axis.
-    if (opts.showCI) scan(lowers());
+    // The band is drawn when both edges are given, so its lower edge must
+    // then fit on the axis.
+    if (opts.showCI && uppers()) scan(lowers());
     return Math.max(0, Math.floor(m * 10) / 10 - 0.05);
   }
   /** Width of the widest stratum name in the risk table, in px. */
@@ -364,6 +389,17 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     let w = 0;
     for (const g of groups()) w = Math.max(w, ctx.measureText(g).width);
     return w;
+  }
+  /** A stratum name cut with an ellipsis to fit `maxW` px in the table. */
+  function fitRiskLabel(name: string, maxW: number): string {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return name;
+    ctx.font = `9px ${theme.fontFamily}`;
+    if (ctx.measureText(name).width <= maxW) return name;
+    let n = name.length;
+    while (n > 1 && ctx.measureText(`${name.slice(0, n)}\u2026`).width > maxW)
+      n -= 1;
+    return `${name.slice(0, n)}\u2026`;
   }
   function hasRiskCounts(): boolean {
     return Boolean(data.meta?.riskCounts && data.meta?.riskTimes);
@@ -480,15 +516,18 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     const upper = uppers();
     const sArr = survs();
 
-    // Nothing is drawn outside the plot panel, so a band or a curve that
-    // reaches below the axis floor stops at the axis.
+    // A band or a curve that reaches below the axis floor stops at the axis.
+    // The other edges leave room for a full stroke and censoring tick, since
+    // every curve starts on the 100% line and may end on the right edge.
+    const pad = Math.max(CENSOR_TICK, opts.lineWidth) + 1;
+    const below = lo > 0 ? 0 : pad;
     ctx.save();
     ctx.beginPath();
     ctx.rect(
-      layout.left,
-      layout.top,
-      width - layout.left - layout.right,
-      layout.plotH,
+      layout.left - pad,
+      layout.top - pad,
+      width - layout.left - layout.right + 2 * pad,
+      layout.plotH + pad + below,
     );
     ctx.clip();
 
@@ -619,11 +658,9 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     );
     const ticks =
       (data.meta?.riskTimes as number[] | undefined) ?? timeTicks(tmax);
-    // Decimals come from the tick step, so 12.5 reads "12.5", not "13".
-    const step =
-      ticks.length > 1
-        ? Math.abs((ticks[1] as number) - (ticks[0] as number))
-        : 0;
+    // Every tick gets the decimals the most precise one needs, so 12.5 reads
+    // "12.5" and not "13".
+    const decimals = tickDecimals(ticks.filter((t) => t <= tmax));
     for (const t of ticks) {
       if (t > tmax) continue;
       const x = sx(t, tmax);
@@ -632,7 +669,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
         text(
           x,
           layout.axisY + 15,
-          formatTime(t, step),
+          t.toFixed(decimals),
           theme.muted,
           "middle",
           9,
@@ -672,7 +709,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
           text(
             layout.left - RISK_LABEL_GAP,
             y + 3,
-            gl[g] ?? "",
+            fitRiskLabel(gl[g] ?? "", layout.left - RISK_LABEL_GAP - 4),
             cols[g] ?? theme.foreground,
             "end",
             9,
