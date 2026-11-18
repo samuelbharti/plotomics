@@ -3,6 +3,7 @@ import {
   fitTransform,
   isCategorical,
   numericExtent,
+  spatialLevels,
   spotRadius,
 } from "../src/components/spatial.js";
 
@@ -23,12 +24,20 @@ describe("spatial fit transform", () => {
   });
 
   it("keeps the whole image inside the container", () => {
-    for (const [w, h] of [[300, 700], [1200, 200], [500, 500]]) {
+    for (const [w, h] of [
+      [300, 700],
+      [1200, 200],
+      [500, 500],
+    ]) {
       const f = fitTransform(w as number, h as number, 600, 450);
       expect(f.offsetX).toBeGreaterThanOrEqual(-1e-9);
       expect(f.offsetY).toBeGreaterThanOrEqual(-1e-9);
-      expect(f.offsetX + 600 * f.scale).toBeLessThanOrEqual((w as number) + 1e-9);
-      expect(f.offsetY + 450 * f.scale).toBeLessThanOrEqual((h as number) + 1e-9);
+      expect(f.offsetX + 600 * f.scale).toBeLessThanOrEqual(
+        (w as number) + 1e-9,
+      );
+      expect(f.offsetY + 450 * f.scale).toBeLessThanOrEqual(
+        (h as number) + 1e-9,
+      );
     }
   });
 
@@ -39,8 +48,16 @@ describe("spatial fit transform", () => {
   });
 
   it("degrades safely on zero-sized input", () => {
-    expect(fitTransform(0, 0, 600, 600)).toEqual({ scale: 1, offsetX: 0, offsetY: 0 });
-    expect(fitTransform(100, 100, 0, 0)).toEqual({ scale: 1, offsetX: 0, offsetY: 0 });
+    expect(fitTransform(0, 0, 600, 600)).toEqual({
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+    });
+    expect(fitTransform(100, 100, 0, 0)).toEqual({
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+    });
   });
 });
 
@@ -81,5 +98,27 @@ describe("spatial colour handling", () => {
     expect(numericExtent([NaN, 2, Infinity, 6])).toEqual([2, 6]);
     expect(numericExtent([NaN, NaN])).toEqual([0, 1]);
     expect(numericExtent([])).toEqual([0, 1]);
+  });
+});
+
+describe("spatial levels and missing values", () => {
+  it("decides the colour type from the first value that is not missing", () => {
+    expect(isCategorical([null, "a", "b"], "auto")).toBe(true);
+    expect(isCategorical([null, 1, 2], "auto")).toBe(false);
+    expect(isCategorical([Number.NaN, 1], "auto")).toBe(false);
+  });
+
+  it("sorts levels in natural order and leaves out missing values", () => {
+    expect(spatialLevels([10, 2, null, 0, 1])).toEqual(["0", "1", "2", "10"]);
+    expect(spatialLevels(["b", "a"], ["b", "a"])).toEqual(["b", "a"]);
+    // Numeric levels from R arrive as numbers; they are read as text.
+    expect(spatialLevels([], [0, 1])).toEqual(["0", "1"]);
+    // Numbers read as categories sort by value.
+    expect(spatialLevels([0.5, 0.25, 1, 1.5])).toEqual([
+      "0.25",
+      "0.5",
+      "1",
+      "1.5",
+    ]);
   });
 });

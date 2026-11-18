@@ -97,3 +97,45 @@ def test_spatial_validates_its_input():
         Spatial(d, levels=["A", "B"], colors=["#f00"], **IMG)
     with pytest.raises(ValueError, match="same length"):
         Spatial({"x": [1, 2, 3], "y": [1, 2]}, **IMG)
+
+
+def test_spatial_sends_missing_colours_as_null_and_reads_categorical_levels():
+    pd = pytest.importorskip("pandas")
+    d = {"x": [1, 2, 3], "y": [1, 2, 3],
+         "color": pd.Categorical(["b", None, "a"], categories=["b", "a"])}
+    w = Spatial(d, image="img.png", img_width=10, img_height=10)
+    assert w.data["columns"]["color"] == ["b", None, "a"]
+    assert w.data["meta"]["levels"] == ["b", "a"]
+
+
+def test_spatial_keeps_a_numeric_colour_with_a_missing_value_numeric():
+    d = {"x": [1, 2, 3], "y": [1, 2, 3], "color": [None, 2.0, 3.0]}
+    w = Spatial(d, image="img.png", img_width=10, img_height=10)
+    assert "color" not in w.data["columns"]
+
+
+def test_spatial_rejects_too_few_colours_for_the_levels():
+    d = {"x": [1, 2, 3], "y": [1, 2, 3], "color": ["a", "b", "c"]}
+    with pytest.raises(ValueError, match="one entry per level"):
+        Spatial(d, image="img.png", img_width=10, img_height=10,
+                colors=["#ff0000"])
+
+
+def test_spatial_checks_colours_against_categorical_levels():
+    pd = pytest.importorskip("pandas")
+    d = {"x": [1, 2, 3], "y": [1, 2, 3],
+         "color": pd.Categorical(["a", "b", "a"])}
+    w = Spatial(d, image="img.png", img_width=10, img_height=10,
+                colors=["#ff0000", "#00ff00", "#0000ff"])
+    assert w.data["meta"]["levels"] == ["a", "b"]
+    with pytest.raises(ValueError, match="one entry per level"):
+        Spatial(d, image="img.png", img_width=10, img_height=10,
+                colors=["#ff0000"])
+
+
+def test_spatial_sends_numbers_read_as_categories_at_full_precision():
+    d = {"x": [1, 2], "y": [1, 2], "color": [0.1, 0.2]}
+    w = Spatial(d, image="img.png", img_width=10, img_height=10,
+                color_mode="categorical", levels=["0.1", "0.2"],
+                colors=["#ff0000", "#0000ff"])
+    assert w.data["columns"]["color"] == [0.1, 0.2]
