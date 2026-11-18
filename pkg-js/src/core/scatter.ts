@@ -91,24 +91,79 @@ export function fitView(
 }
 
 /**
- * Run fits and draws one after another.
+ * Call `fn` once, `ms` after the last of a run of calls. A dragged window
+ * edge sends a resize on every frame; the refit waits until it stops.
+ */
+export function afterQuiet(
+  fn: () => void,
+  ms: number,
+): { (): void; cancel(): void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const call = () => {
+    clearTimeout(timer);
+    timer = setTimeout(fn, ms);
+  };
+  call.cancel = () => clearTimeout(timer);
+  return call;
+}
+
+/** Requests renders from a render loop, and stops it. */
+export interface RenderLoop {
+  /** Ask for a render. `fit` asks it to frame all the data again. */
+  request(fit: boolean): void;
+  /** Drop any pending render. For destroy(). */
+  stop(): void;
+}
+
+/**
+ * Run renders one at a time, and merge the requests that arrive while one
+ * runs into a single next render.
  *
  * regl-scatterplot rejects a draw() that starts before the previous one has
- * finished, and keeps the old points. A fit that went through next to a
- * rejected draw would leave the axes on the new range and the points on the
- * old one. Each step waits for the one before. A failed step is logged and
- * does not stop the steps after it.
+ * finished, and keeps the old points, which would leave them under axes for
+ * new data. A dragged window edge sends a resize on every frame, and each
+ * render maps every point again; merged, a burst of requests costs one more
+ * render, not one per request. A render starts in a microtask, so requests
+ * made together, such as the setData() and setOptions() that the Shiny
+ * binding sends on every update, also become one render. The merged render
+ * fits if any request asked for a fit. It reads the component's state when
+ * it starts, so it always draws the latest data and options. A failed render
+ * is logged and does not stop the next one.
  */
-export function createDrawQueue(): (
-  step: () => Promise<unknown>,
-) => Promise<void> {
-  let last: Promise<void> = Promise.resolve();
-  return (step) => {
-    last = last.then(step).then(
-      () => {},
-      (err) => console.error("plotomics: scatterplot draw failed", err),
-    );
-    return last;
+export function createRenderLoop(
+  render: (fit: boolean) => Promise<void>,
+): RenderLoop {
+  let running = false;
+  let stopped = false;
+  // null: nothing pending. Otherwise whether the pending render fits.
+  let pending: boolean | null = null;
+
+  async function run() {
+    while (pending !== null && !stopped) {
+      const fit = pending;
+      pending = null;
+      try {
+        await render(fit);
+      } catch (err) {
+        console.error("plotomics: scatterplot render failed", err);
+      }
+    }
+    running = false;
+  }
+
+  return {
+    request(fit) {
+      if (stopped) return;
+      pending = (pending ?? false) || fit;
+      if (!running) {
+        running = true;
+        queueMicrotask(() => void run());
+      }
+    },
+    stop() {
+      stopped = true;
+      pending = null;
+    },
   };
 }
 

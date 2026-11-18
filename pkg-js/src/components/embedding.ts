@@ -40,7 +40,8 @@ import {
   fitView,
   resizeView,
   isStartView,
-  createDrawQueue,
+  createRenderLoop,
+  afterQuiet,
 } from "../core/index.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
@@ -356,7 +357,15 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
     lassoInitiator: true,
     lassoOnLongPress: true,
   });
-  const queue = createDrawQueue();
+  const loop = createRenderLoop((fit) => render(fit));
+  let destroyed = false;
+  // Until the person pans or zooms, the plot keeps showing all the data, so
+  // it fits again once a resize has settled. This also covers the first
+  // draw, which happens at measure()'s 640x480 fallback when the container
+  // has not been laid out yet. After a pan or zoom it keeps their view.
+  const refitAfterResize = afterQuiet(() => {
+    if (data.columns.x && isStartView(scatterplot)) applyData(true);
+  }, 120);
 
   scatterplot.subscribe("pointOver", (i: number) => showTip(i));
   scatterplot.subscribe("pointOut", () => tooltip.hide());
@@ -427,88 +436,94 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
   // `fit` recomputes the view to frame the data (used on new data); pass false
   // to recolor/redraw at the current pan/zoom (used on option changes) so a
   // re-render — e.g. toggling the drag mode — never snaps the camera back.
+  // Every request goes to the render loop. Renders run one at a time, read
+  // the current state when they start, and fit if any merged request asked.
   function applyData(fit = true) {
+    loop.request(fit);
+  }
+
+  async function render(fit: boolean) {
     const cols = data.columns;
     const x = cols.x as ArrayLike<number> | undefined;
     const y = cols.y as ArrayLike<number> | undefined;
     if (!x || !y || x.length === 0) {
-      // clear() acts at once. Its promise waits for a "draw" event that an
-      // empty plot may never fire, so the queue does not wait for it.
-      void queue(async () => {
-        void scatterplot.clear?.();
-      });
+      void scatterplot.clear?.();
       legend = null;
       renderOverlay();
       return;
     }
+    const fitW = innerW();
+    const fitH = innerH();
     if (fit) {
       xDomain = paddedExtent(x, opts.padding);
       yDomain = paddedExtent(y, opts.padding);
       if (opts.aspect === "equal") {
-        [xDomain, yDomain] = equalAspectDomains(
-          xDomain, yDomain, innerW(), innerH());
+        [xDomain, yDomain] = equalAspectDomains(xDomain, yDomain, fitW, fitH);
       }
       // One unit is the same number of pixels on both axes of the
       // scatterplot, so domains that "equal" has matched to the plot area's
       // shape keep equal data units per pixel through every pan and zoom.
-      [baseX, baseY] = baseDomains(xDomain, yDomain, innerW(), innerH());
+      [baseX, baseY] = baseDomains(xDomain, yDomain, fitW, fitH);
     }
     const [xBase, yBase] = [baseX, baseY];
     const px = toNdc(x, xBase);
     const py = toNdc(y, yBase);
-    // The fit, when there is one, and the draw go through the queue as one
-    // step, so the scales and the points always change together.
-    const draw = (z: ArrayLike<number>, zDataType: "categorical" | "continuous") =>
-      void queue(async () => {
-        if (fit) await fitView(scatterplot, xScale, yScale, xBase, yBase);
-        await scatterplot.draw({ x: px, y: py, z }, { zDataType });
-      });
 
     const color = cols.color;
     const mode = color && color.length ? resolveColorMode(color, opts.colorMode) : null;
+    let z: ArrayLike<number>;
+    let zDataType: "categorical" | "continuous" = "categorical";
+    let colorBy = "category";
+    let pointColor: string[];
 
     if (mode === "categorical") {
       const { indices, categories } = categoryToIndex(
         color as string[], opts.categories);
-      const palette = categoricalPalette(categories.length);
-      legend = { mode, categories, palette };
-      scatterplot.set({
-        colorBy: "category",
-        pointColor: palette,
-        pointSize: opts.pointSize,
-        pointScaleMode: opts.pointScaleMode,
-        opacity: opts.opacity,
-      });
+      pointColor = categoricalPalette(categories.length);
+      legend = { mode, categories, palette: pointColor };
       // Integer category indices in the z channel; pointColor[z] selects the hue.
-      draw(indices, "categorical");
+      z = indices;
     } else if (mode === "continuous") {
       const values = color as ArrayLike<number>;
       const domain = paddedExtent(values, 0);
-      const z = normalizeToUnit(values, domain);
-      const palette = sampleRamp(opts.colormap, CONTINUOUS_STEPS);
+      pointColor = sampleRamp(opts.colormap, CONTINUOUS_STEPS);
       legend = { mode, domain };
-      scatterplot.set({
-        colorBy: "valueA",
-        pointColor: palette,
-        pointSize: opts.pointSize,
-        pointScaleMode: opts.pointScaleMode,
-        opacity: opts.opacity,
-      });
       // Normalized [0,1] values interpolate across the sampled ramp.
-      draw(z, "continuous");
+      z = normalizeToUnit(values, domain);
+      zDataType = "continuous";
+      colorBy = "valueA";
     } else {
       // No color column: one flat hue, no legend.
       legend = null;
-      scatterplot.set({
-        colorBy: "category",
-        pointColor: [theme.categorical[0] ?? OKABE_ITO[0] ?? "#0072B2"],
-        pointSize: opts.pointSize,
-        pointScaleMode: opts.pointScaleMode,
-        opacity: opts.opacity,
-      });
-      draw(new Float32Array(x.length), "categorical");
+      pointColor = [theme.categorical[0] ?? OKABE_ITO[0] ?? "#0072B2"];
+      z = new Float32Array(x.length);
     }
     renderOverlay();
+    // The fit and the draw happen in the same render, so the scales and the
+    // points come from the same data.
+    if (fit) {
+      await fitView(scatterplot, xScale, yScale, xBase, yBase);
+      if (destroyed) return;
+    }
+    // Colours go in just before the points they belong to.
+    scatterplot.set({
+      colorBy,
+      pointColor,
+      pointSize: opts.pointSize,
+      pointScaleMode: opts.pointScaleMode,
+      opacity: opts.opacity,
+    });
+    await scatterplot.draw({ x: px, y: py, z }, { zDataType });
+    // A resize that arrived while this fit ran used the old size for the
+    // base ranges. Fit again at the new one, unless the view has moved.
+    if (
+      fit &&
+      !destroyed &&
+      (innerW() !== fitW || innerH() !== fitH) &&
+      isStartView(scatterplot)
+    ) {
+      applyData(true);
+    }
   }
 
   // ---- overlay rendering (optional axes + legend) ----
@@ -696,8 +711,13 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       // aspect and padding decide the fitted range, so a change to either
-      // refits. The wrappers may resend every option, so compare values.
-      const refit = opts.aspect !== prev.aspect || opts.padding !== prev.padding;
+      // refits. showAxes changes the plot area's size, which refits while
+      // the view is untouched, as a resize does. The wrappers may resend
+      // every option, so compare values.
+      const refit =
+        opts.aspect !== prev.aspect ||
+        opts.padding !== prev.padding ||
+        (opts.showAxes !== prev.showAxes && isStartView(scatterplot));
       scatterplot.set({
         backgroundColor: theme.background,
         mouseMode: opts.mouseMode,
@@ -715,12 +735,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
       applyData(refit);
     },
     resize(w, h) {
+      if (w === width && h === height) return;
       doResize(w, h);
-      // Until the person pans or zooms, the plot keeps showing all the data,
-      // so it fits again at the new size. This also covers the first draw,
-      // which happens at measure()'s 640x480 fallback when the container has
-      // not been laid out yet. After a pan or zoom it keeps their view.
-      if (data.columns.x && isStartView(scatterplot)) applyData(true);
+      refitAfterResize();
     },
     get selectedIndices() {
       return selected.slice();
@@ -742,6 +759,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (el, initial)
       return canvasToPNG(canvas, scale);
     },
     destroy() {
+      destroyed = true;
+      loop.stop();
+      refitAfterResize.cancel();
       el.removeEventListener("mousemove", onMove);
       tooltip.destroy();
       scatterplot.destroy();

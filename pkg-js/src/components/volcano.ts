@@ -26,7 +26,8 @@ import {
   fitView,
   resizeView,
   isStartView,
-  createDrawQueue,
+  createRenderLoop,
+  afterQuiet,
 } from "../core/index.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
@@ -123,8 +124,13 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
   // Layout state
   let width = 0;
   let height = 0;
+  // The visible range, which follows pan/zoom and drives the axes.
   let xDomain: [number, number] = [-1, 1];
   let yDomain: [number, number] = [0, 1];
+  // The range that [-1, 1] stands for, fixed at the last fit. A redraw at
+  // the current zoom converts the points with this one.
+  let baseX: [number, number] = [-1, 1];
+  let baseY: [number, number] = [0, 1];
 
   const xScale = scaleLinear().domain(xDomain);
   const yScale = scaleLinear().domain(yDomain);
@@ -150,7 +156,13 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     backgroundColor: theme.background,
     lassoInitiator: false,
   });
-  const queue = createDrawQueue();
+  const loop = createRenderLoop((fit) => render(fit));
+  let destroyed = false;
+  // Until the person pans or zooms, the plot keeps showing all the data, so
+  // it fits again once a resize has settled. After that it keeps their view.
+  const refitAfterResize = afterQuiet(() => {
+    if (data.columns.x && isStartView(scatterplot)) applyData();
+  }, 120);
 
   scatterplot.subscribe("pointOver", (i: number) => showTip(i));
   scatterplot.subscribe("pointOut", () => tooltip.hide());
@@ -200,21 +212,30 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     svg.setAttribute("height", String(height));
   }
 
-  function applyData() {
+  // Every change asks the loop for a render. Renders run one at a time and
+  // read the current state when they start. `fit` frames all the data again:
+  // new data and a settled resize ask for it. Options only recolor and
+  // relabel, so they redraw at the current pan/zoom.
+  function applyData(fit = true) {
+    loop.request(fit);
+  }
+
+  async function render(fit: boolean) {
     const cols = data.columns;
     if (!cols.x || !cols.y || cols.x.length === 0) {
-      // clear() acts at once. Its promise waits for a "draw" event that an
-      // empty plot may never fire, so the queue does not wait for it.
-      void queue(async () => {
-        void scatterplot.clear?.();
-      });
+      void scatterplot.clear?.();
       renderOverlay();
       return;
     }
-    xDomain = symmetricExtent(cols.x);
-    yDomain = paddedExtent(cols.y);
-    yDomain[0] = Math.min(0, yDomain[0]);
-    const [xBase, yBase] = baseDomains(xDomain, yDomain, innerW(), innerH());
+    const fitW = innerW();
+    const fitH = innerH();
+    if (fit) {
+      xDomain = symmetricExtent(cols.x);
+      yDomain = paddedExtent(cols.y);
+      yDomain[0] = Math.min(0, yDomain[0]);
+      [baseX, baseY] = baseDomains(xDomain, yDomain, fitW, fitH);
+    }
+    const [xBase, yBase] = [baseX, baseY];
 
     const yThresh = -Math.log10(opts.pThreshold);
     const n = cols.x.length;
@@ -227,12 +248,24 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
       y: toNdc(cols.y as ArrayLike<number>, yBase),
       z,
     };
-    applyColors();
-    void queue(async () => {
-      await fitView(scatterplot, xScale, yScale, xBase, yBase);
-      await scatterplot.draw(points);
-    });
     renderOverlay();
+    if (fit) {
+      await fitView(scatterplot, xScale, yScale, xBase, yBase);
+      if (destroyed) return;
+    }
+    // Colours go in just before the points they belong to.
+    applyColors();
+    await scatterplot.draw(points);
+    // A resize that arrived while this fit ran used the old size for the
+    // base ranges. Fit again at the new one, unless the view has moved.
+    if (
+      fit &&
+      !destroyed &&
+      (innerW() !== fitW || innerH() !== fitH) &&
+      isStartView(scatterplot)
+    ) {
+      applyData(true);
+    }
   }
 
   function applyColors() {
@@ -378,13 +411,13 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
-      applyData();
+      // No option changes the data range, so the current pan/zoom stays.
+      applyData(false);
     },
     resize(w, h) {
+      if (w === width && h === height) return;
       doResize(w, h);
-      // Until the person pans or zooms, the plot keeps showing all the data,
-      // so it fits again at the new size. After that it keeps their view.
-      if (data.columns.x && isStartView(scatterplot)) applyData();
+      refitAfterResize();
     },
     exportSVG() {
       // Hybrid figure: rasterized GPU layer + vector axes/labels.
@@ -402,6 +435,9 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (el, initial) => 
       return canvasToPNG(canvas, scale);
     },
     destroy() {
+      destroyed = true;
+      loop.stop();
+      refitAfterResize.cancel();
       el.removeEventListener("mousemove", onMove);
       tooltip.destroy();
       scatterplot.destroy();

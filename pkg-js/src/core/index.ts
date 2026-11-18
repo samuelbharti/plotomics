@@ -61,5 +61,7 @@ export {
   fitView,
   resizeView,
   isStartView,
-  createDrawQueue,
+  type RenderLoop,
+  createRenderLoop,
+  afterQuiet,
 } from "./scatter.js";
