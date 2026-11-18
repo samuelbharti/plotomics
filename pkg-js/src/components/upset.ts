@@ -39,6 +39,10 @@ import {
   zeroTicks,
   fitZeroTicks,
   formatTick,
+  defaultTheme,
+  type TextSizes,
+  textSizes,
+  textWidth as measureText,
 } from "../core/index.js";
 
 export interface UpsetOptions {
@@ -70,6 +74,23 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 /** The set-name column grows to this many px, or this share of the width. */
 const NAME_MAX_PX = 200;
 const NAME_MAX_SHARE = 0.3;
+/**
+ * Room a line of text takes above its baseline, as a share of its size. This
+ * covers the font box of the common system fonts.
+ */
+const ASCENT = 1.08;
+/** Text sizes of the default theme, for a layout computed without a theme. */
+const DEFAULT_SIZES = textSizes(defaultTheme);
+
+/** How far below a line a text's baseline goes to centre the text on it. */
+function midline(size: number): number {
+  return size * 0.35;
+}
+
+/** x of the rotated y title, far enough right for its letters. */
+function titleX(s: TextSizes): number {
+  return Math.ceil(1.1 * s.axisTitle);
+}
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/upset.test.ts)
@@ -107,8 +128,13 @@ export function layoutUpset(
   nameWidth = 48,
   /** Width in px of the widest set-size count. */
   countWidth = 24,
+  /** Text sizes; those of the default theme when omitted. */
+  sizes: TextSizes = DEFAULT_SIZES,
 ): UpsetLayout {
-  const setPanelW = opts.showSetSizes ? 74 : 0;
+  // The set-size panel also holds its "set size" title, about 3.6 em wide.
+  const setPanelW = opts.showSetSizes
+    ? Math.max(74, Math.ceil(3.6 * sizes.axisTitle))
+    : 0;
   // The counts sit just right of the set-size bars, then the names; the
   // name column grows with the longest name up to a share of the width, and
   // longer names are shortened when drawn.
@@ -116,7 +142,8 @@ export function layoutUpset(
   const cap = Math.min(NAME_MAX_PX, Math.max(44, width * NAME_MAX_SHARE));
   const nameW = Math.min(cap, Math.max(44, Math.ceil(nameWidth) + 10));
   const left = setPanelW + countW + nameW + 12;
-  const top = 14;
+  // Room above the bars for the total, drawn 2 px under the top.
+  const top = Math.max(14, Math.ceil(ASCENT * sizes.label) + 2);
   const bottom = 16;
   const avail = Math.max(1, height - top - bottom);
   // Clamp the split so neither panel can vanish at extreme aspect ratios.
@@ -175,6 +202,7 @@ export function membershipRow(
 export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
   let opts: UpsetOptions = mergeOptions(defaultUpsetOptions, initial.options);
   let theme = resolveTheme(opts.theme);
+  let fontSizes = textSizes(theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   let width = 0;
@@ -200,20 +228,18 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
   const barFill = () => opts.barColor ?? theme.foreground;
   const emptyFill = () => opts.emptyDotColor ?? theme.grid;
 
-  const measureCtx = document.createElement("canvas").getContext("2d");
   function textWidth(s: string, size: number): number {
-    if (!measureCtx) return s.length * size * 0.56;
-    measureCtx.font = `${size}px ${theme.fontFamily}`;
-    return measureCtx.measureText(s).width;
+    return measureText(s, size, theme.fontFamily);
   }
   /** A name cut with an ellipsis to fit `maxW` px. */
   function fitName(name: string, maxW: number): string {
-    if (textWidth(name, 10) <= maxW) return name;
+    if (textWidth(name, fontSizes.label) <= maxW) return name;
     let lo = 1;
     let hi = name.length;
     while (lo < hi) {
       const mid = Math.ceil((lo + hi) / 2);
-      if (textWidth(`${name.slice(0, mid)}\u2026`, 10) <= maxW) lo = mid;
+      if (textWidth(`${name.slice(0, mid)}\u2026`, fontSizes.label) <= maxW)
+        lo = mid;
       else hi = mid - 1;
     }
     return `${name.slice(0, lo)}\u2026`;
@@ -289,14 +315,17 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     if (!ctx || !width || !height) return;
     const s = sizes();
     const names = sets();
-    const nameWidth = names.reduce((m, n) => Math.max(m, textWidth(n, 10)), 0);
+    const nameWidth = names.reduce(
+      (m, n) => Math.max(m, textWidth(n, fontSizes.label)),
+      0,
+    );
     const ssAll = setSizes();
     let countWidth = 0;
     if (ssAll) {
       for (let k = 0; k < ssAll.length; k += 1) {
         countWidth = Math.max(
           countWidth,
-          textWidth(fmtInt(ssAll[k] as number), 8),
+          textWidth(fmtInt(ssAll[k] as number), fontSizes.label),
         );
       }
     }
@@ -308,6 +337,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       opts,
       nameWidth,
       countWidth,
+      fontSizes,
     );
 
     ctx.clearRect(0, 0, width, height);
@@ -319,7 +349,10 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     }
 
     // Whole-number ticks, as many as the bar panel holds without crowding.
-    const axis = fitZeroTicks(finiteMax(s), layout.barH - 6, { integer: true });
+    const axis = fitZeroTicks(finiteMax(s), layout.barH - 6, {
+      integer: true,
+      minGapPx: fontSizes.label + 5,
+    });
     const max = axis.top;
     const bw = Math.max(1, layout.colW * 0.68);
     const mem = membership();
@@ -412,21 +445,21 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       svg.appendChild(
         text(
           layout.left - 6,
-          y + 3,
+          y + midline(fontSizes.label),
           formatTick(v, axis.step),
           theme.muted,
           "end",
-          9,
+          fontSizes.label,
         ),
       );
     }
     svg.appendChild(
       rotatedText(
-        14,
+        titleX(fontSizes),
         layout.top + layout.barH / 2,
         opts.yLabel,
         theme.muted,
-        10,
+        fontSizes.axisTitle,
       ),
     );
 
@@ -436,11 +469,13 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       svg.appendChild(
         text(
           layout.left - 10,
-          layout.barBaseline + (k + 0.5) * layout.rowH + 3,
+          layout.barBaseline +
+            (k + 0.5) * layout.rowH +
+            midline(fontSizes.label),
           fitName(names[k] ?? "", nameRoom),
           theme.foreground,
           "end",
-          10,
+          fontSizes.label,
         ),
       );
     }
@@ -448,17 +483,26 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     const ss = setSizes();
     if (opts.showSetSizes && ss) {
       svg.appendChild(
-        text(0, layout.barBaseline - 6, "set size", theme.muted, "start", 9),
+        text(
+          0,
+          layout.barBaseline - 6,
+          "set size",
+          theme.muted,
+          "start",
+          fontSizes.axisTitle,
+        ),
       );
       for (let k = 0; k < names.length; k += 1) {
         svg.appendChild(
           text(
             layout.setPanelW + 3,
-            layout.barBaseline + (k + 0.5) * layout.rowH + 3,
+            layout.barBaseline +
+              (k + 0.5) * layout.rowH +
+              midline(fontSizes.label),
             fmtInt(ss[k] as number),
             theme.muted,
             "start",
-            8,
+            fontSizes.label,
           ),
         );
       }
@@ -473,7 +517,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
           `${total.toLocaleString()} total`,
           theme.muted,
           "end",
-          9,
+          fontSizes.label,
         ),
       );
     }
@@ -486,7 +530,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     content: string,
     fill: string,
     anchor: string,
-    size = 10,
+    size: number,
   ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
@@ -546,6 +590,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      fontSizes = textSizes(theme);
       render();
     },
     resize(w, h) {

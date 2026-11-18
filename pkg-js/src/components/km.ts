@@ -45,6 +45,10 @@ import {
   serializeSVG,
   canvasToPNG,
   OKABE_ITO,
+  defaultTheme,
+  type TextSizes,
+  textSizes,
+  textWidth,
 } from "../core/index.js";
 
 export interface KmOptions {
@@ -80,24 +84,55 @@ export const defaultKmOptions: KmOptions = {
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-/** Height of one row in the at-risk table. */
-const RISK_ROW_H = 16;
-/**
- * Gap between the axis and the first risk-table row: room for the tick
- * labels (axis + 15), the x title (axis + 28) and the "number at risk"
- * heading (axis + 44).
- */
-const RISK_GAP = 58;
-/** Space between a risk-table name and the column of counts at time 0. */
-const RISK_LABEL_GAP = 18;
-/** Smallest left gutter, which fits the y tick labels. */
+/** Smallest left gutter. */
 const MIN_LEFT = 58;
 /** Widest left gutter, as a share of the element width. */
 const MAX_LEFT_SHARE = 0.35;
-/** Smallest risk-table row; below this the 9 px counts would overlap. */
-const MIN_RISK_ROW_H = 8;
 /** Length of a censoring tick, in pixels either side of the curve. */
 const CENSOR_TICK = 4;
+/**
+ * Room a line of text takes above and below its baseline, as a share of its
+ * size. This covers the font box of the common system fonts.
+ */
+const ASCENT = 1.08;
+const DESCENT = 0.26;
+/** Text sizes of the default theme, for a layout computed without a theme. */
+const DEFAULT_SIZES = textSizes(defaultTheme);
+
+/** How far below a line a text's baseline goes to centre the text on it. */
+function midline(size: number): number {
+  return size * 0.35;
+}
+
+/**
+ * Where the text around the curve panel goes for the given text sizes:
+ * offsets below the time axis of the tick labels, the x title and the
+ * "number at risk" heading, and the size of the risk-table rows. Each line
+ * starts under the font box of the line above it.
+ */
+function kmText(s: TextSizes) {
+  const tick = 6 + s.label;
+  const title = tick + Math.ceil(DESCENT * s.label + ASCENT * s.axisTitle) + 1;
+  const heading = title + Math.ceil((DESCENT + ASCENT) * s.axisTitle) + 1;
+  const rowH = Math.round(s.label + 5);
+  return {
+    /** x of the rotated y title, far enough right for its letters. */
+    titleX: Math.ceil(1.1 * s.axisTitle),
+    tick,
+    title,
+    heading,
+    /** Room under the axis for the tick labels and the x title alone. */
+    axisOnly: Math.ceil(title + DESCENT * s.axisTitle) + 1,
+    /** Gap from the axis to the middle of the first risk-table row. */
+    gap: heading + Math.ceil(DESCENT * s.axisTitle) + 2 + rowH / 2,
+    /** Height of one risk-table row. */
+    rowH,
+    /** Smallest row; tighter rows would run the names into each other. */
+    minRowH: Math.ceil(0.8 * s.label),
+    /** Space between a stratum name and the column of counts at time 0. */
+    labelGap: 2 * s.small,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/km.test.ts)
@@ -111,7 +146,7 @@ export interface KmLayout {
   axisY: number;
   /** Height of the curve panel. */
   plotH: number;
-  /** y of the first risk-table row's baseline. */
+  /** y of the middle of the first risk-table row. */
   riskTop: number;
   riskRowH: number;
 }
@@ -132,43 +167,56 @@ export function layoutKm(
   hasCounts = true,
   /** Width in px of the longest stratum name in the table. */
   labelWidth = 0,
+  /** Text sizes; those of the default theme when omitted. */
+  sizes: TextSizes = DEFAULT_SIZES,
+  /** Width in px of the widest y tick label. */
+  tickWidth = 0,
+  /** Width in px of the widest text centred on the last time tick. */
+  endWidth = 0,
 ): KmLayout {
+  const t = kmText(sizes);
   const showTable = opts.showRiskTable && nGroups > 0 && hasCounts;
+  // The y tick labels sit between the rotated y title and the panel.
+  const minLeft = Math.max(
+    MIN_LEFT,
+    Math.ceil(t.titleX + DESCENT * sizes.axisTitle + 3 + tickWidth + 8),
+  );
   // The stratum names sit left of the counts at time 0, so the gutter grows
   // to fit the longest one.
   const left = showTable
     ? Math.max(
-        MIN_LEFT,
+        minLeft,
         Math.min(
-          Math.ceil(labelWidth) + RISK_LABEL_GAP + 8,
+          Math.ceil(labelWidth) + t.labelGap + 8,
           Math.floor(width * MAX_LEFT_SHARE),
         ),
       )
-    : MIN_LEFT;
-  const right = 16;
+    : minLeft;
+  // The last tick label is centred on the right edge of the panel.
+  const right = Math.max(16, Math.ceil(endWidth / 2) + 2);
   const top = 14;
   // Room for the axis labels alone when there is no table.
-  const riskH = showTable ? RISK_GAP + nGroups * RISK_ROW_H : 30;
+  const riskH = showTable ? t.gap + nGroups * t.rowH : t.axisOnly;
   // Never let the table starve the curves: the panel keeps half the element
   // and the table rows tighten to fit below it. When even the tightest rows
   // do not fit, the panel gives up the room they need.
-  const tightest = showTable ? RISK_GAP + nGroups * MIN_RISK_ROW_H : riskH;
+  const tightest = showTable ? t.gap + nGroups * t.minRowH : riskH;
   const axisY = Math.max(
     top + 40,
     height - riskH,
     Math.min(height * 0.5, height - tightest),
   );
-  const avail = height - axisY - RISK_GAP;
+  const avail = height - axisY - t.gap;
   const riskRowH = showTable
-    ? Math.min(RISK_ROW_H, Math.max(MIN_RISK_ROW_H, avail / nGroups))
-    : RISK_ROW_H;
+    ? Math.min(t.rowH, Math.max(t.minRowH, avail / nGroups))
+    : t.rowH;
   return {
     left,
     right,
     top,
     axisY,
     plotH: Math.max(1, axisY - top),
-    riskTop: axisY + RISK_GAP,
+    riskTop: axisY + t.gap,
     riskRowH,
   };
 }
@@ -290,6 +338,7 @@ export function timeTicks(max: number, target = 6): number[] {
 export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   let opts: KmOptions = mergeOptions(defaultKmOptions, initial.options);
   let theme = resolveTheme(opts.theme);
+  let sizes = textSizes(theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   let width = 0;
@@ -384,25 +433,56 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     if (opts.showCI && uppers()) scan(lowers());
     return Math.max(0, Math.floor(m * 10) / 10 - 0.05);
   }
+  /** Width of `s` in px at the label size. */
+  function labelWidth(s: string): number {
+    return textWidth(s, sizes.label, theme.fontFamily);
+  }
   /** Width of the widest stratum name in the risk table, in px. */
   function riskLabelWidth(): number {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return 0;
-    ctx.font = `9px ${theme.fontFamily}`;
     let w = 0;
-    for (const g of groups()) w = Math.max(w, ctx.measureText(g).width);
+    for (const g of groups()) w = Math.max(w, labelWidth(g));
     return w;
   }
   /** A stratum name cut with an ellipsis to fit `maxW` px in the table. */
   function fitRiskLabel(name: string, maxW: number): string {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return name;
-    ctx.font = `9px ${theme.fontFamily}`;
-    if (ctx.measureText(name).width <= maxW) return name;
+    if (labelWidth(name) <= maxW) return name;
     let n = name.length;
-    while (n > 1 && ctx.measureText(`${name.slice(0, n)}\u2026`).width > maxW)
-      n -= 1;
+    while (n > 1 && labelWidth(`${name.slice(0, n)}\u2026`) > maxW) n -= 1;
     return `${name.slice(0, n)}\u2026`;
+  }
+  /** The time ticks inside the axis, and the decimals their labels need. */
+  function timeAxis(tmax: number): { ticks: number[]; decimals: number } {
+    const all =
+      (data.meta?.riskTimes as number[] | undefined) ?? timeTicks(tmax);
+    const ticks = all.filter((t) => t <= tmax);
+    // Every tick gets the decimals the most precise one needs, so 12.5 reads
+    // "12.5" and not "13".
+    return { ticks, decimals: tickDecimals(ticks) };
+  }
+  /**
+   * Width of the widest text centred on the last time tick: its label, or a
+   * count of the risk table under it.
+   */
+  function endWidth(tmax: number): number {
+    const { ticks, decimals } = timeAxis(tmax);
+    let last = Number.NEGATIVE_INFINITY;
+    for (const t of ticks) if (t > last) last = t;
+    if (!Number.isFinite(last)) return 0;
+    let w = labelWidth(last.toFixed(decimals));
+    const counts = data.meta?.riskCounts as number[] | undefined;
+    const riskTimes = data.meta?.riskTimes as number[] | undefined;
+    if (opts.showRiskTable && counts && riskTimes) {
+      const n = groups().length;
+      for (let j = 0; j < riskTimes.length; j += 1) {
+        if (riskTimes[j] !== last) continue;
+        for (let g = 0; g < n; g += 1) {
+          const c = counts[g * riskTimes.length + j];
+          if (c === undefined) continue;
+          w = Math.max(w, textWidth(String(c), sizes.small, theme.fontFamily));
+        }
+      }
+    }
+    return w;
   }
   function hasRiskCounts(): boolean {
     return Boolean(data.meta?.riskCounts && data.meta?.riskTimes);
@@ -502,6 +582,9 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       opts,
       hasRiskCounts(),
       riskLabelWidth(),
+      sizes,
+      labelWidth("100%"),
+      endWidth(maxTime()),
     );
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
@@ -622,6 +705,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     const cols = groupColors();
     const tmax = maxTime();
     const lo = yMin();
+    const tx = kmText(sizes);
 
     // y gridlines and ticks, as percentages.
     for (let k = 0; k <= 4; k += 1) {
@@ -633,21 +717,21 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       svg.appendChild(
         text(
           layout.left - 8,
-          y + 3,
+          y + midline(sizes.label),
           `${Math.round(v * 100)}%`,
           theme.muted,
           "end",
-          9,
+          sizes.label,
         ),
       );
     }
     svg.appendChild(
       rotatedText(
-        14,
+        tx.titleX,
         layout.top + layout.plotH / 2,
         opts.yLabel,
         theme.muted,
-        10,
+        sizes.axisTitle,
       ),
     );
 
@@ -661,34 +745,29 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
         theme.axis,
       ),
     );
-    const ticks =
-      (data.meta?.riskTimes as number[] | undefined) ?? timeTicks(tmax);
-    // Every tick gets the decimals the most precise one needs, so 12.5 reads
-    // "12.5" and not "13".
-    const decimals = tickDecimals(ticks.filter((t) => t <= tmax));
+    const { ticks, decimals } = timeAxis(tmax);
     for (const t of ticks) {
-      if (t > tmax) continue;
       const x = sx(t, tmax);
       svg.appendChild(line(x, layout.axisY, x, layout.axisY + 4, theme.axis));
       svg.appendChild(
         text(
           x,
-          layout.axisY + 15,
+          layout.axisY + tx.tick,
           t.toFixed(decimals),
           theme.muted,
           "middle",
-          9,
+          sizes.label,
         ),
       );
     }
     svg.appendChild(
       text(
         (layout.left + width - layout.right) / 2,
-        layout.axisY + 28,
+        layout.axisY + tx.title,
         opts.xLabel,
         theme.muted,
         "middle",
-        10,
+        sizes.axisTitle,
       ),
     );
 
@@ -699,11 +778,11 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       svg.appendChild(
         text(
           layout.left,
-          layout.riskTop - 14,
+          layout.axisY + tx.heading,
           "number at risk",
           theme.foreground,
           "start",
-          10,
+          sizes.axisTitle,
         ),
       );
       for (let g = 0; g < gl.length; g += 1) {
@@ -712,12 +791,12 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
         // the left edge of the panel.
         svg.appendChild(
           text(
-            layout.left - RISK_LABEL_GAP,
-            y + 3,
-            fitRiskLabel(gl[g] ?? "", layout.left - RISK_LABEL_GAP - 4),
+            layout.left - tx.labelGap,
+            y + midline(sizes.label),
+            fitRiskLabel(gl[g] ?? "", layout.left - tx.labelGap - 4),
             cols[g] ?? theme.foreground,
             "end",
-            9,
+            sizes.label,
           ),
         );
         for (let j = 0; j < riskTimes.length; j += 1) {
@@ -726,7 +805,14 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
           const n = counts[g * riskTimes.length + j];
           if (n === undefined) continue;
           svg.appendChild(
-            text(sx(t, tmax), y + 3, String(n), theme.muted, "middle", 9),
+            text(
+              sx(t, tmax),
+              y + midline(sizes.small),
+              String(n),
+              theme.muted,
+              "middle",
+              sizes.small,
+            ),
           );
         }
       }
@@ -735,20 +821,20 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     // Legend, top-right of the panel: survival curves fall left to right, so
     // the top-right corner is the one reliably empty.
     if (opts.showLegend && gl.length > 1) {
-      let y = layout.top + 10;
+      let y = layout.top + sizes.label - 1;
       for (let g = 0; g < gl.length; g += 1) {
         const x = width - layout.right - 10;
         const sw = document.createElementNS(SVG_NS, "rect");
         sw.setAttribute("x", String(x - 8));
-        sw.setAttribute("y", String(y - 7));
+        sw.setAttribute("y", String(y - midline(sizes.label) - 4));
         sw.setAttribute("width", "8");
         sw.setAttribute("height", "8");
         sw.setAttribute("fill", cols[g] ?? theme.foreground);
         svg.appendChild(sw);
         svg.appendChild(
-          text(x - 12, y, gl[g] ?? "", theme.foreground, "end", 10),
+          text(x - 12, y, gl[g] ?? "", theme.foreground, "end", sizes.label),
         );
-        y += 15;
+        y += Math.round(sizes.label + 4);
       }
     }
 
@@ -763,7 +849,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
           pLabel,
           theme.foreground,
           "start",
-          11,
+          sizes.label,
         ),
       );
     }
@@ -776,7 +862,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     content: string,
     fill: string,
     anchor: string,
-    size = 10,
+    size: number,
   ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
@@ -836,6 +922,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      sizes = textSizes(theme);
       render();
     },
     resize(w, h) {

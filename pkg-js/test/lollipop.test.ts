@@ -34,10 +34,10 @@ describe("lollipop layout", () => {
 
   it("reserves the axis text and the legend rows below the axis", () => {
     const one = layoutLollipop(900, 540, { showPtms: true, showLegend: true });
-    // The title (baseline axisY + 28) ends above the first legend row, whose
-    // baseline is axisY + 44 and whose 10 px text starts near axisY + 35.
-    const firstRow = one.axisY + 44;
-    expect(one.axisY + 28 + 3).toBeLessThan(firstRow - 9);
+    // The title (baseline axisY + 35) ends above the first legend row, whose
+    // baseline is axisY + 52 and whose 11 px text starts near axisY + 41.
+    const firstRow = one.axisY + 52;
+    expect(one.axisY + 35 + 4).toBeLessThan(firstRow - 11);
     // The last legend row's baseline stays inside the element.
     expect(firstRow).toBeLessThanOrEqual(540 - 6);
     const three = layoutLollipop(
@@ -47,13 +47,13 @@ describe("lollipop layout", () => {
       3,
     );
     expect(three.axisY).toBe(one.axisY - 2 * 15);
-    expect(three.axisY + 44 + 2 * 15).toBeLessThanOrEqual(540 - 6);
+    expect(three.axisY + 52 + 2 * 15).toBeLessThanOrEqual(540 - 6);
     // Without a legend, the axis text still fits under the axis.
     const bare = layoutLollipop(900, 540, {
       showPtms: true,
       showLegend: false,
     });
-    expect(bare.axisY + 28 + 3).toBeLessThanOrEqual(540 - 2);
+    expect(bare.axisY + 35 + 4).toBeLessThanOrEqual(540 - 1);
     // A legend with no entries takes no room.
     const empty = layoutLollipop(
       900,

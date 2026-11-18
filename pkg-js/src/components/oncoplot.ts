@@ -44,6 +44,10 @@ import {
   serializeSVG,
   canvasToPNG,
   OKABE_ITO,
+  defaultTheme,
+  type TextSizes,
+  textSizes,
+  textWidth,
 } from "../core/index.js";
 
 export interface OncoplotOptions {
@@ -94,12 +98,21 @@ export interface OncoplotAnnotation {
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-/** Height of one clinical annotation strip, in CSS pixels. */
+/** Smallest height of one clinical annotation strip, in CSS pixels. */
 const ANN_ROW_H = 13;
 /** Gap between the grid and the annotation strips. */
 const ANN_GAP = 6;
-/** Height of one legend row. */
-const LEGEND_ROW_H = 15;
+/** Smallest width of the gene label column. */
+const GENE_LABEL_W = 96;
+/**
+ * Room a line of text takes above and below its baseline, as a share of its
+ * size. This covers the font box of the common system fonts.
+ */
+const ASCENT = 1.08;
+const DESCENT = 0.26;
+/** Text sizes of the default theme, for a layout computed without a theme. */
+const DEFAULT_SIZES = textSizes(defaultTheme);
+
 /** Swatch size and the gaps around a legend entry. */
 const SWATCH = 9;
 const SWATCH_GAP = 4;
@@ -122,6 +135,40 @@ const ANNOTATION_PALETTE = [
   "#B3B3B3",
 ];
 
+/** How far below a line a text's baseline goes to centre the text on it. */
+function midline(size: number): number {
+  return size * 0.35;
+}
+
+/**
+ * Where the text around the grid goes for the given text sizes, and the size
+ * of the parts that hold text.
+ */
+function oncoText(s: TextSizes) {
+  const burdenMax = Math.ceil(ASCENT * s.label);
+  const countY = Math.ceil(ASCENT * s.axisTitle) + 1;
+  return {
+    /** Baseline of the maximum of the burden axis, from the top. */
+    burdenMax,
+    /**
+     * Smallest burden panel: the maximum, then the axis title, whose
+     * baseline sits 8 px above the grid.
+     */
+    minBurdenH:
+      burdenMax + Math.ceil(DESCENT * s.label + ASCENT * s.axisTitle) + 9,
+    /** Height of one annotation strip, which holds its name. */
+    annRowH: Math.max(ANN_ROW_H, Math.ceil(s.label + 2)),
+    /** Baseline of the sample count, below the grid and the strips. */
+    countY,
+    /** Room under the grid and the strips for the sample count. */
+    bottomAxis: Math.ceil(countY + DESCENT * s.axisTitle) + 2,
+    /** Height of one legend row. */
+    legendRowH: Math.round(s.label + 4),
+    /** Gap from the bottom of the element to the last legend baseline. */
+    legendFoot: Math.ceil(DESCENT * s.label) + 3,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/oncoplot.test.ts)
 // ---------------------------------------------------------------------------
@@ -140,6 +187,8 @@ export interface OncoplotLayout {
   burdenH: number;
   /** Vertical extent of the annotation strips (0 when hidden or absent). */
   annH: number;
+  /** Height of one annotation strip. */
+  annRowH: number;
   cellW: number;
   cellH: number;
 }
@@ -158,20 +207,26 @@ export function layoutOncoplot(
     OncoplotOptions,
     "showBurden" | "showFrequency" | "showAnnotations" | "showLegend"
   >,
-  geneLabelW = 96,
+  geneLabelW = GENE_LABEL_W,
   /** Rows of legend entries; the legend wraps, so it can need several. */
   legendRows = 1,
+  /** Text sizes; those of the default theme when omitted. */
+  sizes: TextSizes = DEFAULT_SIZES,
 ): OncoplotLayout {
+  const t = oncoText(sizes);
   const burdenH = opts.showBurden
-    ? Math.min(72, Math.max(36, height * 0.14))
+    ? Math.min(
+        Math.max(72, t.minBurdenH),
+        Math.max(t.minBurdenH, height * 0.14),
+      )
     : 0;
   const freqW = opts.showFrequency ? 96 : 0;
   const annCount = opts.showAnnotations ? nAnnotations : 0;
-  const annH = annCount > 0 ? ANN_GAP + annCount * ANN_ROW_H : 0;
+  const annH = annCount > 0 ? ANN_GAP + annCount * t.annRowH : 0;
   const legendH = opts.showLegend
-    ? 16 + Math.max(1, legendRows) * LEGEND_ROW_H
+    ? 16 + Math.max(1, legendRows) * t.legendRowH
     : 0;
-  const bottomAxis = 16;
+  const bottomAxis = t.bottomAxis;
 
   const left = geneLabelW;
   const top = burdenH;
@@ -186,6 +241,7 @@ export function layoutOncoplot(
     freqW,
     burdenH,
     annH,
+    annRowH: t.annRowH,
     cellW: gridW / Math.max(1, ncols),
     cellH: gridH / Math.max(1, nrows),
   };
@@ -319,6 +375,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     initial.options,
   );
   let theme = resolveTheme(opts.theme);
+  let sizes = textSizes(theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   let width = 0;
@@ -399,18 +456,47 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     return groups;
   }
 
-  const measureCtx = document.createElement("canvas").getContext("2d");
   function labelWidth(s: string): number {
-    if (!measureCtx) return s.length * 10 * 0.56;
-    measureCtx.font = `10px ${theme.fontFamily}`;
-    return measureCtx.measureText(s).width;
+    return textWidth(s, sizes.label, theme.fontFamily);
+  }
+  /**
+   * Width of the gene label column: wide enough for the gene names, the
+   * strip names and the burden axis text, and at least 96 px.
+   */
+  function geneLabelWidth(): number {
+    let w = 0;
+    for (const g of genes()) w = Math.max(w, labelWidth(g ?? ""));
+    if (opts.showAnnotations) {
+      for (const a of annotations()) w = Math.max(w, labelWidth(a.name));
+    }
+    const tmb = data.columns.tmb as ArrayLike<number> | undefined;
+    if (opts.showBurden && tmb) {
+      w = Math.max(
+        w,
+        labelWidth(fmtCount(columnMax(tmb))),
+        textWidth(opts.burdenLabel, sizes.axisTitle, theme.fontFamily),
+      );
+    }
+    return Math.max(
+      GENE_LABEL_W,
+      Math.min(Math.ceil(w) + 12, Math.floor(width * 0.4)),
+    );
+  }
+  /**
+   * Length of the longest frequency bar, leaving room after it for its
+   * value.
+   */
+  function freqUsable(freq: ArrayLike<number>): number {
+    const room = labelWidth(`${fmtPct(columnMax(freq))}%`) + 10;
+    return layout.freqW - Math.max(44, Math.ceil(room));
   }
   function legendLayout() {
     // The legend gets at most a fifth of the height.
-    const maxRows = Math.max(1, Math.floor((height * 0.2) / LEGEND_ROW_H));
+    const rowH = oncoText(sizes).legendRowH;
+    const maxRows = Math.max(1, Math.floor((height * 0.2) / rowH));
     return wrapLegend(
       legendGroups(),
-      Math.max(1, width - 96 - 8),
+      Math.max(1, width - geneLabelWidth() - 8),
       labelWidth,
       maxRows,
     );
@@ -459,7 +545,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     const cx = px - layout.left;
     const cy = py - (layout.top + layout.gridH + ANN_GAP);
     if (cx < 0 || cx >= layout.gridW || cy < 0) return null;
-    const k = Math.floor(cy / ANN_ROW_H);
+    const k = Math.floor(cy / layout.annRowH);
     const a = annotations()[k];
     const col = Math.floor(cx / layout.cellW);
     if (!a || col < 0 || col >= ncols()) return null;
@@ -509,8 +595,9 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       C,
       annotations().length,
       opts,
-      96,
+      geneLabelWidth(),
       legendRows,
+      sizes,
     );
     if (R === 0 || C === 0) {
       renderOverlay();
@@ -568,7 +655,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       if (freq) {
         const max = columnMax(freq);
         const x0 = left + layout.gridW + 6;
-        const usable = layout.freqW - 44;
+        const usable = freqUsable(freq);
         ctx.fillStyle = opts.frequencyColor;
         for (let r = 0; r < R; r += 1) {
           const v = (freq[r] as number) ?? 0;
@@ -591,9 +678,9 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
           } else {
             ctx.fillStyle = palette[code % palette.length] as string;
           }
-          ctx.fillRect(left + c * cellW + gapX / 2, y, w, ANN_ROW_H - 2);
+          ctx.fillRect(left + c * cellW + gapX / 2, y, w, layout.annRowH - 2);
         }
-        y += ANN_ROW_H;
+        y += layout.annRowH;
       }
     }
 
@@ -606,15 +693,25 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     const R = nrows();
     const C = ncols();
     const { left, top, cellH } = layout;
+    const tx = oncoText(sizes);
+    const mid = midline(sizes.label);
 
     // Gene labels, right-aligned against the grid.
-    const showRow = visibleRowLabels(R, cellH);
+    const showRow = visibleRowLabels(R, cellH, sizes.label);
     const g = genes();
     for (let r = 0; r < R; r += 1) {
       if (!showRow.has(r)) continue;
-      const y = top + r * cellH + cellH / 2 + 3;
+      const y = top + r * cellH + cellH / 2 + mid;
       svg.appendChild(
-        text(left - 8, y, g[r] ?? "", theme.foreground, "end", 10, "italic"),
+        text(
+          left - 8,
+          y,
+          g[r] ?? "",
+          theme.foreground,
+          "end",
+          sizes.label,
+          "italic",
+        ),
       );
     }
 
@@ -624,11 +721,11 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       if (freq) {
         const max = columnMax(freq);
         const x0 = left + layout.gridW + 6;
-        const usable = layout.freqW - 44;
+        const usable = freqUsable(freq);
         for (let r = 0; r < R; r += 1) {
           if (!showRow.has(r)) continue;
           const v = (freq[r] as number) ?? 0;
-          const y = top + r * cellH + cellH / 2 + 3;
+          const y = top + r * cellH + cellH / 2 + mid;
           svg.appendChild(
             text(
               x0 + (v / max) * usable + 4,
@@ -636,7 +733,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
               `${fmtPct(v)}%`,
               theme.muted,
               "start",
-              9,
+              sizes.label,
             ),
           );
         }
@@ -648,7 +745,14 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       const tmb = data.columns.tmb as ArrayLike<number> | undefined;
       if (tmb) {
         svg.appendChild(
-          text(left - 8, 12, fmtCount(columnMax(tmb)), theme.muted, "end", 9),
+          text(
+            left - 8,
+            tx.burdenMax,
+            fmtCount(columnMax(tmb)),
+            theme.muted,
+            "end",
+            sizes.label,
+          ),
         );
         svg.appendChild(
           text(
@@ -657,7 +761,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
             opts.burdenLabel,
             theme.muted,
             "end",
-            9,
+            sizes.axisTitle,
           ),
         );
       }
@@ -666,11 +770,13 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     // Annotation strip names.
     if (opts.showAnnotations && layout.annH > 0) {
       let y = top + layout.gridH + ANN_GAP;
+      // Each name is centred on its strip, which is 2 px short of the row.
+      const nameY = (layout.annRowH - 2) / 2 + mid;
       for (const a of annotations()) {
         svg.appendChild(
-          text(left - 8, y + ANN_ROW_H - 4, a.name, theme.muted, "end", 9),
+          text(left - 8, y + nameY, a.name, theme.muted, "end", sizes.label),
         );
-        y += ANN_ROW_H;
+        y += layout.annRowH;
       }
     }
 
@@ -678,11 +784,11 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     svg.appendChild(
       text(
         left + layout.gridW / 2,
-        top + layout.gridH + layout.annH + 13,
+        top + layout.gridH + layout.annH + tx.countY,
         `${C.toLocaleString()} ${opts.xLabel}`,
         theme.muted,
         "middle",
-        10,
+        sizes.axisTitle,
       ),
     );
 
@@ -693,9 +799,10 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     const items = legendLayout();
     if (!items.length) return;
     const rows = (items[items.length - 1]?.row ?? 0) + 1;
+    const tx = oncoText(sizes);
     for (const { entry, x: dx, row } of items) {
       const x = layout.left + dx;
-      const y = height - 6 - (rows - 1 - row) * LEGEND_ROW_H;
+      const y = height - tx.legendFoot - (rows - 1 - row) * tx.legendRowH;
       if (entry.color) {
         const sw = document.createElementNS(SVG_NS, "rect");
         sw.setAttribute("x", String(x));
@@ -711,12 +818,12 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
             entry.label,
             theme.foreground,
             "start",
-            10,
+            sizes.label,
           ),
         );
       } else {
         // An annotation's name heads its levels.
-        const t = text(x, y, entry.label, theme.muted, "start", 10);
+        const t = text(x, y, entry.label, theme.muted, "start", sizes.label);
         t.setAttribute("font-weight", "600");
         svg.appendChild(t);
       }
@@ -730,7 +837,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     content: string,
     fill: string,
     anchor: string,
-    size = 10,
+    size: number,
     style?: string,
   ) {
     const t = document.createElementNS(SVG_NS, "text");
@@ -765,6 +872,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      sizes = textSizes(theme);
       render();
     },
     resize(w, h) {

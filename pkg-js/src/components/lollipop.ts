@@ -52,6 +52,10 @@ import {
   OKABE_ITO,
   rangeTicks,
   spaceTicks,
+  defaultTheme,
+  type TextSizes,
+  textSizes,
+  textWidth as measureText,
 } from "../core/index.js";
 
 export interface LollipopOptions {
@@ -95,21 +99,61 @@ export interface LollipopPtm {
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-/** Height of the backbone / domain band. */
+/** Smallest height of the backbone / domain band. */
 const BACKBONE_H = 22;
 /** Height of the PTM tick track under the backbone. */
 const PTM_H = 14;
 /**
- * Room under the residue axis: ticks to axisY + 4, tick labels on axisY + 15,
- * the title on axisY + 28, and its descent.
+ * Height of a variant label box, and the step between label rows, for the
+ * label size of the default theme.
  */
-const AXIS_TEXT_H = 33;
-/** Height of one legend row. */
-const LEGEND_ROW_H = 15;
-/** Height of a variant label box, and the step between label rows. */
 const LABEL_H = 12;
 /** Label rows a label may climb above its own head to find free space. */
 const LABEL_MAX_ROWS = 4;
+/**
+ * Room a line of text takes above and below its baseline, as a share of its
+ * size. This covers the font box of the common system fonts.
+ */
+const ASCENT = 1.08;
+const DESCENT = 0.26;
+/** Text sizes of the default theme, for a layout computed without a theme. */
+const DEFAULT_SIZES = textSizes(defaultTheme);
+
+/** How far below a line a text's baseline goes to centre the text on it. */
+function midline(size: number): number {
+  return size * 0.35;
+}
+
+/**
+ * Where the text around the plot goes for the given text sizes: offsets
+ * below the residue axis of its labels, its title and the first legend row,
+ * and the size of the parts that hold text. Each line starts under the font
+ * box of the line above it.
+ */
+function lollipopText(s: TextSizes) {
+  const tick = 6 + s.label;
+  const title = tick + Math.ceil(DESCENT * s.label + ASCENT * s.axisTitle) + 1;
+  const axisText = Math.ceil(title + DESCENT * s.axisTitle) + 1;
+  return {
+    /** x of the rotated y title, far enough right for its letters. */
+    titleX: Math.ceil(1.1 * s.axisTitle),
+    tick,
+    title,
+    /** Room under the residue axis for its labels and title. */
+    axisText,
+    /** Baseline of the first legend row. */
+    legend: axisText + Math.ceil(ASCENT * s.label),
+    /** Height of one legend row. */
+    legendRowH: Math.round(s.label + 4),
+    /** Height of a variant label box, and the step between label rows. */
+    labelH: Math.round(s.label + 1),
+    /** Height of the backbone band, which holds the domain names. */
+    backboneH: Math.max(
+      BACKBONE_H,
+      Math.ceil((ASCENT + DESCENT) * s.small) + 6,
+    ),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/lollipop.test.ts)
@@ -141,20 +185,32 @@ export function layoutLollipop(
   opts: Pick<LollipopOptions, "showPtms" | "showLegend">,
   /** Rows of legend entries; the legend wraps, so it can need several. */
   legendRows = 1,
+  /** Text sizes; those of the default theme when omitted. */
+  sizes: TextSizes = DEFAULT_SIZES,
+  /** Width in px of the widest y tick label. */
+  tickWidth = 0,
+  /** Width in px of the label of the last residue tick. */
+  endWidth = 0,
 ): LollipopLayout {
-  const left = 52;
-  const right = 16;
+  const t = lollipopText(sizes);
+  // The y tick labels sit between the rotated y title and the stems.
+  const left = Math.max(
+    52,
+    Math.ceil(t.titleX + DESCENT * sizes.axisTitle + 3 + tickWidth + 8),
+  );
+  // The last residue label is centred on the right end of the axis.
+  const right = Math.max(16, Math.ceil(endWidth / 2) + 2);
   // Room above the tallest stem for its head and two label rows, so a label
   // on the most recurrent variant never rides the top edge.
-  const top = 40;
+  const top = Math.max(40, 2 * t.labelH + 16);
   const legendH =
-    opts.showLegend && legendRows > 0 ? legendRows * LEGEND_ROW_H + 4 : 0;
+    opts.showLegend && legendRows > 0 ? legendRows * t.legendRowH + 4 : 0;
   const ptmH = opts.showPtms ? PTM_H : 0;
 
-  const axisY = height - legendH - AXIS_TEXT_H;
+  const axisY = height - legendH - t.axisText;
   const ptmTop = axisY - ptmH;
   const backboneBottom = ptmTop - 2;
-  const backboneTop = backboneBottom - BACKBONE_H;
+  const backboneTop = backboneBottom - t.backboneH;
   const baseline = backboneTop;
 
   return {
@@ -256,16 +312,23 @@ export interface LabelCandidate {
   spots: LabelSpot[];
 }
 
-/** The box a label of `width` takes at `spot`. */
-function labelBox(spot: LabelSpot, width: number): Box {
+/** The box a label of `width` takes at `spot`, in a row `labelH` tall. */
+function labelBox(spot: LabelSpot, width: number, labelH: number): Box {
   const x0 =
     spot.anchor === "middle"
       ? spot.x - width / 2
       : spot.anchor === "start"
         ? spot.x
         : spot.x - width;
-  // A 10 px label: the box runs from its cap height to its descent.
-  return { x0, y0: spot.y - LABEL_H + 2, x1: x0 + width, y1: spot.y + 2 };
+  // The box runs from the cap height of the label to its descent, which
+  // takes a sixth of the row.
+  const descent = labelH / 6;
+  return {
+    x0,
+    y0: spot.y - labelH + descent,
+    x1: x0 + width,
+    y1: spot.y + descent,
+  };
 }
 
 /**
@@ -279,6 +342,8 @@ export function placeLabels(
   candidates: LabelCandidate[],
   obstacles: Box[],
   bounds: { left: number; right: number; top: number },
+  /** Height of a label box; see {@link labelBox}. */
+  labelH = LABEL_H,
 ): (LabelSpot | null)[] {
   const placed: Box[] = [];
   const hits = (b: Box, others: Box[]) =>
@@ -297,7 +362,7 @@ export function placeLabels(
               ),
             }
           : s;
-      const box = labelBox(spot, c.width);
+      const box = labelBox(spot, c.width, labelH);
       if (
         box.y0 < bounds.top ||
         box.x0 < bounds.left - 0.5 ||
@@ -370,6 +435,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     initial.options,
   );
   let theme = resolveTheme(opts.theme);
+  let sizes = textSizes(theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   let width = 0;
@@ -456,11 +522,27 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     );
   }
 
-  const measureCtx = document.createElement("canvas").getContext("2d");
   function textWidth(s: string, size: number): number {
-    if (!measureCtx) return s.length * size * 0.56;
-    measureCtx.font = `${size}px ${theme.fontFamily}`;
-    return measureCtx.measureText(s).width;
+    return measureText(s, size, theme.fontFamily);
+  }
+  /**
+   * The layout for the current size, data and text sizes, with `legendRows`
+   * rows of legend. Call {@link restack} first.
+   */
+  function frame(legendRows: number): LollipopLayout {
+    const tickWidth = Math.max(
+      textWidth("0", sizes.label),
+      textWidth(String(maxStack()), sizes.label),
+    );
+    return layoutLollipop(
+      width,
+      height,
+      opts,
+      legendRows,
+      sizes,
+      tickWidth,
+      textWidth(String(plen()), sizes.label),
+    );
   }
   /**
    * Each shown legend entry's x and row, and a "+N more" note when the
@@ -470,9 +552,11 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     items: { x: number; row: number }[];
     note: { x: number; row: number; text: string } | null;
   } {
-    const widths = classes().map((c) => 12 + textWidth(c, 10));
-    const maxW = Math.max(1, width - 52 - 16);
-    const maxRows = Math.max(1, Math.floor((height * 0.2) / LEGEND_ROW_H));
+    const widths = classes().map((c) => 12 + textWidth(c, sizes.label));
+    const f = frame(0);
+    const maxW = Math.max(1, width - f.left - f.right);
+    const rowH = lollipopText(sizes).legendRowH;
+    const maxRows = Math.max(1, Math.floor((height * 0.2) / rowH));
     const all = wrapRows(widths, maxW);
     const items = all.filter((it) => it.row < maxRows);
     if (items.length === all.length) return { items, note: null };
@@ -482,7 +566,11 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       const tail = items[items.length - 1];
       const i = items.length - 1;
       const x = tail && tail.row === last ? tail.x + (widths[i] ?? 0) + 14 : 0;
-      if (x + textWidth(text, 10) <= maxW || !tail || tail.row !== last) {
+      if (
+        x + textWidth(text, sizes.label) <= maxW ||
+        !tail ||
+        tail.row !== last
+      ) {
         return { items, note: { x, row: last, text } };
       }
       items.pop();
@@ -589,7 +677,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     const ctx = canvas.getContext("2d");
     if (!ctx || !width || !height) return;
     restack();
-    layout = layoutLollipop(width, height, opts, legendRows());
+    layout = frame(legendRows());
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, width, height);
@@ -601,7 +689,8 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     }
 
     // Backbone.
-    const midY = layout.backboneTop + BACKBONE_H / 2;
+    const bandH = layout.backboneBottom - layout.backboneTop;
+    const midY = layout.backboneTop + bandH / 2;
     ctx.fillStyle = opts.backboneColor;
     ctx.fillRect(layout.left, midY - 4, layout.innerW, 8);
 
@@ -612,7 +701,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
         const x0 = px(d.start);
         const x1 = px(d.end);
         ctx.fillStyle = dcols[i % dcols.length] as string;
-        ctx.fillRect(x0, layout.backboneTop, Math.max(1, x1 - x0), BACKBONE_H);
+        ctx.fillRect(x0, layout.backboneTop, Math.max(1, x1 - x0), bandH);
       });
     }
 
@@ -673,37 +762,54 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const L = plen();
+    const tx = lollipopText(sizes);
+    const mid = midline(sizes.label);
 
     // y axis: a tick at 0 and at the tallest stem.
     const top = maxStack();
     svg.appendChild(
-      text(layout.left - 8, layout.baseline + 3, "0", theme.muted, "end", 9),
+      text(
+        layout.left - 8,
+        layout.baseline + mid,
+        "0",
+        theme.muted,
+        "end",
+        sizes.label,
+      ),
     );
     svg.appendChild(
-      text(layout.left - 8, py(top) + 3, String(top), theme.muted, "end", 9),
+      text(
+        layout.left - 8,
+        py(top) + mid,
+        String(top),
+        theme.muted,
+        "end",
+        sizes.label,
+      ),
     );
     svg.appendChild(
       rotatedText(
-        14,
+        tx.titleX,
         layout.top + layout.stemH / 2,
         opts.yLabel,
         theme.muted,
-        10,
+        sizes.axisTitle,
       ),
     );
 
     // Domain names, centred, dropped when the rectangle is too narrow to hold
     // the text rather than overflowing into its neighbours.
     if (opts.showDomains) {
-      const midY = layout.backboneTop + BACKBONE_H / 2 + 3;
+      const bandH = layout.backboneBottom - layout.backboneTop;
+      const midY = layout.backboneTop + bandH / 2 + midline(sizes.small);
       domains().forEach((d) => {
         const x0 = px(d.start);
         const x1 = px(d.end);
         const w = x1 - x0;
         const label = shortDomain(d.name);
-        if (w > textWidth(label, 9) + 6) {
+        if (w > textWidth(label, sizes.small) + 6) {
           svg.appendChild(
-            text((x0 + x1) / 2, midY, label, "#FBF7EF", "middle", 9),
+            text((x0 + x1) / 2, midY, label, "#FBF7EF", "middle", sizes.small),
           );
         }
       });
@@ -745,8 +851,8 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
         const r = radius(i, mc);
         const headTop = hy - r;
         const beside: LabelSpot[] = [
-          { x: hx + r + 3, y: hy + 3, anchor: "start" },
-          { x: hx - r - 3, y: hy + 3, anchor: "end" },
+          { x: hx + r + 3, y: hy + mid, anchor: "start" },
+          { x: hx - r - 3, y: hy + mid, anchor: "end" },
         ];
         const onTop =
           (stack.top[i] as number) >= (stemTop.get(pos[i] as number) ?? 0);
@@ -754,23 +860,33 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
         for (let row = 0; row < LABEL_MAX_ROWS; row += 1) {
           above.push({
             x: hx,
-            y: headTop - 4 - row * LABEL_H,
+            y: headTop - 4 - row * tx.labelH,
             anchor: "middle",
             leader: row > 0 ? { x: hx, y: headTop - 1 } : undefined,
           });
         }
         return {
-          width: textWidth(labs[i] ?? "", 10) + 4,
+          width: textWidth(labs[i] ?? "", sizes.label) + 4,
           spots: onTop
             ? [above[0] as LabelSpot, ...beside, ...above.slice(1)]
             : beside,
         };
       });
-      const spots = placeLabels(candidates, heads, {
-        left: layout.left,
-        right: width - layout.right,
-        top: 2,
-      });
+      // A label box starts five sixths of a row above its baseline, and
+      // the font box of the text reaches a little higher.
+      const spots = placeLabels(
+        candidates,
+        heads,
+        {
+          left: layout.left,
+          right: width - layout.right,
+          top: Math.max(
+            2,
+            Math.ceil(ASCENT * sizes.label - (tx.labelH * 5) / 6),
+          ),
+        },
+        tx.labelH,
+      );
       idx.forEach((i, k) => {
         const spot = spots[k];
         if (!spot) return;
@@ -786,7 +902,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
             labs[i] ?? "",
             theme.foreground,
             spot.anchor,
-            10,
+            sizes.label,
           ),
         );
       });
@@ -796,13 +912,20 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     // touch its neighbour's is left out, so narrow plots stay readable.
     const count = Math.max(2, Math.min(8, Math.floor(layout.innerW / 80)));
     const residues = spaceTicks(residueTicks(L, count), px, (t) =>
-      textWidth(String(t), 9),
+      textWidth(String(t), sizes.label),
     );
     for (const t of residues) {
       const x = px(t);
       svg.appendChild(line(x, layout.axisY, x, layout.axisY + 4, theme.axis));
       svg.appendChild(
-        text(x, layout.axisY + 15, String(t), theme.muted, "middle", 9),
+        text(
+          x,
+          layout.axisY + tx.tick,
+          String(t),
+          theme.muted,
+          "middle",
+          sizes.label,
+        ),
       );
     }
     const gene = (data.meta?.gene as string) ?? "";
@@ -813,11 +936,11 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     svg.appendChild(
       text(
         layout.left + layout.innerW / 2,
-        layout.axisY + 28,
+        layout.axisY + tx.title,
         title,
         theme.muted,
         "middle",
-        10,
+        sizes.axisTitle,
       ),
     );
 
@@ -829,31 +952,32 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     if (!cls.length) return;
     const cols = classColors();
     const { items, note } = legendLayout();
+    const tx = lollipopText(sizes);
     // Rows start under the axis title.
-    const firstY = layout.axisY + AXIS_TEXT_H + 11;
+    const firstY = layout.axisY + tx.legend;
     if (note) {
       svg.appendChild(
         text(
           layout.left + note.x,
-          firstY + note.row * LEGEND_ROW_H,
+          firstY + note.row * tx.legendRowH,
           note.text,
           theme.muted,
           "start",
-          10,
+          sizes.label,
         ),
       );
     }
     items.forEach(({ x: dx, row }, i) => {
       const x = layout.left + dx;
-      const y = firstY + row * LEGEND_ROW_H;
+      const y = firstY + row * tx.legendRowH;
       const dot = document.createElementNS(SVG_NS, "circle");
       dot.setAttribute("cx", String(x + 4));
-      dot.setAttribute("cy", String(y - 4));
+      dot.setAttribute("cy", String(y - midline(sizes.label)));
       dot.setAttribute("r", "4");
       dot.setAttribute("fill", cols[i] ?? theme.foreground);
       svg.appendChild(dot);
       svg.appendChild(
-        text(x + 12, y, cls[i] ?? "", theme.foreground, "start", 10),
+        text(x + 12, y, cls[i] ?? "", theme.foreground, "start", sizes.label),
       );
     });
   }
@@ -865,7 +989,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     content: string,
     fill: string,
     anchor: string,
-    size = 10,
+    size: number,
   ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
@@ -925,6 +1049,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      sizes = textSizes(theme);
       render();
     },
     resize(w, h) {

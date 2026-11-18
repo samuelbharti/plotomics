@@ -41,6 +41,10 @@ import {
   zeroTicks,
   fitZeroTicks,
   formatTick,
+  defaultTheme,
+  type TextSizes,
+  textSizes,
+  textWidth as measureText,
 } from "../core/index.js";
 
 export interface ProfileOptions {
@@ -66,16 +70,47 @@ export const defaultProfileOptions: ProfileOptions = {
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-/** Height of the title row, when a title is set. */
-const TITLE_H = 18;
-/** Font size of the per-bar labels, the same as the axis tick labels. */
-const BAR_LABEL_SIZE = 9;
-/** Tallest the band of rotated bar labels may get. */
-const MAX_BAR_LABEL_H = 60;
-/** Height of the coloured group banner. */
+/** Tallest the band of rotated bar labels may get, in multiples of their size. */
+const MAX_BAR_LABEL_EM = 60 / 9;
+/** Smallest height of the coloured group banner. */
 const HEADER_H = 18;
 /** Gap between the banner and the tallest bar. */
 const HEADER_GAP = 6;
+/**
+ * Room a line of text takes above and below its baseline, as a share of its
+ * size. This covers the font box of the common system fonts.
+ */
+const ASCENT = 1.08;
+const DESCENT = 0.26;
+/** Text sizes of the default theme, for a layout computed without a theme. */
+const DEFAULT_SIZES = textSizes(defaultTheme);
+
+/** How far below a line a text's baseline goes to centre the text on it. */
+function midline(size: number): number {
+  return size * 0.35;
+}
+
+/**
+ * Where the text around the bars goes for the given text sizes, and the size
+ * of the parts that hold text. Bar labels use the small size: there is one
+ * under every bar.
+ */
+function profileText(s: TextSizes) {
+  const titleBaseline = Math.ceil(ASCENT * s.title) + 1;
+  return {
+    /** x of the rotated y title, far enough right for its letters. */
+    titleX: Math.ceil(1.1 * s.axisTitle),
+    titleBaseline,
+    /** Height of the title row; the descent reaches into the gap below. */
+    titleH: titleBaseline + 1,
+    /** Height of the coloured group banner, which holds the group names. */
+    headerH: Math.max(HEADER_H, Math.ceil(s.label + 7)),
+    /** Room above the plot for the top tick label when nothing is above. */
+    plotPad: Math.max(10, Math.ceil((ASCENT - 0.35) * s.label) + 1),
+    /** Tallest the band of rotated bar labels may get. */
+    maxBarLabelH: Math.round(MAX_BAR_LABEL_EM * s.small),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/profile.test.ts)
@@ -139,16 +174,25 @@ export function layoutProfile(
   hasTitle = false,
   /** Width in px of the longest bar label, which runs down the bottom. */
   barLabelW = 24,
+  /** Text sizes; those of the default theme when omitted. */
+  sizes: TextSizes = DEFAULT_SIZES,
+  /** Width in px of the widest y tick label. */
+  tickWidth = 0,
 ): ProfileLayout {
-  const left = 56;
+  const t = profileText(sizes);
+  // The y tick labels sit between the rotated y title and the bars.
+  const left = Math.max(
+    56,
+    Math.ceil(t.titleX + DESCENT * sizes.axisTitle + 3 + tickWidth + 8),
+  );
   const right = 14;
-  const titleH = hasTitle ? TITLE_H : 0;
+  const titleH = hasTitle ? t.titleH : 0;
   const headerTop = titleH + (opts.showHeader ? 6 : 0);
   const plotTop = opts.showHeader
-    ? headerTop + HEADER_H + HEADER_GAP
-    : titleH + 10;
+    ? headerTop + t.headerH + HEADER_GAP
+    : titleH + t.plotPad;
   const labelH = opts.showBarLabels
-    ? Math.min(MAX_BAR_LABEL_H, Math.ceil(barLabelW) + 10)
+    ? Math.min(t.maxBarLabelH, Math.ceil(barLabelW) + 10)
     : 10;
   const axisY = height - labelH - 14;
   return {
@@ -177,6 +221,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     initial.options,
   );
   let theme = resolveTheme(opts.theme);
+  let sizes = textSizes(theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   let width = 0;
@@ -209,14 +254,12 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     if (given && given.length) return given;
     return groups().map((_, i) => OKABE_ITO[i % OKABE_ITO.length] as string);
   }
-  const measureCtx = document.createElement("canvas").getContext("2d");
+  function textWidth(s: string, size: number): number {
+    return measureText(s, size, theme.fontFamily);
+  }
   /** A bar label cut with an ellipsis to fit `maxW` px. */
   function fitBarLabel(label: string, maxW: number): string {
-    const w = (s: string) => {
-      if (!measureCtx) return s.length * BAR_LABEL_SIZE * 0.56;
-      measureCtx.font = `${BAR_LABEL_SIZE}px ${theme.fontFamily}`;
-      return measureCtx.measureText(s).width;
-    };
+    const w = (s: string) => textWidth(s, sizes.small);
     if (w(label) <= maxW) return label;
     let lo = 1;
     let hi = label.length;
@@ -231,15 +274,13 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
   function longestBarLabel(): number {
     let w = 0;
     for (const lab of barLabels()) {
-      const s = lab ?? "";
-      if (measureCtx) {
-        measureCtx.font = `${BAR_LABEL_SIZE}px ${theme.fontFamily}`;
-        w = Math.max(w, measureCtx.measureText(s).width);
-      } else {
-        w = Math.max(w, s.length * BAR_LABEL_SIZE * 0.56);
-      }
+      w = Math.max(w, textWidth(lab ?? "", sizes.small));
     }
     return w;
+  }
+  /** The label of the y tick at `val`. */
+  function tickText(val: number, step: number): string {
+    return formatTick(val, step, { percent: opts.asFraction });
   }
   function plotted(): number[] {
     const v = values();
@@ -303,24 +344,42 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     const ctx = canvas.getContext("2d");
     if (!ctx || !width || !height) return;
     const v = plotted();
-    layout = layoutProfile(
-      width,
-      height,
-      v.length,
-      opts,
-      Boolean(data.meta?.title),
-      longestBarLabel(),
-    );
+    const frame = (tickWidth: number) =>
+      layoutProfile(
+        width,
+        height,
+        v.length,
+        opts,
+        Boolean(data.meta?.title),
+        longestBarLabel(),
+        sizes,
+        tickWidth,
+      );
+    // As many round ticks as the plot height holds without crowding. The
+    // height does not depend on the left gutter, so the gutter can then grow
+    // to fit the tick labels without changing the ticks.
+    layout = frame(0);
+    const axis = v.length
+      ? fitZeroTicks(finiteMax(v), layout.plotH, {
+          minGapPx: sizes.label + 5,
+        })
+      : zeroTicks(1, 4);
+    let tickWidth = 0;
+    for (const val of axis.ticks) {
+      tickWidth = Math.max(
+        tickWidth,
+        textWidth(tickText(val, axis.step), sizes.label),
+      );
+    }
+    layout = frame(tickWidth);
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, width, height);
     if (!v.length) {
-      renderOverlay(zeroTicks(1, 4));
+      renderOverlay(axis);
       return;
     }
 
-    // As many round ticks as the plot height holds without crowding.
-    const axis = fitZeroTicks(finiteMax(v), layout.plotH);
     const max = axis.top;
     const gcol = groupCol();
     const glist = groups();
@@ -343,7 +402,12 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
         ctx.fillStyle = gi >= 0 ? (gcols[gi] as string) : theme.foreground;
         const x0 = layout.left + run.start * layout.slot;
         const x1 = layout.left + (run.end + 1) * layout.slot;
-        ctx.fillRect(x0, layout.headerTop, Math.max(1, x1 - x0 - 2), HEADER_H);
+        ctx.fillRect(
+          x0,
+          layout.headerTop,
+          Math.max(1, x1 - x0 - 2),
+          profileText(sizes).headerH,
+        );
       }
     }
 
@@ -356,6 +420,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     const gcol = groupCol();
     const glist = groups();
     const gcols = groupColors();
+    const tx = profileText(sizes);
 
     // y gridlines and ticks, on round steps, each label stating its value.
     for (const val of axis.ticks) {
@@ -366,21 +431,21 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
       svg.appendChild(
         text(
           layout.left - 8,
-          y + 3,
-          formatTick(val, axis.step, { percent: opts.asFraction }),
+          y + midline(sizes.label),
+          tickText(val, axis.step),
           theme.muted,
           "end",
-          9,
+          sizes.label,
         ),
       );
     }
     svg.appendChild(
       rotatedText(
-        14,
+        tx.titleX,
         layout.plotTop + layout.plotH / 2,
         opts.yLabel,
         theme.muted,
-        10,
+        sizes.axisTitle,
       ),
     );
 
@@ -391,15 +456,15 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
         const x1 = layout.left + (run.end + 1) * layout.slot;
         const gi = glist.indexOf(run.group);
         const bg = gi >= 0 ? (gcols[gi] as string) : theme.foreground;
-        if (x1 - x0 > estimateTextWidth(run.group, 10) + 8) {
+        if (x1 - x0 > textWidth(run.group, sizes.label) + 8) {
           svg.appendChild(
             text(
               (x0 + x1) / 2,
-              layout.headerTop + HEADER_H - 5,
+              layout.headerTop + tx.headerH / 2 + midline(sizes.label),
               run.group,
               readableOn(bg),
               "middle",
-              10,
+              sizes.label,
             ),
           );
         }
@@ -409,7 +474,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     // Per-bar labels, rotated, thinned when they would collide.
     if (opts.showBarLabels) {
       const labs = barLabels();
-      const every = Math.max(1, Math.ceil((BAR_LABEL_SIZE + 1) / layout.slot));
+      const every = Math.max(1, Math.ceil((sizes.small + 1) / layout.slot));
       // A label longer than the band under the axis is cut to fit.
       const room = Math.max(8, height - layout.axisY - 8);
       for (let i = 0; i < labs.length; i += every) {
@@ -420,7 +485,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
           fitBarLabel(labs[i] ?? "", room),
           theme.muted,
           "end",
-          BAR_LABEL_SIZE,
+          sizes.small,
         );
         t.setAttribute("transform", `rotate(-90 ${x} ${layout.axisY + 6})`);
         svg.appendChild(t);
@@ -431,7 +496,14 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     if (title) {
       // In its own row above the strip, with room for capitals and descenders.
       svg.appendChild(
-        text(layout.left, TITLE_H - 5, title, theme.foreground, "start", 11),
+        text(
+          layout.left,
+          tx.titleBaseline,
+          title,
+          theme.foreground,
+          "start",
+          sizes.title,
+        ),
       );
     }
   }
@@ -443,7 +515,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     content: string,
     fill: string,
     anchor: string,
-    size = 10,
+    size: number,
   ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
@@ -503,6 +575,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      sizes = textSizes(theme);
       render();
     },
     resize(w, h) {
@@ -550,9 +623,6 @@ function fmtInt(v: number): string {
   return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2);
 }
 
-function estimateTextWidth(s: string, size: number): number {
-  return s.length * size * 0.56;
-}
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
     c === "&"
