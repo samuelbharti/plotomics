@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  fitZeroTicks,
   formatTick,
   rangeTicks,
+  spaceTicks,
   stepDecimals,
   zeroTicks,
 } from "../src/core/ticks.js";
@@ -63,5 +65,34 @@ describe("round axis ticks", () => {
     expect(rangeTicks(10)).toEqual([1, 2, 4, 6, 8, 10]);
     expect(rangeTicks(3)).toEqual([1, 2, 3]);
     expect(rangeTicks(1)).toEqual([1]);
+  });
+});
+
+describe("ticks for tiny values, whole counts and short axes", () => {
+  it("handles tiny and absurd maxima", () => {
+    expect(stepDecimals(2e-10)).toBe(10);
+    const tiny = zeroTicks(3e-10, 4);
+    expect(tiny.top).toBeGreaterThanOrEqual(3e-10);
+    expect(new Set(tiny.ticks).size).toBe(tiny.ticks.length);
+    expect(zeroTicks(Number.MIN_VALUE).top).toBe(1);
+  });
+
+  it("keeps whole-number steps for counts", () => {
+    expect(zeroTicks(1, 4, { integer: true }).ticks).toEqual([0, 1]);
+    expect(zeroTicks(2, 4, { integer: true }).ticks).toEqual([0, 1, 2]);
+  });
+
+  it("uses fewer ticks on a short axis", () => {
+    const tall = fitZeroTicks(12.4, 300);
+    const short = fitZeroTicks(12.4, 60);
+    expect(tall.ticks.length).toBeGreaterThan(short.ticks.length);
+    expect(60 / (short.ticks.length - 1)).toBeGreaterThanOrEqual(16);
+  });
+
+  it("drops a tick whose label would touch its neighbour", () => {
+    // Labels 40 px wide, 5 residues per px: 1600 and 1680 would overlap.
+    const x = (t: number) => t / 5;
+    const kept = spaceTicks([1, 400, 800, 1200, 1600, 1680], x, () => 40);
+    expect(kept).toEqual([1, 400, 800, 1200, 1680]);
   });
 });

@@ -37,6 +37,7 @@ import {
   serializeSVG,
   canvasToPNG,
   zeroTicks,
+  fitZeroTicks,
   formatTick,
 } from "../core/index.js";
 
@@ -233,7 +234,11 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     const k = Math.floor((my - layout.barBaseline) / layout.rowH);
     if (mx < layout.left && k >= 0 && k < names.length) {
       const ss = setSizes();
-      const size = ss ? ` (${(ss[k] as number).toLocaleString()})` : "";
+      const n = ss?.[k];
+      const size =
+        typeof n === "number" && Number.isFinite(n)
+          ? ` (${n.toLocaleString()})`
+          : "";
       tooltip.show(
         `<b>${esc(names[k] ?? "")}</b>${size}`,
         lastPointer.x,
@@ -313,7 +318,8 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       return;
     }
 
-    const axis = zeroTicks(finiteMax(s), 4);
+    // Whole-number ticks, as many as the bar panel holds without crowding.
+    const axis = fitZeroTicks(finiteMax(s), layout.barH - 6, { integer: true });
     const max = axis.top;
     const bw = Math.max(1, layout.colW * 0.68);
     const mem = membership();
@@ -380,7 +386,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     // Set totals, drawn leftwards from the matrix so they read against it.
     const ss = setSizes();
     if (opts.showSetSizes && ss) {
-      const smax = zeroTicks(finiteMax(ss), 4).top;
+      const smax = zeroTicks(finiteMax(ss), 4, { integer: true }).top;
       ctx.fillStyle = barFill();
       ctx.globalAlpha = 0.55;
       for (let k = 0; k < names.length; k += 1) {

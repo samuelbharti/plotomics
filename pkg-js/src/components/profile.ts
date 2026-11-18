@@ -39,6 +39,7 @@ import {
   canvasToPNG,
   OKABE_ITO,
   zeroTicks,
+  fitZeroTicks,
   formatTick,
 } from "../core/index.js";
 
@@ -209,6 +210,23 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     return groups().map((_, i) => OKABE_ITO[i % OKABE_ITO.length] as string);
   }
   const measureCtx = document.createElement("canvas").getContext("2d");
+  /** A bar label cut with an ellipsis to fit `maxW` px. */
+  function fitBarLabel(label: string, maxW: number): string {
+    const w = (s: string) => {
+      if (!measureCtx) return s.length * BAR_LABEL_SIZE * 0.56;
+      measureCtx.font = `${BAR_LABEL_SIZE}px ${theme.fontFamily}`;
+      return measureCtx.measureText(s).width;
+    };
+    if (w(label) <= maxW) return label;
+    let lo = 1;
+    let hi = label.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (w(`${label.slice(0, mid)}\u2026`) <= maxW) lo = mid;
+      else hi = mid - 1;
+    }
+    return `${label.slice(0, lo)}\u2026`;
+  }
   /** Width of the longest bar label at its font size, in px. */
   function longestBarLabel(): number {
     let w = 0;
@@ -301,7 +319,8 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
       return;
     }
 
-    const axis = zeroTicks(finiteMax(v), 4);
+    // As many round ticks as the plot height holds without crowding.
+    const axis = fitZeroTicks(finiteMax(v), layout.plotH);
     const max = axis.top;
     const gcol = groupCol();
     const glist = groups();
@@ -391,12 +410,14 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     if (opts.showBarLabels) {
       const labs = barLabels();
       const every = Math.max(1, Math.ceil((BAR_LABEL_SIZE + 1) / layout.slot));
+      // A label longer than the band under the axis is cut to fit.
+      const room = Math.max(8, height - layout.axisY - 8);
       for (let i = 0; i < labs.length; i += every) {
         const x = layout.left + i * layout.slot + layout.slot / 2;
         const t = text(
           x,
           layout.axisY + 6,
-          labs[i] ?? "",
+          fitBarLabel(labs[i] ?? "", room),
           theme.muted,
           "end",
           BAR_LABEL_SIZE,

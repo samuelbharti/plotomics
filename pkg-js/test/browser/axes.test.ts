@@ -79,11 +79,99 @@ describe("profile axis, title and bar labels", () => {
     expect((t2 as SVGTextElement).getBBox().y).toBeGreaterThanOrEqual(0);
   });
 
+  it("cuts a bar label longer than the band under the axis", () => {
+    const el = container(300, 300);
+    instances.push(
+      createProfile(el, {
+        data: {
+          columns: { value: [3, 5], label: ["chr1:1000000-2000000", "x"] },
+        },
+      }),
+    );
+    const lab = texts(el).find((t) => (t.textContent ?? "").startsWith("chr1"));
+    const b = (lab as SVGTextElement).getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    expect(b.bottom).toBeLessThanOrEqual(box.bottom + 0.5);
+  });
+
   it("draws the bar labels at the tick label size", () => {
     const el = container();
     instances.push(createProfile(el, { data }));
     const lab = texts(el).find((t) => t.textContent === "A[C>A]A");
     expect(lab?.getAttribute("font-size")).toBe("9");
+  });
+});
+
+describe("ticks on short or narrow plots", () => {
+  /** Smallest gap between the baselines of right-aligned tick labels. */
+  function minGap(el: HTMLElement): number {
+    const ys = texts(el)
+      .filter(
+        (t) =>
+          t.getAttribute("text-anchor") === "end" &&
+          /^\d/.test(t.textContent ?? ""),
+      )
+      .map((t) => Number(t.getAttribute("y")))
+      .sort((a, b) => a - b);
+    let gap = Number.POSITIVE_INFINITY;
+    for (let i = 1; i < ys.length; i += 1) {
+      gap = Math.min(gap, (ys[i] as number) - (ys[i - 1] as number));
+    }
+    return gap;
+  }
+
+  it("keeps profile tick labels clear of each other at 150 px", () => {
+    const el = container(900, 150);
+    instances.push(
+      createProfile(el, {
+        data: {
+          columns: {
+            value: [12.4, 3, 7],
+            label: ["A[C>A]A", "A[C>A]C", "A[C>A]G"],
+          },
+          meta: { title: "Sample 1" },
+        },
+      }),
+    );
+    expect(minGap(el)).toBeGreaterThanOrEqual(12);
+  });
+
+  it("keeps UpSet tick labels clear of each other at 130 px", () => {
+    const el = container(600, 130);
+    instances.push(
+      createUpset(el, {
+        data: {
+          columns: { size: [124, 50] },
+          meta: { sets: ["A", "B"], membership: [1, 0, 0, 1] },
+        },
+      }),
+    );
+    expect(minGap(el)).toBeGreaterThanOrEqual(12);
+  });
+
+  it("keeps lollipop residue labels from touching on a 400 px plot", () => {
+    const el = container(400, 300);
+    instances.push(
+      createLollipop(el, {
+        data: {
+          columns: { position: [130], count: [3] },
+          meta: { length: 1680 },
+        },
+      }),
+    );
+    const boxes = texts(el)
+      .filter(
+        (t) =>
+          t.getAttribute("text-anchor") === "middle" &&
+          /^\d+$/.test(t.textContent ?? ""),
+      )
+      .map((t) => t.getBBox())
+      .sort((a, b) => a.x - b.x);
+    for (let i = 1; i < boxes.length; i += 1) {
+      const prev = boxes[i - 1] as DOMRect;
+      expect((boxes[i] as DOMRect).x).toBeGreaterThan(prev.x + prev.width);
+    }
+    expect(boxes.length).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -123,6 +211,26 @@ describe("upset axis and set names", () => {
     expect(nb.x).toBeGreaterThanOrEqual(cb.x + cb.width);
     const y = Number((name as SVGTextElement).getAttribute("y")) - 3;
     expect(hoverAt(el, nb.x + nb.width / 2, y)).toContain(long);
+  });
+
+  it("names a set on hover when its size is missing", () => {
+    const el = container(500, 400);
+    instances.push(
+      createUpset(el, {
+        data: {
+          columns: { size: [250, 120, 40] },
+          meta: {
+            sets: ["A", "B"],
+            setSizes: [300, null] as unknown as number[],
+            membership: [1, 0, 0, 1, 1, 1],
+          },
+        },
+      }),
+    );
+    const b = texts(el).find((t) => t.textContent === "B") as SVGTextElement;
+    const bb = b.getBBox();
+    const y = Number(b.getAttribute("y")) - 3;
+    expect(hoverAt(el, bb.x + bb.width / 2, y)).toBe("B");
   });
 });
 

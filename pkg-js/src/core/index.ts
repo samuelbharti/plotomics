@@ -66,4 +66,11 @@ export {
   afterQuiet,
 } from "./scatter.js";
 
-export { stepDecimals, zeroTicks, formatTick, rangeTicks } from "./ticks.js";
+export {
+  stepDecimals,
+  zeroTicks,
+  fitZeroTicks,
+  spaceTicks,
+  formatTick,
+  rangeTicks,
+} from "./ticks.js";

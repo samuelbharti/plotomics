@@ -51,6 +51,7 @@ import {
   canvasToPNG,
   OKABE_ITO,
   rangeTicks,
+  spaceTicks,
 } from "../core/index.js";
 
 export interface LollipopOptions {
@@ -791,8 +792,13 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       });
     }
 
-    // Residue axis.
-    for (const t of residueTicks(L)) {
+    // Residue axis: about one tick per 80 px, and a tick whose label would
+    // touch its neighbour's is left out, so narrow plots stay readable.
+    const count = Math.max(2, Math.min(8, Math.floor(layout.innerW / 80)));
+    const residues = spaceTicks(residueTicks(L, count), px, (t) =>
+      textWidth(String(t), 9),
+    );
+    for (const t of residues) {
       const x = px(t);
       svg.appendChild(line(x, layout.axisY, x, layout.axisY + 4, theme.axis));
       svg.appendChild(
