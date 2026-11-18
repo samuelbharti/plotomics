@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Mapping
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, pack_columns
+from ._base import STATIC, PlotomicsWidget, _as_matrix, _check_labels, pack_columns
 
 _METRICS = ("euclidean", "correlation")
 _LINKAGES = ("average", "complete", "ward")
@@ -34,12 +35,17 @@ class Clustermap(PlotomicsWidget):
     matrix:
         A 2D NumPy array or a pandas ``DataFrame``. For a ``DataFrame``, the
         index becomes row labels and the columns become column labels. Values
-        are packed as ``float32`` and transported row-major.
+        are packed as ``float32`` and transported row-major. A missing cell
+        (NaN) is drawn grey, and distances between rows or columns use the
+        cells both have, scaled up as R's ``dist()`` does.
     metric:
         Distance metric for clustering: ``"euclidean"`` or ``"correlation"``
         (1 - Pearson correlation).
     linkage:
         Agglomeration method: ``"average"``, ``"complete"`` or ``"ward"``.
+        ``"ward"`` is Ward's method as scipy and R's ``ward.D2`` compute it,
+        and it assumes the euclidean metric (a warning says so for
+        correlation).
     colormap:
         Color ramp: ``"viridis"`` (sequential) or ``"rdbu"`` (diverging).
     z_score:
@@ -108,6 +114,12 @@ class Clustermap(PlotomicsWidget):
             raise ValueError(
                 "`linkage` must be 'average', 'complete' or 'ward'."
             )
+        if linkage == "ward" and metric != "euclidean":
+            warnings.warn(
+                "Ward linkage assumes euclidean distances; with "
+                f"metric={metric!r} its merge heights have no clear meaning.",
+                stacklevel=2,
+            )
         if colormap not in _COLORMAPS:
             raise ValueError("`colormap` must be 'viridis' or 'rdbu'.")
 
@@ -133,12 +145,22 @@ class Clustermap(PlotomicsWidget):
         buffer, schema = pack_columns({"values": values})
 
         meta: dict[str, Any] = {"nrows": int(nrows), "ncols": int(ncols)}
-        rlabels = row_labels if row_labels is not None else inferred_rows
-        clabels = col_labels if col_labels is not None else inferred_cols
+        # A label list of the wrong length would make the browser drop every
+        # label without a word, so it fails here, as in Heatmap.
+        rlabels = _check_labels(
+            row_labels if row_labels is not None else inferred_rows,
+            int(nrows),
+            "row_labels",
+        )
+        clabels = _check_labels(
+            col_labels if col_labels is not None else inferred_cols,
+            int(ncols),
+            "col_labels",
+        )
         if rlabels is not None:
-            meta["rowLabels"] = [str(v) for v in rlabels]
+            meta["rowLabels"] = rlabels
         if clabels is not None:
-            meta["colLabels"] = [str(v) for v in clabels]
+            meta["colLabels"] = clabels
         if row_linkage is not None:
             meta["rowLinkage"] = row_linkage
         if col_linkage is not None:
@@ -221,13 +243,4 @@ def _validate_linkage(linkage: Any, n: int, name: str) -> None:
         raise ValueError(f"`{name}` order must be a permutation of 0..{n - 1}.")
 
 
-def _as_matrix(matrix: Any) -> tuple[np.ndarray, Any | None, Any | None]:
-    """Coerce input to a 2D ndarray, extracting labels from a DataFrame.
 
-    Returns ``(array, row_labels_or_None, col_labels_or_None)``.
-    """
-    # Duck-typed pandas DataFrame support without a hard dependency.
-    if hasattr(matrix, "values") and hasattr(matrix, "index") and hasattr(matrix, "columns"):
-        arr = np.asarray(matrix.values)
-        return arr, list(matrix.index), list(matrix.columns)
-    return np.asarray(matrix), None, None

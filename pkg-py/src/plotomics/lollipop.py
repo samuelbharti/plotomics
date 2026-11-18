@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import math
 from collections import Counter
+from numbers import Real
 from typing import Any
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _column,
+    _text_or_none,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Lollipop(PlotomicsWidget):
@@ -15,7 +24,9 @@ class Lollipop(PlotomicsWidget):
 
     A backbone spanning the sequence with domain rectangles on it, mutation
     stems whose head area is proportional to recurrence, and an optional
-    post-translational modification track below. Hotspots inside a functional
+    post-translational modification track below. Variants at one residue
+    stack on one stem, most recurrent at the bottom, so the top of a stem is
+    the residue's total. Hotspots inside a functional
     domain read very differently from truncating variants scattered across one,
     which is what this figure exists to show.
 
@@ -26,7 +37,8 @@ class Lollipop(PlotomicsWidget):
     ----------
     data:
         A pandas ``DataFrame`` or mapping of arrays with ``position``
-        (amino-acid position, 1-based) and ``count`` (recurrence). Optional
+        (amino-acid position, 1-based) and ``count`` (recurrence, zero or
+        more; a variant with a missing count is not drawn). Optional
         ``class`` and ``label`` columns drive the colour and the text labels.
     length:
         Protein length in residues.
@@ -104,7 +116,14 @@ class Lollipop(PlotomicsWidget):
         cnt = _column(data, "count")
         if pos is None or cnt is None:
             raise ValueError("`data` must provide `position` and `count` columns.")
-        if not isinstance(length, (int, float)) or length < 1:
+        # numbers.Real covers numpy scalars, such as the np.int64 a pandas
+        # lookup returns.
+        if (
+            isinstance(length, bool)
+            or not isinstance(length, Real)
+            or not math.isfinite(length)
+            or length < 1
+        ):
             raise ValueError("`length` must be a positive protein length.")
 
         position = _to_float32(pos, "position")
@@ -115,14 +134,19 @@ class Lollipop(PlotomicsWidget):
             raise ValueError("`position` and `count` must be the same length.")
         if np.any(position < 1) or np.any(position > length):
             raise ValueError("`position` must fall within 1..length.")
+        if np.any(count < 0):
+            raise ValueError("`count` must be zero or more.")
 
         cls_col = _column(data, "class")
         lab_col = _column(data, "label")
         cls = [str(v) for v in cls_col] if cls_col is not None else None
-        lab = [str(v) for v in lab_col] if lab_col is not None else None
+        # A missing label crosses as null, so the browser draws no text for it.
+        lab = _text_or_none(lab_col) if lab_col is not None else None
 
         if classes is None and cls is not None:
-            classes = [c for c, _ in Counter(cls).most_common()]
+            # Most frequent first, ties by name, as R orders them.
+            counted = Counter(cls)
+            classes = sorted(counted, key=lambda c: (-counted[c], c))
         if classes is not None:
             classes = [str(c) for c in classes]
             unknown = sorted(set(cls or []) - set(classes))

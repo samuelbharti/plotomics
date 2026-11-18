@@ -26,12 +26,18 @@ clustermap(
 }
 \arguments{
 \item{mat}{A numeric matrix. Row and column names, if present, are used as
-labels. Values are transported row-major to the browser.}
+labels. Values are transported row-major to the browser. A missing cell
+(\code{NA}, \code{NaN} or an infinite value) is drawn grey, and distances between
+rows or columns use the cells both have, scaled up as \code{\link[stats:dist]{stats::dist()}}
+does.}
 
 \item{metric}{Distance metric for clustering: \code{"euclidean"} or
 \code{"correlation"} (1 - Pearson correlation).}
 
-\item{linkage}{Agglomeration method: \code{"average"}, \code{"complete"} or \code{"ward"}.}
+\item{linkage}{Agglomeration method: \code{"average"}, \code{"complete"} or \code{"ward"}.
+\code{"ward"} is Ward's method as \code{hclust(method = "ward.D2")} and scipy
+compute it, and it assumes the euclidean metric (a warning says so for
+correlation).}
 
 \item{colormap}{Color ramp: \code{"viridis"} (sequential) or \code{"rdbu"} (diverging).}
 

@@ -6,14 +6,16 @@ from plotomics import Clustermap
 
 def test_clustermap_builds_traits_from_ndarray():
     mat = np.arange(6, dtype=float).reshape(2, 3)  # [[0,1,2],[3,4,5]]
-    w = Clustermap(
-        mat,
-        metric="correlation",
-        linkage="ward",
-        colormap="rdbu",
-        z_score=True,
-        legend_title="expr",
-    )
+    # Ward with correlation is allowed, with a warning.
+    with pytest.warns(UserWarning, match="Ward linkage"):
+        w = Clustermap(
+            mat,
+            metric="correlation",
+            linkage="ward",
+            colormap="rdbu",
+            z_score=True,
+            legend_title="expr",
+        )
 
     assert w.data["meta"]["nrows"] == 2
     assert w.data["meta"]["ncols"] == 3
@@ -141,3 +143,17 @@ def test_clustermap_rejects_merges_missing_keys():
 def test_clustermap_rejects_non_integer_order():
     with pytest.raises(ValueError, match="integer leaf indices"):
         Clustermap(np.random.randn(3, 3), row_linkage=[0.5, 1, 2])
+
+
+def test_clustermap_warns_on_ward_with_correlation():
+    m = np.arange(6, dtype=float).reshape(3, 2)
+    with pytest.warns(UserWarning, match="Ward linkage assumes euclidean"):
+        Clustermap(m, linkage="ward", metric="correlation")
+
+
+def test_clustermap_checks_label_lengths():
+    m = np.arange(6, dtype=float).reshape(3, 2)
+    with pytest.raises(ValueError, match="`row_labels` has 2 entries; expected 3"):
+        Clustermap(m, row_labels=["a", "b"])
+    with pytest.raises(ValueError, match="`col_labels` has 3 entries; expected 2"):
+        Clustermap(m, col_labels=["a", "b", "c"])
