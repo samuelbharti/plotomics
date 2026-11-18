@@ -214,3 +214,21 @@ class PlotomicsWidget(anywidget.AnyWidget):
         if fmt not in ("png", "svg"):
             raise ValueError(f"fmt must be 'png' or 'svg', got {fmt!r}")
         self.send({"plotomics": "export", "format": fmt})
+
+
+def _text_or_none(values: Any) -> list[str | None]:
+    """Text of each value, with a missing value (None, NaN, pandas NA) as None.
+
+    ``str(v)`` turns a missing value into the text "None", "nan" or "<NA>",
+    which the browser would show as a real label or category. None crosses as
+    JSON null, which the components read as missing.
+    """
+    out: list[str | None] = []
+    for v in values:
+        missing = (
+            v is None
+            or type(v).__name__ in ("NAType", "NaTType")
+            or (isinstance(v, (float, np.floating)) and bool(np.isnan(v)))
+        )
+        out.append(None if missing else str(v))
+    return out

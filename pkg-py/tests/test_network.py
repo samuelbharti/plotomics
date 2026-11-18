@@ -142,3 +142,14 @@ def test_network_selected_trait_accepts_node_id_and_none():
     assert w.selected == "a"
     w.selected = None
     assert w.selected is None
+
+
+def test_network_sends_missing_groups_and_labels_as_null():
+    nodes = {
+        "id": ["a", "b", "c", "d"],
+        "group": ["g1", None, float("nan"), "g2"],
+        "label": ["A", np.nan, "C", None],
+    }
+    w = Network(nodes, {"source": ["a"], "target": ["b"]})
+    assert w.data["meta"]["nodeGroup"] == ["g1", None, None, "g2"]
+    assert w.data["meta"]["nodeLabels"] == ["A", None, "C", None]
