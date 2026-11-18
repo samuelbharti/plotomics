@@ -120,7 +120,9 @@ export function densifySymmetric(
   for (let k = 0; k < m; k += 1) {
     const r = i[k] as number;
     const c = j[k] as number;
-    const val = v[k] as number;
+    // A missing value (null, which is how R's JSON sends NA) is NaN, not 0.
+    const raw = v[k] as number | null | undefined;
+    const val = raw == null ? Number.NaN : raw;
     if (r < 0 || r >= n || c < 0 || c >= n) continue;
     out[r * n + c] = val;
     if (symmetric) out[c * n + r] = val;
@@ -338,16 +340,24 @@ export function formatCoord(bp: number, step = 0): string {
   const a = Math.abs(bp);
   const [div, unit] = a >= 1e6 ? [1e6, "Mb"] : a >= 1e3 ? [1e3, "kb"] : [1, ""];
   const v = bp / div;
-  if (step > 0) {
-    const decimals = Math.min(
-      6,
-      Math.max(0, Math.ceil(-Math.log10(step / div) - 1e-9)),
-    );
-    return `${v.toFixed(decimals)}${unit}`;
-  }
+  if (step > 0) return `${v.toFixed(decimalsFor(step / div))}${unit}`;
   if (div === 1) return `${Math.round(bp)}`;
   const s = v.toPrecision(3);
   return `${s.includes(".") ? s.replace(/\.?0+$/, "") : s}${unit}`;
+}
+
+/**
+ * Decimals needed to write `x` exactly (2.5 needs 1, 0.25 needs 2), at most 6.
+ * Tick values are whole multiples of the step, so they need no more.
+ */
+function decimalsFor(x: number): number {
+  for (let d = 0; d < 6; d += 1) {
+    const scaled = x * 10 ** d;
+    if (Math.abs(scaled - Math.round(scaled)) < 1e-6 * Math.max(1, scaled)) {
+      return d;
+    }
+  }
+  return 6;
 }
 
 /** Sample the named colormap into a Uint8 RGBA lookup texture (256x1). */
@@ -414,18 +424,28 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   let glBroken = false;
   const uid = `plotomics-hic-${hicSeq++}`;
 
+  /** Set up WebGL once; on any failure, mark it broken and draw no matrix. */
   function initGL() {
     if (regl || glBroken) return;
     try {
-      regl = createREGL({
-        canvas,
-        attributes: { antialias: false, preserveDrawingBuffer: true },
-      });
-    } catch {
+      setupGL();
+    } catch (err) {
+      // setupGL assigns these, which TypeScript cannot see from here.
+      (cmapTex as Texture2D | null)?.destroy?.();
+      (regl as Regl | null)?.destroy?.();
       regl = null;
+      draw = null;
+      cmapTex = null;
       glBroken = true;
-      return;
+      console.error("plotomics hic: WebGL setup failed", err);
     }
+  }
+
+  function setupGL() {
+    regl = createREGL({
+      canvas,
+      attributes: { antialias: false, preserveDrawingBuffer: true },
+    });
     maxTextureSize = regl.limits.maxTextureSize;
     cmapTex = regl.texture({
       data: colormapLUT(opts.colormap),
@@ -1052,8 +1072,8 @@ const colorCache = new Map<string, [number, number, number]>();
 
 /**
  * Any CSS color as unit RGB. Hex is parsed directly; other forms ("white",
- * "rgb(...)") go through a 2D context, which normalizes them. Unparseable input
- * falls back to white.
+ * "rgb(...)") go through a 2D context, which normalizes them. Unparseable or
+ * fully transparent input falls back to white.
  */
 export function cssColorToUnitRGB(color: string): [number, number, number] {
   const cached = colorCache.get(color);
@@ -1077,8 +1097,10 @@ export function cssColorToUnitRGB(color: string): [number, number, number] {
       if (norm.startsWith("#")) {
         rgb = cssColorToUnitRGB(norm);
       } else {
+        // "rgba(r, g, b, a)". A fully transparent color has no RGB of its
+        // own, so it keeps the white fallback; partial alpha keeps the RGB.
         const m = norm.match(/[\d.]+/g);
-        if (m && m.length >= 3) {
+        if (m && m.length >= 3 && !(m.length >= 4 && Number(m[3]) === 0)) {
           rgb = [Number(m[0]) / 255, Number(m[1]) / 255, Number(m[2]) / 255];
         }
       }

@@ -154,6 +154,48 @@ describe("hic helpers", () => {
     ).toEqual(["25.01Mb", "25.02Mb", "25.03Mb"]);
   });
 
+  it("states steps such as 2.5 and 0.25 exactly", () => {
+    // 80 bins of 250 kb: ticks every 10 bins = 2.5 Mb.
+    const step = tickStep(0, 80) * 250_000;
+    expect(step).toBe(2_500_000);
+    expect(axisTicks(0, 80).map((t) => formatCoord(t * 250_000, step))).toEqual(
+      [
+        "0",
+        "2.5Mb",
+        "5.0Mb",
+        "7.5Mb",
+        "10.0Mb",
+        "12.5Mb",
+        "15.0Mb",
+        "17.5Mb",
+        "20.0Mb",
+      ],
+    );
+    // A 250 kb step from 1 Mb, and 250 kb bins in the tooltip.
+    expect(
+      [1e6, 1.25e6, 1.5e6, 1.75e6].map((bp) => formatCoord(bp, 250_000)),
+    ).toEqual(["1.00Mb", "1.25Mb", "1.50Mb", "1.75Mb"]);
+    expect(formatCoord(5 * 250_000, 250_000)).toBe("1.25Mb");
+    // 2.5 Mb bins.
+    expect([1, 2, 3].map((b) => formatCoord(b * 2_500_000, 2_500_000))).toEqual(
+      ["2.5Mb", "5.0Mb", "7.5Mb"],
+    );
+  });
+
+  it("keeps a missing sparse value missing", () => {
+    const m = densifySymmetric(
+      [0, 1],
+      [1, 2],
+      [null as unknown as number, 5],
+      4,
+      true,
+    );
+    expect(Number.isNaN(m[0 * 4 + 1])).toBe(true);
+    expect(Number.isNaN(m[1 * 4 + 0])).toBe(true);
+    expect(m[1 * 4 + 2]).toBe(5);
+    expect(m[3 * 4 + 3]).toBe(0); // no contact stays 0
+  });
+
   it("ticks whole bins on an index axis", () => {
     expect(axisTicks(10, 12.5, 6, 1)).toEqual([10, 11, 12]);
     expect(axisTicks(0, 3, 6, 1)).toEqual([0, 1, 2, 3]);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createHic } from "../../src/components/hic.js";
+import { createHic, cssColorToUnitRGB } from "../../src/components/hic.js";
 import type { PlotomicsInstance } from "../../src/core/index.js";
 import { drawnPixels } from "./helpers.js";
 
@@ -107,6 +107,34 @@ describe("hic in a browser", () => {
     hic.setOptions({ symmetric: false });
     expect(hover(el, 4, 1, 0)).toContain("contacts: 0");
     expect(hover(el, 4, 0, 1)).toContain("contacts: 7");
+  });
+
+  it("keeps the overlay and does not throw when WebGL setup fails", () => {
+    const proto = WebGLRenderingContext.prototype;
+    const real = proto.getShaderParameter;
+    // Every shader "fails to compile".
+    proto.getShaderParameter = () => false;
+    try {
+      const el = container(600, 400);
+      const hic = createHic(el, {
+        data: {
+          columns: { values: decay(64) },
+          meta: { n: 64, binSize: 10_000 },
+        },
+      });
+      instances.push(hic);
+      expect(xTicks(el)).toContain("100kb");
+      expect(() => hic.setOptions({ vmin: 1 })).not.toThrow();
+    } finally {
+      proto.getShaderParameter = real;
+    }
+  });
+
+  it("reads CSS colours for the background, with white for transparent", () => {
+    expect(cssColorToUnitRGB("#000")).toEqual([0, 0, 0]);
+    expect(cssColorToUnitRGB("white")).toEqual([1, 1, 1]);
+    expect(cssColorToUnitRGB("rgb(255, 0, 0)")).toEqual([1, 0, 0]);
+    expect(cssColorToUnitRGB("transparent")).toEqual([1, 1, 1]);
   });
 
   it("draws a diverging map with a negative vmin", async () => {
