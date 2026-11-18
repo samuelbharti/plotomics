@@ -44,6 +44,7 @@ import {
   type TextSizes,
   textSizes,
   textWidth as measureText,
+  fitText,
   categoricalColors,
 } from "../core/index.js";
 
@@ -257,18 +258,9 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
   function textWidth(s: string, size: number): number {
     return measureText(s, size, theme.fontFamily);
   }
-  /** A bar label cut with an ellipsis to fit `maxW` px. */
-  function fitBarLabel(label: string, maxW: number): string {
-    const w = (s: string) => textWidth(s, sizes.small);
-    if (w(label) <= maxW) return label;
-    let lo = 1;
-    let hi = label.length;
-    while (lo < hi) {
-      const mid = Math.ceil((lo + hi) / 2);
-      if (w(`${label.slice(0, mid)}\u2026`) <= maxW) lo = mid;
-      else hi = mid - 1;
-    }
-    return `${label.slice(0, lo)}\u2026`;
+  /** `s` cut with an ellipsis to fit `maxW` px at `size`. */
+  function fit(s: string, maxW: number, size: number): string {
+    return fitText(s, maxW, size, theme.fontFamily);
   }
   /** Width of the longest bar label at its font size, in px. */
   function longestBarLabel(): number {
@@ -439,11 +431,17 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
         ),
       );
     }
+    // The y title is centred on the bars and may reach the element's edges.
+    const yTitleCy = layout.plotTop + layout.plotH / 2;
     svg.appendChild(
       rotatedText(
         tx.titleX,
-        layout.plotTop + layout.plotH / 2,
-        opts.yLabel,
+        yTitleCy,
+        fit(
+          opts.yLabel,
+          2 * Math.min(yTitleCy - 2, height - 2 - yTitleCy),
+          sizes.axisTitle,
+        ),
         theme.muted,
         sizes.axisTitle,
       ),
@@ -482,7 +480,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
         const t = text(
           x,
           layout.axisY + 6,
-          fitBarLabel(labs[i] ?? "", room),
+          fit(labs[i] ?? "", room, sizes.small),
           theme.muted,
           "end",
           sizes.small,
@@ -499,7 +497,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
         text(
           layout.left,
           tx.titleBaseline,
-          title,
+          fit(title, width - layout.left - layout.right, sizes.title),
           theme.foreground,
           "start",
           sizes.title,

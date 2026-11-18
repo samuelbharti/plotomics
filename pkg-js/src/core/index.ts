@@ -59,6 +59,7 @@ export {
   createTooltip,
   measure,
   textWidth,
+  fitText,
   dpr,
 } from "./dom.js";
 

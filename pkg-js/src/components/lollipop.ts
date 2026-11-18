@@ -55,6 +55,7 @@ import {
   type TextSizes,
   textSizes,
   textWidth as measureText,
+  fitText,
   categoricalColors,
 } from "../core/index.js";
 
@@ -525,6 +526,10 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   function textWidth(s: string, size: number): number {
     return measureText(s, size, theme.fontFamily);
   }
+  /** `s` cut with an ellipsis to fit `maxW` px at `size`. */
+  function fit(s: string, maxW: number, size: number): string {
+    return fitText(s, maxW, size, theme.fontFamily);
+  }
   /**
    * The layout for the current size, data and text sizes, with `legendRows`
    * rows of legend. Call {@link restack} first.
@@ -551,15 +556,18 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   function legendLayout(): {
     items: { x: number; row: number }[];
     note: { x: number; row: number; text: string } | null;
+    /** The class names, each cut to fit a row. */
+    names: string[];
   } {
-    const widths = classes().map((c) => 12 + textWidth(c, sizes.label));
     const f = frame(0);
     const maxW = Math.max(1, width - f.left - f.right);
+    const names = classes().map((c) => fit(c, maxW - 12, sizes.label));
+    const widths = names.map((c) => 12 + textWidth(c, sizes.label));
     const rowH = lollipopText(sizes).legendRowH;
     const maxRows = Math.max(1, Math.floor((height * 0.2) / rowH));
     const all = wrapRows(widths, maxW);
     const items = all.filter((it) => it.row < maxRows);
-    if (items.length === all.length) return { items, note: null };
+    if (items.length === all.length) return { items, note: null, names };
     const last = maxRows - 1;
     for (;;) {
       const text = `+${all.length - items.length} more`;
@@ -571,7 +579,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
         !tail ||
         tail.row !== last
       ) {
-        return { items, note: { x, row: last, text } };
+        return { items, note: { x, row: last, text }, names };
       }
       items.pop();
     }
@@ -787,11 +795,17 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
         sizes.label,
       ),
     );
+    // The y title is centred on the stems and may reach down to the axis.
+    const yTitleCy = layout.top + layout.stemH / 2;
     svg.appendChild(
       rotatedText(
         tx.titleX,
-        layout.top + layout.stemH / 2,
-        opts.yLabel,
+        yTitleCy,
+        fit(
+          opts.yLabel,
+          2 * Math.min(yTitleCy - 2, layout.axisY - yTitleCy),
+          sizes.axisTitle,
+        ),
         theme.muted,
         sizes.axisTitle,
       ),
@@ -933,11 +947,12 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     // Either identifier alone still names the protein.
     const id = gene && acc ? `${gene} (${acc})` : gene || acc;
     const title = id ? `${id} - amino-acid position` : "amino-acid position";
+    const titleCx = layout.left + layout.innerW / 2;
     svg.appendChild(
       text(
-        layout.left + layout.innerW / 2,
+        titleCx,
         layout.axisY + tx.title,
-        title,
+        fit(title, 2 * Math.min(titleCx, width - titleCx) - 4, sizes.axisTitle),
         theme.muted,
         "middle",
         sizes.axisTitle,
@@ -951,7 +966,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     const cls = classes();
     if (!cls.length) return;
     const cols = classColors();
-    const { items, note } = legendLayout();
+    const { items, note, names } = legendLayout();
     const tx = lollipopText(sizes);
     // Rows start under the axis title.
     const firstY = layout.axisY + tx.legend;
@@ -977,7 +992,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       dot.setAttribute("fill", cols[i] ?? theme.foreground);
       svg.appendChild(dot);
       svg.appendChild(
-        text(x + 12, y, cls[i] ?? "", theme.foreground, "start", sizes.label),
+        text(x + 12, y, names[i] ?? "", theme.foreground, "start", sizes.label),
       );
     });
   }

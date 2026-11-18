@@ -6,6 +6,7 @@ import {
   visibleRowLabels,
   wrapLegend,
 } from "../src/components/oncoplot.js";
+import { textSizes } from "../src/core/theme.js";
 
 const OPTS = {
   showBurden: true,
@@ -163,5 +164,33 @@ describe("oncoplot column helpers", () => {
     );
     // Without a cap every entry is laid out.
     expect(wrapLegend([levels], 150, width)).toHaveLength(40);
+  });
+});
+
+describe("oncoplot layout at other text sizes", () => {
+  const huge = textSizes({ fontSize: 24 });
+
+  it("makes the strips taller and the grid shorter for larger text", () => {
+    const small = layoutOncoplot(600, 560, 6, 20, 2, OPTS);
+    const large = layoutOncoplot(600, 560, 6, 20, 2, OPTS, 96, 2, huge);
+    expect(large.annRowH).toBeGreaterThanOrEqual(huge.label + 2);
+    expect(large.annH).toBeGreaterThan(small.annH);
+    expect(large.gridH).toBeLessThan(small.gridH);
+  });
+
+  it("keeps the burden panel tall enough for its maximum and its title", () => {
+    // The maximum sits at the top and the title's baseline 8 px above the
+    // grid; the panel holds both font boxes.
+    const l = layoutOncoplot(600, 200, 6, 20, 0, OPTS, 96, 1, huge);
+    const max = Math.ceil(1.08 * huge.label);
+    expect(l.burdenH).toBeGreaterThanOrEqual(
+      max + 0.26 * huge.label + 1.08 * huge.axisTitle + 8,
+    );
+  });
+
+  it("uses the gene label width it is given", () => {
+    expect(layoutOncoplot(600, 560, 6, 20, 2, OPTS, 150, 1, huge).left).toBe(
+      150,
+    );
   });
 });

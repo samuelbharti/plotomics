@@ -62,13 +62,15 @@ let measureCtx: CanvasRenderingContext2D | null | undefined;
 
 /**
  * Width in px of `text` set at `size` px in `fontFamily`, measured on a
- * shared canvas. Without a canvas (outside a browser) it estimates 0.58 em
- * per character.
+ * shared canvas. `style` is what goes before the size in a CSS font, such
+ * as "italic" or "600". Without a canvas (outside a browser) it estimates
+ * 0.58 em per character.
  */
 export function textWidth(
   text: string,
   size: number,
   fontFamily: string,
+  style = "",
 ): number {
   if (measureCtx === undefined) {
     measureCtx =
@@ -77,8 +79,38 @@ export function textWidth(
         : document.createElement("canvas").getContext("2d");
   }
   if (!measureCtx) return text.length * size * 0.58;
-  measureCtx.font = `${size}px ${fontFamily}`;
+  const prefix = style ? `${style} ` : "";
+  // The canvas ignores a font it cannot parse, such as a family name with an
+  // unquoted number in it, and keeps the font of the call before. A generic
+  // family first sets the size, so such a family still measures at `size`.
+  measureCtx.font = `${prefix}${size}px sans-serif`;
+  measureCtx.font = `${prefix}${size}px ${fontFamily}`;
   return measureCtx.measureText(text).width;
+}
+
+/**
+ * `text` cut with an ellipsis to at most `maxWidth` px, measured as
+ * {@link textWidth} does. Text that fits comes back whole, and when not
+ * even the ellipsis fits the result is empty.
+ */
+export function fitText(
+  text: string,
+  maxWidth: number,
+  size: number,
+  fontFamily: string,
+  style = "",
+): string {
+  const width = (s: string) => textWidth(s, size, fontFamily, style);
+  if (width(text) <= maxWidth) return text;
+  let lo = 0;
+  let hi = text.length - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (width(`${text.slice(0, mid).trimEnd()}\u2026`) <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  const out = `${text.slice(0, lo).trimEnd()}\u2026`;
+  return width(out) <= maxWidth ? out : "";
 }
 
 /** Measure a container, falling back to sensible defaults for headless/0-size. */

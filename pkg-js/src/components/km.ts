@@ -48,6 +48,7 @@ import {
   type TextSizes,
   textSizes,
   textWidth,
+  fitText,
   categoricalColors,
 } from "../core/index.js";
 
@@ -127,8 +128,8 @@ function kmText(s: TextSizes) {
     gap: heading + Math.ceil(DESCENT * s.axisTitle) + 2 + rowH / 2,
     /** Height of one risk-table row. */
     rowH,
-    /** Smallest row; tighter rows would run the names into each other. */
-    minRowH: Math.ceil(0.8 * s.label),
+    /** Smallest row: one name tall, with a pixel to spare. */
+    minRowH: Math.ceil(s.label) + 1,
     /** Space between a stratum name and the column of counts at time 0. */
     labelGap: 2 * s.small,
   };
@@ -194,7 +195,8 @@ export function layoutKm(
     : minLeft;
   // The last tick label is centred on the right edge of the panel.
   const right = Math.max(16, Math.ceil(endWidth / 2) + 2);
-  const top = 14;
+  // Room above the panel for the top half of the "100%" tick label.
+  const top = Math.max(14, Math.ceil((ASCENT - 0.35) * sizes.label) + 2);
   // Room for the axis labels alone when there is no table.
   const riskH = showTable ? t.gap + nGroups * t.rowH : t.axisOnly;
   // Never let the table starve the curves: the panel keeps half the element
@@ -443,12 +445,9 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     for (const g of groups()) w = Math.max(w, labelWidth(g));
     return w;
   }
-  /** A stratum name cut with an ellipsis to fit `maxW` px in the table. */
-  function fitRiskLabel(name: string, maxW: number): string {
-    if (labelWidth(name) <= maxW) return name;
-    let n = name.length;
-    while (n > 1 && labelWidth(`${name.slice(0, n)}\u2026`) > maxW) n -= 1;
-    return `${name.slice(0, n)}\u2026`;
+  /** `s` cut with an ellipsis to fit `maxW` px at `size`. */
+  function fit(s: string, maxW: number, size = sizes.label): string {
+    return fitText(s, maxW, size, theme.fontFamily);
   }
   /** The time ticks inside the axis, and the decimals their labels need. */
   function timeAxis(tmax: number): { ticks: number[]; decimals: number } {
@@ -729,7 +728,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       rotatedText(
         tx.titleX,
         layout.top + layout.plotH / 2,
-        opts.yLabel,
+        fit(opts.yLabel, layout.plotH, sizes.axisTitle),
         theme.muted,
         sizes.axisTitle,
       ),
@@ -760,11 +759,16 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
         ),
       );
     }
+    const titleCx = (layout.left + width - layout.right) / 2;
     svg.appendChild(
       text(
-        (layout.left + width - layout.right) / 2,
+        titleCx,
         layout.axisY + tx.title,
-        opts.xLabel,
+        fit(
+          opts.xLabel,
+          2 * Math.min(titleCx, width - titleCx) - 4,
+          sizes.axisTitle,
+        ),
         theme.muted,
         "middle",
         sizes.axisTitle,
@@ -793,7 +797,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
           text(
             layout.left - tx.labelGap,
             y + midline(sizes.label),
-            fitRiskLabel(gl[g] ?? "", layout.left - tx.labelGap - 4),
+            fit(gl[g] ?? "", layout.left - tx.labelGap - 4),
             cols[g] ?? theme.foreground,
             "end",
             sizes.label,
@@ -819,34 +823,56 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     }
 
     // Legend, top-right of the panel: survival curves fall left to right, so
-    // the top-right corner is the one reliably empty.
+    // the top-right corner is the one reliably empty. Strata past the rows
+    // the panel holds go on to more columns, leftwards, and the names are
+    // cut to share the width of the panel.
+    const pLabel = data.meta?.pLabel as string | undefined;
     if (opts.showLegend && gl.length > 1) {
-      let y = layout.top + sizes.label - 1;
-      for (let g = 0; g < gl.length; g += 1) {
-        const x = width - layout.right - 10;
-        const sw = document.createElementNS(SVG_NS, "rect");
-        sw.setAttribute("x", String(x - 8));
-        sw.setAttribute("y", String(y - midline(sizes.label) - 4));
-        sw.setAttribute("width", "8");
-        sw.setAttribute("height", "8");
-        sw.setAttribute("fill", cols[g] ?? theme.foreground);
-        svg.appendChild(sw);
-        svg.appendChild(
-          text(x - 12, y, gl[g] ?? "", theme.foreground, "end", sizes.label),
-        );
-        y += Math.round(sizes.label + 4);
+      const step = Math.round(sizes.label + 4);
+      const first = layout.top + sizes.label - 1;
+      // The last row stays above the axis, and above the log-rank result.
+      const last = pLabel
+        ? layout.axisY - 10 - Math.ceil(ASCENT * sizes.label) - 2
+        : layout.axisY - 6;
+      const fits = Math.max(1, Math.floor((last - first) / step) + 1);
+      const nCols = Math.ceil(gl.length / fits);
+      const rows = Math.ceil(gl.length / nCols);
+      // Each column is a name, a 4 px gap and an 8 px swatch, and 12 px
+      // separate the columns.
+      const room = width - layout.right - 10 - (layout.left + 4);
+      const names = gl.map((g) => fit(g, (room + 12) / nCols - 24));
+      let x = width - layout.right - 10;
+      for (let c = nCols - 1; c >= 0; c -= 1) {
+        let colW = 0;
+        for (let r = 0; r < rows; r += 1) {
+          const g = c * rows + r;
+          if (g >= gl.length) break;
+          const y = first + r * step;
+          const sw = document.createElementNS(SVG_NS, "rect");
+          sw.setAttribute("x", String(x - 8));
+          sw.setAttribute("y", String(y - midline(sizes.label) - 4));
+          sw.setAttribute("width", "8");
+          sw.setAttribute("height", "8");
+          sw.setAttribute("fill", cols[g] ?? theme.foreground);
+          svg.appendChild(sw);
+          const name = names[g] ?? "";
+          svg.appendChild(
+            text(x - 12, y, name, theme.foreground, "end", sizes.label),
+          );
+          colW = Math.max(colW, labelWidth(name));
+        }
+        x -= colW + 24;
       }
     }
 
     // The log-rank result, bottom-left of the panel where the curves have
     // already fallen away.
-    const pLabel = data.meta?.pLabel as string | undefined;
     if (pLabel) {
       svg.appendChild(
         text(
           layout.left + 10,
           layout.axisY - 10,
-          pLabel,
+          fit(pLabel, width - layout.right - layout.left - 14),
           theme.foreground,
           "start",
           sizes.label,

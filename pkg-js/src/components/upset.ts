@@ -43,6 +43,7 @@ import {
   type TextSizes,
   textSizes,
   textWidth as measureText,
+  fitText,
 } from "../core/index.js";
 
 export interface UpsetOptions {
@@ -105,6 +106,11 @@ export interface UpsetLayout {
   barH: number;
   /** Height of one matrix row. */
   rowH: number;
+  /**
+   * Font size of the set names and the set-size counts: the label size, or
+   * less when the rows are too short for it.
+   */
+  rowText: number;
   /** Width of one intersection column. */
   colW: number;
   matrixH: number;
@@ -124,24 +130,13 @@ export function layoutUpset(
   nSets: number,
   nIntersections: number,
   opts: Pick<UpsetOptions, "barFraction" | "showSetSizes">,
-  /** Width in px of the longest set name. */
+  /** Width in px of the longest set name, at the label size. */
   nameWidth = 48,
-  /** Width in px of the widest set-size count. */
+  /** Width in px of the widest set-size count, at the label size. */
   countWidth = 24,
   /** Text sizes; those of the default theme when omitted. */
   sizes: TextSizes = DEFAULT_SIZES,
 ): UpsetLayout {
-  // The set-size panel also holds its "set size" title, about 3.6 em wide.
-  const setPanelW = opts.showSetSizes
-    ? Math.max(74, Math.ceil(3.6 * sizes.axisTitle))
-    : 0;
-  // The counts sit just right of the set-size bars, then the names; the
-  // name column grows with the longest name up to a share of the width, and
-  // longer names are shortened when drawn.
-  const countW = opts.showSetSizes ? Math.ceil(countWidth) + 8 : 0;
-  const cap = Math.min(NAME_MAX_PX, Math.max(44, width * NAME_MAX_SHARE));
-  const nameW = Math.min(cap, Math.max(44, Math.ceil(nameWidth) + 10));
-  const left = setPanelW + countW + nameW + 12;
   // Room above the bars for the total, drawn 2 px under the top.
   const top = Math.max(14, Math.ceil(ASCENT * sizes.label) + 2);
   const bottom = 16;
@@ -150,12 +145,29 @@ export function layoutUpset(
   const frac = Math.min(0.8, Math.max(0.2, opts.barFraction));
   const barH = avail * frac;
   const matrixH = avail - barH;
+  const rowH = nSets > 0 ? matrixH / nSets : matrixH;
+  // Every set keeps its name: in rows shorter than the label size, the
+  // names and counts shrink to nine tenths of the row.
+  const rowText = Math.min(sizes.label, Math.floor(9 * rowH) / 10);
+  const shrink = rowText / sizes.label;
+  // The set-size panel also holds its "set size" title, about 3.6 em wide.
+  const setPanelW = opts.showSetSizes
+    ? Math.max(74, Math.ceil(3.6 * sizes.axisTitle))
+    : 0;
+  // The counts sit just right of the set-size bars, then the names; the
+  // name column grows with the longest name up to a share of the width, and
+  // longer names are shortened when drawn.
+  const countW = opts.showSetSizes ? Math.ceil(countWidth * shrink) + 8 : 0;
+  const cap = Math.min(NAME_MAX_PX, Math.max(44, width * NAME_MAX_SHARE));
+  const nameW = Math.min(cap, Math.max(44, Math.ceil(nameWidth * shrink) + 10));
+  const left = setPanelW + countW + nameW + 12;
   return {
     left,
     top,
     barBaseline: top + barH,
     barH,
-    rowH: nSets > 0 ? matrixH / nSets : matrixH,
+    rowH,
+    rowText,
     colW:
       nIntersections > 0
         ? Math.max(1, (width - left - 12) / nIntersections)
@@ -231,18 +243,9 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
   function textWidth(s: string, size: number): number {
     return measureText(s, size, theme.fontFamily);
   }
-  /** A name cut with an ellipsis to fit `maxW` px. */
-  function fitName(name: string, maxW: number): string {
-    if (textWidth(name, fontSizes.label) <= maxW) return name;
-    let lo = 1;
-    let hi = name.length;
-    while (lo < hi) {
-      const mid = Math.ceil((lo + hi) / 2);
-      if (textWidth(`${name.slice(0, mid)}\u2026`, fontSizes.label) <= maxW)
-        lo = mid;
-      else hi = mid - 1;
-    }
-    return `${name.slice(0, lo)}\u2026`;
+  /** `s` cut with an ellipsis to fit `maxW` px at `size`. */
+  function fit(s: string, maxW: number, size: number): string {
+    return fitText(s, maxW, size, theme.fontFamily);
   }
 
   // ---- pointer ----
@@ -438,10 +441,21 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     if (!width || !height) return;
     const names = sets();
 
-    // Bar axis, on round steps, each label stating its value.
+    // Bar axis, on round steps, each label stating its value. The zero
+    // label sits on the baseline, which is also the top of the first matrix
+    // row. Letters reach 0.8 em above a baseline and 0.2 em below it, so
+    // when that row is too short to keep the first set name clear of the
+    // zero, the zero is left out: the bars start there anyway.
+    const label = fontSizes.label;
+    const rowText = layout.rowText;
+    const zeroClear =
+      names.length === 0 ||
+      layout.rowH / 2 + midline(rowText) - 0.8 * rowText >=
+        midline(label) + 0.2 * label + 1;
     for (const v of axis.ticks) {
       const y = layout.barBaseline - (v / axis.top) * (layout.barH - 6);
       svg.appendChild(line(layout.left, y, width - 12, y, theme.grid));
+      if (v === 0 && !zeroClear) continue;
       svg.appendChild(
         text(
           layout.left - 6,
@@ -453,11 +467,25 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
         ),
       );
     }
+    // The y title runs up beside the bars. It stays above the "set size"
+    // title, which sits in the same corner: centred on the bars when it
+    // fits there, moved up when it does not, and shortened when the panel is
+    // too short for it.
+    const ss = setSizes();
+    const showCounts = opts.showSetSizes && Boolean(ss);
+    const lowest = showCounts
+      ? layout.barBaseline - 6 - Math.ceil(ASCENT * fontSizes.axisTitle) - 2
+      : layout.barBaseline;
+    const yTitle = fit(opts.yLabel, lowest - 2, fontSizes.axisTitle);
+    const half = textWidth(yTitle, fontSizes.axisTitle) / 2;
     svg.appendChild(
       rotatedText(
         titleX(fontSizes),
-        layout.top + layout.barH / 2,
-        opts.yLabel,
+        Math.max(
+          2 + half,
+          Math.min(layout.top + layout.barH / 2, lowest - half),
+        ),
+        yTitle,
         theme.muted,
         fontSizes.axisTitle,
       ),
@@ -465,23 +493,21 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
 
     // Set names, between the counts and the matrix, shortened to fit.
     const nameRoom = Math.max(12, layout.nameW - 4);
+    const rowMid = midline(layout.rowText);
     for (let k = 0; k < names.length; k += 1) {
       svg.appendChild(
         text(
           layout.left - 10,
-          layout.barBaseline +
-            (k + 0.5) * layout.rowH +
-            midline(fontSizes.label),
-          fitName(names[k] ?? "", nameRoom),
+          layout.barBaseline + (k + 0.5) * layout.rowH + rowMid,
+          fit(names[k] ?? "", nameRoom, layout.rowText),
           theme.foreground,
           "end",
-          fontSizes.label,
+          layout.rowText,
         ),
       );
     }
 
-    const ss = setSizes();
-    if (opts.showSetSizes && ss) {
+    if (showCounts && ss) {
       svg.appendChild(
         text(
           0,
@@ -496,13 +522,11 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
         svg.appendChild(
           text(
             layout.setPanelW + 3,
-            layout.barBaseline +
-              (k + 0.5) * layout.rowH +
-              midline(fontSizes.label),
+            layout.barBaseline + (k + 0.5) * layout.rowH + rowMid,
             fmtInt(ss[k] as number),
             theme.muted,
             "start",
-            fontSizes.label,
+            layout.rowText,
           ),
         );
       }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { fitText } from "../src/core/dom.js";
 import { textSizes } from "../src/core/theme.js";
 
 describe("textSizes", () => {
@@ -25,5 +26,25 @@ describe("textSizes", () => {
     for (const fontSize of [0, -3, Number.NaN]) {
       expect(textSizes({ fontSize }).label).toBe(11);
     }
+  });
+});
+
+describe("fitText", () => {
+  // Outside a browser, textWidth estimates 0.58 em a character: 5.8 px at
+  // 10 px.
+  it("keeps text that fits", () => {
+    expect(fitText("abcde", 29, 10, "sans-serif")).toBe("abcde");
+  });
+
+  it("cuts longer text with an ellipsis to the width", () => {
+    expect(fitText("abcdefghij", 35, 10, "sans-serif")).toBe("abcde\u2026");
+  });
+
+  it("drops a space left before the ellipsis", () => {
+    expect(fitText("ab cdefgh", 23.2, 10, "sans-serif")).toBe("ab\u2026");
+  });
+
+  it("returns nothing when not even the ellipsis fits", () => {
+    expect(fitText("abc", 3, 10, "sans-serif")).toBe("");
   });
 });

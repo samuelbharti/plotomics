@@ -47,6 +47,7 @@ import {
   type TextSizes,
   textSizes,
   textWidth,
+  fitText,
   categoricalColors,
   PALETTE_20,
 } from "../core/index.js";
@@ -465,13 +466,27 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
   function labelWidth(s: string): number {
     return textWidth(s, sizes.label, theme.fontFamily);
   }
+  /** `s` cut with an ellipsis to fit `maxW` px at `size`. */
+  function fit(
+    s: string,
+    maxW: number,
+    size = sizes.label,
+    style = "",
+  ): string {
+    return fitText(s, maxW, size, theme.fontFamily, style);
+  }
   /**
    * Width of the gene label column: wide enough for the gene names, the
    * strip names and the burden axis text, and at least 96 px.
    */
   function geneLabelWidth(): number {
     let w = 0;
-    for (const g of genes()) w = Math.max(w, labelWidth(g ?? ""));
+    for (const g of genes()) {
+      w = Math.max(
+        w,
+        textWidth(g ?? "", sizes.label, theme.fontFamily, "italic"),
+      );
+    }
     if (opts.showAnnotations) {
       for (const a of annotations()) w = Math.max(w, labelWidth(a.name));
     }
@@ -500,12 +515,15 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     // The legend gets at most a fifth of the height.
     const rowH = oncoText(sizes).legendRowH;
     const maxRows = Math.max(1, Math.floor((height * 0.2) / rowH));
-    return wrapLegend(
-      legendGroups(),
-      Math.max(1, width - geneLabelWidth() - 8),
-      labelWidth,
-      maxRows,
+    const maxW = Math.max(1, width - geneLabelWidth() - 8);
+    // An entry wider than a whole row is cut to fit it.
+    const groups = legendGroups().map((group) =>
+      group.map((e) => ({
+        ...e,
+        label: fit(e.label, e.color ? maxW - SWATCH - SWATCH_GAP : maxW),
+      })),
     );
+    return wrapLegend(groups, maxW, labelWidth, maxRows);
   }
 
   // ---- pointer ----
@@ -702,7 +720,9 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     const tx = oncoText(sizes);
     const mid = midline(sizes.label);
 
-    // Gene labels, right-aligned against the grid.
+    // Gene labels, right-aligned against the grid. The column stops at a
+    // share of the width, and longer names are shortened.
+    const room = left - 10;
     const showRow = visibleRowLabels(R, cellH, sizes.label);
     const g = genes();
     for (let r = 0; r < R; r += 1) {
@@ -712,7 +732,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
         text(
           left - 8,
           y,
-          g[r] ?? "",
+          fit(g[r] ?? "", room, sizes.label, "italic"),
           theme.foreground,
           "end",
           sizes.label,
@@ -754,7 +774,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
           text(
             left - 8,
             tx.burdenMax,
-            fmtCount(columnMax(tmb)),
+            fit(fmtCount(columnMax(tmb)), room),
             theme.muted,
             "end",
             sizes.label,
@@ -764,7 +784,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
           text(
             left - 8,
             layout.burdenH - 8,
-            opts.burdenLabel,
+            fit(opts.burdenLabel, room, sizes.axisTitle),
             theme.muted,
             "end",
             sizes.axisTitle,
@@ -780,18 +800,30 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       const nameY = (layout.annRowH - 2) / 2 + mid;
       for (const a of annotations()) {
         svg.appendChild(
-          text(left - 8, y + nameY, a.name, theme.muted, "end", sizes.label),
+          text(
+            left - 8,
+            y + nameY,
+            fit(a.name, room),
+            theme.muted,
+            "end",
+            sizes.label,
+          ),
         );
         y += layout.annRowH;
       }
     }
 
     // Sample count under the grid.
+    const countCx = left + layout.gridW / 2;
     svg.appendChild(
       text(
-        left + layout.gridW / 2,
+        countCx,
         top + layout.gridH + layout.annH + tx.countY,
-        `${C.toLocaleString()} ${opts.xLabel}`,
+        fit(
+          `${C.toLocaleString()} ${opts.xLabel}`,
+          2 * Math.min(countCx, width - countCx) - 4,
+          sizes.axisTitle,
+        ),
         theme.muted,
         "middle",
         sizes.axisTitle,
