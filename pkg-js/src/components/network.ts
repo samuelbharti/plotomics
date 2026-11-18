@@ -105,8 +105,14 @@ export const defaultNetworkOptions: NetworkOptions = {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createNetwork: PlotomicsFactory<NetworkOptions> = (el, initial) => {
-  let opts: NetworkOptions = mergeOptions(defaultNetworkOptions, initial.options);
+export const createNetwork: PlotomicsFactory<NetworkOptions> = (
+  el,
+  initial,
+) => {
+  let opts: NetworkOptions = mergeOptions(
+    defaultNetworkOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -130,7 +136,9 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (el, initial) => 
   el.addEventListener("mousemove", onMove);
 
   function paletteColors(): string[] {
-    return opts.palette && opts.palette.length ? opts.palette : theme.categorical;
+    return opts.palette && opts.palette.length
+      ? opts.palette
+      : theme.categorical;
   }
 
   function buildAndLayout(): { graph: Graph; dropped: EdgeDrops } {
@@ -149,6 +157,12 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (el, initial) => 
   /** Warn once per render when edges were left out, so a caller is not shown an
    * incomplete graph without notice (unknown endpoint, self-loop, parallel). */
   function reportDropped(dropped: EdgeDrops) {
+    if (dropped.missingCoords) {
+      console.warn(
+        `plotomics network: ${dropped.missingCoords} node(s) had no x or y ` +
+          "and were placed at the centre of the others.",
+      );
+    }
     const total =
       dropped.missingEndpoint + dropped.selfLoop + dropped.duplicate;
     if (total === 0) return;
@@ -231,6 +245,8 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (el, initial) => 
   function applyData() {
     hovered = null;
     neighborSet = new Set();
+    // The new renderer never sends leaveNode for the old one's hovered node.
+    tooltip.hide();
     const built = buildAndLayout();
     graph = built.graph;
     reportDropped(built.dropped);
@@ -297,6 +313,10 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (el, initial) => 
    * background so PNG/SVG export captures edges, nodes and labels together. */
   function compositeCanvas(): HTMLCanvasElement | null {
     if (!renderer) return null;
+    // Sigma's WebGL layers do not keep their drawing buffer, so a copy taken
+    // after the frame was shown reads a cleared canvas. refresh() renders
+    // synchronously, and the copies below run before the browser clears it.
+    renderer.refresh();
     const canvases = renderer.getCanvases();
     const order = ["edges", "edgeLabels", "nodes", "labels", "hovers"];
     const layers = order
@@ -319,13 +339,13 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (el, initial) => 
 
 // ---- small utilities ----
 function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function mergeOptions(base: NetworkOptions, next?: Partial<NetworkOptions>): NetworkOptions {
+function mergeOptions(
+  base: NetworkOptions,
+  next?: Partial<NetworkOptions>,
+): NetworkOptions {
   if (!next) return { ...base };
   return {
     ...base,
