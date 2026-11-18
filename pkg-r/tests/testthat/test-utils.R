@@ -67,3 +67,13 @@ test_that("a theme given as a named vector still renders", {
   )
   expect_no_error(w$preRenderHook(w))
 })
+
+test_that("each plot has one default height, as in Shiny and Python", {
+  m <- matrix(1:6, 2, 3)
+  expect_equal(clustermap(m)$sizingPolicy$defaultHeight, 560)
+  expect_equal(bioheatmap(m)$sizingPolicy$defaultHeight, 480)
+  expect_equal(
+    bioprofile(data.frame(value = c(1, 2)))$sizingPolicy$defaultHeight, 380
+  )
+  expect_equal(formals(clustermapOutput)$height, "560px")
+})
