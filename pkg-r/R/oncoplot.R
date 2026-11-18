@@ -157,9 +157,10 @@ oncoplot <- function(alterations,
       f <- factor(as.character(a$values))
       out <- list(
         name = as.character(a$name)[1],
-        # I() keeps a single-level annotation from unboxing to a JSON scalar.
+        # I() keeps a single level, or a single sample, from unboxing to a
+        # JSON scalar.
         levels = I(levels(f)),
-        codes = ifelse(is.na(f), -1L, as.integer(f) - 1L)
+        codes = I(ifelse(is.na(f), -1L, as.integer(f) - 1L))
       )
       if (!is.null(a$colors)) out$colors <- I(as.character(a$colors))
       out
@@ -185,7 +186,8 @@ oncoplot <- function(alterations,
     "oncoplot", columns,
     meta = meta,
     options = options,
-    width = width, height = height, element_id = element_id
+    width = width, height = height, element_id = element_id,
+    array_meta = c("genes", "samples", "classes", "classColors")
   )
 }
 

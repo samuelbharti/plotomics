@@ -154,7 +154,9 @@ network <- function(nodes,
     "network", columns,
     meta = meta,
     options = options,
-    width = width, height = height, element_id = element_id
+    width = width, height = height, element_id = element_id,
+    array_meta = c("nodeLabels", "nodeGroup"),
+    array_options = "palette"
   )
 }
 

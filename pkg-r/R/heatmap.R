@@ -70,8 +70,8 @@ bioheatmap <- function(mat,
     zScore = z_score,
     showColorbar = show_colorbar
   )
-  # NULL clamps must be sent as JSON null, not dropped, so the JS side can tell
-  # "auto" from "unset". jsonlite serializes NULL inside a named list as null.
+  # A NULL clamp drops the key (assigning NULL removes a list element), and the
+  # browser then uses its default, which is "auto".
   options$vmin <- vmin
   options$vmax <- vmax
   if (!is.null(theme)) options$theme <- theme
@@ -80,7 +80,8 @@ bioheatmap <- function(mat,
     "heatmap", columns,
     meta = meta,
     options = options,
-    width = width, height = height, element_id = element_id
+    width = width, height = height, element_id = element_id,
+    array_meta = c("rowLabels", "colLabels")
   )
 }
 
