@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { assembleConfig, defaultIgvOptions } from "../src/components/igv-config.js";
+import {
+  assembleConfig,
+  copyForIgv,
+  defaultIgvOptions,
+  trackKey,
+} from "../src/components/igv-config.js";
 
 describe("igv assembleConfig", () => {
   it("passes a full config through unchanged (and wins over convenience fields)", () => {
@@ -31,5 +36,23 @@ describe("igv assembleConfig", () => {
 
   it("assembles from the shipped defaults (genome only)", () => {
     expect(assembleConfig(defaultIgvOptions)).toEqual({ genome: "hg38" });
+  });
+
+  it("keys a track by its whole content, whatever the key order", () => {
+    const a = { name: "t", url: "t.bed", format: "bed" };
+    const b = { format: "bed", url: "t.bed", name: "t" };
+    expect(trackKey(a)).toBe(trackKey(b));
+    expect(trackKey({ ...a, color: "red" })).not.toBe(trackKey(a));
+  });
+
+  it("gives igv a deep copy of a config", () => {
+    const config = { tracks: [{ name: "t", url: "t.bed", format: "BED" }] };
+    const copy = copyForIgv(config);
+    (copy.tracks[0] as Record<string, unknown>).format = "bed";
+    (copy.tracks[0] as Record<string, unknown>).order = 1;
+    expect(config.tracks[0]).toEqual({ name: "t", url: "t.bed", format: "BED" });
+    // A config with a function cannot be copied, and igv gets it as is.
+    const withFn = { onClick: () => 1 };
+    expect(copyForIgv(withFn)).toBe(withFn);
   });
 });

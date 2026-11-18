@@ -1,18 +1,18 @@
 /**
- * Genome viewer — an embeddable IGV browser via igv.js.
+ * Genome viewer: an embeddable IGV browser via igv.js.
  *
  * Unlike the columnar components (volcano, heatmap, ...), this one is
  * *config-driven*: igv.js streams and tiles remote indexed files (BAM/CRAM,
- * bigWig, VCF, BED, ...) itself, so there is no binary transport here — the
+ * bigWig, VCF, BED, ...) itself, so there is no binary transport here; the
  * data flows entirely through the browser config as URLs.
  *
  * igv.createBrowser is asynchronous (returns a Promise<Browser>), but the
- * plotomics contract requires the factory to return a PlotomicsInstance
- * *synchronously*. We therefore kick the browser off immediately and buffer any
- * setOptions()/resize() calls that arrive before the promise resolves,
- * replaying them once the browser is live. On destroy we remove the browser and
- * clear the element (guarding against a destroy() that races the pending
- * promise).
+ * plotomics factory interface returns a PlotomicsInstance *synchronously*.
+ * The browser is started at once, and option changes that arrive before it
+ * is ready only update the stored options; once it is live, the stored
+ * options are applied in full (locus and tracks). A change to `genome` or
+ * `config` builds a new browser. On destroy the browser is removed and the
+ * element cleared, also when destroy() races a pending browser.
  */
 import {
   type PlotomicsData,
@@ -29,8 +29,11 @@ import type { Browser, CreateOpt } from "igv";
 import {
   type IgvOptions,
   assembleConfig,
+  copyForIgv,
   defaultIgvOptions,
   mergeOptions,
+  stableJSON,
+  trackKey,
 } from "./igv-config.js";
 
 // Re-export the pure config surface so consumers import from one place while
@@ -40,6 +43,7 @@ export {
   type IgvOptions,
   assembleConfig,
   defaultIgvOptions,
+  trackKey,
 } from "./igv-config.js";
 
 // ---------------------------------------------------------------------------
@@ -58,65 +62,91 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
   // True once destroy() has run: prevents a late-resolving createBrowser from
   // attaching a browser we then leak.
   let destroyed = false;
-  // The locus currently reflected in the browser; used to detect setOptions
-  // navigation requests.
-  let currentLocus: string | null = opts.locus;
+  // Each new browser gets a number; a browser that resolves after a newer one
+  // was asked for is removed at once.
+  let generation = 0;
+  // The locus and the tracks the live browser shows. Tracks are compared by
+  // their content, because anywidget hands over freshly decoded objects on
+  // every change. igv.js gets copies of the configs, since it writes into
+  // them, and the stored options stay as they came.
+  let currentLocus: string | null = null;
+  let loadedTracks = new Set<string>();
 
-  // igv.createBrowser is async but the factory must return synchronously.
-  // Kick it off and replay the latest locus once the browser is live.
-  const ready = igv
-    .createBrowser(host, assembleConfig(opts) as unknown as CreateOpt)
-    .then((b) => {
-      if (destroyed) {
-        // destroy() ran while we were loading — tear the browser down at once.
-        igv.removeBrowser(b);
-        return;
-      }
-      browser = b;
-      // If a locus was requested via setOptions before the browser was ready,
-      // navigate to it now.
-      if (opts.locus && opts.locus !== currentLocus) {
-        currentLocus = opts.locus;
-        b.search(opts.locus);
-      }
-    })
-    .catch((err) => {
-      // Surface the failure without breaking the host page.
-      console.error("plotomics igv: failed to create browser", err);
-    });
+  function startBrowser() {
+    const gen = ++generation;
+    const config = assembleConfig(opts);
+    currentLocus = (config.locus as string | undefined) ?? null;
+    loadedTracks = new Set(
+      ((config.tracks as Record<string, unknown>[] | undefined) ?? []).map(
+        trackKey,
+      ),
+    );
+    igv
+      .createBrowser(host, copyForIgv(config) as unknown as CreateOpt)
+      .then((b) => {
+        if (destroyed || gen !== generation) {
+          // destroy() ran, or a newer browser was asked for, while this one
+          // loaded: tear it down at once.
+          igv.removeBrowser(b);
+          return;
+        }
+        browser = b;
+        // Options that changed while the browser loaded apply now.
+        syncBrowser();
+      })
+      .catch((err) => {
+        // Surface the failure without breaking the host page.
+        console.error("plotomics igv: failed to create browser", err);
+      });
+  }
 
-  function applyOptions(next: Partial<IgvOptions>) {
-    const prev = opts;
-    opts = mergeOptions(opts, next);
-
-    if (!browser) {
-      // Not ready yet — the ready() handler replays opts.locus once live. New
-      // tracks arriving before load are best expressed via the initial config.
-      return;
-    }
-    // A new locus navigates the browser.
+  /** Bring the live browser to the stored locus and tracks. */
+  function syncBrowser() {
+    if (!browser) return;
     if (opts.locus && opts.locus !== currentLocus) {
       currentLocus = opts.locus;
       browser.search(opts.locus);
     }
-    // Treat `tracks` as additive: load any entries not present in the previous
-    // list when a new tracks array is supplied.
-    if (opts.tracks !== prev.tracks && Array.isArray(opts.tracks)) {
-      const before = new Set(prev.tracks ?? []);
+    // `tracks` is additive: entries the browser does not show yet are loaded.
+    if (Array.isArray(opts.tracks)) {
       for (const track of opts.tracks) {
-        if (!before.has(track)) {
-          void browser.loadTrack(track as never).catch((err) => {
-            console.error("plotomics igv: failed to load track", err);
-          });
-        }
+        const key = trackKey(track);
+        if (loadedTracks.has(key)) continue;
+        loadedTracks.add(key);
+        void browser.loadTrack(copyForIgv(track) as never).catch((err) => {
+          console.error("plotomics igv: failed to load track", err);
+        });
       }
     }
   }
 
+  function applyOptions(next: Partial<IgvOptions>) {
+    const prev = opts;
+    opts = mergeOptions(opts, next);
+    // The genome or a full config cannot change in place: build a new
+    // browser for it.
+    const rebuild =
+      opts.genome !== prev.genome ||
+      stableJSON(opts.config ?? null) !== stableJSON(prev.config ?? null);
+    if (rebuild) {
+      if (browser) {
+        igv.removeBrowser(browser);
+        browser = null;
+      }
+      clearElement(host);
+      startBrowser();
+      return;
+    }
+    // Not ready yet: the stored options apply when the browser is live.
+    syncBrowser();
+  }
+
+  startBrowser();
+
   const instance: PlotomicsInstance<IgvOptions> = {
     // Columnar data is unused: igv.js streams via config URLs.
     setData(_next: PlotomicsData) {
-      /* no-op — data flows through options.config (URLs). */
+      /* no-op; data flows through options.config (URLs). */
     },
     setOptions(next) {
       applyOptions(next);
@@ -124,7 +154,7 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
     resize() {
       // igv.js tracks its container size internally and re-lays out on window
       // resize; a visibilityChange nudge covers tab/accordion reveals. If the
-      // browser isn't ready there is nothing to nudge (buffered implicitly).
+      // browser isn't ready there is nothing to nudge.
       if (browser) void igv.visibilityChange();
     },
     exportSVG() {
@@ -137,9 +167,8 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
         igv.removeBrowser(browser);
         browser = null;
       }
-      // If the browser promise is still pending, its resolution handler sees
-      // `destroyed` and removes the browser itself.
-      void ready;
+      // If a browser is still loading, its resolution handler sees
+      // `destroyed` and removes it.
       clearElement(el);
     },
   };

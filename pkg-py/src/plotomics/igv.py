@@ -16,7 +16,8 @@ class IGV(PlotomicsWidget):
 
     Supply either a full igv.js ``config`` or the convenience arguments
     ``genome``, ``locus`` and ``tracks``, which are assembled into a config when
-    ``config`` is ``None``.
+    ``config`` is ``None``. A later change to ``options["locus"]`` or
+    ``options["tracks"]`` applies to the live browser in both cases.
 
     Parameters
     ----------
@@ -28,10 +29,13 @@ class IGV(PlotomicsWidget):
         gene symbol.
     tracks:
         A sequence of igv.js track configuration dicts (each with at least a
-        ``url``). Used when ``config`` is ``None``.
+        ``url``). Used when ``config`` is ``None``. Tracks are additive: a
+        track already shown is not loaded again, a changed track loads as a
+        new one, and a track left out stays shown.
     config:
         Optional full igv.js browser configuration dict. When supplied it is
-        passed through as-is and the convenience arguments are ignored.
+        passed through as-is and ``genome``, ``locus`` and ``tracks`` are not
+        sent.
     height:
         Initial widget height in CSS pixels.
 
