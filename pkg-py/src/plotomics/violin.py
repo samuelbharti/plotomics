@@ -135,7 +135,14 @@ class Violin(PlotomicsWidget):
                 )
             meta[key] = order
         if group_colors is not None:
-            if groups is None or len(group_colors) != len(groups):
+            # Without `groups`, colours follow the groups in order of first
+            # appearance, the order the browser uses; R does the same.
+            if groups is None:
+                order = list(dict.fromkeys(json_columns["group"]))
+                meta["groups"] = order
+            else:
+                order = meta["groups"]
+            if len(group_colors) != len(order):
                 raise ValueError("`group_colors` must have one entry per group.")
             meta["groupColors"] = [str(c) for c in group_colors]
         if grids is not None:

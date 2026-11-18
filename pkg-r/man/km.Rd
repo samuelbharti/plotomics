@@ -17,7 +17,7 @@ km(
   show_legend = TRUE,
   y_from_zero = TRUE,
   line_width = 2,
-  x_label = "months",
+  x_label = "time",
   y_label = "overall survival",
   theme = NULL,
   width = NULL,

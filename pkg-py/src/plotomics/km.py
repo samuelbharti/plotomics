@@ -87,7 +87,7 @@ class Km(PlotomicsWidget):
         show_legend: bool = True,
         y_from_zero: bool = True,
         line_width: float = 2.0,
-        x_label: str = "months",
+        x_label: str = "time",
         y_label: str = "overall survival",
         theme: dict | None = None,
         height: int = 520,
@@ -138,12 +138,12 @@ class Km(PlotomicsWidget):
                     "stratum/strata not present in `groups`: " + ", ".join(unknown)
                 )
             meta["groups"] = groups
-            if group_colors is not None:
-                if len(group_colors) != len(groups):
-                    raise ValueError(
-                        "`group_colors` must have one entry per stratum."
-                    )
-                meta["groupColors"] = [str(c) for c in group_colors]
+        # A single curve has one stratum, so its colour is sent too.
+        if group_colors is not None:
+            n_strata = 1 if groups is None else len(groups)
+            if len(group_colors) != n_strata:
+                raise ValueError("`group_colors` must have one entry per stratum.")
+            meta["groupColors"] = [str(c) for c in group_colors]
 
         if censor is not None:
             ct = _column(censor, "time")

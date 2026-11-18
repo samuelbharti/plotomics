@@ -55,7 +55,7 @@ km <- function(data,
                show_legend = TRUE,
                y_from_zero = TRUE,
                line_width = 2,
-               x_label = "months",
+               x_label = "time",
                y_label = "overall survival",
                theme = NULL,
                width = NULL,
@@ -106,12 +106,14 @@ km <- function(data,
       ), call. = FALSE)
     }
     meta$groups <- I(groups)
-    if (!is.null(group_colors)) {
-      if (length(group_colors) != length(groups)) {
-        stop("`group_colors` must have one entry per stratum.", call. = FALSE)
-      }
-      meta$groupColors <- I(as.character(group_colors))
+  }
+  # A single curve has one stratum, so its colour is sent too.
+  if (!is.null(group_colors)) {
+    n_strata <- if (is.null(groups)) 1L else length(groups)
+    if (length(group_colors) != n_strata) {
+      stop("`group_colors` must have one entry per stratum.", call. = FALSE)
     }
+    meta$groupColors <- I(as.character(group_colors))
   }
 
   if (!is.null(censor) && nrow(censor) > 0L) {
@@ -130,6 +132,12 @@ km <- function(data,
       }
       if (!is.null(groups) && nrow(m) != length(groups)) {
         stop("`risk_counts` must have one row per stratum.", call. = FALSE)
+      }
+      # Counts read off a survfit carry their stratum as the row name, in the
+      # fit's order. The browser reads row g as groups[g], so follow `groups`.
+      if (!is.null(groups) && !is.null(rownames(m)) &&
+          setequal(rownames(m), groups)) {
+        m <- m[groups, , drop = FALSE]
       }
       # Row-major: the component indexes it as group * ntimes + j.
       meta$riskCounts <- I(as.integer(t(m)))
@@ -220,7 +228,7 @@ bv_tidy_survfit <- function(fit, risk_times = NULL) {
 
   # n.risk is the count just before each event time, so the number still at
   # risk at grid time t is the one attached to the first step at or after t.
-  risk_counts <- t(vapply(levs, function(g) {
+  counts <- vapply(levs, function(g) {
     idx <- which(group == g)
     tt <- fit$time[idx]
     nr <- fit$n.risk[idx]
@@ -228,7 +236,11 @@ bv_tidy_survfit <- function(fit, risk_times = NULL) {
       j <- which(tt >= t)
       if (length(j) == 0L) 0L else as.integer(nr[j[1]])
     }, integer(1))
-  }, integer(length(risk_times))))
+  }, integer(length(risk_times)))
+  # One row per stratum and one column per time, also for a single time,
+  # where vapply returns a plain vector.
+  risk_counts <- matrix(counts, nrow = length(levs), ncol = length(risk_times),
+                        byrow = TRUE, dimnames = list(levs, NULL))
 
   list(curves = curves, censor = censor,
        risk_times = risk_times, risk_counts = risk_counts)
