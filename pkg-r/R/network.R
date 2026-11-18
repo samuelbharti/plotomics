@@ -5,7 +5,8 @@
 #' graphology graph) so tens of thousands of elements stay interactive. When
 #' node coordinates are not supplied, a bounded ForceAtlas2 layout positions the
 #' nodes in the browser; otherwise the supplied `x`/`y` are used. Categorical
-#' node groups are colored from a colorblind-safe palette. Hovering a node
+#' node groups take the theme's palette: Okabe-Ito (colour-blind safe) for up
+#' to 8 groups, and a 20-colour palette past 8. Hovering a node
 #' highlights it and its neighbors; zoom and pan use sigma's camera. In a Shiny
 #' app, clicking a node sets `input$<id>_selected` to the clicked node id, and
 #' clicking the empty canvas clears it.

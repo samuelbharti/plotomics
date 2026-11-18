@@ -42,7 +42,7 @@ import {
   dpr,
   serializeSVG,
   canvasToPNG,
-  OKABE_ITO,
+  categoricalColors,
 } from "../core/index.js";
 
 export interface ViolinOptions {
@@ -228,7 +228,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
   function groupColors(): string[] {
     const given = data.meta?.groupColors as string[] | undefined;
     if (given && given.length) return given;
-    return groups().map((_, i) => OKABE_ITO[i % OKABE_ITO.length] as string);
+    return categoricalColors(theme.categorical, groups().length);
   }
   /** Index of the violin for (feature, group), or -1. */
   function violinIndex(feature: string, group: string): number {

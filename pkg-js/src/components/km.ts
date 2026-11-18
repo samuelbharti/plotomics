@@ -44,7 +44,7 @@ import {
   dpr,
   serializeSVG,
   canvasToPNG,
-  OKABE_ITO,
+  categoricalColors,
 } from "../core/index.js";
 
 export interface KmOptions {
@@ -326,7 +326,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   function groupColors(): string[] {
     const given = data.meta?.groupColors as string[] | undefined;
     if (given && given.length) return given;
-    return groups().map((_, i) => OKABE_ITO[i % OKABE_ITO.length] as string);
+    return categoricalColors(theme.categorical, groups().length);
   }
   /** Each stratum's rows, in time order. */
   function strata(): { group: string; rows: number[] }[] {

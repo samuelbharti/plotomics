@@ -7,11 +7,15 @@ export interface PlotomicsTheme {
   axis: string;
   fontFamily: string;
   fontSize: number;
-  /** Colorblind-safe categorical palette (Okabe-Ito + extensions). */
+  /**
+   * Categorical palette. The default is Okabe-Ito (colour-blind safe, 8
+   * colours); past 8 categories the components switch to {@link PALETTE_20}.
+   * A palette set here is used as given, its colours repeating past its end.
+   */
   categorical: string[];
 }
 
-/** Okabe-Ito colorblind-safe palette, extended with a few Tableau-ish hues. */
+/** Okabe-Ito colour-blind safe palette, 8 colours. */
 export const OKABE_ITO = [
   "#0072B2", // blue
   "#E69F00", // orange
@@ -21,6 +25,33 @@ export const OKABE_ITO = [
   "#56B4E9", // sky blue
   "#F0E442", // yellow
   "#999999", // grey
+];
+
+/**
+ * scanpy's default palette for 9 to 20 clusters (`default_20`): matplotlib's
+ * tab20 reordered, with three colours replaced and two added.
+ */
+export const PALETTE_20 = [
+  "#1f77b4",
+  "#ff7f0e",
+  "#279e68",
+  "#d62728",
+  "#aa40fc",
+  "#8c564b",
+  "#e377c2",
+  "#b5bd61",
+  "#17becf",
+  "#aec7e8",
+  "#ffbb78",
+  "#98df8a",
+  "#ff9896",
+  "#c5b0d5",
+  "#c49c94",
+  "#f7b6d2",
+  "#dbdb8d",
+  "#9edae5",
+  "#ad494a",
+  "#8c6d31",
 ];
 
 export const defaultTheme: PlotomicsTheme = {
