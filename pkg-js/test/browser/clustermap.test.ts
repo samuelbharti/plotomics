@@ -161,7 +161,9 @@ describe("clustermap in a browser", () => {
 
   it("draws labels only where it made room for them", () => {
     const el = container(800, 560);
-    const nrows = 50;
+    // Rows tall enough for 11 px labels on their own, but not with the
+    // column labels' gutter as well.
+    const nrows = 40;
     const ncols = 70;
     instances.push(
       createClustermap(el, {
@@ -188,6 +190,7 @@ describe("clustermap in a browser", () => {
     const labels = Array.from(el.querySelectorAll("svg text")).filter((t) =>
       /^(gene|sample)|\u2026$/.test(t.textContent ?? ""),
     );
+    expect(labels.length).toBeGreaterThan(0);
     for (const t of labels) {
       const r = t.getBoundingClientRect();
       // Before the fix one-letter stubs ran over the bar and off the bottom.

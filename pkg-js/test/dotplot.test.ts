@@ -56,8 +56,11 @@ describe("dotplot helpers", () => {
   });
 
   it("widens the left gutter for long row labels", () => {
-    const short = layoutDotplot(800, 600, 4, 4, { showLegend: true }, 4);
-    const long = layoutDotplot(800, 600, 4, 4, { showLegend: true }, 30);
+    const at = (rowLabel: number) =>
+      layoutDotplot(800, 600, 4, 4, { showLegend: true }, { rowLabel });
+    // Widths in px of labels of 4 and 30 characters.
+    const short = at(26);
+    const long = at(192);
     expect(long.left).toBeGreaterThan(short.left);
     // But never so far that the grid disappears.
     expect(long.plotW).toBeGreaterThan(0);

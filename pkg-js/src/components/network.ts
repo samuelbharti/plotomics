@@ -31,6 +31,7 @@ import {
   type PlotomicsInstance,
   type PlotomicsTheme,
   resolveTheme,
+  textSizes,
   createTooltip,
   type Tooltip,
   measure,
@@ -38,7 +39,10 @@ import {
 } from "../core/index.js";
 import Graph from "graphology";
 import Sigma from "sigma";
-import { EdgeArrowProgram } from "sigma/rendering";
+import {
+  EdgeArrowProgram,
+  type NodeLabelDrawingFunction,
+} from "sigma/rendering";
 import {
   type NetworkLayout,
   type EdgeDrops,
@@ -99,6 +103,23 @@ export const defaultNetworkOptions: NetworkOptions = {
   directed: false,
   theme: {},
   onSelect: null,
+};
+
+/**
+ * A node label, kept inside the canvas. Sigma draws it right of the node; a
+ * label that would run past the right edge goes left of the node instead.
+ */
+const drawNodeLabel: NodeLabelDrawingFunction = (context, data, settings) => {
+  if (!data.label) return;
+  const size = settings.labelSize;
+  context.fillStyle = settings.labelColor.color ?? "#000";
+  context.font = `${settings.labelWeight} ${size}px ${settings.labelFont}`;
+  const width = context.measureText(data.label).width;
+  // The context is scaled by the pixel ratio; the edge is in CSS pixels.
+  const edge = context.canvas.width / (context.getTransform().a || 1);
+  let x = data.x + data.size + 3;
+  if (x + width > edge) x = Math.max(0, data.x - data.size - 3 - width);
+  context.fillText(data.label, x, data.y + size / 3);
 };
 
 // ---------------------------------------------------------------------------
@@ -176,11 +197,18 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
 
   function makeRenderer() {
     renderer?.kill();
+    const labelSize = textSizes(theme).label;
     renderer = new Sigma(graph, host, {
       defaultNodeColor: opts.defaultNodeColor,
       defaultEdgeColor: opts.defaultEdgeColor,
       labelColor: { color: theme.foreground },
       labelFont: theme.fontFamily,
+      labelSize,
+      // Sigma shows a set number of labels per grid cell, 100 px wide by
+      // default. The cell grows with the labels, so larger text is not more
+      // crowded.
+      labelGridCellSize: Math.round((100 * labelSize) / 11),
+      defaultDrawNodeLabel: drawNodeLabel,
       labelRenderedSizeThreshold: opts.labelThreshold,
       renderLabels: true,
       // Directed graphs draw arrowheads via sigma's arrow edge program.

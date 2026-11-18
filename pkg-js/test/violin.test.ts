@@ -75,9 +75,12 @@ describe("violin helpers", () => {
   });
 
   it("widens the left gutter for long feature names and can drop it", () => {
-    const short = layoutViolin(800, 600, 4, 4, { showFeatureLabels: true }, 4);
-    const long = layoutViolin(800, 600, 4, 4, { showFeatureLabels: true }, 30);
-    const none = layoutViolin(800, 600, 4, 4, { showFeatureLabels: false }, 30);
+    const at = (showFeatureLabels: boolean, rowLabel: number) =>
+      layoutViolin(800, 600, 4, 4, { showFeatureLabels }, { rowLabel });
+    // Widths in px of labels of 4 and 30 characters.
+    const short = at(true, 26);
+    const long = at(true, 192);
+    const none = at(false, 192);
     expect(long.left).toBeGreaterThan(short.left);
     expect(long.left).toBeLessThanOrEqual(150);
     expect(none.left).toBeLessThan(short.left);
