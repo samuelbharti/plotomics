@@ -208,7 +208,7 @@ export function columnMax(col: Column | undefined): number {
 /**
  * Pick which row labels to draw. When rows are at least `minSpacing` px tall
  * every gene is labelled; when they are shorter, every k-th row is, with k
- * chosen so labelled rows are `minSpacing` apart. The tooltip names every
+ * chosen so labelled rows keep a `minSpacing` gap. The tooltip names every
  * gene. Returning an explicit set keeps the decision testable.
  */
 export function visibleRowLabels(

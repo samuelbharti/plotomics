@@ -107,9 +107,9 @@ describe("oncoplot column helpers", () => {
     expect(columnMax(undefined)).toBe(1);
   });
 
-  it("labels every row when they are far enough apart, every k-th when cramped", () => {
+  it("labels every row when rows are tall enough, every k-th when cramped", () => {
     expect(visibleRowLabels(20, 14).size).toBe(20);
-    // 1.2 px rows: every 8th row keeps labels 9.6 px apart.
+    // 1.2 px rows: every 8th row keeps a 9.6 px gap between labels.
     const thinned = visibleRowLabels(400, 1.2);
     expect(thinned.size).toBe(50);
     expect([...thinned].slice(0, 3)).toEqual([0, 8, 16]);
