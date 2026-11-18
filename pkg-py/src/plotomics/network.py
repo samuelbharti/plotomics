@@ -21,8 +21,9 @@ class Network(PlotomicsWidget):
     Nodes and edges render with WebGL (sigma v3 over a graphology graph) so tens
     of thousands of elements stay interactive. If node coordinates are absent, a
     bounded ForceAtlas2 layout positions them in the browser; otherwise the
-    supplied ``x``/``y`` are used. Categorical node groups are colored from a
-    colorblind-safe palette. Hovering a node highlights it and its neighbors.
+    supplied ``x``/``y`` are used. Categorical node groups take the theme's
+    palette: Okabe-Ito (colour-blind safe) for up to 8 groups, and a 20-colour
+    palette past 8. Hovering a node highlights it and its neighbors.
 
     Parameters
     ----------

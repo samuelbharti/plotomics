@@ -137,7 +137,11 @@ export function categoricalColors(
   const base = palette?.length ? palette : OKABE_ITO;
   const isDefault =
     base.length === OKABE_ITO.length &&
-    base.every((c, i) => c.toLowerCase() === OKABE_ITO[i]?.toLowerCase());
+    base.every(
+      (c, i) =>
+        typeof c === "string" &&
+        c.toLowerCase() === OKABE_ITO[i]?.toLowerCase(),
+    );
   const pal = isDefault && n > OKABE_ITO.length ? PALETTE_20 : base;
   return Array.from(
     { length: Math.max(0, n) },

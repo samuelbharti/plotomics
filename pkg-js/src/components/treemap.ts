@@ -218,8 +218,9 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
   /** Assign palette colors to the top-level groups in tree order. */
   function assignPalette() {
     const tops = root?.children ?? [];
+    // A tree that is a lone root still colours that root.
     paletteFor = categoricalScale(
-      categoricalColors(theme.categorical, tops.length),
+      categoricalColors(theme.categorical, Math.max(1, tops.length)),
     );
     for (const top of tops) paletteFor(top.data.id);
   }

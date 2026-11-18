@@ -616,7 +616,10 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         pickValues(color as ArrayLike<unknown>, drawn),
         opts.categories,
       );
-      pointColor = categoricalPalette(categories.length);
+      // The NA entry is painted grey, so it takes no palette colour.
+      pointColor = categoricalPalette(
+        categories.length - (missing >= 0 ? 1 : 0),
+      );
       if (missing >= 0) {
         pointColor[missing] = MISSING_COLOR;
         missingColor = true;

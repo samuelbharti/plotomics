@@ -101,6 +101,12 @@ describe("categoricalColors", () => {
     expect(categoricalColors(["#a"], 0)).toEqual([]);
   });
 
+  it("does not stop on a palette entry that is not text", () => {
+    // R sends an NA in theme$categorical as null.
+    const pal = [...OKABE_ITO.slice(0, 7), null] as unknown as string[];
+    expect(categoricalColors(pal, 2)).toEqual(OKABE_ITO.slice(0, 2));
+  });
+
   it("holds 20 distinct colours in PALETTE_20", () => {
     expect(PALETTE_20).toHaveLength(20);
     expect(new Set(PALETTE_20).size).toBe(20);

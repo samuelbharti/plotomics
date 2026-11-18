@@ -140,8 +140,16 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   function paletteColors(): string[] {
     if (opts.palette?.length) return opts.palette;
     const groups = (data.meta?.nodeGroup as unknown[] | undefined) ?? [];
+    // Missing groups (null, NaN, "") take the default node colour.
     const n = new Set(
-      groups.filter((g) => g != null && g !== "").map((g) => String(g)),
+      groups
+        .filter(
+          (g) =>
+            g != null &&
+            g !== "" &&
+            !(typeof g === "number" && Number.isNaN(g)),
+        )
+        .map((g) => String(g)),
     ).size;
     return categoricalColors(theme.categorical, n);
   }
