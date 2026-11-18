@@ -33,7 +33,9 @@ heatmap_plotomics(
 }
 \arguments{
 \item{mat}{A numeric matrix (rows x columns). \code{rownames(mat)} and
-\code{colnames(mat)}, when present, are used as row/column tick labels.}
+\code{colnames(mat)}, when present, are used as row/column tick labels. A
+missing cell (\code{NA}, \code{NaN} or an infinite value) is drawn grey and left
+out of the colour range and the z-score, with a warning.}
 
 \item{colormap}{Color ramp: \code{"viridis"} (sequential) or \code{"rdbu"} (diverging).}
 
@@ -62,7 +64,10 @@ A GPU-accelerated heatmap for large expression matrices (samples x genes).
 The matrix is uploaded to the GPU as a single texture and colormapped in a
 fragment shader (via \code{regl}), so matrices with a million or more cells pan
 and zoom smoothly. The colorbar legend and row/column tick labels are drawn
-as crisp vector overlays; ticks appear only when few enough to be legible.
+as crisp vector overlays; when rows or columns are too tight for every
+label, every second, third or fourth one is drawn, and zooming in shows
+the rest. A matrix larger than the GPU's texture limit is averaged down to
+the limit for drawing.
 }
 \details{
 The function is exported as \code{bioheatmap()} (and aliased as \code{heatmap_plotomics()})

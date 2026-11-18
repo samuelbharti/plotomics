@@ -149,3 +149,11 @@ def test_clustermap_warns_on_ward_with_correlation():
     m = np.arange(6, dtype=float).reshape(3, 2)
     with pytest.warns(UserWarning, match="Ward linkage assumes euclidean"):
         Clustermap(m, linkage="ward", metric="correlation")
+
+
+def test_clustermap_checks_label_lengths():
+    m = np.arange(6, dtype=float).reshape(3, 2)
+    with pytest.raises(ValueError, match="`row_labels` has 2 entries; expected 3"):
+        Clustermap(m, row_labels=["a", "b"])
+    with pytest.raises(ValueError, match="`col_labels` has 3 entries; expected 2"):
+        Clustermap(m, col_labels=["a", "b", "c"])

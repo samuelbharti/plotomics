@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, pack_columns
+from ._base import STATIC, PlotomicsWidget, _as_matrix, _check_labels, pack_columns
 
 _METRICS = ("euclidean", "correlation")
 _LINKAGES = ("average", "complete", "ward")
@@ -145,12 +145,22 @@ class Clustermap(PlotomicsWidget):
         buffer, schema = pack_columns({"values": values})
 
         meta: dict[str, Any] = {"nrows": int(nrows), "ncols": int(ncols)}
-        rlabels = row_labels if row_labels is not None else inferred_rows
-        clabels = col_labels if col_labels is not None else inferred_cols
+        # A label list of the wrong length would make the browser drop every
+        # label without a word, so it fails here, as in Heatmap.
+        rlabels = _check_labels(
+            row_labels if row_labels is not None else inferred_rows,
+            int(nrows),
+            "row_labels",
+        )
+        clabels = _check_labels(
+            col_labels if col_labels is not None else inferred_cols,
+            int(ncols),
+            "col_labels",
+        )
         if rlabels is not None:
-            meta["rowLabels"] = [str(v) for v in rlabels]
+            meta["rowLabels"] = rlabels
         if clabels is not None:
-            meta["colLabels"] = [str(v) for v in clabels]
+            meta["colLabels"] = clabels
         if row_linkage is not None:
             meta["rowLinkage"] = row_linkage
         if col_linkage is not None:
@@ -233,13 +243,4 @@ def _validate_linkage(linkage: Any, n: int, name: str) -> None:
         raise ValueError(f"`{name}` order must be a permutation of 0..{n - 1}.")
 
 
-def _as_matrix(matrix: Any) -> tuple[np.ndarray, Any | None, Any | None]:
-    """Coerce input to a 2D ndarray, extracting labels from a DataFrame.
 
-    Returns ``(array, row_labels_or_None, col_labels_or_None)``.
-    """
-    # Duck-typed pandas DataFrame support without a hard dependency.
-    if hasattr(matrix, "values") and hasattr(matrix, "index") and hasattr(matrix, "columns"):
-        arr = np.asarray(matrix.values)
-        return arr, list(matrix.index), list(matrix.columns)
-    return np.asarray(matrix), None, None
