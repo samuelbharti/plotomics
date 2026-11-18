@@ -17,18 +17,25 @@
 #'   `sample` and `class`. Unaltered pairs are simply absent; the full grid is
 #'   reconstructed from `genes` and `samples`.
 #' @param genes Character vector of genes, top row first. Defaults to the genes
-#'   present in `alterations`, most frequently altered first.
+#'   present in `alterations`, the gene altered in the most samples first.
 #' @param samples Character vector of samples, left column first. Defaults to
-#'   the memo-sorted order.
+#'   the memo-sorted order of the samples present in `alterations`. The
+#'   frequency bars divide by the number of samples shown, so pass `samples`
+#'   to count unaltered samples of the cohort too.
 #' @param classes Character vector of alteration classes, which fixes both the
 #'   legend order and the colour assignment. Defaults to the classes present.
+#'   A gene and sample with two or more different classes is drawn as
+#'   `"Multi-hit"`, which is added to the classes when it occurs.
 #' @param class_colors Character vector of hex colours, one per entry of
-#'   `classes`. `NULL` uses the component's categorical palette.
+#'   `classes`. `NULL` uses the component's categorical palette. When
+#'   `"Multi-hit"` is added, it is drawn in dark grey.
 #' @param burden Numeric vector, one value per sample, for the top barplot.
 #'   Defaults to the number of altered genes per sample.
 #' @param annotations Optional list of clinical strips. Each element is a list
-#'   with `name` (character scalar), `values` (one value per sample) and an
-#'   optional `colors`.
+#'   with `name` (character scalar), `values` and an optional `colors`.
+#'   `values` is a vector named by sample id, matched to the columns by name.
+#'   An unnamed vector is read in the order of `samples`, so it needs
+#'   `samples` to be given.
 #' @param show_burden,show_frequency,show_annotations,show_legend Toggle the
 #'   surrounding panels.
 #' @param empty_color Fill for a gene x sample cell with no alteration.
@@ -104,6 +111,20 @@ oncoplot <- function(alterations,
     stop("`class_colors` must have one entry per class.", call. = FALSE)
   }
 
+  # A gene and sample with two or more different classes is one cell, drawn
+  # as "Multi-hit"; otherwise the last row would win without a word.
+  pair <- paste(alt_gene, alt_sample, sep = "\r")
+  n_class <- tapply(alt_class, pair, function(x) length(unique(x)))
+  multi <- names(n_class)[n_class > 1L]
+  if (length(multi) > 0L) {
+    if (!MULTI_HIT %in% classes) {
+      classes <- c(classes, MULTI_HIT)
+      if (!is.null(class_colors)) class_colors <- c(class_colors, MULTI_HIT_COLOR)
+    }
+    alt_class[pair %in% multi] <- MULTI_HIT
+  }
+
+  samples_given <- !is.null(samples)
   ord <- oncoplot_memo_sort(alterations, genes = genes, samples = samples)
   genes <- ord$genes
   samples <- ord$samples
@@ -149,12 +170,29 @@ oncoplot <- function(alterations,
       if (is.null(a$name) || is.null(a$values)) {
         stop("each annotation needs `name` and `values`.", call. = FALSE)
       }
-      if (length(a$values) != ncols) {
+      values <- a$values
+      if (!is.null(names(values))) {
+        # Named by sample: match to the columns, whatever order they are in.
+        missing <- setdiff(samples, names(values))
+        if (length(missing) > 0L) {
+          stop(sprintf(
+            "annotation '%s' has no value for sample(s): %s", a$name,
+            paste(utils::head(missing, 5), collapse = ", ")
+          ), call. = FALSE)
+        }
+        values <- values[samples]
+      } else if (!samples_given) {
+        stop(sprintf(paste0(
+          "annotation '%s' needs sample names: give `values` names, or pass ",
+          "`samples` so unnamed values can be read in that order."
+        ), a$name), call. = FALSE)
+      }
+      if (length(values) != ncols) {
         stop(sprintf(
           "annotation '%s' must have one value per sample.", a$name
         ), call. = FALSE)
       }
-      f <- factor(as.character(a$values))
+      f <- factor(as.character(unname(values)))
       out <- list(
         name = as.character(a$name)[1],
         # I() keeps a single level, or a single sample, from unboxing to a
@@ -221,7 +259,10 @@ oncoplot_memo_sort <- function(alterations, genes = NULL, samples = NULL) {
   s <- as.character(alterations$sample)
 
   if (is.null(genes)) {
-    genes <- names(sort(table(g), decreasing = TRUE))
+    # Rank genes by the number of samples they are altered in, not by rows:
+    # three mutations in one sample count once.
+    pairs <- unique(data.frame(g = g, s = s, stringsAsFactors = FALSE))
+    genes <- names(sort(table(pairs$g), decreasing = TRUE))
   } else {
     genes <- as.character(genes)
   }
@@ -285,3 +326,7 @@ renderOncoplot <- function(expr, env = parent.frame(), quoted = FALSE) {
   }
   htmlwidgets::shinyRenderWidget(expr, oncoplotOutput, env, quoted = TRUE)
 }
+
+# The class for a gene and sample altered in two or more different ways.
+MULTI_HIT <- "Multi-hit"
+MULTI_HIT_COLOR <- "#3A3A3A"

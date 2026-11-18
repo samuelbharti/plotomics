@@ -159,3 +159,77 @@ def test_oncoplot_forwards_bar_colour_label_and_cell_gap_options():
     # A zero gap draws a solid block, so it must survive the payload.
     assert w.options["cellGapX"] == 0
     assert w.options["cellGapY"] == 0
+
+
+def test_memo_sort_counts_a_gene_once_per_sample():
+    # A is hit three times in S1 alone; B once in each of S1 and S2.
+    genes, _ = memo_sort(["A", "B"], ["S1", "S2"],
+                         ["A", "A", "A", "B", "B"],
+                         ["S1", "S1", "S1", "S1", "S2"])
+    assert genes == ["B", "A"]
+
+
+def test_given_genes_keep_their_order_and_sort_the_samples():
+    genes, samples = memo_sort(["GATA3", "TP53", "PIK3CA"], ["S1", "S2", "S3"],
+                               make_data()["gene"], make_data()["sample"],
+                               sort_genes=False)
+    assert genes == ["GATA3", "TP53", "PIK3CA"]
+    # S1 carries GATA3, the top row, so it comes first.
+    assert samples[0] == "S1"
+    w = Oncoplot(make_data(), genes=["GATA3", "TP53", "PIK3CA"])
+    assert w.data["meta"]["genes"] == ["GATA3", "TP53", "PIK3CA"]
+    assert w.data["meta"]["samples"] == samples
+
+
+def test_two_classes_in_one_cell_are_drawn_as_multi_hit():
+    d = make_data()
+    d = {k: [*v, extra] for (k, v), extra in
+         zip(d.items(), ["TP53", "S1", "Truncating"])}
+    w = Oncoplot(d, class_colors=["#111111", "#222222", "#333333"],
+                 classes=["Missense", "Truncating", "Amplification"])
+    meta = w.data["meta"]
+    assert meta["classes"][-1] == "Multi-hit"
+    assert meta["classColors"][-1] == "#3A3A3A"
+    ncols = meta["ncols"]
+    codes = np.frombuffer(w.buffer, dtype=np.float32,
+                          count=meta["nrows"] * ncols)
+    cell = meta["genes"].index("TP53") * ncols + meta["samples"].index("S1")
+    assert codes[cell] == len(meta["classes"])
+    # The other cells keep their own class.
+    cell = meta["genes"].index("TP53") * ncols + meta["samples"].index("S2")
+    assert codes[cell] == meta["classes"].index("Truncating") + 1
+
+
+def test_keyed_annotation_values_follow_their_samples():
+    values = {"S1": "LumA", "S2": "Basal", "S3": "LumA"}
+    w = Oncoplot(make_data(), annotations=[{"name": "subtype", "values": values}])
+    samples = w.data["meta"]["samples"]
+    # Memo sort moves S1 last, so reading the values by position would be wrong.
+    assert samples != ["S1", "S2", "S3"]
+    ann = w.data["meta"]["annotations"][0]
+    shown = [ann["levels"][c] for c in ann["codes"]]
+    assert shown == [values[s] for s in samples]
+
+
+def test_series_annotation_values_follow_their_samples():
+    pd = pytest.importorskip("pandas")
+    values = pd.Series(["LumA", "Basal", "Her2"], index=["S1", "S2", "S3"])
+    w = Oncoplot(make_data(), annotations=[{"name": "subtype", "values": values}])
+    ann = w.data["meta"]["annotations"][0]
+    shown = [ann["levels"][c] for c in ann["codes"]]
+    assert shown == [values[s] for s in w.data["meta"]["samples"]]
+    # A Series with a default index is read in the order of `samples`.
+    w = Oncoplot(make_data(), samples=["S3", "S1", "S2"],
+                 annotations=[{"name": "subtype",
+                               "values": pd.Series(["Her2", "LumA", "Basal"])}])
+    ann = w.data["meta"]["annotations"][0]
+    assert [ann["levels"][c] for c in ann["codes"]] == ["Her2", "LumA", "Basal"]
+
+
+def test_annotation_needs_sample_names():
+    with pytest.raises(ValueError, match="needs sample names"):
+        Oncoplot(make_data(),
+                 annotations=[{"name": "stage", "values": ["I", "II", "I"]}])
+    with pytest.raises(ValueError, match="no value for sample"):
+        Oncoplot(make_data(),
+                 annotations=[{"name": "stage", "values": {"S1": "I"}}])

@@ -35,23 +35,30 @@ oncoplot(
 reconstructed from \code{genes} and \code{samples}.}
 
 \item{genes}{Character vector of genes, top row first. Defaults to the genes
-present in \code{alterations}, most frequently altered first.}
+present in \code{alterations}, the gene altered in the most samples first.}
 
 \item{samples}{Character vector of samples, left column first. Defaults to
-the memo-sorted order.}
+the memo-sorted order of the samples present in \code{alterations}. The
+frequency bars divide by the number of samples shown, so pass \code{samples}
+to count unaltered samples of the cohort too.}
 
 \item{classes}{Character vector of alteration classes, which fixes both the
-legend order and the colour assignment. Defaults to the classes present.}
+legend order and the colour assignment. Defaults to the classes present.
+A gene and sample with two or more different classes is drawn as
+\code{"Multi-hit"}, which is added to the classes when it occurs.}
 
 \item{class_colors}{Character vector of hex colours, one per entry of
-\code{classes}. \code{NULL} uses the component's categorical palette.}
+\code{classes}. \code{NULL} uses the component's categorical palette. When
+\code{"Multi-hit"} is added, it is drawn in dark grey.}
 
 \item{burden}{Numeric vector, one value per sample, for the top barplot.
 Defaults to the number of altered genes per sample.}
 
 \item{annotations}{Optional list of clinical strips. Each element is a list
-with \code{name} (character scalar), \code{values} (one value per sample) and an
-optional \code{colors}.}
+with \code{name} (character scalar), \code{values} and an optional \code{colors}.
+\code{values} is a vector named by sample id, matched to the columns by name.
+An unnamed vector is read in the order of \code{samples}, so it needs
+\code{samples} to be given.}
 
 \item{show_burden, show_frequency, show_annotations, show_legend}{Toggle the
 surrounding panels.}
