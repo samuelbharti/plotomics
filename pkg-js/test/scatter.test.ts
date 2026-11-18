@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  afterQuiet,
   baseDomains,
-  createDrawQueue,
+  createRenderLoop,
   isStartView,
   toNdc,
 } from "../src/core/scatter.js";
@@ -55,22 +56,72 @@ describe("scatter helpers", () => {
     expect(isStartView(at(panned))).toBe(false);
   });
 
-  it("runs queued steps one after another, past a failed one", async () => {
-    const queue = createDrawQueue();
-    const log: string[] = [];
-    const step = (name: string, ms: number) => async () => {
-      log.push(`${name} start`);
-      await new Promise((resolve) => setTimeout(resolve, ms));
-      log.push(`${name} end`);
-    };
-    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
-    void queue(step("a", 20));
-    void queue(async () => {
-      throw new Error("b failed");
+  it("merges requests made together, and requests made during a render", async () => {
+    const calls: boolean[] = [];
+    let finish: () => void = () => {};
+    const loop = createRenderLoop(async (fit) => {
+      calls.push(fit);
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
     });
-    await queue(step("c", 0));
-    expect(log).toEqual(["a start", "a end", "c start", "c end"]);
-    expect(quiet).toHaveBeenCalledTimes(1);
+    // Made in the same task, as setData() then setOptions() are: one render.
+    loop.request(true);
+    loop.request(false);
+    expect(calls).toEqual([]);
+    await vi.waitFor(() => expect(calls).toEqual([true]));
+    // Made while it runs: merged into one next render, which fits because
+    // one of them asked.
+    loop.request(false);
+    loop.request(true);
+    loop.request(false);
+    finish();
+    await vi.waitFor(() => expect(calls).toEqual([true, true]));
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(calls).toEqual([true, true]);
+  });
+
+  it("goes on after a failed render, and runs nothing after stop()", async () => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    const calls: boolean[] = [];
+    let fail = true;
+    const loop = createRenderLoop(async (fit) => {
+      calls.push(fit);
+      if (fail) {
+        fail = false;
+        throw new Error("render failed");
+      }
+    });
+    loop.request(true);
+    await vi.waitFor(() => expect(quiet).toHaveBeenCalledTimes(1));
+    loop.request(false);
+    await vi.waitFor(() => expect(calls).toEqual([true, false]));
+    loop.stop();
+    loop.request(true);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(calls).toEqual([true, false]);
     quiet.mockRestore();
+  });
+
+  it("calls once, after the last of a run of calls has gone quiet", () => {
+    vi.useFakeTimers();
+    try {
+      const fn = vi.fn();
+      const call = afterQuiet(fn, 100);
+      for (let i = 0; i < 5; i += 1) {
+        call();
+        vi.advanceTimersByTime(50);
+      }
+      expect(fn).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(60);
+      expect(fn).toHaveBeenCalledTimes(1);
+      call();
+      call.cancel();
+      vi.advanceTimersByTime(200);
+      expect(fn).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
