@@ -27,6 +27,7 @@ import {
   ramp,
   type RampName,
 } from "../core/index.js";
+import { uniqueId } from "../core/dom.js";
 import {
   stratify,
   treemap,
@@ -62,6 +63,9 @@ export const defaultTreemapOptions: TreemapOptions = {
 const SVG_NS = "http://www.w3.org/2000/svg";
 /** Breadcrumb strip reserved at the top of the container. */
 const BREADCRUMB_H = 24;
+/** Header strip for a group's name, and the border around a group. */
+const GROUP_HEADER_H = 16;
+const GROUP_PAD = 2;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/treemap.test.ts)
@@ -78,7 +82,8 @@ export interface TreeRow {
 /**
  * Zip the id/parent/value columns (+ optional meta.labels) into rows. Blank,
  * `"NA"` or missing parents mark the root. Values are coerced to non-negative
- * numbers so a stray NaN can never poison the layout's `sum`.
+ * numbers so a stray NaN can never poison the layout's `sum`. With no `value`
+ * column, every leaf weighs 1, so the tiles show leaf counts.
  */
 export function buildRows(data: PlotomicsData): TreeRow[] {
   const cols = data.columns;
@@ -91,9 +96,9 @@ export function buildRows(data: PlotomicsData): TreeRow[] {
   const rows: TreeRow[] = new Array(n);
   for (let i = 0; i < n; i += 1) {
     const rawParent = parent[i];
-    const p =
-      rawParent == null || rawParent === "NA" ? "" : String(rawParent);
-    const v = value ? Number(value[i]) : 0;
+    const p = rawParent == null || rawParent === "NA" ? "" : String(rawParent);
+    const raw = value ? value[i] : 1;
+    const v = raw == null ? 0 : Number(raw);
     rows[i] = {
       id: String(id[i]),
       parent: p,
@@ -105,19 +110,38 @@ export function buildRows(data: PlotomicsData): TreeRow[] {
 }
 
 /**
- * Stratify rows into a hierarchy and compute node values. Internal-node values
- * are the sum of their leaves (d3.sum), so a treemap over `value` respects the
- * supplied leaf weights. Throws on the usual stratify errors (no/multiple
- * roots, missing parent, cycle) which is preferable to silently mislaying data.
+ * Stratify rows into a hierarchy and compute node values. A node's value is
+ * the sum of its leaves; the value given on an internal node is ignored, so
+ * the leaves always fill their parent. Throws on the usual stratify errors
+ * (no/multiple roots, missing parent, cycle) which is preferable to silently
+ * mislaying data.
  */
 export function buildHierarchy(rows: TreeRow[]): HierarchyNode<TreeRow> {
+  const internal = new Set<string>();
+  for (const r of rows) if (r.parent !== "") internal.add(r.parent);
   const root = stratify<TreeRow>()
     .id((d) => d.id)
     .parentId((d) => (d.parent === "" ? undefined : d.parent))(rows);
+  // d3's sum() adds each node's own value to its children's, so internal
+  // nodes contribute 0.
   root
-    .sum((d) => d.value)
+    .sum((d) => (internal.has(d.id) ? 0 : d.value))
     .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
   return root;
+}
+
+/**
+ * The top-level group of every node: the id of its ancestor just below the
+ * root (a top-level node maps to itself). Computed once on the full tree, so
+ * colors and group names stay the same after drilling in.
+ */
+export function topLevelIds(root: HierarchyNode<TreeRow>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const top of root.children ?? []) {
+    top.each((n) => out.set(n.data.id, top.data.id));
+  }
+  out.set(root.data.id, root.data.id);
+  return out;
 }
 
 /**
@@ -160,8 +184,14 @@ export function valueExtent(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createTreemap: PlotomicsFactory<TreemapOptions> = (el, initial) => {
-  let opts: TreemapOptions = mergeOptions(defaultTreemapOptions, initial.options);
+export const createTreemap: PlotomicsFactory<TreemapOptions> = (
+  el,
+  initial,
+) => {
+  let opts: TreemapOptions = mergeOptions(
+    defaultTreemapOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -173,8 +203,29 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (el, initial) => 
   let focus: HierarchyNode<TreeRow> | null = null;
   // Laid-out leaves of the current focus, in draw order.
   let layoutLeaves: HierarchyRectangularNode<TreeRow>[] = [];
-  // Stable categorical color assignment across re-layouts/zoom.
+  // Laid-out groups of the current focus: its children that have children.
+  let layoutGroups: HierarchyRectangularNode<TreeRow>[] = [];
+  // Top-level group of every node, from the full tree, so colors keep their
+  // meaning after drilling in.
+  let topOf = new Map<string, string>();
   let paletteFor = categoricalScale(theme.categorical);
+  const uid = uniqueId("plotomics-treemap");
+  // Groups given a header strip in the last layout. The decision is made on
+  // the unrounded rect, so it is recorded then and read when labelling.
+  let headerIds = new Set<string>();
+
+  /** Assign palette colors to the top-level groups in tree order. */
+  function assignPalette() {
+    paletteFor = categoricalScale(theme.categorical);
+    for (const top of root?.children ?? []) paletteFor(top.data.id);
+  }
+
+  /** Whether a group tile has room for its name in a header strip. */
+  const hasHeader = (d: HierarchyRectangularNode<TreeRow>) =>
+    d.depth === 1 &&
+    !!d.children &&
+    d.y1 - d.y0 >= 3 * GROUP_HEADER_H &&
+    d.x1 - d.x0 >= 48;
 
   // DOM: canvas for the tiles, SVG overlay for labels + breadcrumb.
   el.style.position = el.style.position || "relative";
@@ -186,6 +237,16 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (el, initial) => 
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
+
+  // SVG text in the current theme font.
+  const text = (
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 11,
+  ) => svgText(x, y, content, fill, anchor, size, theme.fontFamily);
 
   const plotTop = () => BREADCRUMB_H;
   const plotW = () => Math.max(1, width);
@@ -209,20 +270,24 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (el, initial) => 
       root = null;
       focus = null;
       layoutLeaves = [];
+      layoutGroups = [];
       render();
       return;
     }
     try {
       root = buildHierarchy(rows);
     } catch {
-      // Malformed hierarchy (no root, cycle, ...): render nothing rather than
-      // throwing across the host boundary.
+      // Malformed hierarchy (no root, cycle, ...): render nothing, so no
+      // error crosses the host boundary.
       root = null;
       focus = null;
       layoutLeaves = [];
+      layoutGroups = [];
       render();
       return;
     }
+    topOf = topLevelIds(root);
+    assignPalette();
     // Preserve the current focus id across data/option updates when possible.
     const prevId = focus?.data.id;
     focus = (prevId && findNode(root, prevId)) || root;
@@ -233,19 +298,38 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (el, initial) => 
   function computeLayout() {
     if (!focus) {
       layoutLeaves = [];
+      layoutGroups = [];
       return;
     }
-    paletteFor = categoricalScale(theme.categorical);
     const tileFn = opts.tile === "binary" ? treemapBinary : treemapSquarify;
+    const inner = Math.max(0, opts.paddingInner);
     // Lay out a *copy* of the focus subtree so drilling in re-fits the tiles to
-    // the full plot area without mutating the shared root layout.
+    // the full plot area without mutating the shared root layout. Groups (the
+    // focus's children that have children) get a wider border than the tiles
+    // inside them, and a header strip for their name when there is room.
     const sub = focus.copy();
+    const headers = new Set<string>();
     treemap<TreeRow>()
       .tile(tileFn)
       .size([plotW(), plotH()])
-      .paddingInner(Math.max(0, opts.paddingInner))
+      .paddingInner(inner)
+      .paddingOuter((d) => (d.depth === 1 && d.children ? GROUP_PAD : 0))
+      .paddingTop((d) => {
+        if (!(d.depth === 1 && d.children)) return 0;
+        if (!hasHeader(d as HierarchyRectangularNode<TreeRow>))
+          return GROUP_PAD;
+        headers.add(d.data.id);
+        return GROUP_HEADER_H;
+      })
       .round(true)(sub);
-    layoutLeaves = sub.leaves() as HierarchyRectangularNode<TreeRow>[];
+    headerIds = headers;
+    const laid = sub as HierarchyRectangularNode<TreeRow>;
+    layoutLeaves = laid.leaves();
+    layoutGroups = (laid.children ?? []).filter((c) => !!c.children);
+  }
+
+  function groupColor(id: string): string {
+    return paletteFor(topOf.get(id) ?? id);
   }
 
   function fillFor(
@@ -257,7 +341,17 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (el, initial) => 
       const t = ext[1] > ext[0] ? (v - ext[0]) / (ext[1] - ext[0]) : 0.5;
       return ramp(opts.colormap)(t);
     }
-    return paletteFor(topAncestorId(leaf));
+    return groupColor(leaf.data.id);
+  }
+
+  /** The group in view that holds a leaf: the focus child above it. */
+  function viewGroupOf(
+    leaf: HierarchyRectangularNode<TreeRow>,
+  ): HierarchyRectangularNode<TreeRow> | null {
+    const chain = leaf.ancestors(); // [leaf, ..., sub root]
+    return chain.length > 2
+      ? (chain[chain.length - 2] as HierarchyRectangularNode<TreeRow>)
+      : null;
   }
 
   // ---- canvas rendering (the data layer) ----
@@ -270,6 +364,21 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (el, initial) => 
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, plotW(), plotH());
     if (layoutLeaves.length === 0) return;
+
+    // Group tiles first: their header strip and border show the group color.
+    if (opts.colorBy === "parent") {
+      for (const g of layoutGroups) {
+        ctx.fillStyle = groupColor(g.data.id);
+        ctx.globalAlpha = 0.85;
+        ctx.fillRect(g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0);
+        ctx.globalAlpha = 1;
+      }
+    } else {
+      for (const g of layoutGroups) {
+        ctx.fillStyle = theme.axis;
+        ctx.fillRect(g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0);
+      }
+    }
 
     const ext = valueExtent(layoutLeaves);
     ctx.lineWidth = 0.5;
@@ -303,12 +412,22 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (el, initial) => 
   function renderBreadcrumb() {
     // Background strip so tile labels never bleed into the breadcrumb.
     svg.appendChild(rect(0, 0, width, BREADCRUMB_H, theme.background));
-    if (!focus) return;
+    const crumbsEnd = renderCrumbs();
+    if (opts.colorBy === "value" && layoutLeaves.length) {
+      renderValueKey(crumbsEnd);
+    }
+  }
+
+  /** Draw the breadcrumb; returns the x where it ends. */
+  function renderCrumbs(): number {
+    if (!focus) return 0;
     const chain = focus.ancestors().reverse(); // root -> focus
     let x = 8;
     chain.forEach((node, i) => {
       if (i > 0) {
-        svg.appendChild(text(x, BREADCRUMB_H - 8, "›", theme.muted, "start", 12));
+        svg.appendChild(
+          text(x, BREADCRUMB_H - 8, "›", theme.muted, "start", 12),
+        );
         x += 12;
       }
       const label = node.data.label || node.data.id;
@@ -329,25 +448,93 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (el, initial) => 
       svg.appendChild(t);
       x += approxTextWidth(label, 12) + 6;
     });
+    return x;
+  }
+
+  /**
+   * Value color key at the right of the breadcrumb strip: min, ramp, max.
+   * Left out when the breadcrumb reaches it.
+   */
+  function renderValueKey(crumbsEnd: number) {
+    // The labels state values that tiles have: valueExtent widens an all-
+    // equal range for the color scale, which the key must not print.
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const l of layoutLeaves) {
+      const v = l.value ?? 0;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    const barW = 90;
+    const x = width - barW - 46;
+    if (x - 30 < crumbsEnd) return; // the min label would meet the breadcrumb
+    const gid = `${uid}-key`;
+    const defs = document.createElementNS(SVG_NS, "defs");
+    const grad = document.createElementNS(SVG_NS, "linearGradient");
+    grad.setAttribute("id", gid);
+    const fn = ramp(opts.colormap);
+    for (let i = 0; i <= 8; i += 1) {
+      const stop = document.createElementNS(SVG_NS, "stop");
+      stop.setAttribute("offset", `${(i / 8) * 100}%`);
+      stop.setAttribute("stop-color", fn(i / 8));
+      grad.appendChild(stop);
+    }
+    defs.appendChild(grad);
+    svg.appendChild(defs);
+    svg.appendChild(rect(x, 8, barW, 8, `url(#${gid})`));
+    svg.appendChild(text(x - 4, 16, fmt(lo), theme.axis, "end", 10));
+    // One value only: every tile has it, and it takes the low end of the ramp.
+    if (hi > lo) {
+      svg.appendChild(text(x + barW + 4, 16, fmt(hi), theme.axis, "start", 10));
+    }
+  }
+
+  /** White text with a dark halo, cut to `maxWidth` px with an ellipsis. */
+  function haloText(
+    x: number,
+    y: number,
+    label: string,
+    maxWidth: number,
+    size: number,
+    weight?: string,
+  ) {
+    const t = text(x, y, "", "#ffffff", "start", size);
+    // Halo for legibility over any tile color.
+    t.setAttribute("paint-order", "stroke");
+    t.setAttribute("stroke", "rgba(0,0,0,0.55)");
+    t.setAttribute("stroke-width", "2");
+    if (weight) t.setAttribute("font-weight", weight);
+    const maxChars = Math.max(1, Math.floor(maxWidth / (size * 0.56)));
+    t.textContent =
+      label.length > maxChars ? `${label.slice(0, maxChars - 1)}…` : label;
+    svg.appendChild(t);
   }
 
   function renderLabels() {
     const yOff = plotTop();
+    // Group names in their header strips.
+    for (const g of layoutGroups) {
+      if (!headerIds.has(g.data.id)) continue;
+      const label = g.data.label || g.data.id;
+      haloText(
+        g.x0 + 4,
+        yOff + g.y0 + GROUP_HEADER_H - 4,
+        label,
+        g.x1 - g.x0 - 8,
+        11,
+        "600",
+      );
+    }
     for (const leaf of layoutLeaves) {
       if (!tileFitsLabel(leaf, opts.labelMinSize)) continue;
       const label = leaf.data.label || leaf.data.id;
-      const tx = leaf.x0 + 4;
-      const ty = yOff + leaf.y0 + 14;
-      const t = text(tx, ty, "", "#ffffff", "start", 11);
-      // Halo for legibility over any tile color.
-      t.setAttribute("paint-order", "stroke");
-      t.setAttribute("stroke", "rgba(0,0,0,0.55)");
-      t.setAttribute("stroke-width", "2");
-      // Truncate to the tile width with an ellipsis.
-      const maxChars = Math.max(1, Math.floor((leaf.x1 - leaf.x0 - 8) / 6.2));
-      t.textContent =
-        label.length > maxChars ? `${label.slice(0, maxChars - 1)}…` : label;
-      svg.appendChild(t);
+      haloText(
+        leaf.x0 + 4,
+        yOff + leaf.y0 + 14,
+        label,
+        leaf.x1 - leaf.x0 - 8,
+        11,
+      );
     }
   }
 
@@ -375,8 +562,12 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (el, initial) => 
     const leaf = leafAt(px, py);
     if (leaf) {
       const label = leaf.data.label || leaf.data.id;
+      const group = viewGroupOf(leaf);
+      const groupLine = group
+        ? `<br/>group: ${escapeHTML(group.data.label || group.data.id)}`
+        : "";
       tooltip.show(
-        `<b>${escapeHTML(label)}</b><br/>value: ${fmt(leaf.value ?? 0)}`,
+        `<b>${escapeHTML(label)}</b>${groupLine}<br/>value: ${fmt(leaf.value ?? 0)}`,
         e.clientX,
         e.clientY,
       );
@@ -431,6 +622,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (el, initial) => 
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      assignPalette();
       // Keep the current focus; only re-layout + recolor.
       computeLayout();
       render();
@@ -494,22 +686,21 @@ function rect(
   return r;
 }
 
-let _sharedFontFamily =
-  "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
-function text(
+function svgText(
   x: number,
   y: number,
   content: string,
   fill: string,
   anchor: string,
-  size = 11,
+  size: number,
+  fontFamily: string,
 ): SVGTextElement {
   const t = document.createElementNS(SVG_NS, "text");
   t.setAttribute("x", String(x));
   t.setAttribute("y", String(y));
   t.setAttribute("fill", fill);
   t.setAttribute("text-anchor", anchor);
-  t.setAttribute("font-family", _sharedFontFamily);
+  t.setAttribute("font-family", fontFamily);
   t.setAttribute("font-size", String(size));
   t.textContent = content;
   return t;
@@ -537,11 +728,9 @@ function mergeOptions(
   next?: Partial<TreemapOptions>,
 ): TreemapOptions {
   if (!next) return { ...base };
-  const merged: TreemapOptions = {
+  return {
     ...base,
     ...next,
     theme: { ...base.theme, ...(next.theme ?? {}) },
   };
-  _sharedFontFamily = resolveTheme(merged.theme).fontFamily;
-  return merged;
 }
