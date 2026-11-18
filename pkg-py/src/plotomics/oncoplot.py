@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -15,21 +16,26 @@ def memo_sort(
     samples: list[str],
     alt_gene: list[str],
     alt_sample: list[str],
+    sort_genes: bool = True,
 ) -> tuple[list[str], list[str]]:
     """Return the conventional oncoplot row and column order.
 
-    Genes are ordered by descending alteration frequency, then samples are
-    ordered so the most frequently altered gene's carriers come first, ties
-    broken by the next gene down. This is the "memo sort" cBioPortal
-    popularised; it is what makes mutual exclusivity between drivers read as a
-    staircase.
+    Genes are ordered by the number of samples they are altered in (several
+    mutations in one sample count once), then samples are ordered so the top
+    gene's carriers come first, ties broken by the next gene down. This is the
+    "memo sort" cBioPortal popularised; it is what makes mutual exclusivity
+    between drivers read as a staircase. With ``sort_genes=False`` the given
+    gene order is kept and the samples are sorted by it.
 
     Exposed separately so a caller can compute the order once and reuse it for
-    both an interactive widget and a static rendering, rather than letting two
-    implementations tie-break differently.
+    both an interactive widget and a static rendering, so two implementations
+    cannot tie-break differently.
     """
-    counts = Counter(alt_gene)
-    genes = sorted(genes, key=lambda g: (-counts.get(g, 0), g))
+    if sort_genes:
+        counts = Counter(g for g, _ in set(zip(alt_gene, alt_sample)))
+        genes = sorted(genes, key=lambda g: (-counts.get(g, 0), g))
+    else:
+        genes = list(genes)
     gi = {g: i for i, g in enumerate(genes)}
     hits: dict[str, int] = {s: 0 for s in samples}
     # One bit per gene, most frequent gene in the highest bit, so ordinary
@@ -63,10 +69,17 @@ class Oncoplot(PlotomicsWidget):
         simply absent; the full grid is reconstructed from ``genes`` and
         ``samples``.
     genes, samples:
-        Explicit row / column order. Defaults to the memo-sorted order.
+        Explicit row / column order. Defaults to the memo-sorted order of the
+        genes and samples present in ``data``. Given ``genes`` keep their order
+        and the samples are sorted by it. The frequency bars divide by the
+        number of samples shown, so pass ``samples`` to count unaltered
+        samples of the cohort too.
     classes:
         Alteration classes, fixing both legend order and colour assignment.
-        Defaults to the classes present, most frequent first.
+        Defaults to the classes present, most frequent first. A gene and
+        sample with two or more different classes is drawn as
+        ``"Multi-hit"``, in dark grey, which is added to the classes when it
+        occurs.
     class_colors:
         One hex colour per entry of ``classes``. ``None`` uses the component's
         categorical palette.
@@ -74,8 +87,11 @@ class Oncoplot(PlotomicsWidget):
         One value per sample for the top barplot. Defaults to the number of
         altered genes per sample.
     annotations:
-        Optional clinical strips, each a mapping with ``name``, ``values`` (one
-        per sample) and optional ``colors``.
+        Optional clinical strips, each a mapping with ``name``, ``values`` and
+        optional ``colors``. ``values`` keyed by sample (a dict, or a pandas
+        Series whose index names samples) are matched to the columns by name.
+        A plain list, or a Series indexed by row number, is read in the order
+        of ``samples``, so it needs ``samples``.
     show_burden, show_frequency, show_annotations, show_legend:
         Toggle the surrounding panels.
     empty_color:
@@ -157,11 +173,29 @@ class Oncoplot(PlotomicsWidget):
         if class_colors is not None and len(class_colors) != len(classes):
             raise ValueError("`class_colors` must have one entry per class.")
 
+        # A gene and sample with two or more different classes is one cell,
+        # drawn as "Multi-hit"; otherwise the last row would win silently.
+        by_pair: dict[tuple[str, str], set[str]] = {}
+        for g, s_, c in zip(alt_gene, alt_sample, alt_class):
+            by_pair.setdefault((g, s_), set()).add(c)
+        multi = {k for k, v in by_pair.items() if len(v) > 1}
+        if multi:
+            if MULTI_HIT not in classes:
+                classes = [*classes, MULTI_HIT]
+                if class_colors is not None:
+                    class_colors = [*class_colors, MULTI_HIT_COLOR]
+            alt_class = [
+                MULTI_HIT if (g, s_) in multi else c
+                for g, s_, c in zip(alt_gene, alt_sample, alt_class)
+            ]
+
         genes_in = list(genes) if genes is not None else sorted(set(alt_gene))
         samples_in = list(samples) if samples is not None else sorted(set(alt_sample))
         if genes is None or samples is None:
+            # Given genes keep their order, and the samples follow it.
             sorted_genes, sorted_samples = memo_sort(
-                genes_in, samples_in, alt_gene, alt_sample
+                genes_in, samples_in, alt_gene, alt_sample,
+                sort_genes=genes is None,
             )
             genes_in = list(genes) if genes is not None else sorted_genes
             samples_in = list(samples) if samples is not None else sorted_samples
@@ -209,7 +243,8 @@ class Oncoplot(PlotomicsWidget):
             meta["classColors"] = [str(c) for c in class_colors]
         if annotations:
             meta["annotations"] = [
-                _annotation(a, ncols) for a in annotations
+                _annotation(a, samples_in, samples is not None)
+                for a in annotations
             ]
 
         options: dict[str, Any] = {
@@ -238,14 +273,53 @@ class Oncoplot(PlotomicsWidget):
         )
 
 
-def _annotation(a: dict[str, Any], ncols: int) -> dict[str, Any]:
-    """Encode one clinical strip as levels plus 0-based codes."""
+def _annotation(
+    a: dict[str, Any], samples: list[str], samples_given: bool
+) -> dict[str, Any]:
+    """Encode one clinical strip as levels plus 0-based codes.
+
+    Values keyed by sample (a dict, or a pandas Series whose index names
+    samples) are matched to the columns by name. A plain sequence, or a
+    Series indexed by row number, is read in the order of ``samples``, so it
+    needs ``samples`` to have been given.
+    """
     name = a.get("name")
     values = a.get("values")
     if name is None or values is None:
         raise ValueError("each annotation needs `name` and `values`.")
-    vals = [None if v is None else str(v) for v in values]
-    if len(vals) != ncols:
+    keyed = None
+    if isinstance(values, Mapping):
+        keyed = {str(k): v for k, v in values.items()}
+    elif hasattr(values, "to_dict") and hasattr(values, "index"):
+        # A pandas Series is keyed when its index names samples. A row-number
+        # index, as left by filtering a table, is read by position.
+        index = [str(k) for k in values.index]
+        if set(index) & set(samples):
+            dup = sorted({k for k in index if index.count(k) > 1})
+            if dup:
+                raise ValueError(
+                    f"annotation '{name}' has more than one value for "
+                    "sample(s): " + ", ".join(dup[:5])
+                )
+            keyed = dict(zip(index, values.tolist()))
+    if keyed is not None:
+        missing = [s for s in samples if s not in keyed]
+        if missing:
+            raise ValueError(
+                f"annotation '{name}' has no value for sample(s): "
+                + ", ".join(missing[:5])
+            )
+        raw = [keyed[s] for s in samples]
+    elif not samples_given:
+        raise ValueError(
+            f"annotation '{name}' needs sample names: pass `values` as a dict "
+            "or a pandas Series keyed by sample, or pass `samples` so a list "
+            "can be read in that order."
+        )
+    else:
+        raw = list(values)
+    vals = [None if v is None else str(v) for v in raw]
+    if len(vals) != len(samples):
         raise ValueError(f"annotation '{name}' must have one value per sample.")
     levels = sorted({v for v in vals if v is not None and v not in ("nan", "<NA>")})
     idx = {lv: i for i, lv in enumerate(levels)}
@@ -259,3 +333,8 @@ def _annotation(a: dict[str, Any], ncols: int) -> dict[str, Any]:
     if colors is not None:
         out["colors"] = [str(c) for c in colors]
     return out
+
+
+# The class for a gene and sample altered in two or more different ways.
+MULTI_HIT = "Multi-hit"
+MULTI_HIT_COLOR = "#3A3A3A"
