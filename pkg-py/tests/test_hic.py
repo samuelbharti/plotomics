@@ -106,3 +106,27 @@ def test_hic_rejects_non_numeric_triplet():
 def test_hic_rejects_non_numeric_matrix():
     with pytest.raises(ValueError, match="must be numeric"):
         HiC(np.array([["a", "b"], ["c", "d"]]))
+
+
+def test_hic_reads_a_3x3_nested_list_as_dense():
+    w = HiC([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+
+    assert w.data["meta"]["n"] == 3
+    names = {c["name"] for c in w.schema["columns"]}
+    assert names == {"values"}
+    vals = np.frombuffer(w.buffer, dtype=np.float32)
+    assert vals.tolist() == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+
+def test_hic_reads_a_list_of_three_sequences_as_a_triplet():
+    w = HiC([[0, 1], [1, 2], [5.0, 3.0]], n=3)
+
+    names = {c["name"] for c in w.schema["columns"]}
+    assert names == {"i", "j", "v"}
+
+
+def test_hic_accepts_rdbu_and_rejects_unknown_colormaps():
+    m = np.eye(4)
+    assert HiC(m, colormap="rdbu").options["colormap"] == "rdbu"
+    with pytest.raises(ValueError, match="colormap"):
+        HiC(m, colormap="magma")
