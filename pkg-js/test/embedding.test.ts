@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   categoryToIndex,
+  drawableRows,
   equalAspectDomains,
   isStringColumn,
   niceTicks,
@@ -39,9 +40,9 @@ describe("embedding helpers", () => {
 
   it("maps categorical labels to dense indices + ordered categories", () => {
     const { indices, categories } = categoryToIndex(["b", "a", "b", "c", "a"]);
-    // First-appearance order: b=0, a=1, c=2.
-    expect(categories).toEqual(["b", "a", "c"]);
-    expect(Array.from(indices)).toEqual([0, 1, 0, 2, 1]);
+    // Sorted: a=0, b=1, c=2.
+    expect(categories).toEqual(["a", "b", "c"]);
+    expect(Array.from(indices)).toEqual([1, 0, 1, 2, 0]);
     expect(indices).toBeInstanceOf(Int32Array);
   });
 
@@ -70,8 +71,9 @@ describe("embedding helpers", () => {
       ["a", "z", "y", "z"],
       ["a", "b"],
     );
-    expect(categories).toEqual(["a", "b", "z", "y"]);
-    expect(Array.from(indices)).toEqual([0, 2, 3, 2]);
+    // Labels outside the order follow it, sorted.
+    expect(categories).toEqual(["a", "b", "y", "z"]);
+    expect(Array.from(indices)).toEqual([0, 3, 2, 3]);
   });
 
   it("ignores duplicates in the explicit order", () => {
@@ -81,9 +83,59 @@ describe("embedding helpers", () => {
     ]);
   });
 
-  it("falls back to first-appearance order for a null/empty order", () => {
-    expect(categoryToIndex(["b", "a"], null).categories).toEqual(["b", "a"]);
-    expect(categoryToIndex(["b", "a"], []).categories).toEqual(["b", "a"]);
+  it("sorts text categories for a null or empty order", () => {
+    expect(categoryToIndex(["b", "a"], null).categories).toEqual(["a", "b"]);
+    expect(categoryToIndex(["b", "a"], []).categories).toEqual(["a", "b"]);
+  });
+
+  it("sorts categories in natural order, so 2 comes before 10", () => {
+    const labels = ["cluster 10", "cluster 2", "cluster 1"];
+    expect(categoryToIndex(labels).categories).toEqual([
+      "cluster 1",
+      "cluster 2",
+      "cluster 10",
+    ]);
+    expect(categoryToIndex([10, 2, 0, 1]).categories).toEqual([
+      "0",
+      "1",
+      "2",
+      "10",
+    ]);
+  });
+
+  it("puts a missing label last as NA", () => {
+    const { indices, categories, missing } = categoryToIndex([
+      null,
+      "B cell",
+      Number.NaN,
+      "T cell",
+    ]);
+    expect(categories).toEqual(["B cell", "T cell", "NA"]);
+    expect(missing).toBe(2);
+    expect(Array.from(indices)).toEqual([2, 0, 2, 1]);
+    expect(categoryToIndex(["a"]).missing).toBe(-1);
+  });
+
+  it("decides the colour type from the first value that is not missing", () => {
+    expect(
+      isStringColumn([null, "B cell", "T cell"] as unknown as string[]),
+    ).toBe(true);
+    expect(isStringColumn([Number.NaN, 2, 3])).toBe(false);
+    expect(isStringColumn([null, null] as unknown as string[])).toBe(false);
+  });
+
+  it("draws only rows with a finite x and y", () => {
+    const rows = drawableRows(
+      [1, null, 3, Number.NaN, 5] as unknown as number[],
+      [1, 2, null, 4, 5] as unknown as number[],
+    );
+    expect(Array.from(rows)).toEqual([0, 4]);
+  });
+
+  it("leaves a missing value out of the padded extent", () => {
+    expect(paddedExtent([10, null, 14] as unknown as number[], 0)).toEqual([
+      10, 14,
+    ]);
   });
 
   it("normalizes a column to [0,1] over its own extent", () => {

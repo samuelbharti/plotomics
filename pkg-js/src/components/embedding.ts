@@ -134,6 +134,9 @@ const BARE_MARGIN = { top: 10, right: 10, bottom: 10, left: 10 };
 const CONTINUOUS_STEPS = 256;
 /** Cap on discrete legend rows before collapsing into a "+N more" line. */
 const LEGEND_MAX = 20;
+/** Colour for a point whose colour value is missing, and its legend entry. */
+const MISSING_COLOR = "#BDBDBD";
+const MISSING_LABEL = "NA";
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/embedding.test.ts)
@@ -150,10 +153,12 @@ export function paddedExtent(
   const n = col.length;
   for (let i = 0; i < n; i += 1) {
     const v = col[i] as number;
+    // R sends NA as null, which compares as 0; skip anything not finite.
+    if (!Number.isFinite(v)) continue;
     if (v < min) min = v;
     if (v > max) max = v;
   }
-  if (!isFinite(min) || !isFinite(max)) return [0, 1];
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 1];
   if (min === max) return [min - 1, max + 1];
   const d = (max - min) * pad;
   return [min - d, max + d];
@@ -187,9 +192,26 @@ export function equalAspectDomains(
   ];
 }
 
-/** True when a column holds strings (categorical) rather than numbers. */
+/**
+ * True when a column holds strings (categorical), not numbers. The first
+ * value that is not missing decides, since R sends a leading NA as null.
+ */
 export function isStringColumn(col: Column): col is string[] {
-  return col.length > 0 && typeof (col as ArrayLike<unknown>)[0] === "string";
+  const values = col as ArrayLike<unknown>;
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i];
+    if (v == null || (typeof v === "number" && Number.isNaN(v))) continue;
+    return typeof v === "string";
+  }
+  return false;
+}
+
+/** Compare category names in natural order, so "cluster 2" < "cluster 10". */
+export function naturalCompare(a: string, b: string): number {
+  return (
+    a.localeCompare(b, undefined, { numeric: true }) ||
+    (a < b ? -1 : a > b ? 1 : 0)
+  );
 }
 
 /**
@@ -207,44 +229,99 @@ export function resolveColorMode(
 
 /**
  * Map categorical labels to dense integer indices plus the ordered category
- * list (first-appearance order, which is also the palette-assignment order).
+ * list, which is also the palette-assignment order. Text categories are in
+ * natural order ("cluster 2" before "cluster 10"), as ggplot2 and scanpy
+ * sort them.
  *
- * Pass `order` to fix that order yourself. Its entries come first and keep
- * their index whether or not any point carries them, which is what lets a
- * caller pin a specific color to a specific category; labels outside it are
- * appended in first-appearance order behind them.
+ * Pass `order` to fix that order yourself (R sends a factor's levels, Python
+ * a Categorical's categories). Its entries come first and keep their index
+ * whether or not any point carries them, which is what lets a caller pin a
+ * specific color to a specific category; labels outside it follow, in
+ * natural order.
+ *
+ * A missing label (null from R, NaN or null from Python) gets the category
+ * "NA", placed last; `missing` is its index, or -1 when there is none.
  */
 export function categoryToIndex(
-  labels: string[],
+  labels: ArrayLike<unknown>,
   order?: readonly string[] | null,
 ): {
   indices: Int32Array;
   categories: string[];
+  missing: number;
 } {
-  const lookup = new Map<string, number>();
-  const categories: string[] = [];
-  const indices = new Int32Array(labels.length);
+  const isMissing = (v: unknown) =>
+    v == null || (typeof v === "number" && Number.isNaN(v));
+  const given: string[] = [];
+  const seen = new Set<string>();
   if (order) {
     for (const name of order) {
       const key = String(name);
-      if (lookup.has(key)) continue;
-      lookup.set(key, categories.length);
-      categories.push(key);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      given.push(key);
     }
   }
+  const extra = new Set<string>();
+  let anyMissing = false;
   for (let i = 0; i < labels.length; i += 1) {
+    const v = labels[i];
+    if (isMissing(v)) {
+      anyMissing = true;
+      continue;
+    }
     // Stringify: a numeric column forced to categorical arrives here as numbers,
     // and a number has no `.length`, which would make the legend box width NaN.
-    const key = String(labels[i]);
-    let idx = lookup.get(key);
-    if (idx === undefined) {
-      idx = categories.length;
-      lookup.set(key, idx);
-      categories.push(key);
-    }
-    indices[i] = idx;
+    const key = String(v);
+    if (!seen.has(key)) extra.add(key);
   }
-  return { indices, categories };
+  const categories = [...given, ...[...extra].sort(naturalCompare)];
+  const lookup = new Map<string, number>();
+  categories.forEach((c, i) => {
+    lookup.set(c, i);
+  });
+  const missing = anyMissing ? categories.length : -1;
+  if (anyMissing) categories.push(MISSING_LABEL);
+  const indices = new Int32Array(labels.length);
+  for (let i = 0; i < labels.length; i += 1) {
+    const v = labels[i];
+    indices[i] = isMissing(v) ? missing : (lookup.get(String(v)) as number);
+  }
+  return { indices, categories, missing };
+}
+
+/**
+ * The rows that have a finite x and y. A missing coordinate (null from R,
+ * NaN from Python) has no place on the plot, so its row is not drawn.
+ */
+export function drawableRows(
+  x: ArrayLike<number | null>,
+  y: ArrayLike<number | null>,
+): Int32Array {
+  const n = Math.min(x.length, y.length);
+  const rows: number[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const a = x[i];
+    const b = y[i];
+    if (a == null || b == null) continue;
+    if (Number.isFinite(a) && Number.isFinite(b)) rows.push(i);
+  }
+  return Int32Array.from(rows);
+}
+
+/** The values of `col` at `rows`, as numbers (null becomes NaN). */
+function pickNumbers(col: ArrayLike<unknown>, rows: Int32Array): Float32Array {
+  const out = new Float32Array(rows.length);
+  for (let k = 0; k < rows.length; k += 1) {
+    const v = col[rows[k] as number];
+    out[k] = v == null ? Number.NaN : Number(v);
+  }
+  return out;
+}
+
+/** The values of `col` at `rows`. */
+function pickValues(col: ArrayLike<unknown>, rows: Int32Array): unknown[] {
+  return Array.from(rows, (i) => col[i]);
 }
 
 /**
@@ -334,6 +411,11 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   let baseY: [number, number] = [0, 1];
   let legend: LegendState = null;
   let selected: number[] = [];
+  // The data rows that are drawn, in drawing order: the scatterplot's point k
+  // is data row drawn[k]. Rows with a missing coordinate are left out.
+  let drawn: Int32Array = new Int32Array(0);
+  // Whether some drawn point has no colour value (drawn grey, keyed "NA").
+  let missingColor = false;
   const uid = `plotomics-embedding-${embeddingSeq++}`;
 
   const xScale = scaleLinear().domain(xDomain);
@@ -377,10 +459,11 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     if (data.columns.x && isStartView(scatterplot)) applyData(true);
   }, 120);
 
-  scatterplot.subscribe("pointOver", (i: number) => showTip(i));
+  scatterplot.subscribe("pointOver", (k: number) => showTip(drawn[k] ?? k));
   scatterplot.subscribe("pointOut", () => tooltip.hide());
   scatterplot.subscribe("select", ({ points }: { points: number[] }) => {
-    selected = points.slice();
+    // Report data rows, not the scatterplot's point numbers.
+    selected = points.map((k) => drawn[k] ?? k);
     opts.onSelect?.(selected.slice());
   });
   scatterplot.subscribe("deselect", () => {
@@ -456,14 +539,18 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
 
   async function render(fit: boolean) {
     const cols = data.columns;
-    const x = cols.x as ArrayLike<number> | undefined;
-    const y = cols.y as ArrayLike<number> | undefined;
-    if (!x || !y || x.length === 0) {
+    const xAll = cols.x as ArrayLike<number> | undefined;
+    const yAll = cols.y as ArrayLike<number> | undefined;
+    drawn = xAll && yAll ? drawableRows(xAll, yAll) : new Int32Array(0);
+    if (!xAll || !yAll || drawn.length === 0) {
       void scatterplot.clear?.();
       legend = null;
+      missingColor = false;
       renderOverlay();
       return;
     }
+    const x = pickNumbers(xAll, drawn);
+    const y = pickNumbers(yAll, drawn);
     const fitW = innerW();
     const fitH = innerH();
     if (fit) {
@@ -485,28 +572,45 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     const mode =
       color && color.length ? resolveColorMode(color, opts.colorMode) : null;
     let z: ArrayLike<number>;
-    let zDataType: "categorical" | "continuous" = "categorical";
-    let colorBy: "category" | "valueA" = "category";
+    const zDataType = "categorical" as const;
+    const colorBy = "category" as const;
     let pointColor: string[];
+    missingColor = false;
 
     if (mode === "categorical") {
-      const { indices, categories } = categoryToIndex(
-        color as string[],
+      const { indices, categories, missing } = categoryToIndex(
+        pickValues(color as ArrayLike<unknown>, drawn),
         opts.categories,
       );
       pointColor = categoricalPalette(categories.length);
+      if (missing >= 0) {
+        pointColor[missing] = MISSING_COLOR;
+        missingColor = true;
+      }
       legend = { mode, categories, palette: pointColor };
       // Integer category indices in the z channel; pointColor[z] selects the hue.
       z = indices;
     } else if (mode === "continuous") {
-      const values = color as ArrayLike<number>;
+      const values = pickNumbers(color as ArrayLike<unknown>, drawn);
       const domain = paddedExtent(values, 0);
-      pointColor = sampleRamp(opts.colormap, CONTINUOUS_STEPS);
+      // Level 0 is the grey of a missing value; levels 1 to 256 run along the
+      // ramp. Drawing the levels as categories keeps a missing value from
+      // taking the low end of the ramp.
+      pointColor = [
+        MISSING_COLOR,
+        ...sampleRamp(opts.colormap, CONTINUOUS_STEPS),
+      ];
+      const t = normalizeToUnit(values, domain);
+      const levels = new Int32Array(values.length);
+      for (let k = 0; k < values.length; k += 1) {
+        if (!Number.isFinite(values[k] as number)) {
+          missingColor = true;
+          continue;
+        }
+        levels[k] = 1 + Math.round((t[k] as number) * (CONTINUOUS_STEPS - 1));
+      }
       legend = { mode, domain };
-      // Normalized [0,1] values interpolate across the sampled ramp.
-      z = normalizeToUnit(values, domain);
-      zDataType = "continuous";
-      colorBy = "valueA";
+      z = levels;
     } else {
       // No color column: one flat hue, no legend.
       legend = null;
@@ -706,6 +810,22 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         10,
       ),
     );
+    // A grey swatch for points with no value, when there are any.
+    if (missingColor) {
+      const sy = y0 + cbH + 14;
+      svg.appendChild(legendBg(x0 - 6, sy - 4, cbW + 52, 18));
+      svg.appendChild(rect(x0, sy, cbW, 10, MISSING_COLOR, theme.axis, 1));
+      svg.appendChild(
+        text(
+          x0 + cbW + 5,
+          sy + 9,
+          MISSING_LABEL,
+          theme.foreground,
+          "start",
+          10,
+        ),
+      );
+    }
   }
 
   // ---- SVG element helpers ----
@@ -788,6 +908,13 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   const instance: EmbeddingInstance = {
     setData(next) {
       data = next;
+      // A selection names rows of the old data; drop it and say so, so
+      // Shiny's input and Python's trait do not keep stale rows.
+      if (selected.length) {
+        scatterplot.deselect({ preventEvent: true });
+        selected = [];
+        opts.onSelect?.([]);
+      }
       applyData();
     },
     setOptions(next) {
@@ -867,7 +994,7 @@ function str(col: Column | undefined, i: number): string | undefined {
   return v == null ? undefined : String(v);
 }
 function fmt(v: number): string {
-  if (!Number.isFinite(v)) return "—";
+  if (!Number.isFinite(v)) return "NA";
   if (v === 0) return "0";
   const a = Math.abs(v);
   if (a >= 1000 || a < 0.01) return v.toExponential(1);

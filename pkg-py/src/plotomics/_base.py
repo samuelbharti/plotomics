@@ -232,3 +232,31 @@ def _text_or_none(values: Any) -> list[str | None]:
         )
         out.append(None if missing else str(v))
     return out
+
+
+def _numeric_values(values: Any) -> np.ndarray | None:
+    """A colour column as float32 when it holds numbers, else None.
+
+    A missing value (None, NaN, pandas NA) does not decide the type, so a
+    numeric column that starts with None stays numeric, with NaN for each
+    missing value. Text, or a Categorical, gives None.
+    """
+    if getattr(getattr(values, "dtype", None), "categories", None) is not None:
+        return None
+    arr = np.asarray(values)
+    if arr.dtype.kind == "b":
+        return None
+    if np.issubdtype(arr.dtype, np.number):
+        return arr.astype(np.float32)
+    present = [v for v in _text_or_none(arr.tolist()) if v is not None]
+    if not present:
+        return None
+    out = []
+    for v in arr.tolist():
+        if _text_or_none([v])[0] is None:
+            out.append(np.nan)
+        elif isinstance(v, (int, float, np.number)) and not isinstance(v, bool):
+            out.append(float(v))
+        else:
+            return None
+    return np.asarray(out, dtype=np.float32)
