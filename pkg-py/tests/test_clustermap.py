@@ -141,3 +141,11 @@ def test_clustermap_rejects_merges_missing_keys():
 def test_clustermap_rejects_non_integer_order():
     with pytest.raises(ValueError, match="integer leaf indices"):
         Clustermap(np.random.randn(3, 3), row_linkage=[0.5, 1, 2])
+
+
+def test_clustermap_checks_label_lengths():
+    m = np.arange(6, dtype=float).reshape(3, 2)
+    with pytest.raises(ValueError, match="`row_labels` has 2 entries; expected 3"):
+        Clustermap(m, row_labels=["a", "b"])
+    with pytest.raises(ValueError, match="`col_labels` has 3 entries; expected 2"):
+        Clustermap(m, col_labels=["a", "b", "c"])
