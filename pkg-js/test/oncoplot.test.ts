@@ -28,14 +28,21 @@ describe("oncoplot layout", () => {
   });
 
   it("reclaims the marginal space when those panels are hidden", () => {
-    const off = { showBurden: false, showFrequency: false, showAnnotations: false, showLegend: false };
+    const off = {
+      showBurden: false,
+      showFrequency: false,
+      showAnnotations: false,
+      showLegend: false,
+    };
     const l = layoutOncoplot(1000, 600, 20, 100, 2, off);
     expect(l.burdenH).toBe(0);
     expect(l.freqW).toBe(0);
     expect(l.annH).toBe(0);
     expect(l.top).toBe(0);
     // taller grid than the fully-decorated layout
-    expect(l.gridH).toBeGreaterThan(layoutOncoplot(1000, 600, 20, 100, 2, OPTS).gridH);
+    expect(l.gridH).toBeGreaterThan(
+      layoutOncoplot(1000, 600, 20, 100, 2, OPTS).gridH,
+    );
   });
 
   it("has no annotation band when there are no annotations", () => {
@@ -53,21 +60,37 @@ describe("oncoplot hit testing", () => {
   const layout = layoutOncoplot(1000, 600, 20, 100, 2, OPTS);
 
   it("maps a pixel inside the grid to its cell", () => {
-    const hit = hitTest(layout.left + layout.cellW * 3.5, layout.top + layout.cellH * 2.5,
-      layout, 20, 100);
+    const hit = hitTest(
+      layout.left + layout.cellW * 3.5,
+      layout.top + layout.cellH * 2.5,
+      layout,
+      20,
+      100,
+    );
     expect(hit).toEqual({ row: 2, col: 3 });
   });
 
   it("returns null outside the grid", () => {
     expect(hitTest(0, 0, layout, 20, 100)).toBeNull();
-    expect(hitTest(layout.left - 1, layout.top + 5, layout, 20, 100)).toBeNull();
-    expect(hitTest(layout.left + layout.gridW + 1, layout.top + 5, layout, 20, 100)).toBeNull();
-    expect(hitTest(layout.left + 5, layout.top + layout.gridH + 1, layout, 20, 100)).toBeNull();
+    expect(
+      hitTest(layout.left - 1, layout.top + 5, layout, 20, 100),
+    ).toBeNull();
+    expect(
+      hitTest(layout.left + layout.gridW + 1, layout.top + 5, layout, 20, 100),
+    ).toBeNull();
+    expect(
+      hitTest(layout.left + 5, layout.top + layout.gridH + 1, layout, 20, 100),
+    ).toBeNull();
   });
 
   it("clamps at the far edge rather than reporting an out-of-range cell", () => {
-    const hit = hitTest(layout.left + layout.gridW - 0.5, layout.top + layout.gridH - 0.5,
-      layout, 20, 100);
+    const hit = hitTest(
+      layout.left + layout.gridW - 0.5,
+      layout.top + layout.gridH - 0.5,
+      layout,
+      20,
+      100,
+    );
     expect(hit).toEqual({ row: 19, col: 99 });
   });
 });

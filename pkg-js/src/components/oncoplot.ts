@@ -131,10 +131,15 @@ export function layoutOncoplot(
   nrows: number,
   ncols: number,
   nAnnotations: number,
-  opts: Pick<OncoplotOptions, "showBurden" | "showFrequency" | "showAnnotations" | "showLegend">,
+  opts: Pick<
+    OncoplotOptions,
+    "showBurden" | "showFrequency" | "showAnnotations" | "showLegend"
+  >,
   geneLabelW = 96,
 ): OncoplotLayout {
-  const burdenH = opts.showBurden ? Math.min(72, Math.max(36, height * 0.14)) : 0;
+  const burdenH = opts.showBurden
+    ? Math.min(72, Math.max(36, height * 0.14))
+    : 0;
   const freqW = opts.showFrequency ? 96 : 0;
   const annCount = opts.showAnnotations ? nAnnotations : 0;
   const annH = annCount > 0 ? ANN_GAP + annCount * ANN_ROW_H : 0;
@@ -178,7 +183,11 @@ export function columnMax(col: Column | undefined): number {
  * above it, labels would collide, so none are drawn and the tooltip carries the
  * gene name instead. Returning an explicit set keeps the decision testable.
  */
-export function visibleRowLabels(nrows: number, cellH: number, minSpacing = 9): Set<number> {
+export function visibleRowLabels(
+  nrows: number,
+  cellH: number,
+  minSpacing = 9,
+): Set<number> {
   const out = new Set<number>();
   if (cellH < minSpacing) return out;
   for (let r = 0; r < nrows; r += 1) out.add(r);
@@ -206,8 +215,14 @@ export function hitTest(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (el, initial) => {
-  let opts: OncoplotOptions = mergeOptions(defaultOncoplotOptions, initial.options);
+export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
+  el,
+  initial,
+) => {
+  let opts: OncoplotOptions = mergeOptions(
+    defaultOncoplotOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -219,7 +234,8 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (el, initial) =
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;inset:0;display:block;";
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -230,7 +246,8 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (el, initial) =
   const genes = () => (data.meta?.genes as string[]) ?? [];
   const samples = () => (data.meta?.samples as string[]) ?? [];
   const classes = () => (data.meta?.classes as string[]) ?? [];
-  const annotations = () => (data.meta?.annotations as OncoplotAnnotation[]) ?? [];
+  const annotations = () =>
+    (data.meta?.annotations as OncoplotAnnotation[]) ?? [];
   function classColors(): string[] {
     const given = data.meta?.classColors as string[] | undefined;
     if (given && given.length) return given;
@@ -247,17 +264,27 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (el, initial) =
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
     const rect = el.getBoundingClientRect();
-    const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top, layout, nrows(), ncols());
+    const hit = hitTest(
+      e.clientX - rect.left,
+      e.clientY - rect.top,
+      layout,
+      nrows(),
+      ncols(),
+    );
     if (!hit) {
       tooltip.hide();
       return;
     }
     const codes = data.columns.codes as ArrayLike<number> | undefined;
     const code = codes ? (codes[hit.row * ncols() + hit.col] as number) : 0;
-    const cls = code > 0 ? classes()[code - 1] ?? "altered" : "no alteration";
+    const cls = code > 0 ? (classes()[code - 1] ?? "altered") : "no alteration";
     const g = genes()[hit.row] ?? `row ${hit.row}`;
     const s = samples()[hit.col] ?? `col ${hit.col}`;
-    tooltip.show(`<b>${esc(g)}</b><br/>${esc(s)}<br/>${esc(cls)}`, lastPointer.x, lastPointer.y);
+    tooltip.show(
+      `<b>${esc(g)}</b><br/>${esc(s)}<br/>${esc(cls)}`,
+      lastPointer.x,
+      lastPointer.y,
+    );
   }
   function onLeave() {
     tooltip.hide();
@@ -388,7 +415,9 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (el, initial) =
     for (let r = 0; r < R; r += 1) {
       if (!showRow.has(r)) continue;
       const y = top + r * cellH + cellH / 2 + 3;
-      svg.appendChild(text(left - 8, y, g[r] ?? "", theme.foreground, "end", 10, "italic"));
+      svg.appendChild(
+        text(left - 8, y, g[r] ?? "", theme.foreground, "end", 10, "italic"),
+      );
     }
 
     // Frequency values, printed past the end of each bar.
@@ -403,7 +432,14 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (el, initial) =
           const v = (freq[r] as number) ?? 0;
           const y = top + r * cellH + cellH / 2 + 3;
           svg.appendChild(
-            text(x0 + (v / max) * usable + 4, y, `${fmtPct(v)}%`, theme.muted, "start", 9),
+            text(
+              x0 + (v / max) * usable + 4,
+              y,
+              `${fmtPct(v)}%`,
+              theme.muted,
+              "start",
+              9,
+            ),
           );
         }
       }
@@ -413,8 +449,19 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (el, initial) =
     if (opts.showBurden && layout.burdenH > 0) {
       const tmb = data.columns.tmb as ArrayLike<number> | undefined;
       if (tmb) {
-        svg.appendChild(text(left - 8, 12, String(columnMax(tmb)), theme.muted, "end", 9));
-        svg.appendChild(text(left - 8, layout.burdenH - 8, opts.burdenLabel, theme.muted, "end", 9));
+        svg.appendChild(
+          text(left - 8, 12, String(columnMax(tmb)), theme.muted, "end", 9),
+        );
+        svg.appendChild(
+          text(
+            left - 8,
+            layout.burdenH - 8,
+            opts.burdenLabel,
+            theme.muted,
+            "end",
+            9,
+          ),
+        );
       }
     }
 
@@ -422,7 +469,9 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (el, initial) =
     if (opts.showAnnotations && layout.annH > 0) {
       let y = top + layout.gridH + ANN_GAP;
       for (const a of annotations()) {
-        svg.appendChild(text(left - 8, y + ANN_ROW_H - 4, a.name, theme.muted, "end", 9));
+        svg.appendChild(
+          text(left - 8, y + ANN_ROW_H - 4, a.name, theme.muted, "end", 9),
+        );
         y += ANN_ROW_H;
       }
     }
@@ -456,7 +505,9 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (el, initial) =
       sw.setAttribute("height", "9");
       sw.setAttribute("fill", cols[i] ?? theme.foreground);
       svg.appendChild(sw);
-      svg.appendChild(text(x + 13, y, cls[i] ?? "", theme.foreground, "start", 10));
+      svg.appendChild(
+        text(x + 13, y, cls[i] ?? "", theme.foreground, "start", 10),
+      );
       x += 13 + estimateTextWidth(cls[i] ?? "", 10) + 14;
     }
   }
@@ -545,10 +596,21 @@ function estimateTextWidth(s: string, size: number): number {
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+    c === "&"
+      ? "&amp;"
+      : c === "<"
+        ? "&lt;"
+        : c === ">"
+          ? "&gt;"
+          : c === '"'
+            ? "&quot;"
+            : "&#39;",
   );
 }
-function mergeOptions(base: OncoplotOptions, next?: Partial<OncoplotOptions>): OncoplotOptions {
+function mergeOptions(
+  base: OncoplotOptions,
+  next?: Partial<OncoplotOptions>,
+): OncoplotOptions {
   if (!next) return { ...base };
   return {
     ...base,
