@@ -19,6 +19,10 @@ export default defineConfig({
       headless: true,
       provider: playwright(),
       instances: [{ browser: "chromium" }],
+      // A desktop-sized page. The default is 414 px wide, and regl-scatterplot
+      // draws through one shared canvas sized to the window, so a plot wider
+      // than the page is clipped at the page edge.
+      viewport: { width: 1280, height: 1024 },
     },
   },
 });

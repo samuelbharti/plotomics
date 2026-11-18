@@ -6,13 +6,8 @@ export function mountPoint(): HTMLElement {
   return el;
 }
 
-/**
- * Count the pixels in a PNG that differ from its most common colour.
- *
- * The most common colour is taken as the background. A canvas that holds only
- * the background, with no marks drawn on it, returns 0.
- */
-export async function drawnPixels(png: Blob): Promise<number> {
+/** The pixels of a PNG, and its most common colour, taken as background. */
+async function readPixels(png: Blob) {
   const bitmap = await createImageBitmap(png);
   const canvas = document.createElement("canvas");
   canvas.width = bitmap.width;
@@ -28,8 +23,61 @@ export async function drawnPixels(png: Blob): Promise<number> {
   const counts = new Map<number, number>();
   for (const p of pixels) counts.set(p, (counts.get(p) ?? 0) + 1);
   let background = 0;
-  for (const n of counts.values()) background = Math.max(background, n);
-  return pixels.length - background;
+  let backgroundCount = 0;
+  for (const [colour, n] of counts) {
+    if (n > backgroundCount) [background, backgroundCount] = [colour, n];
+  }
+  return { pixels, width: canvas.width, height: canvas.height, background };
+}
+
+/**
+ * Count the pixels in a PNG that differ from its most common colour.
+ *
+ * The most common colour is taken as the background. A canvas that holds only
+ * the background, with no marks drawn on it, returns 0.
+ */
+export async function drawnPixels(png: Blob): Promise<number> {
+  const { pixels, background } = await readPixels(png);
+  let drawn = 0;
+  for (const p of pixels) if (p !== background) drawn += 1;
+  return drawn;
+}
+
+/** Where the marks in a PNG sit: edges as fractions of the image, and size. */
+export interface MarkBox {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  widthPx: number;
+  heightPx: number;
+}
+
+/** The box around every pixel that is not background, or null if none. */
+export async function markBox(png: Blob): Promise<MarkBox | null> {
+  const { pixels, width, height, background } = await readPixels(png);
+  let x0 = width;
+  let x1 = -1;
+  let y0 = height;
+  let y1 = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (pixels[y * width + x] === background) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < 0) return null;
+  return {
+    left: x0 / width,
+    right: (x1 + 1) / width,
+    top: y0 / height,
+    bottom: (y1 + 1) / height,
+    widthPx: x1 + 1 - x0,
+    heightPx: y1 + 1 - y0,
+  };
 }
 
 /**
