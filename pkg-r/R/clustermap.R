@@ -116,7 +116,8 @@ clustermap <- function(mat,
     "clustermap", list(values = values),
     meta = meta,
     options = options,
-    width = width, height = height, element_id = element_id
+    width = width, height = height, element_id = element_id,
+    array_meta = c("rowLabels", "colLabels")
   )
 }
 

@@ -75,7 +75,7 @@ test_that("annotations are encoded as levels plus 0-based codes", {
   a <- w$x$data$meta$annotations[[1]]
   expect_equal(a$name, "Subtype")
   expect_equal(as.character(a$levels), c("Basal", "LumA"))
-  expect_equal(a$codes, c(1L, 0L, 1L, -1L))
+  expect_equal(as.integer(a$codes), c(1L, 0L, 1L, -1L))
 })
 
 test_that("oncoplot() validates its input", {

@@ -28,6 +28,7 @@ import {
   serializeSVG,
   canvasToPNG,
 } from "../core/index.js";
+import { releaseRegl } from "../core/gl.js";
 import createREGL from "regl";
 import type { Regl, Texture2D, DrawCommand } from "regl";
 
@@ -726,7 +727,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (el, initial) => 
       tooltip.destroy();
       valueTex?.destroy();
       lutTex?.destroy();
-      regl?.destroy();
+      releaseRegl(regl);
       canvas.remove();
       svg.remove();
     },

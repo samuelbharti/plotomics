@@ -1,5 +1,6 @@
 import { type PlotomicsFactory, downloadBlob } from "../core/index.js";
 import { decodeModelData } from "./decode-model.js";
+import { dropsOptionKeys } from "./rerender.js";
 
 /**
  * Wraps a headless component {@link PlotomicsFactory} into the object anywidget
@@ -37,11 +38,29 @@ export function makeAnywidget<O>(factory: PlotomicsFactory<O>) {
       const readOptions = () =>
         ({ ...((model.get("options") as Partial<O>) ?? {}), onSelect }) as Partial<O>;
 
-      const inst = factory(host, { data: readData(), options: readOptions() });
+      let inst = factory(host, { data: readData(), options: readOptions() });
+      let lastOptions: unknown = model.get("options");
 
       const onData = () => inst.setData(readData());
       const onBuffer = () => inst.setData(readData());
-      const onOptions = () => inst.setOptions(readOptions());
+      const onOptions = () => {
+        const sent = model.get("options");
+        // A key removed from the Python `options` dict would keep its old
+        // value under a merge, so build the component again instead.
+        if (dropsOptionKeys(lastOptions, sent)) {
+          inst.destroy();
+          inst = factory(host, { data: readData(), options: readOptions() });
+          // The new instance starts with nothing selected; say so in Python.
+          const selected = model.get("selected");
+          if (Array.isArray(selected) && selected.length > 0) {
+            model.set("selected", []);
+            model.save_changes();
+          }
+        } else {
+          inst.setOptions(readOptions());
+        }
+        lastOptions = sent;
+      };
       model.on("change:data", onData);
       model.on("change:buffer", onBuffer);
       model.on("change:options", onOptions);

@@ -1,4 +1,5 @@
 import type { PlotomicsData, PlotomicsFactory, PlotomicsInstance } from "../core/index.js";
+import { dropsOptionKeys } from "./rerender.js";
 
 /**
  * Runtime shared by the htmlwidgets (R) path. Each component's IIFE bundle
@@ -42,17 +43,36 @@ function ensureGlobal(): PlotomicsGlobal {
             if (height) el.style.height = `${height}px`;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let inst: PlotomicsInstance<any> | null = null;
+            let lastOptions: Record<string, unknown> = {};
+            // Whether Shiny holds a non-empty selection from this widget.
+            let hasSelection = false;
             return {
               renderValue(x: RenderPayload) {
                 const factory = g.components[name];
                 if (!factory) throw new Error(`plotomics: component "${name}" not registered`);
-                const options = withShinySelection(el, x.options ?? {});
+                const sent = x.options ?? {};
+                const options = withShinySelection(el, sent, (n) => {
+                  hasSelection = n > 0;
+                });
+                // R leaves out NULL arguments. If an option sent last time is
+                // missing now, build the component again so its default
+                // applies; merging would keep the old value.
+                if (inst && dropsOptionKeys(lastOptions, sent)) {
+                  inst.destroy();
+                  inst = null;
+                  // The new instance starts with nothing selected.
+                  if (hasSelection) {
+                    sendShinySelection(el, []);
+                    hasSelection = false;
+                  }
+                }
                 if (!inst) {
                   inst = factory(el, { data: x.data, options });
                 } else {
                   inst.setData(x.data);
                   inst.setOptions(options);
                 }
+                lastOptions = sent;
               },
               resize(width: number, h: number) {
                 inst?.resize(width, h);
@@ -76,20 +96,39 @@ function withShinySelection(
   el: HTMLElement,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   options: Record<string, any>,
+  onReport?: (count: number) => void,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Record<string, any> {
-  const w = window as unknown as {
-    HTMLWidgets?: { shinyMode?: boolean };
-    Shiny?: { setInputValue?: (id: string, value: unknown, opts?: unknown) => void };
-  };
-  if (w.HTMLWidgets?.shinyMode && w.Shiny?.setInputValue && el.id) {
+  if (shinyMode(el)) {
     return {
       ...options,
-      onSelect: (indices: number[]) =>
-        w.Shiny?.setInputValue?.(`${el.id}_selected`, indices, { priority: "event" }),
+      onSelect: (indices: number[]) => {
+        onReport?.(indices.length);
+        sendShinySelection(el, indices);
+      },
     };
   }
   return options;
+}
+
+type ShinyWindow = {
+  HTMLWidgets?: { shinyMode?: boolean };
+  Shiny?: { setInputValue?: (id: string, value: unknown, opts?: unknown) => void };
+};
+
+function shinyMode(el: HTMLElement): boolean {
+  const w = window as unknown as ShinyWindow;
+  return Boolean(w.HTMLWidgets?.shinyMode && w.Shiny?.setInputValue && el.id);
+}
+
+/** Set `input$<outputId>_selected`, outside Shiny a no-op. */
+function sendShinySelection(el: HTMLElement, indices: number[]): void {
+  if (!shinyMode(el)) return;
+  (window as unknown as ShinyWindow).Shiny?.setInputValue?.(
+    `${el.id}_selected`,
+    indices,
+    { priority: "event" },
+  );
 }
 
 export function registerComponent(name: string, factory: AnyFactory): void {
