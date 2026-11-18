@@ -9,6 +9,7 @@ import numpy as np
 from ._base import (
     STATIC,
     PlotomicsWidget,
+    _check_choice,
     _column,
     _numeric_values,
     _text_or_none,
@@ -123,6 +124,7 @@ class Spatial(PlotomicsWidget):
             raise ValueError("`image` must be a URL or path the browser can fetch.")
         if img_width <= 0 or img_height <= 0:
             raise ValueError("`img_width` and `img_height` must be positive.")
+        _check_choice(colormap, "colormap", ("viridis", "rdbu", "ltc", "ltcdiv"))
         if color_mode not in ("auto", "categorical", "continuous"):
             raise ValueError(
                 "`color_mode` must be 'auto', 'categorical' or 'continuous'."
@@ -174,7 +176,7 @@ class Spatial(PlotomicsWidget):
                     )
         lab = _column(data, "label")
         if lab is not None:
-            json_columns["label"] = [str(v) for v in lab]
+            json_columns["label"] = _text_or_none(lab)
 
         buffer, schema = pack_columns(packed)
 

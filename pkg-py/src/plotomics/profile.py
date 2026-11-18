@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _column,
+    _text_or_none,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Profile(PlotomicsWidget):
@@ -95,7 +102,7 @@ class Profile(PlotomicsWidget):
             json_columns["group"] = grp
         lab_col = _column(data, "label")
         if lab_col is not None:
-            json_columns["label"] = [str(v) for v in lab_col]
+            json_columns["label"] = _text_or_none(lab_col)
 
         meta: dict[str, Any] = {}
         if groups is None and grp is not None:

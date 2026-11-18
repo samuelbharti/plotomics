@@ -142,3 +142,11 @@ def test_km_risk_counts_follow_a_stratum_index():
     # A default index says nothing about the strata, so rows keep their order.
     w = Km(data, risk_times=[0, 5], risk_counts=pd.DataFrame([[10, 8], [20, 15]]))
     assert w.data["meta"]["riskCounts"] == [10, 8, 20, 15]
+
+
+def test_km_leaves_a_missing_group_out_of_the_strata():
+    d = {"time": [0.0, 5.0, 0.0, 5.0], "surv": [1.0, 0.8, 1.0, 0.6],
+         "group": ["a", "a", float("nan"), float("nan")]}
+    w = Km(d)
+    assert w.data["meta"]["groups"] == ["a"]
+    assert w.data["columns"]["group"] == ["a", "a", None, None]

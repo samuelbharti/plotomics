@@ -114,3 +114,42 @@ def test_volcano_rejects_plain_ndarray():
 def test_volcano_rejects_empty_data():
     with pytest.raises(ValueError, match="at least one row"):
         Volcano({"x": [], "y": []})
+
+
+def test_volcano_sends_a_missing_symbol_as_null():
+    d = {"x": [1.0, -2.0], "y": [3.0, 0.5], "label": ["TP53", float("nan")]}
+    assert Volcano(d).data["columns"]["label"] == ["TP53", None]
+
+
+def test_volcano_reads_a_frame_without_the_optional_columns():
+    # A frame-like object whose lookup of a missing column raises its own
+    # error, as polars does (ColumnNotFoundError).
+    class ColumnNotFoundError(Exception):
+        pass
+
+    class Frame:
+        columns = ["x", "y"]
+        _cols = {"x": [1.0, -2.0], "y": [3.0, 0.5]}
+
+        def __getitem__(self, name):
+            if name not in self._cols:
+                raise ColumnNotFoundError(name)
+            return self._cols[name]
+
+    w = Volcano(Frame())
+    assert "label" not in w.data["columns"]
+
+
+def test_wrappers_read_a_polars_frame_with_optional_columns_left_out():
+    pl = pytest.importorskip("polars")
+    from plotomics import Embedding, Km
+
+    w = Volcano(pl.DataFrame({"x": [1.0, -2.0], "y": [3.0, 0.5]}))
+    assert "label" not in w.data["columns"]
+    w = Volcano(pl.DataFrame({"x": [1.0, -2.0], "y": [3.0, 0.5],
+                              "label": ["TP53", None]}))
+    assert w.data["columns"]["label"] == ["TP53", None]
+    Km(pl.DataFrame({"time": [0.0, 5.0], "surv": [1.0, 0.8]}))
+    w = Embedding(pl.DataFrame({"x": [0.0, 1.0], "y": [0.0, 1.0],
+                                "color": ["a", None]}))
+    assert w.data["columns"]["color"] == ["a", None]

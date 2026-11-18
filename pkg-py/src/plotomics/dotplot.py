@@ -6,7 +6,14 @@ from typing import Any, Literal
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _check_choice,
+    _column,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Dotplot(PlotomicsWidget):
@@ -101,6 +108,7 @@ class Dotplot(PlotomicsWidget):
         if missing:
             raise ValueError("`data` is missing column(s): " + ", ".join(missing))
 
+        _check_choice(colormap, "colormap", ("viridis", "rdbu", "ltc", "ltcdiv"))
         pct = _to_float32(pct_col, "pct")
         value = _to_float32(value_col, "value")
         if pct.size == 0:

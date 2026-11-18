@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _column,
+    _text_or_none,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Volcano(PlotomicsWidget):
@@ -85,7 +92,8 @@ class Volcano(PlotomicsWidget):
         json_columns: dict[str, list] = {}
         label = _column(data, "label")
         if label is not None:
-            json_columns["label"] = [str(v) for v in label]
+            # A missing symbol crosses as null, as from R, never as "nan".
+            json_columns["label"] = _text_or_none(label)
 
         options: dict[str, Any] = {
             "fcThreshold": fc_threshold,
