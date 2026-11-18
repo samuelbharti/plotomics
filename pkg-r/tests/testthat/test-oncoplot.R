@@ -94,10 +94,17 @@ test_that("oncoplot() validates its input", {
     "one value per sample"
   )
   expect_error(
-    oncoplot(alt_fixture(),
+    oncoplot(alt_fixture(), samples = c("S1", "S2", "S3", "S4"),
       annotations = list(list(name = "Subtype", values = c("A", "B")))
     ),
     "one value per sample"
+  )
+  # Unnamed values with a derived sample order cannot be placed.
+  expect_error(
+    oncoplot(alt_fixture(),
+      annotations = list(list(name = "Subtype", values = c("A", "B", "A", "B")))
+    ),
+    "needs sample names"
   )
 })
 
@@ -120,4 +127,49 @@ test_that("oncoplot() forwards the bar colour, label and cell-gap options", {
   # A zero gap draws a solid block, so it must survive the payload.
   expect_equal(w$x$options$cellGapX, 0)
   expect_equal(w$x$options$cellGapY, 0)
+})
+
+
+test_that("named annotation values follow their samples", {
+  expected <- c(S1 = "LumA", S2 = "Basal", S3 = "LumA", S4 = "Her2")
+  w <- oncoplot(alt_fixture(),
+    annotations = list(list(name = "Subtype", values = expected))
+  )
+  samples <- as.character(w$x$data$meta$samples)
+  # Memo sort does not keep S1..S4 order, so position alone would be wrong.
+  expect_false(identical(samples, names(expected)))
+  a <- w$x$data$meta$annotations[[1]]
+  shown <- as.character(a$levels)[as.integer(a$codes) + 1L]
+  expect_equal(shown, unname(expected[samples]))
+})
+
+test_that("genes rank by samples altered, and two classes make a Multi-hit", {
+  alt <- data.frame(
+    gene = c("TTN", "TTN", "TTN", "TP53", "TP53"),
+    sample = c("S1", "S1", "S1", "S1", "S2"),
+    class = c("Missense", "Missense", "Missense", "Missense", "Truncating")
+  )
+  w <- oncoplot(alt)
+  # TP53 is altered in 2 samples, TTN in 1 (three rows in one sample).
+  expect_equal(as.character(w$x$data$meta$genes), c("TP53", "TTN"))
+
+  two <- data.frame(
+    gene = c("TP53", "TP53"), sample = c("S1", "S1"),
+    class = c("Truncating", "Missense")
+  )
+  w2 <- oncoplot(two, class_colors = c("#111111", "#222222"))
+  classes <- as.character(w2$x$data$meta$classes)
+  expect_equal(classes[length(classes)], "Multi-hit")
+  expect_equal(as.integer(w2$x$data$columns$codes), length(classes))
+  expect_equal(length(w2$x$data$meta$classColors), length(classes))
+})
+
+test_that("an annotation with two values for one sample fails", {
+  expect_error(
+    oncoplot(alt_fixture(), annotations = list(list(
+      name = "Subtype",
+      values = c(S1 = "a", S2 = "b", S1 = "c", S3 = "d", S4 = "e")
+    ))),
+    "more than one value for sample"
+  )
 })
