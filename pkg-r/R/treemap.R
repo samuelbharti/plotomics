@@ -9,9 +9,11 @@
 #'
 #' @param data A data frame describing a tree as an edge list. Required columns:
 #'   `id` (unique node id) and `parent` (id of the parent; the root's parent is
-#'   `NA` or `""`). A numeric `value` column supplies leaf weights (internal
-#'   nodes are summed automatically); an optional `label` column supplies
-#'   display names.
+#'   `NA` or `""`). A numeric `value` column supplies leaf weights. A group's
+#'   size is the sum of its leaves; a value given on an internal node is
+#'   ignored. Without a `value` column every leaf weighs 1, so tiles show leaf
+#'   counts. An optional `label` column supplies display names. Top-level
+#'   groups are named in a header strip when their tile has room.
 #' @param tile Tiling algorithm: `"squarify"` (golden-ratio rectangles) or
 #'   `"binary"` (balanced binary partition).
 #' @param padding_inner Padding between sibling tiles, in pixels.
@@ -105,12 +107,11 @@ treemap <- function(data,
     id = id,
     parent = parent
   )
+  # Without a value column the browser weighs every leaf as 1.
   if (!is.null(data$value)) {
     value <- bv_require_numeric(data$value, "value")
     bv_check_finite(value, "value")
     columns$value <- value
-  } else {
-    columns$value <- rep(0, nrow(data))
   }
 
   meta <- list()
