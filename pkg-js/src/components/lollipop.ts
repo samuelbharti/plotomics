@@ -50,6 +50,7 @@ import {
   serializeSVG,
   canvasToPNG,
   OKABE_ITO,
+  rangeTicks,
 } from "../core/index.js";
 
 export interface LollipopOptions {
@@ -346,14 +347,13 @@ export function wrapRows(
   return out;
 }
 
-/** Evenly spaced residue ticks for the axis, always including 1 and length. */
+/**
+ * Residue ticks for the axis: round positions (multiples of 1, 2 or 5 x 10^k)
+ * with 1 and the protein length at the ends. A round tick too close to an end
+ * is left out, so the last two labels never overlap.
+ */
 export function residueTicks(length: number, count = 6): number[] {
-  if (length <= 1) return [1];
-  const step = Math.max(1, Math.round(length / count));
-  const out: number[] = [1];
-  for (let v = step; v < length; v += step) out.push(v);
-  out.push(length);
-  return out;
+  return rangeTicks(length, count);
 }
 
 // ---------------------------------------------------------------------------

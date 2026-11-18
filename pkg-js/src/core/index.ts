@@ -65,3 +65,5 @@ export {
   createRenderLoop,
   afterQuiet,
 } from "./scatter.js";
+
+export { stepDecimals, zeroTicks, formatTick, rangeTicks } from "./ticks.js";
