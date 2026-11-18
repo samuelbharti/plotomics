@@ -27,6 +27,9 @@
 #' @param scale_per_violin Scale each violin to its own maximum rather than the
 #'   row's. Per-row is the default so groups stay comparable within a feature.
 #' @param show_median,show_feature_labels Toggle the median tick and row labels.
+#' @param show_value_axis Draw each row's value axis on the right, with the
+#'   highest value of its grid and, on rows tall enough for two labels, the
+#'   lowest.
 #' @param theme Optional named list of theme overrides.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
@@ -47,6 +50,7 @@ violin <- function(data,
                    scale_per_violin = FALSE,
                    show_median = TRUE,
                    show_feature_labels = TRUE,
+                   show_value_axis = TRUE,
                    theme = NULL,
                    width = NULL,
                    height = NULL,
@@ -139,7 +143,8 @@ violin <- function(data,
     violinWidth = violin_width,
     scalePerViolin = scale_per_violin,
     showMedian = show_median,
-    showFeatureLabels = show_feature_labels
+    showFeatureLabels = show_feature_labels,
+    showValueAxis = show_value_axis
   )
   if (!is.null(theme)) options$theme <- theme
 

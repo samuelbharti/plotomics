@@ -30,7 +30,10 @@ class Dotplot(PlotomicsWidget):
         A pandas ``DataFrame`` or mapping of arrays in long form, one row per
         dot, with ``gene`` and ``cluster`` key columns, a ``pct`` column
         (percent expressing, 0-100) driving dot size, and a ``value`` column
-        (expression level) driving dot colour.
+        (expression level) driving dot colour. A missing ``value``, such as
+        the NaN of a scaled gene that is constant across groups, is drawn as
+        an open ring and left out of the colour scale. A missing ``pct`` draws
+        no dot.
     genes, clusters:
         Fix the row and column order. A pandas Categorical supplies it from its
         categories. Defaults to order of appearance.
@@ -149,6 +152,11 @@ class Dotplot(PlotomicsWidget):
         if value_domain is not None:
             if len(value_domain) != 2:
                 raise ValueError("`value_domain` must be length 2.")
+            if not np.all(np.isfinite(np.asarray(value_domain, dtype=float))):
+                raise ValueError(
+                    "`value_domain` must be two finite numbers; for a column "
+                    "with missing values, use np.nanmin and np.nanmax."
+                )
             options["valueDomain"] = [float(v) for v in value_domain]
         if theme is not None:
             options["theme"] = theme

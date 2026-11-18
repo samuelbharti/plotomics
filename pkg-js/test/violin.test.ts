@@ -23,7 +23,12 @@ describe("violin helpers", () => {
   });
 
   it("takes the largest density across rows", () => {
-    expect(maxDensity([[1, 5], [3, 2]])).toBe(5);
+    expect(
+      maxDensity([
+        [1, 5],
+        [3, 2],
+      ]),
+    ).toBe(5);
     // Degenerate input must not divide by zero downstream.
     expect(maxDensity([])).toBe(1);
     expect(maxDensity([[0, 0]])).toBe(1);
@@ -76,6 +81,15 @@ describe("violin helpers", () => {
     expect(long.left).toBeGreaterThan(short.left);
     expect(long.left).toBeLessThanOrEqual(150);
     expect(none.left).toBeLessThan(short.left);
+  });
+
+  it("makes room on the right for the value axis", () => {
+    const off = layoutViolin(800, 600, 4, 3, { showFeatureLabels: true });
+    const on = layoutViolin(800, 600, 4, 3, {
+      showFeatureLabels: true,
+      showValueAxis: true,
+    });
+    expect(on.plotW).toBe(off.plotW - (44 - 14));
   });
 
   it("stays well-defined with no rows or columns", () => {
