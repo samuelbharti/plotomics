@@ -58,6 +58,29 @@ export function createTooltip(
   };
 }
 
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+
+/**
+ * Width in px of `text` set at `size` px in `fontFamily`, measured on a
+ * shared canvas. Without a canvas (outside a browser) it estimates 0.58 em
+ * per character.
+ */
+export function textWidth(
+  text: string,
+  size: number,
+  fontFamily: string,
+): number {
+  if (measureCtx === undefined) {
+    measureCtx =
+      typeof document === "undefined"
+        ? null
+        : document.createElement("canvas").getContext("2d");
+  }
+  if (!measureCtx) return text.length * size * 0.58;
+  measureCtx.font = `${size}px ${fontFamily}`;
+  return measureCtx.measureText(text).width;
+}
+
 /** Measure a container, falling back to sensible defaults for headless/0-size. */
 export function measure(
   el: HTMLElement,

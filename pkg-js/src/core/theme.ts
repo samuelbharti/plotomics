@@ -44,6 +44,40 @@ export const darkTheme: PlotomicsTheme = {
   axis: "#9ca3af",
 };
 
+/** Text sizes in px for each role in a chart. */
+export interface TextSizes {
+  /** Tick labels, category labels, legend entries and value labels. */
+  label: number;
+  /** Axis titles and legend titles. */
+  axisTitle: number;
+  /** Plot titles. */
+  title: number;
+  /**
+   * Dense labels that must stay compact: bar labels under a profile, the
+   * counts of a risk table, labels inside cells.
+   */
+  small: number;
+}
+
+/**
+ * The text size of each role, scaled from `theme.fontSize`. With the default
+ * of 12 they are 11 px for labels, 13 px for axis and legend titles, 14 px
+ * for plot titles and 9 px for dense labels. A size that is not a positive
+ * number counts as 12.
+ */
+export function textSizes(theme: Pick<PlotomicsTheme, "fontSize">): TextSizes {
+  const base =
+    Number.isFinite(theme.fontSize) && theme.fontSize > 0 ? theme.fontSize : 12;
+  const k = base / 12;
+  const round = (v: number) => Math.round(v * 10) / 10;
+  return {
+    label: round(11 * k),
+    axisTitle: round(13 * k),
+    title: round(14 * k),
+    small: round(9 * k),
+  };
+}
+
 /** Merge a partial theme onto a base (defaults to {@link defaultTheme}). */
 export function resolveTheme(
   partial?: Partial<PlotomicsTheme>,
