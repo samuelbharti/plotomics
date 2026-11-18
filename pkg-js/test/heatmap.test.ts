@@ -6,6 +6,9 @@ import {
   normalizeToU8,
   buildRampLUT,
   tickIndices,
+  toFloat32,
+  poolMatrix,
+  labelEvery,
 } from "../src/components/heatmap.js";
 
 describe("heatmap helpers", () => {
@@ -44,6 +47,22 @@ describe("heatmap helpers", () => {
     expect(z[3]).toBe(0);
     expect(z[4]).toBe(0);
     expect(z[5]).toBe(0);
+  });
+
+  it("z-scores over the finite cells and keeps missing cells missing", () => {
+    // [1, NaN, 3]: mean 2 and sd 1 over the two finite cells.
+    const z = zScoreRows([1, Number.NaN, 3], 1, 3);
+    expect(z[0]).toBeCloseTo(-1, 6);
+    expect(Number.isNaN(z[1] as number)).toBe(true);
+    expect(z[2]).toBeCloseTo(1, 6);
+  });
+
+  it("reads null, which R sends for NA, as NaN", () => {
+    const v = toFloat32([1, null, 3]);
+    expect(v[0]).toBe(1);
+    expect(Number.isNaN(v[1] as number)).toBe(true);
+    // A plain Float32Array.from would store it as 0.
+    expect(Float32Array.from([null as unknown as number])[0]).toBe(0);
   });
 
   it("does not mutate the input in zScoreRows", () => {
@@ -92,33 +111,53 @@ describe("heatmap helpers", () => {
     expect(lo).toBeLessThan(hi);
   });
 
-  it("normalizes and clamps values into [0,255]", () => {
+  it("normalizes and clamps values into levels 1 to 255", () => {
     const u8 = normalizeToU8([0, 5, 10, -3, 99], 0, 10);
-    expect(u8[0]).toBe(0);
-    expect(u8[1]).toBe(128); // 0.5 * 255 rounded
+    expect(u8[0]).toBe(1);
+    expect(u8[1]).toBe(128); // 1 + 0.5 * 254
     expect(u8[2]).toBe(255);
-    expect(u8[3]).toBe(0); // clamped low
+    expect(u8[3]).toBe(1); // clamped low
     expect(u8[4]).toBe(255); // clamped high
   });
 
-  it("maps non-finite values to 0 (ramp low color)", () => {
-    // NaN and +/-Inf all normalize to a non-finite t, which is coerced to 0.
-    const u8 = normalizeToU8([NaN, Infinity, -Infinity], 0, 10);
-    expect(u8[0]).toBe(0);
-    expect(u8[1]).toBe(0);
-    expect(u8[2]).toBe(0);
+  it("keeps level 0 for missing cells, separate from the low end", () => {
+    const u8 = normalizeToU8([Number.NaN, Infinity, -Infinity, 0], 0, 10);
+    expect([...u8]).toEqual([0, 0, 0, 1]);
   });
 
-  it("builds a 256x4 RGBA lookup table spanning the ramp", () => {
+  it("builds a lookup table with grey for missing and the ramp after it", () => {
     const lut = buildRampLUT("viridis");
     expect(lut.length).toBe(256 * 4);
-    // Alpha is fully opaque throughout.
-    expect(lut[3]).toBe(255);
+    // Entry 0 is the missing-cell grey.
+    expect([lut[0], lut[1], lut[2], lut[3]]).toEqual([0xcc, 0xcc, 0xcc, 255]);
     expect(lut[255 * 4 + 3]).toBe(255);
-    // Low and high ends differ (ramp actually varies).
-    const low = [lut[0], lut[1], lut[2]];
+    // The ramp runs from entry 1 to 255, and its ends differ.
+    const low = [lut[4], lut[5], lut[6]];
     const high = [lut[255 * 4], lut[255 * 4 + 1], lut[255 * 4 + 2]];
     expect(low).not.toEqual(high);
+    expect(low).not.toEqual([0xcc, 0xcc, 0xcc]);
+  });
+
+  it("mean-pools a matrix, skipping missing cells", () => {
+    // 3 x 2 pooled by 2 rows and 2 columns: blocks [1,2,3,4] and [5,NaN].
+    const p = poolMatrix([1, 2, 3, 4, 5, Number.NaN], 3, 2, 2, 2);
+    expect(p.nrows).toBe(2);
+    expect(p.ncols).toBe(1);
+    expect(p.values[0]).toBeCloseTo(2.5, 6);
+    expect(p.values[1]).toBeCloseTo(5, 6);
+    const empty = poolMatrix([Number.NaN, Number.NaN], 2, 1, 2, 1);
+    expect(Number.isNaN(empty.values[0] as number)).toBe(true);
+  });
+
+  it("labels every cell, every k-th cell, or none by the cell size", () => {
+    expect(labelEvery(14)).toBe(1);
+    expect(labelEvery(12)).toBe(1);
+    // 6.7 px rows, as with 60 rows in the default height: every 2nd.
+    expect(labelEvery(6.7)).toBe(2);
+    expect(labelEvery(3)).toBe(4);
+    // Tighter than that, a label could name any of many rows: none.
+    expect(labelEvery(2.9)).toBe(0);
+    expect(labelEvery(0)).toBe(0);
   });
 
   it("returns all indices when count <= max", () => {

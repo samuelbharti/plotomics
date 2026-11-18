@@ -9,9 +9,14 @@
  * regardless of matrix size — there is never one DOM node per cell.
  *
  * SVG is reserved for the low-cardinality overlay: the colorbar legend and the
- * row/column tick labels (only drawn when the count is small enough to be
- * legible). This mirrors the Volcano reference component's structure: exported
- * pure helpers plus a `PlotomicsFactory` returning a `PlotomicsInstance`.
+ * row/column tick labels (every k-th one when rows are too tight for all).
+ * This mirrors the Volcano reference component's structure: exported pure
+ * helpers plus a `PlotomicsFactory` returning a `PlotomicsInstance`.
+ *
+ * A missing cell (NaN from Python, null from R) is drawn in a neutral grey and
+ * left out of the colour range and the z-score. A matrix larger than the
+ * GPU's texture limit is mean-pooled down to the limit for drawing; the
+ * tooltip still reads the cell under the cursor.
  */
 import {
   type PlotomicsData,
@@ -29,6 +34,7 @@ import {
   canvasToPNG,
 } from "../core/index.js";
 import { releaseRegl } from "../core/gl.js";
+import { uniqueId } from "../core/dom.js";
 import createREGL from "regl";
 import type { Regl, Texture2D, DrawCommand } from "regl";
 
@@ -55,11 +61,16 @@ export const defaultHeatmapOptions: HeatmapOptions = {
   theme: {},
 };
 
-const MARGIN = { top: 16, right: 84, bottom: 64, left: 96 };
 const SVG_NS = "http://www.w3.org/2000/svg";
-/** Below this many visible rows/cols, tick labels are legible enough to draw. */
-const MAX_TICK_LABELS = 60;
 const COLORBAR_W = 14;
+/** Tick label font size, and the spacing a label needs to stay legible. */
+const LABEL_FONT = 10;
+const LABEL_MIN_PX = LABEL_FONT + 2;
+/** Bounds for the label margins, which grow with the longest label. */
+const MIN_LABEL_MARGIN = 40;
+const MAX_LABEL_MARGIN = 120;
+/** Fill for a missing cell, and its colour bar swatch. */
+const MISSING_COLOR = "#CCCCCC";
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/heatmap.test.ts)
@@ -106,25 +117,88 @@ export function zScoreRows(
   const out = new Float32Array(nrows * ncols);
   for (let r = 0; r < nrows; r += 1) {
     const base = r * ncols;
+    // Mean and sd over the finite cells only, so one missing cell does not
+    // turn the whole row into NaN. Missing cells stay missing.
+    let n = 0;
     let mean = 0;
-    for (let c = 0; c < ncols; c += 1) mean += values[base + c] as number;
-    mean /= ncols || 1;
+    for (let c = 0; c < ncols; c += 1) {
+      const v = values[base + c] as number;
+      if (!Number.isFinite(v)) continue;
+      n += 1;
+      mean += v;
+    }
+    mean /= n || 1;
     let variance = 0;
     for (let c = 0; c < ncols; c += 1) {
-      const d = (values[base + c] as number) - mean;
-      variance += d * d;
+      const v = values[base + c] as number;
+      if (!Number.isFinite(v)) continue;
+      variance += (v - mean) * (v - mean);
     }
-    variance /= ncols || 1;
+    variance /= n || 1;
     const sd = Math.sqrt(variance);
-    if (sd === 0) {
-      for (let c = 0; c < ncols; c += 1) out[base + c] = 0;
-    } else {
-      for (let c = 0; c < ncols; c += 1) {
-        out[base + c] = ((values[base + c] as number) - mean) / sd;
-      }
+    for (let c = 0; c < ncols; c += 1) {
+      const v = values[base + c] as number;
+      if (!Number.isFinite(v)) out[base + c] = Number.NaN;
+      else out[base + c] = sd === 0 ? 0 : (v - mean) / sd;
     }
   }
   return out;
+}
+
+/** Copy a value column to a Float32Array, reading null (R's NA) as NaN. */
+export function toFloat32(values: ArrayLike<number | null>): Float32Array {
+  const out = new Float32Array(values.length);
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i];
+    out[i] = v == null ? Number.NaN : v;
+  }
+  return out;
+}
+
+/**
+ * Mean-pool a row-major matrix by `fr` rows and `fc` columns, skipping
+ * missing cells (a block with no finite cell stays missing). Used to fit a
+ * matrix into the GPU's texture limit. Returns the pooled values and shape.
+ */
+export function poolMatrix(
+  values: ArrayLike<number>,
+  nrows: number,
+  ncols: number,
+  fr: number,
+  fc: number,
+): { values: Float32Array; nrows: number; ncols: number } {
+  const pr = Math.ceil(nrows / fr);
+  const pc = Math.ceil(ncols / fc);
+  const sum = new Float64Array(pr * pc);
+  const cnt = new Uint32Array(pr * pc);
+  for (let r = 0; r < nrows; r += 1) {
+    const prow = Math.floor(r / fr) * pc;
+    for (let c = 0; c < ncols; c += 1) {
+      const v = values[r * ncols + c] as number;
+      if (!Number.isFinite(v)) continue;
+      const k = prow + Math.floor(c / fc);
+      sum[k] = (sum[k] as number) + v;
+      cnt[k] = (cnt[k] as number) + 1;
+    }
+  }
+  const out = new Float32Array(pr * pc);
+  for (let k = 0; k < out.length; k += 1) {
+    const n = cnt[k] as number;
+    out[k] = n > 0 ? (sum[k] as number) / n : Number.NaN;
+  }
+  return { values: out, nrows: pr, ncols: pc };
+}
+
+/**
+ * Which tick labels to draw: every one when cells are at least `minPx` tall
+ * (or wide), every k-th one when they are a little tighter, and none past
+ * every 4th, where the labels would no longer say which cell they name.
+ * Returns k, or 0 for none.
+ */
+export function labelEvery(cellPx: number, minPx = LABEL_MIN_PX): number {
+  if (!(cellPx > 0)) return 0;
+  const k = Math.ceil(minPx / cellPx - 1e-9);
+  return k <= 4 ? Math.max(1, k) : 0;
 }
 
 /**
@@ -169,9 +243,9 @@ export function colorDomain(
 }
 
 /**
- * Normalize `values` into a Uint8Array of [0,255] levels for the luminance
- * texture, clamping to the color domain. Non-finite values map to 0 (rendered
- * as the ramp's low color).
+ * Normalize `values` into a Uint8Array for the luminance texture. Level 0 is
+ * a missing cell; levels 1 to 255 run from the low end of the color domain to
+ * the high end, clamped.
  */
 export function normalizeToU8(
   values: ArrayLike<number>,
@@ -183,21 +257,25 @@ export function normalizeToU8(
   const span = hi - lo || 1;
   for (let i = 0; i < n; i += 1) {
     const v = values[i] as number;
+    if (!Number.isFinite(v)) continue;
     let t = (v - lo) / span;
-    if (!Number.isFinite(t)) t = 0;
-    else if (t < 0) t = 0;
+    if (t < 0) t = 0;
     else if (t > 1) t = 1;
-    out[i] = Math.round(t * 255);
+    out[i] = 1 + Math.round(t * 254);
   }
   return out;
 }
 
-/** Bake a `plotomics/core` ramp into a 256x4 RGBA Uint8Array lookup table. */
+/**
+ * Bake a `plotomics/core` ramp into a 256x4 RGBA lookup table matching
+ * {@link normalizeToU8}: entry 0 is the missing-cell grey and entries 1 to
+ * 255 run along the ramp.
+ */
 export function buildRampLUT(name: RampName): Uint8Array {
   const fn = ramp(name);
   const lut = new Uint8Array(256 * 4);
   for (let i = 0; i < 256; i += 1) {
-    const hex = fn(i / 255);
+    const hex = i === 0 ? MISSING_COLOR : fn((i - 1) / 254);
     lut[i * 4] = parseInt(hex.slice(1, 3), 16);
     lut[i * 4 + 1] = parseInt(hex.slice(3, 5), 16);
     lut[i * 4 + 2] = parseInt(hex.slice(5, 7), 16);
@@ -239,6 +317,15 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   // Values after any z-scoring, kept for tooltips (when zScore is on we show the
   // z-scored value, which is what is colored).
   let scaled: Float32Array = new Float32Array(0);
+  // Texture coordinates per data coordinate: below 1 when the matrix was
+  // pooled into a texture whose blocks run past the last row or column.
+  let texScale: [number, number] = [1, 1];
+  // Set when the GPU refused the matrix, so the overlay can say so.
+  let drawFailed = false;
+  // Label margins, sized from the longest labels when the data arrives.
+  const margin = { top: 16, right: 84, bottom: 64, left: 96 };
+  const gradId = uniqueId("plotomics-heatmap-cb");
+  const measureCtx = document.createElement("canvas").getContext("2d");
 
   // View transform in UV space [0,1]: which sub-rectangle of the matrix is
   // visible. Pan/zoom mutates these; the shader maps quad UV -> data UV.
@@ -280,22 +367,24 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       height: 1,
       format: "rgba",
       data: buildRampLUT(opts.colormap),
-      min: "linear",
-      mag: "linear",
+      min: "nearest",
+      mag: "nearest",
       wrapS: "clamp",
       wrapT: "clamp",
     });
     // Full-screen quad. The fragment shader reads the value texture then indexes
-    // the ramp LUT. `nearest` on the value texture keeps cell edges crisp.
+    // the ramp LUT. `nearest` on both keeps cell edges crisp and keeps the
+    // missing level (0) from blending into the low end of the ramp.
     draw = regl({
       frag: `
         precision highp float;
         uniform sampler2D valueTex;
         uniform sampler2D lut;
+        uniform vec2 texScale;
         varying vec2 uv;
         void main() {
-          float v = texture2D(valueTex, uv).r;
-          gl_FragColor = texture2D(lut, vec2(v, 0.5));
+          float level = floor(texture2D(valueTex, uv * texScale).r * 255.0 + 0.5);
+          gl_FragColor = texture2D(lut, vec2((level + 0.5) / 256.0, 0.5));
         }
       `,
       vert: `
@@ -326,6 +415,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         lut: () => lutTex as Texture2D,
         viewOrigin: () => [viewX, viewY] as [number, number],
         viewSize: () => [viewW, viewH] as [number, number],
+        texScale: () => texScale,
       },
       count: 4,
       primitive: "triangle strip",
@@ -334,13 +424,40 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   }
 
   // --- pixel geometry (overlay + interaction) -----------------------------
-  const innerW = () => Math.max(1, width - MARGIN.left - MARGIN.right);
-  const innerH = () => Math.max(1, height - MARGIN.top - MARGIN.bottom);
+  const innerW = () => Math.max(1, width - margin.left - margin.right);
+  const innerH = () => Math.max(1, height - margin.top - margin.bottom);
+
+  function labelWidth(s: string): number {
+    if (!measureCtx) return s.length * LABEL_FONT * 0.56;
+    measureCtx.font = `${LABEL_FONT}px ${theme.fontFamily}`;
+    return measureCtx.measureText(s).width;
+  }
+  /** Width of the longest label, or of the longest index when unlabelled. */
+  function longestLabel(labels: string[] | undefined, n: number): number {
+    if (!labels) return labelWidth(String(Math.max(0, n - 1)));
+    let w = 0;
+    for (const l of labels) w = Math.max(w, labelWidth(l));
+    return w;
+  }
+  /** Size the left and bottom margins from the longest labels. */
+  function fitMargins() {
+    const clampM = (v: number) =>
+      Math.min(MAX_LABEL_MARGIN, Math.max(MIN_LABEL_MARGIN, Math.ceil(v)));
+    margin.left = clampM(longestLabel(shape.rowLabels, shape.nrows) + 12);
+    margin.bottom = clampM(longestLabel(shape.colLabels, shape.ncols) + 20);
+  }
+  /** A label cut with an ellipsis to fit `maxW` px. */
+  function fitLabel(label: string, maxW: number): string {
+    if (labelWidth(label) <= maxW) return label;
+    let n = label.length;
+    while (n > 1 && labelWidth(`${label.slice(0, n)}\u2026`) > maxW) n -= 1;
+    return `${label.slice(0, n)}\u2026`;
+  }
 
   function layoutCanvas() {
     const ratio = dpr();
-    canvas.style.left = `${MARGIN.left}px`;
-    canvas.style.top = `${MARGIN.top}px`;
+    canvas.style.left = `${margin.left}px`;
+    canvas.style.top = `${margin.top}px`;
     canvas.style.width = `${innerW()}px`;
     canvas.style.height = `${innerH()}px`;
     canvas.width = Math.round(innerW() * ratio);
@@ -352,15 +469,15 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   function computeScaled(): Float32Array {
     const raw = data.columns.values as ArrayLike<number> | undefined;
     if (!raw || raw.length === 0) return new Float32Array(0);
-    if (opts.zScore) return zScoreRows(raw, shape.nrows, shape.ncols);
-    // Copy into a Float32Array so tooltip lookups and domain share one source.
-    const out = new Float32Array(raw.length);
-    for (let i = 0; i < raw.length; i += 1) out[i] = raw[i] as number;
-    return out;
+    // Copy into a Float32Array so tooltip lookups and domain share one source,
+    // reading R's null as missing (a Float32Array would store it as 0).
+    const values = toFloat32(raw);
+    if (opts.zScore) return zScoreRows(values, shape.nrows, shape.ncols);
+    return values;
   }
 
   function uploadMatrix() {
-    if (!regl || reglBroken) return;
+    drawFailed = false;
     const n = scaled.length;
     if (n === 0 || shape.nrows === 0 || shape.ncols === 0) {
       valueTex?.destroy();
@@ -372,10 +489,23 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       vmax: opts.vmax,
       diverging: opts.colormap === "rdbu",
     });
-    const u8 = normalizeToU8(scaled, domain[0], domain[1]);
+    if (!regl || reglBroken) return;
+    // Past the GPU's texture limit, mean-pool rows and columns down to it.
+    const maxTex = Math.max(1, regl.limits.maxTextureSize);
+    const fr = Math.ceil(shape.nrows / maxTex);
+    const fc = Math.ceil(shape.ncols / maxTex);
+    const pooled =
+      fr > 1 || fc > 1
+        ? poolMatrix(scaled, shape.nrows, shape.ncols, fr, fc)
+        : { values: scaled, nrows: shape.nrows, ncols: shape.ncols };
+    texScale = [
+      shape.ncols / (pooled.ncols * fc),
+      shape.nrows / (pooled.nrows * fr),
+    ];
+    const u8 = normalizeToU8(pooled.values, domain[0], domain[1]);
     const texOpts = {
-      width: shape.ncols,
-      height: shape.nrows,
+      width: pooled.ncols,
+      height: pooled.nrows,
       format: "luminance" as const,
       data: u8,
       min: "nearest" as const,
@@ -384,8 +514,16 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       wrapT: "clamp" as const,
       flipY: false,
     };
-    if (valueTex) valueTex(texOpts);
-    else valueTex = regl.texture(texOpts);
+    try {
+      if (valueTex) valueTex(texOpts);
+      else valueTex = regl.texture(texOpts);
+    } catch {
+      // The GPU refused the texture (out of memory, or a limit regl checks
+      // that the pooling did not cover): draw the overlay and say so.
+      valueTex?.destroy();
+      valueTex = null;
+      drawFailed = true;
+    }
   }
 
   function rebuildLUT() {
@@ -395,8 +533,8 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       height: 1,
       format: "rgba",
       data: buildRampLUT(opts.colormap),
-      min: "linear",
-      mag: "linear",
+      min: "nearest",
+      mag: "nearest",
       wrapS: "clamp",
       wrapT: "clamp",
     });
@@ -408,9 +546,13 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       renderOverlay();
       return;
     }
-    regl.poll();
-    regl.clear({ color: [1, 1, 1, 1], depth: 1 });
-    draw();
+    try {
+      regl.poll();
+      regl.clear({ color: [1, 1, 1, 1], depth: 1 });
+      draw();
+    } catch {
+      drawFailed = true;
+    }
     renderOverlay();
   }
 
@@ -419,6 +561,8 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       data.meta,
       (data.columns.values as ArrayLike<number> | undefined)?.length ?? 0,
     );
+    fitMargins();
+    layoutCanvas();
     scaled = computeScaled();
     // Reset the view to the full matrix on new data.
     viewX = 0;
@@ -433,12 +577,24 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   function renderOverlay() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
-    const x0 = MARGIN.left;
-    const y0 = MARGIN.top;
+    const x0 = margin.left;
+    const y0 = margin.top;
     const w = innerW();
     const h = innerH();
 
     svg.appendChild(rect(x0, y0, w, h, "none", theme.axis, 1));
+    if (scaled.length && (drawFailed || reglBroken)) {
+      svg.appendChild(
+        text(
+          x0 + w / 2,
+          y0 + h / 2,
+          "The matrix could not be drawn with WebGL here.",
+          theme.muted,
+          "middle",
+          11,
+        ),
+      );
+    }
 
     if (shape.nrows > 0 && shape.ncols > 0) {
       renderColTicks(x0, y0, w, h);
@@ -448,18 +604,29 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   }
 
   // Columns run left->right; the current view spans [viewX, viewX+viewW].
+  // Labels are thinned to every k-th column by the cell width; k counts from
+  // column 0, so the labelled columns do not jump while panning.
   function renderColTicks(x0: number, y0: number, w: number, h: number) {
     const { ncols, colLabels } = shape;
-    const visibleCols = ncols * viewW;
-    if (visibleCols > MAX_TICK_LABELS) return;
+    const every = labelEvery(w / (ncols * viewW));
+    if (!every) return;
     const firstCol = Math.max(0, Math.floor(viewX * ncols));
     const lastCol = Math.min(ncols - 1, Math.ceil((viewX + viewW) * ncols) - 1);
-    for (let c = firstCol; c <= lastCol; c += 1) {
+    const start = Math.ceil(firstCol / every) * every;
+    const maxW = margin.bottom - 18;
+    for (let c = start; c <= lastCol; c += every) {
       const uv = (c + 0.5) / ncols;
       const px = x0 + ((uv - viewX) / viewW) * w;
       if (px < x0 - 1 || px > x0 + w + 1) continue;
-      const label = colLabels?.[c] ?? String(c);
-      const t = text(px, y0 + h + 14, label, theme.foreground, "end", 10);
+      const label = fitLabel(colLabels?.[c] ?? String(c), maxW);
+      const t = text(
+        px,
+        y0 + h + 14,
+        label,
+        theme.foreground,
+        "end",
+        LABEL_FONT,
+      );
       t.setAttribute("transform", `rotate(-90 ${px} ${y0 + h + 14})`);
       svg.appendChild(t);
     }
@@ -468,16 +635,20 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   // Rows run top->bottom; the current view spans [viewY, viewY+viewH].
   function renderRowTicks(x0: number, y0: number, h: number) {
     const { nrows, rowLabels } = shape;
-    const visibleRows = nrows * viewH;
-    if (visibleRows > MAX_TICK_LABELS) return;
+    const every = labelEvery(h / (nrows * viewH));
+    if (!every) return;
     const firstRow = Math.max(0, Math.floor(viewY * nrows));
     const lastRow = Math.min(nrows - 1, Math.ceil((viewY + viewH) * nrows) - 1);
-    for (let r = firstRow; r <= lastRow; r += 1) {
+    const start = Math.ceil(firstRow / every) * every;
+    const maxW = margin.left - 10;
+    for (let r = start; r <= lastRow; r += every) {
       const uv = (r + 0.5) / nrows;
       const py = y0 + ((uv - viewY) / viewH) * h;
       if (py < y0 - 1 || py > y0 + h + 1) continue;
-      const label = rowLabels?.[r] ?? String(r);
-      svg.appendChild(text(x0 - 6, py + 3, label, theme.foreground, "end", 10));
+      const label = fitLabel(rowLabels?.[r] ?? String(r), maxW);
+      svg.appendChild(
+        text(x0 - 6, py + 3, label, theme.foreground, "end", LABEL_FONT),
+      );
     }
   }
 
@@ -486,7 +657,6 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     const cbH = Math.min(h, 220);
     const cbY = y0 + (h - cbH) / 2;
     const fn = ramp(opts.colormap);
-    const gradId = "plotomics-heatmap-cb";
     const defs = document.createElementNS(SVG_NS, "defs");
     const grad = document.createElementNS(SVG_NS, "linearGradient");
     grad.setAttribute("id", gradId);
@@ -550,6 +720,16 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         10,
       ),
     );
+    // A grey swatch for missing cells, when the matrix has any.
+    if (scaled.some((v) => !Number.isFinite(v))) {
+      const sy = Math.min(cbY + cbH + 14, height - 14);
+      svg.appendChild(
+        rect(cbX, sy, COLORBAR_W, 10, MISSING_COLOR, theme.axis, 1),
+      );
+      svg.appendChild(
+        text(cbX + COLORBAR_W + 5, sy + 9, "NA", theme.foreground, "start", 10),
+      );
+    }
   }
 
   // --- SVG element helpers -------------------------------------------------
@@ -735,8 +915,8 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       if (regl && !reglBroken && valueTex) {
         render(); // ensure the backing buffer is current before readback
         const img = document.createElementNS(SVG_NS, "image");
-        img.setAttribute("x", String(MARGIN.left));
-        img.setAttribute("y", String(MARGIN.top));
+        img.setAttribute("x", String(margin.left));
+        img.setAttribute("y", String(margin.top));
         img.setAttribute("width", String(innerW()));
         img.setAttribute("height", String(innerH()));
         img.setAttribute("preserveAspectRatio", "none");
@@ -770,7 +950,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
 
 // ---- small utilities ------------------------------------------------------
 function fmt(v: number): string {
-  if (!Number.isFinite(v)) return "—";
+  if (!Number.isFinite(v)) return "NA";
   if (v === 0) return "0";
   const a = Math.abs(v);
   if (a >= 1000 || a < 0.01) return v.toExponential(1);
