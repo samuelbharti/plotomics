@@ -220,8 +220,14 @@ export function tickIndices(n: number, max: number): number[] {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (el, initial) => {
-  let opts: HeatmapOptions = mergeOptions(defaultHeatmapOptions, initial.options);
+export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
+  el,
+  initial,
+) => {
+  let opts: HeatmapOptions = mergeOptions(
+    defaultHeatmapOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -499,17 +505,40 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (el, initial) => 
     defs.appendChild(grad);
     svg.appendChild(defs);
 
-    svg.appendChild(rect(cbX, cbY, COLORBAR_W, cbH, `url(#${gradId})`, theme.axis, 1));
+    svg.appendChild(
+      rect(cbX, cbY, COLORBAR_W, cbH, `url(#${gradId})`, theme.axis, 1),
+    );
 
     const mid = (domain[0] + domain[1]) / 2;
     svg.appendChild(
-      text(cbX + COLORBAR_W + 5, cbY + 4, fmt(domain[1]), theme.foreground, "start", 10),
+      text(
+        cbX + COLORBAR_W + 5,
+        cbY + 4,
+        fmt(domain[1]),
+        theme.foreground,
+        "start",
+        10,
+      ),
     );
     svg.appendChild(
-      text(cbX + COLORBAR_W + 5, cbY + cbH / 2 + 3, fmt(mid), theme.foreground, "start", 10),
+      text(
+        cbX + COLORBAR_W + 5,
+        cbY + cbH / 2 + 3,
+        fmt(mid),
+        theme.foreground,
+        "start",
+        10,
+      ),
     );
     svg.appendChild(
-      text(cbX + COLORBAR_W + 5, cbY + cbH, fmt(domain[0]), theme.foreground, "start", 10),
+      text(
+        cbX + COLORBAR_W + 5,
+        cbY + cbH,
+        fmt(domain[0]),
+        theme.foreground,
+        "start",
+        10,
+      ),
     );
     svg.appendChild(
       text(
@@ -564,7 +593,10 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (el, initial) => 
 
   // --- interaction: pan (drag) + zoom (wheel) ------------------------------
   // Pointer -> data-UV within the plot area, accounting for the current view.
-  function pointerUV(clientX: number, clientY: number): { u: number; v: number } | null {
+  function pointerUV(
+    clientX: number,
+    clientY: number,
+  ): { u: number; v: number } | null {
     const r = canvas.getBoundingClientRect();
     const fx = (clientX - r.left) / (r.width || 1);
     const fy = (clientY - r.top) / (r.height || 1);
@@ -757,7 +789,10 @@ function escapeHTML(s: string): string {
             : "&#39;",
   );
 }
-function mergeOptions(base: HeatmapOptions, next?: Partial<HeatmapOptions>): HeatmapOptions {
+function mergeOptions(
+  base: HeatmapOptions,
+  next?: Partial<HeatmapOptions>,
+): HeatmapOptions {
   if (!next) return { ...base };
   return {
     ...base,

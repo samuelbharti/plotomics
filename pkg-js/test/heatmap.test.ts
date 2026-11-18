@@ -11,7 +11,12 @@ import {
 describe("heatmap helpers", () => {
   it("reads matrix shape + labels from meta", () => {
     const s = readShape(
-      { nrows: 2, ncols: 3, rowLabels: ["r0", "r1"], colLabels: ["c0", "c1", "c2"] },
+      {
+        nrows: 2,
+        ncols: 3,
+        rowLabels: ["r0", "r1"],
+        colLabels: ["c0", "c1", "c2"],
+      },
       6,
     );
     expect(s.nrows).toBe(2);
