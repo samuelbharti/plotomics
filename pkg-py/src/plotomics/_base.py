@@ -244,15 +244,26 @@ def _as_matrix(matrix: Any) -> tuple[np.ndarray, list | None, list | None]:
     """
     # A list has an ``index`` method too, so a frame needs ``columns`` as well.
     is_frame = hasattr(matrix, "index") and hasattr(matrix, "columns")
+    if is_frame:
+        # Dates and durations convert to large numbers without complaint;
+        # R rejects them, so Python does too.
+        kinds = {getattr(dt, "kind", "") for dt in getattr(matrix, "dtypes", [])}
+        if kinds & {"m", "M"}:
+            raise ValueError("`matrix` must be numeric; it has a date column.")
     try:
         if is_frame:
-            if hasattr(matrix, "to_numpy"):
+            try:
                 arr = matrix.to_numpy(dtype=np.float32, na_value=np.nan)
-            else:
-                arr = np.asarray(matrix.values, dtype=np.float32)
+            except (AttributeError, TypeError):
+                # A frame-like object without pandas' to_numpy keywords.
+                arr = np.asarray(getattr(matrix, "values", matrix), dtype=np.float32)
             return arr, list(matrix.index), list(matrix.columns)
         return np.asarray(matrix, dtype=np.float32), None, None
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as err:
+        if "inhomogeneous" in str(err):
+            raise ValueError(
+                "`matrix` rows must all have the same length."
+            ) from None
         raise ValueError("`matrix` must be numeric.") from None
 
 

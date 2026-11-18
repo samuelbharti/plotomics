@@ -322,6 +322,11 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   let texScale: [number, number] = [1, 1];
   // Set when the GPU refused the matrix, so the overlay can say so.
   let drawFailed = false;
+  // Whether the matrix has a missing cell, found once per data or option
+  // change, not on every pan or zoom.
+  let anyMissing = false;
+  // Labels already cut to a width, so a pan or zoom does not measure again.
+  const fitted = new Map<string, string>();
   // Label margins, sized from the longest labels when the data arrives.
   const margin = { top: 16, right: 84, bottom: 64, left: 96 };
   const gradId = uniqueId("plotomics-heatmap-cb");
@@ -446,12 +451,27 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     margin.left = clampM(longestLabel(shape.rowLabels, shape.nrows) + 12);
     margin.bottom = clampM(longestLabel(shape.colLabels, shape.ncols) + 20);
   }
-  /** A label cut with an ellipsis to fit `maxW` px. */
+  /**
+   * A label cut with an ellipsis to fit `maxW` px. The cut point is found by
+   * bisection and kept, so a long label is measured a few times, once.
+   */
   function fitLabel(label: string, maxW: number): string {
-    if (labelWidth(label) <= maxW) return label;
-    let n = label.length;
-    while (n > 1 && labelWidth(`${label.slice(0, n)}\u2026`) > maxW) n -= 1;
-    return `${label.slice(0, n)}\u2026`;
+    const key = `${maxW}\u0000${label}`;
+    const hit = fitted.get(key);
+    if (hit !== undefined) return hit;
+    let out = label;
+    if (labelWidth(label) > maxW) {
+      let lo = 1;
+      let hi = label.length;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (labelWidth(`${label.slice(0, mid)}\u2026`) <= maxW) lo = mid;
+        else hi = mid - 1;
+      }
+      out = `${label.slice(0, lo)}\u2026`;
+    }
+    fitted.set(key, out);
+    return out;
   }
 
   function layoutCanvas() {
@@ -472,8 +492,11 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     // Copy into a Float32Array so tooltip lookups and domain share one source,
     // reading R's null as missing (a Float32Array would store it as 0).
     const values = toFloat32(raw);
-    if (opts.zScore) return zScoreRows(values, shape.nrows, shape.ncols);
-    return values;
+    const out = opts.zScore
+      ? zScoreRows(values, shape.nrows, shape.ncols)
+      : values;
+    anyMissing = out.some((v) => !Number.isFinite(v));
+    return out;
   }
 
   function uploadMatrix() {
@@ -542,7 +565,16 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
 
   function render() {
     if (!regl || reglBroken || !draw || !valueTex) {
-      // Nothing on the GPU (no data or no WebGL); draw the overlay only.
+      // Nothing to draw on the GPU (no data, a refused matrix, or no WebGL):
+      // clear what an earlier matrix left, then draw the overlay only.
+      if (regl && !reglBroken) {
+        try {
+          regl.poll();
+          regl.clear({ color: [1, 1, 1, 1], depth: 1 });
+        } catch {
+          // The overlay still says what happened.
+        }
+      }
       renderOverlay();
       return;
     }
@@ -561,6 +593,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       data.meta,
       (data.columns.values as ArrayLike<number> | undefined)?.length ?? 0,
     );
+    fitted.clear();
     fitMargins();
     layoutCanvas();
     scaled = computeScaled();
@@ -721,7 +754,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       ),
     );
     // A grey swatch for missing cells, when the matrix has any.
-    if (scaled.some((v) => !Number.isFinite(v))) {
+    if (anyMissing) {
       const sy = Math.min(cbY + cbH + 14, height - 14);
       svg.appendChild(
         rect(cbX, sy, COLORBAR_W, 10, MISSING_COLOR, theme.axis, 1),

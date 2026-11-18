@@ -79,6 +79,44 @@ describe("heatmap in a browser", () => {
     expect(hoverAt(el, 0.5, 0.9999)).toMatch(/row 199\d\d/);
   });
 
+  it("draws a matrix wider than the GPU texture limit", () => {
+    const ncols = 20000;
+    const values = new Float32Array(ncols * 2);
+    for (let c = 0; c < ncols; c += 1) {
+      values[c] = c;
+      values[ncols + c] = c;
+    }
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: { columns: { values }, meta: { nrows: 2, ncols } },
+      }),
+    );
+    const left = glPixel(el, 0.01, 0.5);
+    const right = glPixel(el, 0.99, 0.5);
+    expect(left).not.toEqual([255, 255, 255]);
+    expect(right[0] as number).toBeGreaterThan(left[0] as number);
+    expect(hoverAt(el, 0.9999, 0.5)).toMatch(/col 199\d\d/);
+  });
+
+  it("clears an earlier matrix when the next one cannot be drawn", () => {
+    const el = container();
+    const plot = createHeatmap(el, {
+      data: { columns: { values: [1, 2, 3, 4] }, meta: { nrows: 2, ncols: 2 } },
+    });
+    instances.push(plot);
+    expect(glPixel(el, 0.25, 0.25)).not.toEqual([255, 255, 255]);
+    // Three values for a 2 x 2 matrix: the GPU refuses the texture.
+    plot.setData({
+      columns: { values: [1, 2, 3] },
+      meta: { nrows: 2, ncols: 2 },
+    });
+    expect(glPixel(el, 0.25, 0.25)).toEqual([255, 255, 255]);
+    expect(svgTexts(el).map((t) => t.textContent)).toContain(
+      "The matrix could not be drawn with WebGL here.",
+    );
+  });
+
   it("draws an R null cell grey, keys it, and leaves it out of the range", () => {
     const el = container();
     instances.push(
