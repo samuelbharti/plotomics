@@ -799,12 +799,12 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     missing: number,
   ) {
     const m = margin();
-    // The NA entry stays in view: with many categories it follows the
-    // "+N more" line, so the grey points are always explained.
+    // The NA entry stays in view as the last row: when the list is cut, it
+    // follows the "+N more" line, so the grey points are always explained.
     let categories = allCategories;
     let palette = allPalette;
     let tail: { label: string; colour: string } | null = null;
-    if (missing >= 0 && allCategories.length > LEGEND_MAX) {
+    if (missing >= 0) {
       categories = allCategories.filter((_, i) => i !== missing);
       palette = allPalette.filter((_, i) => i !== missing);
       tail = {
@@ -879,11 +879,21 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     const m = margin();
     const fs = sizes.label;
     const cbW = 12;
-    const cbH = Math.min(160, Math.max(80, innerH() - 40));
     // Padding above and below the bar, and the baseline offset that centres
     // a label on a point of the bar.
     const pad = Math.round((fs * 8) / 11);
     const mid = Math.round(fs * 0.35);
+    const y0 = m.top + 4 + pad;
+    // Height of the NA row under the bar, when there is one.
+    const naRow = missingColor ? 2 + Math.round(fs + 7) : 0;
+    // The bar is 80 to 160 px tall, and shorter when the plot is too short
+    // to hold it, its padding and the NA row above the bottom of the plot.
+    // Two label sizes hold its top and bottom values.
+    const room = height - m.bottom - 4 - y0 - pad - naRow;
+    const cbH = Math.max(
+      Math.round(fs * 2),
+      Math.min(Math.min(160, Math.max(80, innerH() - 40)), room),
+    );
     const mean = (domain[0] + domain[1]) / 2;
     const values = [fmt(domain[1]), fmt(mean), fmt(domain[0])];
     // The box is as wide as the bar and its longest label.
@@ -893,7 +903,6 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     );
     const boxW = 6 + cbW + 5 + Math.ceil(labelW) + 6;
     const x0 = width - m.right - boxW + 6;
-    const y0 = m.top + 4 + pad;
     const fn = ramp(opts.colormap);
     const gradId = `${uid}-cb`;
     const defs = document.createElementNS(SVG_NS, "defs");
@@ -926,16 +935,19 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         fs,
       ),
     );
-    svg.appendChild(
-      text(
-        x0 + cbW + 5,
-        y0 + cbH / 2 + mid,
-        values[1] ?? "",
-        theme.foreground,
-        "start",
-        fs,
-      ),
-    );
+    // The middle value only when the bar leaves it room clear of the ends.
+    if (cbH >= fs * 4) {
+      svg.appendChild(
+        text(
+          x0 + cbW + 5,
+          y0 + cbH / 2 + mid,
+          values[1] ?? "",
+          theme.foreground,
+          "start",
+          fs,
+        ),
+      );
+    }
     svg.appendChild(
       text(
         x0 + cbW + 5,
