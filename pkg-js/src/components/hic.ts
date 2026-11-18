@@ -35,6 +35,7 @@ import {
   RAMPS,
   type RGB,
 } from "../core/index.js";
+import { releaseRegl } from "../core/gl.js";
 import createREGL from "regl";
 import type { Regl, Texture2D, DrawCommand } from "regl";
 
@@ -432,7 +433,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     } catch (err) {
       // setupGL assigns these, which TypeScript cannot see from here.
       (cmapTex as Texture2D | null)?.destroy?.();
-      (regl as Regl | null)?.destroy?.();
+      releaseRegl(regl as Regl | null);
       regl = null;
       draw = null;
       cmapTex = null;
@@ -1036,7 +1037,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       tooltip.destroy();
       invalidateLevels();
       cmapTex?.destroy?.();
-      regl?.destroy?.();
+      releaseRegl(regl);
       canvas.remove();
       svg.remove();
     },

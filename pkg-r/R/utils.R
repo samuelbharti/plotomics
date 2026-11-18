@@ -77,8 +77,9 @@ bv_keep_arrays <- function(widget, array_meta = character(),
   for (k in intersect(array_options, names(x$options))) {
     x$options[[k]] <- bv_as_array(x$options[[k]])
   }
-  if (!is.null(x$options$theme$categorical)) {
-    x$options$theme$categorical <- bv_as_array(x$options$theme$categorical)
+  theme <- x$options$theme
+  if (is.list(theme) && !is.null(theme$categorical)) {
+    x$options$theme$categorical <- bv_as_array(theme$categorical)
   }
   widget$x <- x
   widget

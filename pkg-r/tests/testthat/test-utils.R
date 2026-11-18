@@ -59,3 +59,11 @@ test_that("the hook leaves the payload users inspect unchanged", {
   w <- volcano(data.frame(x = 2, y = 5))
   expect_false(inherits(w$x$data$columns$x, "AsIs"))
 })
+
+test_that("a theme given as a named vector still renders", {
+  w <- volcano(
+    data.frame(x = 1:3, y = 1:3),
+    theme = c(background = "#000000", foreground = "#ffffff")
+  )
+  expect_no_error(w$preRenderHook(w))
+})

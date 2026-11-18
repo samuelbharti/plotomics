@@ -137,3 +137,92 @@ describe("anywidget binding", () => {
     expect(log.destroyed).toBe(2);
   });
 });
+
+describe("rebuilding", () => {
+  it("releases the WebGL context of a widget it builds again", async () => {
+    registerComponent("heatmap", createHeatmap);
+    const binding = (
+      window as unknown as { plotomics: { htmlwidget(n: string): Binding } }
+    ).plotomics.htmlwidget("heatmap");
+    const elA = container();
+    binding
+      .factory(elA, 600, 400)
+      .renderValue({ data, options: { colormap: "viridis" } });
+    const b = binding.factory(container(), 600, 400);
+    // A Shiny checkbox that sets vmin and then clears it, 20 times over.
+    for (let k = 0; k < 20; k += 1) {
+      b.renderValue({ data, options: { colormap: "viridis", vmin: -2 } });
+      b.renderValue({ data, options: { colormap: "viridis" } });
+    }
+    await new Promise((r) => setTimeout(r, 100));
+    const glA = (elA.querySelector("canvas") as HTMLCanvasElement).getContext(
+      "webgl",
+    );
+    expect(glA?.isContextLost()).toBe(false);
+  });
+
+  it("tells Shiny the selection is empty after a rebuild", () => {
+    const calls: [string, unknown][] = [];
+    const w = window as unknown as Record<string, unknown>;
+    w.HTMLWidgets = { shinyMode: true };
+    w.Shiny = {
+      setInputValue: (id: string, v: unknown) => calls.push([id, v]),
+    };
+    try {
+      // A component that reports a selection as soon as it is built.
+      const selecting: PlotomicsFactory<{
+        onSelect?: (i: number[]) => void;
+      }> = (_el, init) => {
+        init.options?.onSelect?.([0, 1]);
+        return { setData() {}, setOptions() {}, resize() {}, destroy() {} };
+      };
+      registerComponent("selecting", selecting);
+      const el = container();
+      el.id = "emb";
+      const widget = (
+        window as unknown as { plotomics: { htmlwidget(n: string): Binding } }
+      ).plotomics
+        .htmlwidget("selecting")
+        .factory(el, 600, 400);
+      widget.renderValue({ data, options: { a: 1 } });
+      expect(calls).toEqual([["emb_selected", [0, 1]]]);
+      widget.renderValue({ data, options: {} });
+      // Cleared first, then the new instance reports its own selection.
+      expect(calls.slice(1)).toEqual([
+        ["emb_selected", []],
+        ["emb_selected", [0, 1]],
+      ]);
+    } finally {
+      delete w.HTMLWidgets;
+      delete w.Shiny;
+    }
+  });
+
+  it("clears the Python selected trait after a rebuild", () => {
+    const { factory } = countingFactory();
+    const traits: Record<string, unknown> = {
+      data,
+      buffer: null,
+      schema: null,
+      options: { a: 1 },
+      selected: [3, 4],
+      _height: 300,
+    };
+    const handlers: Record<string, () => void> = {};
+    const model = {
+      get: (k: string) => traits[k],
+      set: (k: string, v: unknown) => {
+        traits[k] = v;
+      },
+      save_changes() {},
+      on: (event: string, cb: () => void) => {
+        handlers[event] = cb;
+      },
+      off() {},
+    };
+    makeAnywidget(factory).render({ model, el: container() });
+    traits.options = {};
+    handlers["change:options"]?.();
+    expect(traits.selected).toEqual([]);
+  });
+});

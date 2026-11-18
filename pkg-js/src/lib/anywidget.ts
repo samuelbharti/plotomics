@@ -50,6 +50,12 @@ export function makeAnywidget<O>(factory: PlotomicsFactory<O>) {
         if (dropsOptionKeys(lastOptions, sent)) {
           inst.destroy();
           inst = factory(host, { data: readData(), options: readOptions() });
+          // The new instance starts with nothing selected; say so in Python.
+          const selected = model.get("selected");
+          if (Array.isArray(selected) && selected.length > 0) {
+            model.set("selected", []);
+            model.save_changes();
+          }
         } else {
           inst.setOptions(readOptions());
         }
