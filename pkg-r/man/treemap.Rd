@@ -20,9 +20,11 @@ treemap(
 \arguments{
 \item{data}{A data frame describing a tree as an edge list. Required columns:
 \code{id} (unique node id) and \code{parent} (id of the parent; the root's parent is
-\code{NA} or \code{""}). A numeric \code{value} column supplies leaf weights (internal
-nodes are summed automatically); an optional \code{label} column supplies
-display names.}
+\code{NA} or \code{""}). A numeric \code{value} column supplies leaf weights. A group's
+size is the sum of its leaves; a value given on an internal node is
+ignored. Without a \code{value} column every leaf weighs 1, so tiles show leaf
+counts. An optional \code{label} column supplies display names. Top-level
+groups are named in a header strip when their tile has room.}
 
 \item{tile}{Tiling algorithm: \code{"squarify"} (golden-ratio rectangles) or
 \code{"binary"} (balanced binary partition).}

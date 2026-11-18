@@ -26,7 +26,8 @@ test_that("treemap() builds an htmlwidget with the expected payload", {
 
 test_that("treemap() defaults value/label sensibly when absent", {
   w <- treemap(data.frame(id = c("a", "b"), parent = c(NA, "a")))
-  expect_equal(w$x$data$columns$value, c(0, 0))
+  # No value column: the browser weighs every leaf as 1.
+  expect_null(w$x$data$columns$value)
   expect_null(w$x$data$meta$labels)
   expect_equal(w$x$options$tile, "squarify")
   expect_equal(w$x$options$colorBy, "parent")

@@ -49,8 +49,8 @@ def test_treemap_defaults():
     assert w.options["tile"] == "squarify"
     assert w.options["colorBy"] == "parent"
     assert w.options["colormap"] == "viridis"
-    # value defaults to zeros when absent (float32).
-    assert np.frombuffer(w.buffer, dtype=np.float32).tolist() == [0.0, 0.0]
+    # No value column: the browser weighs every leaf as 1.
+    assert w.schema["columns"] == []
     assert "labels" not in w.data["meta"]
 
 
@@ -115,3 +115,20 @@ def test_treemap_accepts_pandas_dataframe():
     # pandas turns None into NaN; both normalize to the empty-string root marker.
     assert w.data["columns"]["parent"][0] == ""
     assert w.data["meta"]["labels"] == _sample()["label"]
+
+
+def test_treemap_matches_integer_ids_to_float_parents():
+    pd = pytest.importorskip("pandas")
+    # None in the parent column makes pandas store it as float64 (1.0, 2.0).
+    df = pd.DataFrame({"id": [1, 2, 3, 4], "parent": [None, 1, 1, 2], "value": [0, 0, 5, 3]})
+    w = Treemap(df)
+    assert w.data["columns"]["parent"] == ["", "1", "1", "2"]
+    assert w.data["columns"]["id"] == ["1", "2", "3", "4"]
+
+
+def test_treemap_keeps_text_ids_written_as_floats():
+    pd = pytest.importorskip("pandas")
+    # Ids cast to text from floats keep their ".0"; parents must match them.
+    df = pd.DataFrame({"id": ["1.0", "2.0", "3.0"], "parent": [np.nan, 1.0, 1.0]})
+    w = Treemap(df)
+    assert w.data["columns"]["parent"] == ["", "1.0", "1.0"]
