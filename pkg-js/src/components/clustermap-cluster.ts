@@ -206,7 +206,10 @@ export function normalizePrecomputed(
   n: number,
 ): ClusterResult | null {
   // Bare leaf order.
-  if (Array.isArray(value) && (value.length === 0 || typeof value[0] === "number")) {
+  if (
+    Array.isArray(value) &&
+    (value.length === 0 || typeof value[0] === "number")
+  ) {
     const order = value as number[];
     if (!isValidOrder(order, n)) return null;
     return { order, dendrogram: null };
@@ -299,9 +302,10 @@ export function symmetricExtent(values: ArrayLike<number>): [number, number] {
  * (dissimilarity). Leaves sit at their slot in `order`; internal nodes sit at
  * the mean of their children's positions.
  */
-export function dendrogramPositions(
-  d: Dendrogram,
-): { pos: number[]; height: number[] } {
+export function dendrogramPositions(d: Dendrogram): {
+  pos: number[];
+  height: number[];
+} {
   const total = d.n + d.merges.length;
   const pos = new Array<number>(total).fill(0);
   const height = new Array<number>(total).fill(0);

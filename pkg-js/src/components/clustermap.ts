@@ -148,8 +148,14 @@ export function computeLayout(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initial) => {
-  let opts: ClustermapOptions = mergeOptions(defaultClustermapOptions, initial.options);
+export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
+  el,
+  initial,
+) => {
+  let opts: ClustermapOptions = mergeOptions(
+    defaultClustermapOptions,
+    initial.options,
+  );
   let theme = resolveTheme(opts.theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
@@ -174,10 +180,12 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
   // offscreen canvas holds one pixel per cell and is upscaled onto the display.
   el.style.position = el.style.position || "relative";
   const canvas = document.createElement("canvas");
-  canvas.style.cssText = "position:absolute;display:block;image-rendering:pixelated;";
+  canvas.style.cssText =
+    "position:absolute;display:block;image-rendering:pixelated;";
   const cellCanvas = document.createElement("canvas"); // offscreen (nrows×ncols)
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  svg.style.cssText =
+    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -208,8 +216,12 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
       nc = nc || (nr ? Math.floor(values.length / nr) : 0);
       nr = nr || (nc ? Math.floor(values.length / nc) : 0);
     }
-    const rl = Array.isArray(meta.rowLabels) ? (meta.rowLabels as unknown[]) : [];
-    const cl = Array.isArray(meta.colLabels) ? (meta.colLabels as unknown[]) : [];
+    const rl = Array.isArray(meta.rowLabels)
+      ? (meta.rowLabels as unknown[])
+      : [];
+    const cl = Array.isArray(meta.colLabels)
+      ? (meta.colLabels as unknown[])
+      : [];
     return {
       nrows: nr || 0,
       ncols: nc || 0,
@@ -226,7 +238,12 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     nrows = meta.nrows;
     ncols = meta.ncols;
 
-    if (!rawValues || nrows <= 0 || ncols <= 0 || rawValues.length < nrows * ncols) {
+    if (
+      !rawValues ||
+      nrows <= 0 ||
+      ncols <= 0 ||
+      rawValues.length < nrows * ncols
+    ) {
       nrows = 0;
       ncols = 0;
       display = new Float32Array(0);
@@ -244,7 +261,9 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
 
     // Color domain: symmetric for diverging maps (rdbu / z-score), else data extent.
     diverging = opts.colormap === "rdbu" || opts.zScore;
-    [colorLo, colorHi] = diverging ? symmetricExtent(display) : dataExtent(display);
+    [colorLo, colorHi] = diverging
+      ? symmetricExtent(display)
+      : dataExtent(display);
 
     rowLabels = meta.rowLabels;
     colLabels = meta.colLabels;
@@ -337,7 +356,17 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     if (nrows === 0 || ncols === 0) return;
     // Nearest-neighbour upscale from the 1px-per-cell offscreen buffer.
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(cellCanvas, 0, 0, ncols, nrows, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(
+      cellCanvas,
+      0,
+      0,
+      ncols,
+      nrows,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
   }
 
   // ---- layout + overlay ----
@@ -360,7 +389,14 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     if (!width || !height) return;
     if (nrows === 0 || ncols === 0) {
       svg.appendChild(
-        text(width / 2, height / 2, "No data", theme.muted, "middle", theme.fontSize),
+        text(
+          width / 2,
+          height / 2,
+          "No data",
+          theme.muted,
+          "middle",
+          theme.fontSize,
+        ),
       );
       return;
     }
@@ -369,7 +405,9 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     const cellH = heat.h / nrows;
 
     // Frame around the heatmap.
-    svg.appendChild(rect(heat.x, heat.y, heat.w, heat.h, "none", theme.axis, 1));
+    svg.appendChild(
+      rect(heat.x, heat.y, heat.w, heat.h, "none", theme.axis, 1),
+    );
 
     if (opts.showColDendrogram && colDendro) {
       renderDendrogram(colDendro, "top");
@@ -485,15 +523,28 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     defs.appendChild(grad);
     svg.appendChild(defs);
 
-    svg.appendChild(rect(x0, y0, barW, barH, `url(#${gradId})`, theme.axis, 0.75));
+    svg.appendChild(
+      rect(x0, y0, barW, barH, `url(#${gradId})`, theme.axis, 0.75),
+    );
     // Min / mid / max ticks.
     const label = opts.legendTitle + (opts.zScore ? " (row z-score)" : "");
     svg.appendChild(text(x0, y0 - 6, label, theme.foreground, "start", 11));
-    svg.appendChild(text(x0, y0 + barH + 12, fmt(colorLo), theme.muted, "start", 10));
     svg.appendChild(
-      text(x0 + barW / 2, y0 + barH + 12, fmt((colorLo + colorHi) / 2), theme.muted, "middle", 10),
+      text(x0, y0 + barH + 12, fmt(colorLo), theme.muted, "start", 10),
     );
-    svg.appendChild(text(x0 + barW, y0 + barH + 12, fmt(colorHi), theme.muted, "end", 10));
+    svg.appendChild(
+      text(
+        x0 + barW / 2,
+        y0 + barH + 12,
+        fmt((colorLo + colorHi) / 2),
+        theme.muted,
+        "middle",
+        10,
+      ),
+    );
+    svg.appendChild(
+      text(x0 + barW, y0 + barH + 12, fmt(colorHi), theme.muted, "end", 10),
+    );
   }
 
   // ---- pointer / tooltip ----
@@ -506,12 +557,23 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     const px = e.clientX - rectEl.left;
     const py = e.clientY - rectEl.top;
     const { heat } = layout;
-    if (px < heat.x || px > heat.x + heat.w || py < heat.y || py > heat.y + heat.h) {
+    if (
+      px < heat.x ||
+      px > heat.x + heat.w ||
+      py < heat.y ||
+      py > heat.y + heat.h
+    ) {
       tooltip.hide();
       return;
     }
-    const cx = Math.min(ncols - 1, Math.max(0, Math.floor(((px - heat.x) / heat.w) * ncols)));
-    const ry = Math.min(nrows - 1, Math.max(0, Math.floor(((py - heat.y) / heat.h) * nrows)));
+    const cx = Math.min(
+      ncols - 1,
+      Math.max(0, Math.floor(((px - heat.x) / heat.w) * ncols)),
+    );
+    const ry = Math.min(
+      nrows - 1,
+      Math.max(0, Math.floor(((py - heat.y) / heat.h) * nrows)),
+    );
     const srcRow = rowOrder[ry] as number;
     const srcCol = colOrder[cx] as number;
     const v = cellAt(display, ncols, srcRow, srcCol);
@@ -528,7 +590,14 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
   el.addEventListener("mouseleave", onLeave);
 
   // ---- SVG element helpers ----
-  function line(x1: number, y1: number, x2: number, y2: number, stroke: string, w: number) {
+  function line(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    stroke: string,
+    w: number,
+  ) {
     const l = document.createElementNS(SVG_NS, "line");
     l.setAttribute("x1", String(x1));
     l.setAttribute("y1", String(y1));
@@ -539,7 +608,15 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     l.setAttribute("shape-rendering", "crispEdges");
     return l;
   }
-  function rect(x: number, y: number, w: number, h: number, fill: string, stroke: string, sw: number) {
+  function rect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    fill: string,
+    stroke: string,
+    sw: number,
+  ) {
     const r = document.createElementNS(SVG_NS, "rect");
     r.setAttribute("x", String(x));
     r.setAttribute("y", String(y));
@@ -550,7 +627,14 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (el, initia
     r.setAttribute("stroke-width", String(sw));
     return r;
   }
-  function text(x: number, y: number, content: string, fill: string, anchor: string, size = 11) {
+  function text(
+    x: number,
+    y: number,
+    content: string,
+    fill: string,
+    anchor: string,
+    size = 11,
+  ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
     t.setAttribute("y", String(y));
@@ -678,10 +762,7 @@ function fmt(v: number): string {
   return Number(v.toFixed(2)).toString();
 }
 function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 function mergeOptions(
   base: ClustermapOptions,

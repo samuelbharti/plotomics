@@ -93,7 +93,11 @@ describe("clustering", () => {
       [10, 10, 10],
       [10.1, 9.9, 10],
     ];
-    const { order, dendrogram } = clusterVectors(vectors, "euclidean", "average");
+    const { order, dendrogram } = clusterVectors(
+      vectors,
+      "euclidean",
+      "average",
+    );
     expect(order).toHaveLength(4);
     // The two low rows are adjacent and the two high rows are adjacent.
     const posOf = new Map(order.map((leaf, slot) => [leaf, slot]));
