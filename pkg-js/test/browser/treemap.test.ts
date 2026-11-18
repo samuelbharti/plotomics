@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createTreemap } from "../../src/components/treemap.js";
 import type { PlotomicsInstance } from "../../src/core/index.js";
-import { drawnPixels } from "./helpers.js";
+import { canvasPNG, drawnPixels } from "./helpers.js";
 
 function container() {
   const el = document.createElement("div");
@@ -39,9 +39,10 @@ afterEach(() => {
 
 describe("treemap in a browser", () => {
   it("draws tiles when there is no value column", async () => {
-    const tm = createTreemap(container(), { data: pathways(false) });
+    const el = container();
+    const tm = createTreemap(el, { data: pathways(false) });
     instances.push(tm);
-    const png = await tm.exportPNG?.(1);
+    const png = await canvasPNG(el);
     // Before the fix every leaf weighed 0 and the canvas was empty.
     expect(await drawnPixels(png as Blob)).toBeGreaterThan(10_000);
   });

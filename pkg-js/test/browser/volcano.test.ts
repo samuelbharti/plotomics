@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createVolcano } from "../../src/components/volcano.js";
 import type { PlotomicsInstance } from "../../src/core/index.js";
-import { type MarkBox, markBox } from "./helpers.js";
+import { canvasPNG, type MarkBox, markBox } from "./helpers.js";
 
 // Volcano behaviour that needs a real browser: framing with p = 0 and missing
 // values, label placement, and a theme change reaching the canvas.
@@ -61,7 +61,7 @@ describe("volcano in a browser", () => {
 
     await expect
       .poll(async () => {
-        const png = await v.exportPNG?.(1);
+        const png = await canvasPNG(el);
         return png ? markBox(png) : null;
       }, poll)
       .toSatisfy(

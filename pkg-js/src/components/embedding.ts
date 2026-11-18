@@ -30,7 +30,7 @@ import {
   measure,
   dpr,
   serializeSVG,
-  canvasToPNG,
+  compositePNG,
   categoricalScale,
   OKABE_ITO,
   ramp,
@@ -1032,7 +1032,18 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       return serializeSVG(out);
     },
     async exportPNG(scale = 2) {
-      return canvasToPNG(canvas, scale);
+      // The points at their place, with the axes and legend over them.
+      const m = margin();
+      return compositePNG({
+        width,
+        height,
+        scale,
+        background: theme.background,
+        layers: [
+          { canvas, x: m.left, y: m.top, width: innerW(), height: innerH() },
+        ],
+        overlay: svg,
+      });
     },
     destroy() {
       destroyed = true;

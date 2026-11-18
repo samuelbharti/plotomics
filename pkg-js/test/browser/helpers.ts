@@ -6,6 +6,16 @@ export function mountPoint(): HTMLElement {
   return el;
 }
 
+/**
+ * The first canvas in an element as a PNG, without the SVG overlay that
+ * `exportPNG` draws over it. Tests that measure the marks read this.
+ */
+export function canvasPNG(el: HTMLElement): Promise<Blob | null> {
+  const canvas = el.querySelector("canvas");
+  if (!canvas) return Promise.resolve(null);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+}
+
 /** The pixels of a PNG, and its most common colour, taken as background. */
 async function readPixels(png: Blob) {
   const bitmap = await createImageBitmap(png);

@@ -48,7 +48,8 @@ barrel import (`plotomics`) down to what you use.
 contract (`PlotomicsFactory`, `PlotomicsInstance`), theming (`defaultTheme`,
 `darkTheme`, `OKABE_ITO`), colour ramps (`viridis`, `rdbu`, `ltc`, `ltcdiv`,
 `categoricalScale`), the binary column transport (`decodeColumns`) and the
-export helpers (`serializeSVG`, `canvasToPNG`).
+export helpers (`serializeSVG`, `canvasToPNG`, and `compositePNG`, which draws
+the canvases and the SVG overlay into one PNG).
 
 ```js
 import { defaultTheme, categoricalScale } from "plotomics/core";

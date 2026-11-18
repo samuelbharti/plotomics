@@ -22,7 +22,7 @@ import {
   measure,
   dpr,
   serializeSVG,
-  canvasToPNG,
+  compositePNG,
   categoricalScale,
   ramp,
   type RampName,
@@ -643,7 +643,17 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       return serializeSVG(out);
     },
     async exportPNG(scale = 2) {
-      return canvasToPNG(canvas, scale);
+      // The tiles below the breadcrumb, with the labels over them.
+      return compositePNG({
+        width,
+        height,
+        scale,
+        background: theme.background,
+        layers: [
+          { canvas, x: 0, y: plotTop(), width: plotW(), height: plotH() },
+        ],
+        overlay: svg,
+      });
     },
     destroy() {
       canvas.removeEventListener("mousemove", onMove);
