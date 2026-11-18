@@ -57,7 +57,10 @@ export interface GoslingApiLike {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createGosling: PlotomicsFactory<GoslingOptions> = (el, initial) => {
+export const createGosling: PlotomicsFactory<GoslingOptions> = (
+  el,
+  initial,
+) => {
   let opts: GoslingOptions = mergeGoslingOptions(
     defaultGoslingOptions,
     initial.options,

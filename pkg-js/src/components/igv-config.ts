@@ -39,7 +39,9 @@ export const defaultIgvOptions: IgvOptions = {
  * and `tracks` (only when non-empty). Keys with no value are omitted so igv.js
  * applies its own defaults.
  */
-export function assembleConfig(options: Partial<IgvOptions>): Record<string, unknown> {
+export function assembleConfig(
+  options: Partial<IgvOptions>,
+): Record<string, unknown> {
   if (options.config && typeof options.config === "object") {
     return { ...options.config };
   }
@@ -57,7 +59,10 @@ export function assembleConfig(options: Partial<IgvOptions>): Record<string, unk
 }
 
 /** Shallow-merge component options over a base. */
-export function mergeOptions(base: IgvOptions, next?: Partial<IgvOptions>): IgvOptions {
+export function mergeOptions(
+  base: IgvOptions,
+  next?: Partial<IgvOptions>,
+): IgvOptions {
   if (!next) return { ...base };
   return { ...base, ...next };
 }
