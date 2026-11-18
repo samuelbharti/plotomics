@@ -69,6 +69,23 @@ test_that("a theme given as a named vector still renders", {
 })
 
 test_that("each plot has one default height, as in Shiny and Python", {
+  # The same table is in the Python tests (test_defaults.py).
+  expected <- c(
+    clustermap = 560, dotplot = 560, embedding = 480, heatmap = 480,
+    hic = 480, km = 520, lollipop = 440, network = 480, oncoplot = 560,
+    profile = 380, spatial = 560, treemap = 480, upset = 520, violin = 560,
+    volcano = 480
+  )
+  expect_setequal(names(plotomics_heights), names(expected))
+  expect_equal(plotomics_heights[names(expected)], expected)
+  outputs <- c(heatmap = "bioheatmapOutput", profile = "bioprofileOutput")
+  for (name in names(expected)) {
+    fn <- if (name %in% names(outputs)) outputs[[name]] else paste0(name, "Output")
+    expect_equal(
+      formals(get(fn))$height, paste0(expected[[name]], "px"),
+      info = name
+    )
+  }
   m <- matrix(1:6, 2, 3)
   expect_equal(clustermap(m)$sizingPolicy$defaultHeight, 560)
   expect_equal(bioheatmap(m)$sizingPolicy$defaultHeight, 480)

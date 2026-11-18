@@ -1,3 +1,18 @@
+# Default height in px of each plot, the same in R, Shiny and Python. It
+# applies where the page does not set the size: R Markdown, Quarto, Shiny
+# and Jupyter. The RStudio viewer and a browser fill the window.
+plotomics_heights <- c(
+  clustermap = 560, dotplot = 560, embedding = 480, heatmap = 480,
+  hic = 480, km = 520, lollipop = 440, network = 480, oncoplot = 560,
+  profile = 380, spatial = 560, treemap = 480, upset = 520, violin = 560,
+  volcano = 480
+)
+
+plotomics_height <- function(name) {
+  h <- plotomics_heights[name]
+  if (is.na(h)) 480 else unname(h)
+}
+
 #' Construct a plotomics htmlwidget
 #'
 #' Internal helper shared by every component constructor. It assembles the
@@ -20,20 +35,6 @@
 #' @return An object of class `htmlwidget`.
 #' @keywords internal
 #' @noRd
-# Default height in px of each plot, the same in R, Shiny and Python, so a
-# plot keeps its shape in R Markdown, the RStudio viewer, Shiny and Jupyter.
-plotomics_heights <- c(
-  clustermap = 560, dotplot = 560, embedding = 480, heatmap = 480,
-  hic = 480, km = 520, lollipop = 440, network = 480, oncoplot = 560,
-  profile = 380, spatial = 560, treemap = 480, upset = 520, violin = 560,
-  volcano = 480
-)
-
-plotomics_height <- function(name) {
-  h <- plotomics_heights[name]
-  if (is.na(h)) 480 else unname(h)
-}
-
 plotomics_widget <- function(name, columns, meta = list(), options = list(),
                           width = NULL, height = NULL, element_id = NULL,
                           array_meta = character(),

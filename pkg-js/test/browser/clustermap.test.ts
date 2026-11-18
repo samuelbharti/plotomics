@@ -158,4 +158,111 @@ describe("clustermap in a browser", () => {
     expect(idA).toBeTruthy();
     expect(idA).not.toBe(idB);
   });
+
+  it("draws labels only where it made room for them", () => {
+    const el = container(800, 560);
+    const nrows = 50;
+    const ncols = 70;
+    instances.push(
+      createClustermap(el, {
+        data: {
+          columns: {
+            values: Array.from({ length: nrows * ncols }, (_, i) =>
+              Math.sin(i * 0.37),
+            ),
+          },
+          meta: {
+            nrows,
+            ncols,
+            rowLabels: Array.from({ length: nrows }, (_, i) => `gene_${i}`),
+            colLabels: Array.from({ length: ncols }, (_, j) => `sample_${j}`),
+          },
+        },
+      }),
+    );
+    const box = el.getBoundingClientRect();
+    const bar = Array.from(el.querySelectorAll("svg rect")).find((r) =>
+      (r.getAttribute("fill") ?? "").startsWith("url("),
+    ) as SVGRectElement;
+    const barLeft = bar.getBoundingClientRect().left;
+    const labels = Array.from(el.querySelectorAll("svg text")).filter((t) =>
+      /^(gene|sample)|\u2026$/.test(t.textContent ?? ""),
+    );
+    for (const t of labels) {
+      const r = t.getBoundingClientRect();
+      // Before the fix one-letter stubs ran over the bar and off the bottom.
+      expect(t.textContent).not.toMatch(/^.\u2026$/);
+      expect(r.bottom).toBeLessThanOrEqual(box.bottom);
+      if ((t.textContent ?? "").startsWith("gene")) {
+        expect(r.right).toBeLessThanOrEqual(barLeft);
+      }
+    }
+  });
+
+  it("keeps a usable heatmap in a narrow widget with long row labels", () => {
+    const el = container(250, 480);
+    instances.push(
+      createClustermap(el, {
+        data: {
+          columns: { values: Array.from({ length: 60 }, (_, i) => i % 7) },
+          meta: {
+            nrows: 10,
+            ncols: 6,
+            rowLabels: Array.from(
+              { length: 10 },
+              (_, i) => `ENSG00000141517.17_TP53_${i}`,
+            ),
+          },
+        },
+      }),
+    );
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    // Before the fix the row labels took the width and left 1 px.
+    expect(canvas.clientWidth).toBeGreaterThanOrEqual(60);
+  });
+
+  it("keeps a long legend title inside the widget, clear of the ticks", () => {
+    const el = container(800, 560);
+    const values = Array.from({ length: 24 }, (_, i) => -3000 + i * 87);
+    instances.push(
+      createClustermap(el, {
+        data: { columns: { values }, meta: { nrows: 6, ncols: 4 } },
+        options: {
+          clusterCols: false,
+          zScore: false,
+          legendTitle: "log2 normalised expression across every sample",
+        },
+      }),
+    );
+    const texts = Array.from(el.querySelectorAll("svg text"));
+    const title = texts.find((t) =>
+      (t.textContent ?? "").startsWith("log2"),
+    ) as SVGTextElement;
+    const tr = title.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    expect(tr.top).toBeGreaterThanOrEqual(box.top);
+    expect(tr.bottom).toBeLessThanOrEqual(box.bottom);
+    expect(tr.right).toBeLessThanOrEqual(box.right);
+    // The middle tick reads -2.0e+3, the widest of the three.
+    const mid = texts.find(
+      (t) => t.textContent === "-2.0e+3",
+    ) as SVGTextElement;
+    expect(mid.getBoundingClientRect().right + 2).toBeLessThanOrEqual(tr.left);
+  });
+
+  it("labels the middle of a symmetric colour range 0", () => {
+    const el = container(600, 480);
+    // Held in float32, the two ends are not exactly opposite, so before the
+    // fix their middle printed as a tiny number such as -2.4e-7.
+    const values = Array.from(
+      { length: 3500 },
+      (_, i) => Math.sin(i * 0.37) * 3,
+    );
+    instances.push(
+      createClustermap(el, {
+        data: { columns: { values }, meta: { nrows: 50, ncols: 70 } },
+      }),
+    );
+    expect(svgTexts(el)).toContain("0");
+  });
 });
