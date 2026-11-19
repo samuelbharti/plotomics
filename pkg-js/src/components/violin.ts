@@ -50,8 +50,18 @@ import {
 } from "../core/index.js";
 
 export interface ViolinOptions {
-  /** Fraction of a cell's width the widest violin fills, in (0, 1]. */
+  /** Fraction of a cell's width the widest violin fills, in (0, 1].
+   * When rows are short next to the column width (many features, or a
+   * short or wide widget), `violinAspect` can make it fill less. */
   violinWidth: number;
+  /** The largest width of the widest violin, as a multiple of its row
+   * height. A violin much wider than its row is tall reads as a flat
+   * band. The cap never makes a violin narrower than four times the
+   * label text size (44 px at the default font size), so with many
+   * features the violins stay visible; nor wider than `violinWidth`
+   * of its cell. `null` or `Infinity` turns the cap off, and any value
+   * other than a positive number gives the default, 0.8. */
+  violinAspect: number | null;
   /** Scale each violin to its own maximum rather than the row's. Per-row is
    * the honest default: within a gene, groups stay comparable. */
   scalePerViolin: boolean;
@@ -64,8 +74,17 @@ export interface ViolinOptions {
   theme: Partial<PlotomicsTheme>;
 }
 
+/**
+ * The default `violinAspect`. scanpy sizes its stacked violin figure
+ * from fixed cells. There the widest violin comes out about 0.7 to
+ * 0.95 times as wide as its row is tall, depending on the numbers of
+ * genes and groups, and 0.8 for 6 genes by 5 groups.
+ */
+const DEFAULT_ASPECT = 0.8;
+
 export const defaultViolinOptions: ViolinOptions = {
   violinWidth: 0.85,
+  violinAspect: DEFAULT_ASPECT,
   scalePerViolin: false,
   showMedian: true,
   showFeatureLabels: true,
@@ -80,6 +99,15 @@ const MIN_LEFT = 50;
 const MAX_LEFT = 150;
 /** The largest share of the widget's width or height that a gutter takes. */
 const MAX_GUTTER_SHARE = 0.35;
+/**
+ * The `violinAspect` cap never makes the widest violin narrower than
+ * this many times the label text size. scanpy keeps its ratio by
+ * making the figure taller; a widget has a fixed height, so without a
+ * floor many features would shrink the violins to specks. The floor
+ * is in px, not a share of the column, so a wider widget does not
+ * widen it past the cap.
+ */
+const MIN_WIDTH_IN_LABELS = 4;
 const DEFAULT_SIZES = textSizes(defaultTheme);
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -179,6 +207,39 @@ export function layoutViolin(
  */
 function colLabelRoom(bottom: number, size: number): number {
   return Math.max(0, (bottom - 12) * Math.SQRT2 - 0.3 * size);
+}
+
+/**
+ * The cap a `violinAspect` option sets: a positive finite number as it
+ * is, `null` for no cap when the option is `null` or `Infinity`, and
+ * the default 0.8 for any other value.
+ */
+export function resolveViolinAspect(value: unknown): number | null {
+  if (value === null || value === Number.POSITIVE_INFINITY) return null;
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  return DEFAULT_ASPECT;
+}
+
+/**
+ * Width in px of the widest violin in a row: `violinWidth` of its cell,
+ * capped at `violinAspect` times the row height, but never under four
+ * times `labelSize`, unless the cell is narrower than that. Every
+ * violin in the plot is drawn against this one width, so the widths
+ * in a row stay comparable.
+ */
+export function violinMaxWidth(
+  layout: Pick<ViolinLayout, "cellW" | "rowH">,
+  violinWidth: number,
+  violinAspect: unknown,
+  labelSize: number = DEFAULT_SIZES.label,
+): number {
+  const full = layout.cellW * violinWidth;
+  const aspect = resolveViolinAspect(violinAspect);
+  if (aspect === null) return full;
+  const floor = MIN_WIDTH_IN_LABELS * labelSize;
+  return Math.min(full, Math.max(layout.rowH * aspect, floor));
 }
 
 /**
@@ -420,7 +481,9 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     const cols = groupColors();
     const med = medians();
     const grs = grids();
-    const halfW = (layout.cellW * opts.violinWidth) / 2;
+    const halfW =
+      violinMaxWidth(layout, opts.violinWidth, opts.violinAspect, sizes.label) /
+      2;
 
     for (let r = 0; r < f.length; r += 1) {
       // Collect the row first so every violin in it shares one density scale.
