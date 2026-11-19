@@ -24,7 +24,10 @@
 #' @param classes Character vector fixing the legend order and colour
 #'   assignment. Defaults to the classes present, most frequent first.
 #' @param class_colors,domain_colors Character vectors of hex colours. `NULL`
-#'   uses the component's categorical palette.
+#'   gives the classes the component's categorical palette, and the domains a
+#'   muted palette of their own that the default class colours do not use:
+#'   `#B89E84`, `#8FB39A`, `#C78E9C`, `#86A5C1`, `#C7A46C`, `#A49AC9`,
+#'   `#86B3AE` and `#BDB27F`, repeated past the eighth domain.
 #' @param label_top_n Label the `n` most recurrent variants. Which stems get a
 #'   label is resolved here and sent to the browser, so a redraw, an export and
 #'   any static counterpart all label the same ones.

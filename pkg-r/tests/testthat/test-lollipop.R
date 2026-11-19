@@ -43,6 +43,17 @@ test_that("domains and PTMs serialize as arrays of objects", {
   expect_equal(w$x$data$meta$ptms[[1]]$position, 15)
 })
 
+test_that("domain colours are sent only when given", {
+  # Without domain_colors the browser fills the domains from its own muted
+  # palette, as it does for Python.
+  w <- lollipop(variants_fixture(), length = 393, domains = domains_fixture())
+  expect_null(w$x$data$meta$domainColors)
+  w <- lollipop(variants_fixture(), length = 393, domains = domains_fixture(),
+                domain_colors = c("#111111", "#222222"))
+  expect_equal(as.character(w$x$data$meta$domainColors),
+               c("#111111", "#222222"))
+})
+
 test_that("a single domain still yields a list, not a bare object", {
   w <- lollipop(variants_fixture(), length = 393,
                 domains = data.frame(name = "only", start = 10, end = 20))

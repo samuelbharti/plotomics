@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  DOMAIN_PALETTE,
+  countTicks,
+  domainTextColor,
   headRadius,
   layoutLollipop,
   placeLabels,
@@ -7,7 +10,7 @@ import {
   stackVariants,
   wrapRows,
 } from "../src/components/lollipop.js";
-import { textSizes } from "../src/core/theme.js";
+import { OKABE_ITO, PALETTE_20, textSizes } from "../src/core/theme.js";
 
 describe("lollipop layout", () => {
   it("stacks the stem area, backbone, PTM track and axis top to bottom", () => {
@@ -308,6 +311,66 @@ describe("lollipop residue ticks", () => {
       1, 50, 100, 150, 200, 250, 300, 350, 403,
     ]);
     expect(residueTicks(781).slice(-2)).toEqual([700, 781]);
+  });
+});
+
+describe("lollipop count axis", () => {
+  it("steps by whole numbers, never by halves, for small counts", () => {
+    expect(countTicks(2, 300, 16).ticks).toEqual([0, 1, 2]);
+    expect(countTicks(3, 300, 16).ticks).toEqual([0, 1, 2, 3]);
+    expect(countTicks(1, 300, 16)).toEqual({ ticks: [0, 1], top: 1, step: 1 });
+  });
+
+  it("rounds the top up to a round count over the tallest stem", () => {
+    expect(countTicks(39, 300, 16)).toEqual({
+      ticks: [0, 10, 20, 30, 40],
+      top: 40,
+      step: 10,
+    });
+    expect(countTicks(86, 300, 16).top).toBe(100);
+  });
+
+  it("takes fewer labels on a short axis, each gap at least minGapPx", () => {
+    const t = countTicks(86, 30, 16);
+    expect(t.ticks).toEqual([0, 100]);
+    for (const [len, gap] of [
+      [300, 16],
+      [120, 16],
+      [60, 25],
+    ] as const) {
+      const { ticks } = countTicks(86, len, gap);
+      expect(len / (ticks.length - 1)).toBeGreaterThanOrEqual(gap);
+    }
+  });
+});
+
+describe("lollipop domain names", () => {
+  it("writes dark text on a light fill and light text on a dark one", () => {
+    expect(domainTextColor("#F0E442")).toBe("#233038");
+    expect(domainTextColor("#56B4E9")).toBe("#233038");
+    expect(domainTextColor(" #e69f00 ")).toBe("#233038");
+    expect(domainTextColor("#fff")).toBe("#233038");
+    expect(domainTextColor("#0072B2")).toBe("#FBF7EF");
+    expect(domainTextColor("#D55E00")).toBe("#FBF7EF");
+    expect(domainTextColor("#000")).toBe("#FBF7EF");
+  });
+
+  it("keeps the light text for a fill that is not a hex colour", () => {
+    expect(domainTextColor("steelblue")).toBe("#FBF7EF");
+    expect(domainTextColor("")).toBe("#FBF7EF");
+  });
+
+  it("has a palette that no default class colour uses", () => {
+    const classColors = new Set(
+      [...OKABE_ITO, ...PALETTE_20].map((c) => c.toLowerCase()),
+    );
+    expect(DOMAIN_PALETTE.length).toBeGreaterThanOrEqual(8);
+    for (const c of DOMAIN_PALETTE) {
+      expect(classColors.has(c.toLowerCase())).toBe(false);
+      // Light enough for the dark domain name.
+      expect(domainTextColor(c)).toBe("#233038");
+    }
+    expect(new Set(DOMAIN_PALETTE).size).toBe(DOMAIN_PALETTE.length);
   });
 });
 

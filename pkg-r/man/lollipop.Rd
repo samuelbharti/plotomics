@@ -49,7 +49,10 @@ count is not drawn). Optional \code{class} (variant class) and \code{label} (e.g
 assignment. Defaults to the classes present, most frequent first.}
 
 \item{class_colors, domain_colors}{Character vectors of hex colours. \code{NULL}
-uses the component's categorical palette.}
+gives the classes the component's categorical palette, and the domains a
+muted palette of their own that the default class colours do not use:
+\verb{#B89E84}, \verb{#8FB39A}, \verb{#C78E9C}, \verb{#86A5C1}, \verb{#C7A46C}, \verb{#A49AC9},
+\verb{#86B3AE} and \verb{#BDB27F}, repeated past the eighth domain.}
 
 \item{label_top_n}{Label the \code{n} most recurrent variants. Which stems get a
 label is resolved here and sent to the browser, so a redraw, an export and
