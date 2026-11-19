@@ -126,6 +126,7 @@ const MAX_ROW_LABEL = 140; // widest the row-label gutter gets, in px
 const MAX_COL_LABEL = 120; // tallest the column-label band gets, in px
 const COLORBAR_W = 78; // px on the right for the colour bar, at the least
 const MAX_LABEL_SHARE = 0.3; // a label gutter takes at most this share
+const MAX_COLORBAR_SHARE = 0.45; // and the colour bar gutter this one
 const MIN_HEAT = 60; // a label gutter stays only if the heatmap keeps this
 const PAD = 12;
 /**
@@ -561,18 +562,35 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     return w;
   }
   /**
-   * Top and height of the colour bar beside the heatmap of `l`. The bar is
-   * tall enough for three labels, and starts low enough for half of the
-   * label centred on its top.
+   * Room under the colour bar: the lower half of the label centred on its
+   * bottom end, and, when the matrix has missing cells, the NA swatch,
+   * which starts 0.6 of a label and 8 px under the bar and whose label
+   * ends 5 px and 0.61 of a label under its top (see renderColorbar).
+   */
+  function colorbarUnder(): number {
+    const size = sizes.label;
+    if (!anyMissing) return Math.ceil(0.6 * size) + 2;
+    return (
+      Math.round(0.6 * size) + 8 + Math.ceil(Math.max(10, 5 + 0.61 * size)) + 2
+    );
+  }
+  /**
+   * Top and height of the colour bar beside the heatmap of `l`. The bar
+   * starts low enough for half of the label centred on its top. It is at
+   * most 160 px tall and ends inside the heatmap's height, with what goes
+   * under it; it is at least three labels tall when the widget has the
+   * room, and never runs past the bottom of the widget.
    */
   function colorbarBox(l: Layout = layout): { y0: number; barH: number } {
     const size = sizes.label;
+    const y0 = Math.max(l.heat.y + 4, Math.ceil(0.5 * size) + 1);
+    const under = colorbarUnder();
+    const fits = Math.min(160, l.heat.y + l.heat.h - y0 - under);
     return {
-      y0: Math.max(l.heat.y + 4, Math.ceil(0.5 * size) + 1),
+      y0,
       barH: Math.max(
-        40,
-        3 * size,
-        Math.min(160, l.heat.h - (anyMissing ? 30 : 8)),
+        1,
+        Math.min(height - y0 - under, Math.max(40, 3 * size, fits)),
       ),
     };
   }
@@ -589,6 +607,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     const { ticks, step } = fitDomainTicks(colorLo, colorHi, barH, {
       maxCount: 4,
       minGapPx: 1.6 * sizes.label,
+      endGapPx: sizes.label + 2,
     });
     return {
       ticks,
@@ -610,12 +629,16 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
    * Width of the gutter for a colour bar `barH` tall: 4 px, the 12 px bar,
    * 5 px, the tick labels, 4 px, then the title turned upright, whose
    * letters stand 1.1 times its size left of its baseline and 0.3 times
-   * right of it.
+   * right of it. It takes at most a share of the widget, so the heatmap
+   * keeps the rest; longer tick labels are cut to fit.
    */
   function colorbarWidth(barH: number): number {
     const need =
       4 + 12 + 5 + colorbarTickWidth(barH) + 4 + 1.4 * sizes.axisTitle;
-    return Math.max(COLORBAR_W, Math.ceil(need + 2));
+    return Math.min(
+      Math.max(COLORBAR_W, Math.floor(width * MAX_COLORBAR_SHARE)),
+      Math.max(COLORBAR_W, Math.ceil(need + 2)),
+    );
   }
 
   // ---- layout + overlay ----
@@ -820,7 +843,6 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
   function renderColorbar() {
     // A vertical bar in the right-hand gutter, high values at the top, with
     // the legend title running up beside it.
-    const { heat } = layout;
     const { label: size, axisTitle } = sizes;
     const barW = 12;
     const x0 = layout.colorbarX;
@@ -852,7 +874,10 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     );
     // Round values inside the colour range, each centred on its place
     // along the bar, by a short tick. The top of the bar is the high end.
+    // A gutter at its largest share cuts the labels to the room left of
+    // the title.
     const lx = x0 + barW + 5;
+    const room = width - 2 - 1.4 * axisTitle - 4 - lx;
     const bar = colorbarTicks(barH);
     bar.ticks.forEach((v, i) => {
       const y =
@@ -862,7 +887,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
         text(
           lx,
           y + 0.35 * size,
-          bar.labels[i] ?? "",
+          fitLabel(bar.labels[i] ?? "", room),
           theme.muted,
           "start",
           size,
@@ -872,7 +897,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     // The title runs up beside the bar, 4 px right of the widest tick label
     // (once turned, its letters stand 1.1 times its size left of its
     // baseline), cut to the widget height and kept inside the widget.
-    const tickW = colorbarTickWidth(barH);
+    const tickW = Math.min(colorbarTickWidth(barH), room);
     const label = fitLabel(
       opts.legendTitle + (opts.zScore ? " (row z-score)" : ""),
       height - 8,

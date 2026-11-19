@@ -129,10 +129,44 @@ export function tickUnit(maxAbs: number, step: number): TickUnit {
 }
 
 /**
+ * The longest fixed-point tick label, in characters, before
+ * {@link formatTicks} tries the exponent form.
+ */
+const MAX_FIXED_LENGTH = 6;
+
+/**
+ * Labels for `ticks` on multiples of `step`, all in one power of ten: that
+ * of `maxAbs`, the largest tick, with the decimals the step needs in it,
+ * such as "2e-9, 3e-9" or "0.5e+12, 1.0e+12". 0 reads "0".
+ */
+function exponentLabels(
+  ticks: readonly number[],
+  step: number,
+  maxAbs: number,
+): string[] {
+  const power = Math.floor(Math.log10(maxAbs) + 1e-9);
+  const scale = 10 ** power;
+  const decimals = stepDecimals(step / scale);
+  const suffix = `e${power < 0 ? "-" : "+"}${Math.abs(power)}`;
+  return ticks.map((v) =>
+    !Number.isFinite(v)
+      ? "NA"
+      : v === 0
+        ? "0"
+        : `${(v / scale).toFixed(decimals)}${suffix}`,
+  );
+}
+
+/**
  * The labels of the ticks of one axis or colour bar, on multiples of
  * `step`, all in the unit the largest needs (see {@link tickUnit}), so an
- * axis reads "0.8M, 1.0M", never "800k, 1.0M". `percent` is as for
- * {@link formatTick}.
+ * axis reads "0.8M, 1.0M", never "800k, 1.0M". When those labels run past
+ * six characters, as for tiny values ("0.000000002") or huge ones, and the
+ * exponent form is shorter, every label takes the exponent form, in the
+ * power of ten of the largest tick: "2e-9, 3e-9". A narrow range far from
+ * 0, such as 1000.00002 to 1000.00008, keeps its fixed-point labels, which
+ * no exponent form shortens. `percent` is as for {@link formatTick}, and
+ * percentages stay in fixed point.
  */
 export function formatTicks(
   ticks: readonly number[],
@@ -144,7 +178,14 @@ export function formatTicks(
     if (Number.isFinite(v)) maxAbs = Math.max(maxAbs, Math.abs(v));
   }
   const unit = tickUnit(maxAbs, step);
-  return ticks.map((v) => formatTick(v, step, { ...opts, unit }));
+  const fixed = ticks.map((v) => formatTick(v, step, { ...opts, unit }));
+  if (opts.percent || !(step > 0) || !(maxAbs > 0)) return fixed;
+  const longest = (labels: string[]) =>
+    labels.reduce((n, s) => Math.max(n, s.length), 0);
+  const fixedLength = longest(fixed);
+  if (fixedLength <= MAX_FIXED_LENGTH) return fixed;
+  const exponent = exponentLabels(ticks, step, maxAbs);
+  return longest(exponent) < fixedLength ? exponent : fixed;
 }
 
 /**
@@ -226,13 +267,19 @@ export function domainTicks(
  * Round ticks inside `[lo, hi]` for an axis or a colour bar `lengthPx` long:
  * the most ticks, for up to `maxCount` intervals over the range, with at
  * least `minGapPx` between neighbours. When even one interval puts them
- * closer, only every k-th tick is kept, so no two labels touch.
+ * closer, only every k-th tick is kept, so no two labels touch. When that
+ * leaves one tick of a range with width, a pair of ticks takes its place
+ * if two labels fit: the first and last ticks of the coarsest step that
+ * puts them `endGapPx` from each other, a finer step bringing them nearer
+ * the ends of the range. Two labels alone need only to stay clear of each
+ * other (by default the pair asks `minGapPx` too), as for
+ * {@link fitZeroTicks}.
  */
 export function fitDomainTicks(
   lo: number,
   hi: number,
   lengthPx: number,
-  opts: { maxCount?: number; minGapPx?: number } = {},
+  opts: { maxCount?: number; minGapPx?: number; endGapPx?: number } = {},
 ): { ticks: number[]; step: number } {
   const minGap = opts.minGapPx ?? 16;
   const span = Math.abs(hi - lo);
@@ -246,7 +293,19 @@ export function fitDomainTicks(
   }
   const g = gap(t.step);
   const k = g > 0 ? Math.ceil(minGap / g - 1e-9) : t.ticks.length;
-  return { ticks: t.ticks.filter((_, i) => i % k === 0), step: t.step };
+  const kept = t.ticks.filter((_, i) => i % k === 0);
+  if (kept.length > 1 || !(span > 0)) return { ticks: kept, step: t.step };
+  const endGap = opts.endGapPx ?? minGap;
+  // At ten intervals the pair spans most of the range.
+  for (let count = 1; count <= 10; count += 1) {
+    const p = domainTicks(lo, hi, count);
+    const first = p.ticks[0] as number;
+    const last = p.ticks[p.ticks.length - 1] as number;
+    if (p.ticks.length > 1 && ((last - first) / span) * lengthPx >= endGap) {
+      return { ticks: [first, last], step: p.step };
+    }
+  }
+  return { ticks: kept, step: t.step };
 }
 
 /**

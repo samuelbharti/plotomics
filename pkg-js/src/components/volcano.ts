@@ -604,7 +604,15 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     // x ticks
     xAxis.ticks.forEach((t, i) => {
       const x = pxX(t);
-      if (x < margin.left - 1 || x > width - margin.right + 1) return;
+      // A view zoomed past the precision of its numbers has no width, and
+      // its one tick no place on the axis.
+      if (
+        !Number.isFinite(x) ||
+        x < margin.left - 1 ||
+        x > width - margin.right + 1
+      ) {
+        return;
+      }
       under.appendChild(
         line(x, margin.top, x, height - margin.bottom, gridColor, 1),
       );
@@ -624,7 +632,13 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     // y ticks
     yAxis.ticks.forEach((t, i) => {
       const y = pxY(t);
-      if (y < margin.top - 1 || y > height - margin.bottom + 1) return;
+      if (
+        !Number.isFinite(y) ||
+        y < margin.top - 1 ||
+        y > height - margin.bottom + 1
+      ) {
+        return;
+      }
       under.appendChild(
         line(margin.left, y, width - margin.right, y, gridColor, 1),
       );
@@ -753,8 +767,8 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       const x = pxX(pts.x[i] as number);
       const y = pxY(pts.yDraw[i] as number);
       // Points outside the current view keep no label.
-      if (x < bounds.left || x > bounds.right) continue;
-      if (y < bounds.top || y > bounds.bottom) continue;
+      if (!Number.isFinite(x) || x < bounds.left || x > bounds.right) continue;
+      if (!Number.isFinite(y) || y < bounds.top || y > bounds.bottom) continue;
       const label = str(cols.label, pts.rows[i] as number) ?? "";
       items.push({
         i,

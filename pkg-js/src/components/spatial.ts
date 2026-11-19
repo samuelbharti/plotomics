@@ -886,27 +886,39 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     const least = Math.round(fs * 2);
     const missing = legend.missing && avail - naRow >= least;
     const barH = Math.min(BAR_MAX, avail - (missing ? naRow : 0));
-    const { ticks, step } = fitDomainTicks(legend.lo, legend.hi, barH, {
-      maxCount: BAR_TICKS,
-      minGapPx: 1.6 * fs,
-    });
-    const labels = formatTicks(ticks, step);
-    // The gutter fits the labels of every tick count the bar can show, so
-    // a taller widget, with more ticks, never loses the legend. It holds
-    // the NA key whether or not the height leaves it room.
+    const minGapPx = 1.6 * fs;
+    // The gutter holds the NA key whether or not the height leaves it room.
+    const gutterFor = (labelW: number) =>
+      LEGEND_PAD +
+      Math.ceil(
+        Math.max(BAR_W + 5 + labelW, legend.missing ? sw + 5 + w("NA") : 0),
+      ) +
+      LEGEND_PAD;
+    const widest = (labels: string[]) =>
+      labels.reduce((mx, s) => Math.max(mx, w(s)), 0);
+    // The gutter fits the labels of every tick count the bar can show at
+    // some height up to its tallest, so a taller widget, with more ticks,
+    // never loses the legend. A count whose labels the gutter cannot hold
+    // is left to wider widgets: a coarser step prints shorter labels, such
+    // as "0.5000" where a finer one prints "0.50005".
+    const span = Math.abs(legend.hi - legend.lo);
     let labelW = 0;
-    for (const s of labels) labelW = Math.max(labelW, w(s));
+    let maxCount = 1;
     for (let count = 1; count <= BAR_TICKS; count += 1) {
       const t = domainTicks(legend.lo, legend.hi, count);
-      for (const s of formatTicks(t.ticks, t.step)) {
-        labelW = Math.max(labelW, w(s));
-      }
+      if (count > 1 && (t.step / span) * BAR_MAX < minGapPx) break;
+      const tw = widest(formatTicks(t.ticks, t.step));
+      if (count > 1 && gutterFor(Math.max(labelW, tw)) > cap) break;
+      labelW = Math.max(labelW, tw);
+      maxCount = count;
     }
-    const inner = Math.max(
-      BAR_W + 5 + labelW,
-      legend.missing ? sw + 5 + w("NA") : 0,
-    );
-    const gutter = LEGEND_PAD + Math.ceil(inner) + LEGEND_PAD;
+    const { ticks, step } = fitDomainTicks(legend.lo, legend.hi, barH, {
+      maxCount,
+      minGapPx,
+      endGapPx: fs + 2,
+    });
+    const labels = formatTicks(ticks, step);
+    const gutter = gutterFor(Math.max(labelW, widest(labels)));
     if (gutter > cap || barH < least) return null;
     return {
       kind: "continuous",

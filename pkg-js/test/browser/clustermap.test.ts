@@ -579,3 +579,93 @@ describe("clustermap colour bar labels", () => {
     ]);
   });
 });
+
+describe("clustermap colour bar in a small widget", () => {
+  /** A 6 x 4 matrix of evenly spread values from `lo` to `hi`. */
+  const spread = (lo: number, hi: number) =>
+    Array.from({ length: 24 }, (_, i) => lo + (i / 23) * (hi - lo));
+  const make = (
+    el: HTMLElement,
+    values: number[],
+    fontSize: number,
+  ): PlotomicsInstance<unknown> =>
+    createClustermap(el, {
+      data: { columns: { values }, meta: { nrows: 6, ncols: 4 } },
+      options: { theme: { fontSize } },
+    });
+  const tickLabels = (el: HTMLElement) =>
+    (
+      Array.from(
+        el.querySelectorAll('svg text[text-anchor="start"]'),
+      ) as SVGTextElement[]
+    ).filter((t) => /^-?\d/.test(t.textContent ?? ""));
+  const titleBox = (el: HTMLElement) =>
+    (
+      Array.from(el.querySelectorAll("svg text")).find(
+        (t) => t.textContent === "value",
+      ) as SVGTextElement
+    ).getBoundingClientRect();
+
+  it("keeps the heatmap and short exact labels for tiny values", () => {
+    // Values of about 1e-15 at 300 x 300 px, fontSize 20. Before the fix
+    // the labels were 17 characters long, the colour bar gutter took the
+    // width and the heatmap was 1 px wide.
+    const el = container(300, 300);
+    instances.push(make(el, spread(-3e-15, 6.2e-15), 20));
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    expect(canvas.clientWidth).toBeGreaterThanOrEqual(80);
+    const labels = tickLabels(el).map((t) => t.textContent);
+    expect(labels).toContain("2e-15");
+    const title = titleBox(el);
+    for (const t of tickLabels(el)) {
+      expect(t.getBoundingClientRect().right + 2).toBeLessThanOrEqual(
+        title.left,
+      );
+    }
+  });
+
+  it("cuts labels too long for its largest share, and keeps the heatmap", () => {
+    // A narrow range far from 0 has long labels in any form.
+    const el = container(300, 300);
+    instances.push(make(el, spread(1000, 1000.0002), 20));
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    expect(canvas.clientWidth).toBeGreaterThanOrEqual(60);
+    const title = titleBox(el);
+    const box = el.getBoundingClientRect();
+    expect(title.right).toBeLessThanOrEqual(box.right);
+    for (const t of tickLabels(el)) {
+      expect(t.textContent?.endsWith("\u2026")).toBe(true);
+      expect(t.getBoundingClientRect().right + 2).toBeLessThanOrEqual(
+        title.left,
+      );
+    }
+  });
+
+  it("keeps two labels on a short bar", () => {
+    // 300 x 150 px, fontSize 16, values 850 to 1.2e6. Before the fix the
+    // bar showed "500k" alone.
+    const el = container(300, 150);
+    instances.push(make(el, spread(850, 1.2e6), 16));
+    expect(tickLabels(el).map((t) => t.textContent)).toEqual(["0.5M", "1.0M"]);
+  });
+
+  it("keeps the bottom label and the NA key inside a short widget", () => {
+    // 300 x 120 px, fontSize 12, values 0 to 1. Before the fix the bar
+    // kept its 40 px floor and its bottom label was cut at the last row.
+    for (const values of [
+      spread(0, 1),
+      spread(0, 1).map((v, i) => (i === 5 ? Number.NaN : v)),
+    ]) {
+      const el = container(300, 120);
+      instances.push(make(el, values, 12));
+      const box = el.getBoundingClientRect();
+      for (const t of Array.from(el.querySelectorAll("svg text, svg rect"))) {
+        const r = t.getBoundingClientRect();
+        expect(r.bottom, t.textContent || t.tagName).toBeLessThanOrEqual(
+          box.bottom,
+        );
+      }
+      expect(tickLabels(el).length).toBeGreaterThanOrEqual(1);
+    }
+  });
+});

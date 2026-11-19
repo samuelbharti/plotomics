@@ -874,7 +874,11 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     // largest share, is left out; its gridline stays.
     xAxis.ticks.forEach((t, i) => {
       const x = pxX(t);
-      if (x < m.left - 1 || x > width - m.right + 1) return;
+      // A view zoomed past the precision of its numbers has no width, and
+      // its one tick no place on the axis.
+      if (!Number.isFinite(x) || x < m.left - 1 || x > width - m.right + 1) {
+        return;
+      }
       under.appendChild(line(x, m.top, x, height - m.bottom, gridColor, 1));
       const label = xAxis.labels[i] ?? "";
       const half = labelWidth(label) / 2;
@@ -891,7 +895,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     });
     yAxis.ticks.forEach((t, i) => {
       const y = pxY(t);
-      if (y < m.top - 1 || y > height - m.bottom + 1) return;
+      if (!Number.isFinite(y) || y < m.top - 1 || y > height - m.bottom + 1) {
+        return;
+      }
       under.appendChild(line(m.left, y, width - m.right, y, gridColor, 1));
       const label = yAxis.labels[i] ?? "";
       if (m.left - 8 - labelWidth(label) < 0) return;
@@ -1118,6 +1124,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     const { ticks, step } = fitDomainTicks(domain[0], domain[1], cbH, {
       maxCount: 4,
       minGapPx: 1.6 * fs,
+      endGapPx: fs + 2,
     });
     const labels = formatTicks(ticks, step);
     // A flat domain has one tick and no step.

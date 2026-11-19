@@ -798,14 +798,26 @@ function readableOn(hex: string): string {
   return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#233038" : "#FFFFFF";
 }
 /**
- * A value for the tooltip: a count with thousands separators, any other
- * value to six significant digits, so a fraction such as 0.00084 never
- * reads 0.00.
+ * A value for the tooltip, with the thousands separators of a whole one:
+ * any other value to six significant digits, and to two decimals or more,
+ * so 0.00084 never reads 0.00 and 1234567.5 never reads 1234568. Below a
+ * millionth it takes the exponent form.
  */
 function fmtValue(v: number): string {
   // -0, from a tiny negative value that float32 rounds, reads 0.
   if (v === 0) return "0";
-  return Number.isInteger(v) ? v.toLocaleString() : formatTick(v, 0);
+  if (Number.isInteger(v)) return v.toLocaleString();
+  const a = Math.abs(v);
+  if (!(a >= 1e-6)) return formatTick(v, 0);
+  // Digits of the whole part: 7 for 1234567.5, none for 0.25.
+  const whole = a >= 1 ? Math.floor(Math.log10(a)) + 1 : 0;
+  const n = Number(v.toPrecision(Math.min(21, Math.max(6, whole + 2))));
+  const text = String(n);
+  const dot = text.indexOf(".");
+  const decimals = dot < 0 ? 0 : text.length - dot - 1;
+  return n.toLocaleString(undefined, {
+    maximumFractionDigits: Math.min(20, decimals),
+  });
 }
 
 function esc(s: string): string {

@@ -634,7 +634,7 @@ describe("volcano tick labels deep in a zoom", () => {
       all().filter(
         (t) =>
           t.getAttribute("text-anchor") === anchor &&
-          /^-?[\d.]+$/.test(t.textContent ?? ""),
+          /^-?[\d.]+(e[+-]\d+)?$/.test(t.textContent ?? ""),
       );
     const titleBox = (label: string) =>
       (
@@ -695,6 +695,61 @@ describe("volcano tick labels deep in a zoom", () => {
       // The labels stay exact: none repeats.
       const values = ys.map((t) => Number(t.textContent)).sort((a, b) => a - b);
       expect(new Set(values).size).toBe(values.length);
+    }
+  });
+});
+
+describe("volcano zoomed past the precision of its numbers", () => {
+  it("draws no tick label off its axis", async () => {
+    // At 250 px, about 70 wheel steps leave the view no width. Before the
+    // fix its one tick had no place and its label went to the corner.
+    const n = 2000;
+    let s = 3;
+    const r = () => {
+      s = (s * 1103515245 + 12345) % 2147483648;
+      return s / 2147483648;
+    };
+    const x = Array.from({ length: n }, () => (r() - 0.5) * 4);
+    const y = Array.from({ length: n }, () => r() * 10);
+    const el = container(250, 300);
+    instances.push(
+      createVolcano(el, {
+        data: { columns: { x, y } },
+        options: { labelTopN: 0 },
+      }),
+    );
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(100);
+    await frame();
+    await frame();
+    for (let i = 0; i < 80; i += 1) {
+      const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+      const b = canvas.getBoundingClientRect();
+      canvas.dispatchEvent(
+        new WheelEvent("wheel", {
+          deltaY: -120,
+          clientX: b.left + b.width / 2,
+          clientY: b.top + b.height / 2,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await frame();
+    }
+    await new Promise((res) => setTimeout(res, 300));
+    const plot = (
+      el.querySelector("svg") as SVGSVGElement
+    ).getBoundingClientRect();
+    for (const t of Array.from(el.querySelectorAll("svg text"))) {
+      expect(t.getAttribute("x")).not.toBe("NaN");
+      expect(t.getAttribute("y")).not.toBe("NaN");
+      const b = t.getBoundingClientRect();
+      expect(b.left, t.textContent ?? "").toBeGreaterThanOrEqual(plot.left);
+      expect(b.top, t.textContent ?? "").toBeGreaterThanOrEqual(plot.top);
     }
   });
 });

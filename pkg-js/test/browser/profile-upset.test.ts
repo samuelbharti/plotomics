@@ -517,3 +517,18 @@ describe("upset total in a narrow widget", () => {
     });
   }
 });
+
+describe("profile tooltip of a large value", () => {
+  it("prints its fraction with thousands separators", () => {
+    // Before the fix 1234567.5 read "1234568" and 123456.789 "123457",
+    // next to "1,234,567" for a whole value.
+    const el = container(500, 300);
+    const value = [1234567.5, 123456.789, 1234567];
+    instances.push(createProfile(el, { data: { columns: { value } } }));
+    const at = (i: number) =>
+      hoverAt(el, profileBarX(el, i, 3, 500), tick(el, "0").y - 5);
+    expect(at(0)).toContain("1,234,567.5");
+    expect(at(1)).toContain("123,456.79");
+    expect(at(2)).toContain("1,234,567");
+  });
+});

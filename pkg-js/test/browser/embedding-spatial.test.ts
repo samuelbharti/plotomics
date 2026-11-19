@@ -1089,7 +1089,7 @@ describe("embedding axes deep in a zoom", () => {
       all().filter(
         (t) =>
           t.getAttribute("text-anchor") === anchor &&
-          /^-?[\d.]+$/.test(t.textContent ?? ""),
+          /^-?[\d.]+(e[+-]\d+)?$/.test(t.textContent ?? ""),
       );
     const titleBox = (label: string) =>
       (
@@ -1273,6 +1273,118 @@ describe("spatial export of a tissue image from another origin", () => {
     } finally {
       Object.defineProperty(proto, "crossOrigin", crossOrigin);
       console.warn = warn;
+    }
+  });
+});
+
+describe("spatial colour bar with long labels", () => {
+  /** Spots on a 4 x 4 grid over a 100 x 100 image, coloured by `color`. */
+  function spots(color: number[]) {
+    const x: number[] = [];
+    const y: number[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      for (let j = 0; j < 4; j += 1) {
+        x.push(12.5 + i * 25);
+        y.push(12.5 + j * 25);
+      }
+    }
+    return {
+      columns: {
+        x,
+        y,
+        color: x.map((_, i) => color[i % color.length]) as unknown as string[],
+      },
+      meta: { imgWidth: 100, imgHeight: 100, spotDiameter: 20 },
+    };
+  }
+
+  /** The colour bar's labels, top first. */
+  const barLabels = (el: HTMLElement) =>
+    (Array.from(el.querySelectorAll("svg text")) as SVGTextElement[])
+      .sort((a, b) => Number(a.getAttribute("y")) - Number(b.getAttribute("y")))
+      .map((t) => t.textContent ?? "");
+
+  // Before the fix fixed-point labels such as "0.000000002" or "0.50002"
+  // were too long for the gutter, and these widgets drew no colour bar.
+  const cases: [number, number, number, number, number, string[]][] = [
+    [300, 300, 16, 1.2e-9, 5.1e-9, ["4e-9", "2e-9"]],
+    [300, 300, 16, 1.2e-6, 5.1e-6, ["4e-6", "2e-6"]],
+    [
+      250,
+      300,
+      16,
+      -3.1e-4,
+      -1.2e-4,
+      ["-1.5e-4", "-2.0e-4", "-2.5e-4", "-3.0e-4"],
+    ],
+    [250, 300, 16, 0.5, 0.5001, ["0.5001", "0.5000"]],
+    [300, 300, 16, 1000, 1000.0001, ["1000.0001", "1000.0000"]],
+    // A bar too short for three labels keeps two: before the fix one,
+    // "500k".
+    [300, 90, 20, 850, 1.2e6, ["1.2M", "0.2M"]],
+  ];
+  for (const [w, h, fontSize, lo, hi, labels] of cases) {
+    it(`labels ${lo} to ${hi} at ${w} x ${h} px, fontSize ${fontSize}`, () => {
+      const el = container(w, h);
+      instances.push(
+        createSpatial(el, {
+          data: spots([lo, (lo + hi) / 2, hi]),
+          options: { theme: { fontSize } },
+        }),
+      );
+      expect(barLabels(el)).toEqual(labels);
+      const box = el.getBoundingClientRect();
+      for (const t of Array.from(el.querySelectorAll("svg text"))) {
+        const r = t.getBoundingClientRect();
+        expect(r.right).toBeLessThanOrEqual(box.right + 0.5);
+        expect(r.bottom).toBeLessThanOrEqual(box.bottom + 0.5);
+      }
+    });
+  }
+});
+
+describe("embedding axes zoomed past the precision of their numbers", () => {
+  it("draws no tick label off its axis", async () => {
+    // At 250 px, about 70 wheel steps leave the view no width. Before the
+    // fix its one tick had no place and its label went to the corner.
+    const el = container(250, 300);
+    instances.push(
+      createEmbedding(el, {
+        data: { columns: cells() },
+        options: { showAxes: true, showLegend: false },
+      }),
+    );
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(100);
+    await new Promise((r) => setTimeout(r, 300));
+    for (let i = 0; i < 80; i += 1) {
+      const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+      const b = canvas.getBoundingClientRect();
+      canvas.dispatchEvent(
+        new WheelEvent("wheel", {
+          deltaY: -120,
+          clientX: b.left + b.width / 2,
+          clientY: b.top + b.height / 2,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
+    await new Promise((r) => setTimeout(r, 300));
+    const plot = (
+      el.querySelector("svg") as SVGSVGElement
+    ).getBoundingClientRect();
+    for (const t of Array.from(el.querySelectorAll("svg text"))) {
+      expect(t.getAttribute("x")).not.toBe("NaN");
+      expect(t.getAttribute("y")).not.toBe("NaN");
+      const r = t.getBoundingClientRect();
+      expect(r.left, t.textContent ?? "").toBeGreaterThanOrEqual(plot.left);
+      expect(r.top, t.textContent ?? "").toBeGreaterThanOrEqual(plot.top);
     }
   });
 });

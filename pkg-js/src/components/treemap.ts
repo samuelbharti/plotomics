@@ -32,7 +32,6 @@ import {
   ramp,
   type RampName,
   categoricalColors,
-  formatTick,
 } from "../core/index.js";
 import { uniqueId } from "../core/dom.js";
 import {
@@ -557,10 +556,8 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     }
     const fs = sizes.label;
     // The ends of the key are not round values, so each prints as the value
-    // it is, up to six significant digits, and both in one notation: never
-    // "4.0e-3" next to "15.75".
-    const loText = formatTick(lo, 0);
-    const hiText = hi > lo ? formatTick(hi, 0) : "";
+    // it is, and both in one notation (see keyLabels).
+    const [loText = "", hiText = ""] = keyLabels(hi > lo ? [lo, hi] : [lo]);
     const hiW = textWidth(hiText, fs, theme.fontFamily);
     const loW = textWidth(loText, fs, theme.fontFamily);
     const barW = 90;
@@ -853,6 +850,42 @@ function fmt(v: number): string {
   const a = Math.abs(v);
   if (a >= 1000 || a < 0.01) return v.toExponential(1);
   return Number(v.toFixed(2)).toString();
+}
+
+/**
+ * The ends of the value key, each the value it is, to six significant
+ * digits and every digit of its whole part (as formatTick prints the one
+ * tick of a flat range), all in one notation: never "4.0e-3" next to
+ * "15.75", nor "5e-7" next to "3". They print in fixed point, unless that
+ * runs past six characters and the exponent form is shorter, as for values
+ * below a thousandth: then all of them take the exponent form.
+ */
+function keyLabels(values: readonly number[]): string[] {
+  const rounded = values.map((v) => {
+    if (!Number.isFinite(v)) return v;
+    const whole =
+      Math.abs(v) < 1e21 ? Math.trunc(Math.abs(v)).toFixed(0).length : 21;
+    return Number(v.toPrecision(Math.min(21, Math.max(6, whole))));
+  });
+  const fixed = rounded.map((n) => {
+    if (!Number.isFinite(n)) return "NA";
+    const text = String(n);
+    const e = text.indexOf("e-");
+    if (e < 0) return text;
+    // A value below a millionth, which String prints as "5e-7".
+    const mantissa = text.slice(0, e);
+    const dot = mantissa.indexOf(".");
+    const decimals = dot < 0 ? 0 : mantissa.length - dot - 1;
+    return n.toFixed(Math.min(100, decimals + Number(text.slice(e + 2))));
+  });
+  const exponent = rounded.map((n) =>
+    Number.isFinite(n) ? n.toExponential() : "NA",
+  );
+  const longest = (labels: string[]) =>
+    labels.reduce((k, s) => Math.max(k, s.length), 0);
+  return longest(fixed) > 6 && longest(exponent) < longest(fixed)
+    ? exponent
+    : fixed;
 }
 
 function escapeHTML(s: string): string {

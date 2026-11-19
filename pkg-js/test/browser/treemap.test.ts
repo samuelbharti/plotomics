@@ -196,3 +196,39 @@ describe("treemap value key", () => {
     expect(drawn.filter((t) => /\de[+-]/.test(t))).toEqual([]);
   });
 });
+
+describe("treemap value key in one notation", () => {
+  const tree = (values: number[]) => ({
+    columns: {
+      id: ["root", ...values.map((_, i) => `leaf${i}`)],
+      parent: ["", ...values.map(() => "root")],
+      value: [0, ...values],
+    },
+  });
+
+  it("prints small ends in the exponent form", () => {
+    // Before the fix the key read "0.000123457" and "0.00121".
+    const el = container();
+    instances.push(
+      createTreemap(el, {
+        data: tree([0.000123457, 0.0005, 0.00121]),
+        options: { colorBy: "value" },
+      }),
+    );
+    expect(texts(el)).toContain("1.23457e-4");
+    expect(texts(el)).toContain("1.21e-3");
+  });
+
+  it("never mixes the exponent form with fixed point", () => {
+    // Before the fix the key read "5e-7" next to "3".
+    const el = container();
+    instances.push(
+      createTreemap(el, {
+        data: tree([5e-7, 3]),
+        options: { colorBy: "value" },
+      }),
+    );
+    expect(texts(el)).toContain("5e-7");
+    expect(texts(el)).toContain("3e+0");
+  });
+});
