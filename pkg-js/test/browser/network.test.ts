@@ -281,3 +281,54 @@ describe("network labels and group legend", () => {
     expect(svg).toContain("data:image/png;base64,");
   });
 });
+
+describe("network legend in a small widget", () => {
+  /** Four nodes with the given groups. */
+  function grouped(groups: (string | null)[]) {
+    return {
+      columns: { id: ["a", "b", "c", "d"], x: [0, 1, 2, 3], y: [0, 1, 0, 1] },
+      meta: { nodeGroup: groups as string[] },
+    };
+  }
+
+  it("keeps every legend row inside a short widget", () => {
+    const el = container(600, 40);
+    instances.push(createNetwork(el, { data: grouped(["A", "B", "C", null]) }));
+    // Before the fix the rows were "A", "+2 more" and "NA", the last at
+    // baseline 44 in a 40 px widget.
+    expect(legendTexts(el).map((t) => t.textContent)).toEqual(["A", "+2 more"]);
+    const box = el.getBoundingClientRect();
+    for (const t of legendTexts(el)) {
+      expect(t.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        box.bottom + 0.5,
+      );
+    }
+  });
+
+  it("leaves the legend out of a widget too short for one row", () => {
+    const el = container(600, 24);
+    instances.push(createNetwork(el, { data: grouped(["A", "B", "C", null]) }));
+    expect(legendTexts(el)).toEqual([]);
+    expect(graphRight(el)).toBeCloseTo(el.getBoundingClientRect().right, 0);
+  });
+
+  it("leaves the legend out when its gutter cannot show the names", () => {
+    const el = container(120, 300);
+    const groups = ["Cytotoxic T cells", "B cells", "B cells", "B cells"];
+    instances.push(createNetwork(el, { data: grouped(groups) }));
+    // Before the fix the legend read "\u2026" twice and the graph kept 78 px.
+    expect(legendTexts(el)).toEqual([]);
+    expect(graphRight(el)).toBeCloseTo(el.getBoundingClientRect().right, 0);
+  });
+
+  it("keeps a legend whose names show a few characters", () => {
+    const el = container(200, 300);
+    const groups = ["Cytotoxic T cells", "B cells", "B cells", "B cells"];
+    instances.push(createNetwork(el, { data: grouped(groups) }));
+    const shown = legendTexts(el).map((t) => t.textContent ?? "");
+    expect(shown.length).toBe(2);
+    expect(shown[0]?.endsWith("\u2026")).toBe(true);
+    for (const s of shown) expect(s.length).toBeGreaterThanOrEqual(4);
+    expect(graphRight(el)).toBeLessThan(el.getBoundingClientRect().right - 50);
+  });
+});

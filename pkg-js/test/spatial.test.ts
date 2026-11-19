@@ -186,3 +186,80 @@ describe("spatial spot spacing", () => {
     expect(medianNeighbourDistance(sx, sy)).toBeCloseTo(2);
   });
 });
+
+/** The same median as medianNeighbourDistance, checking every pair. */
+function bruteForce(xs: (number | null)[], ys: (number | null)[]) {
+  const pts: [number, number][] = [];
+  xs.forEach((x, i) => {
+    const y = ys[i];
+    if (x != null && y != null && Number.isFinite(x) && Number.isFinite(y)) {
+      pts.push([x, y]);
+    }
+  });
+  const dists: number[] = [];
+  for (const [qx, qy] of pts) {
+    let best = Infinity;
+    for (const [x, y] of pts) {
+      const d = (x - qx) * (x - qx) + (y - qy) * (y - qy);
+      if (d > 0 && d < best) best = d;
+    }
+    if (best < Infinity) dists.push(Math.sqrt(best));
+  }
+  if (dists.length === 0) return null;
+  dists.sort((a, b) => a - b);
+  const mid = dists.length >> 1;
+  return dists.length % 2
+    ? (dists[mid] as number)
+    : ((dists[mid - 1] as number) + (dists[mid] as number)) / 2;
+}
+
+describe("spatial spot spacing on awkward layouts", () => {
+  it("stays fast on a thin strip with one spot far off", () => {
+    // Before the fix each ring of the search walked rows above and below
+    // the one-row grid: 21 s at this size.
+    const n = 90_000;
+    const xs = Array.from({ length: n }, (_, i) => i * 0.01);
+    xs[0] = 1e6;
+    const ys = new Array<number>(n).fill(0);
+    const t = performance.now();
+    expect(medianNeighbourDistance(xs, ys)).toBeCloseTo(0.01, 6);
+    expect(performance.now() - t).toBeLessThan(1000);
+  });
+
+  it("stays fast with every spot at one of two places", () => {
+    // Before the fix: 3 s for 1,000 spots, and longer with more.
+    for (const n of [1000, 90_000]) {
+      const xs = Array.from({ length: n }, (_, i) => (i % 2) * 50);
+      const ys = new Array<number>(n).fill(0);
+      const t = performance.now();
+      expect(medianNeighbourDistance(xs, ys)).toBe(50);
+      expect(performance.now() - t).toBeLessThan(1000);
+    }
+  });
+
+  it("gives the result of checking every pair, on random layouts", () => {
+    let seed = 7;
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    for (let k = 0; k < 300; k += 1) {
+      const n = 2 + Math.floor(rand() * 200);
+      // Coarse coordinates, so spots share places; some layouts are thin,
+      // some have a spot far off, some have missing coordinates.
+      const grid = 1 + Math.floor(rand() * 20);
+      const thin = rand() < 0.3;
+      const xs: (number | null)[] = [];
+      const ys: (number | null)[] = [];
+      for (let i = 0; i < n; i += 1) {
+        xs.push(Math.floor(rand() * grid) * 3);
+        ys.push(thin ? 0 : Math.floor(rand() * grid) * 2);
+      }
+      if (rand() < 0.3) xs[0] = 1e5 * rand();
+      if (rand() < 0.2) ys[n - 1] = null;
+      expect(medianNeighbourDistance(xs, ys), `layout ${k}`).toBe(
+        bruteForce(xs, ys),
+      );
+    }
+  });
+});

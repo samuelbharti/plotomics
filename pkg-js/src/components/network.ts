@@ -38,6 +38,8 @@ import {
   measure,
   textWidth,
   fitText,
+  fitLegend,
+  legendLabelsFit,
   serializeSVG,
   compositePNG,
   categoricalColors,
@@ -381,58 +383,58 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     });
   }
 
-  /**
-   * The legend rows the height holds. When the groups do not fit, fewer are
-   * listed and the rest go into a "+N more" line; the NA entry stays last.
-   */
-  function legendRows(): LegendRow[] {
-    if (!opts.showLegend || legend.length === 0) return [];
-    const fs = textSizes(theme).label;
-    const rowH = Math.round(fs * 1.3);
-    const y0 = Math.round(fs + 5);
-    const groups = legend.filter((e) => !e.missing);
-    const tail = legend.find((e) => e.missing);
-    const fit = Math.max(1, Math.floor((height - 6 - y0) / rowH) + 1);
-    const extra = tail ? 1 : 0;
-    const rowsFor = (cap: number) =>
-      Math.min(groups.length, cap) + (groups.length > cap ? 1 : 0) + extra;
-    let cap = LEGEND_MAX;
-    if (rowsFor(cap) > fit) cap = Math.max(1, fit - 1 - extra);
-    const rows: LegendRow[] = groups
-      .slice(0, cap)
-      .map((e) => ({ label: e.label, color: e.color }));
-    if (groups.length > cap) {
-      rows.push({ label: `+${groups.length - cap} more`, color: null });
-    }
-    if (tail) rows.push({ label: tail.label, color: tail.color });
-    return rows;
-  }
-
   /** Side of a legend swatch: 9 px next to the default 11 px labels. */
   function swatchSize(): number {
     return Math.round((textSizes(theme).label * 9) / 11);
   }
 
   /**
-   * Width of the legend gutter: the widest row with its swatch and padding,
-   * at most a share of the widget. A longer label is cut to fit.
+   * The legend rows and the width of their gutter. The rows are those the
+   * height holds (see fitLegend), and the gutter is the widest row with its
+   * swatch and padding, at most a share of the widget, with longer labels
+   * cut. No rows and no gutter when there are no groups, when not one row
+   * fits, or when the gutter cannot show a few characters of each label.
    */
-  function gutterWidth(rows: LegendRow[]): number {
-    if (rows.length === 0) return 0;
+  function legendLayout(): { rows: LegendRow[]; gutter: number } {
+    const none = { rows: [], gutter: 0 };
+    if (!opts.showLegend || legend.length === 0) return none;
     const fs = textSizes(theme).label;
-    const longest = rows.reduce(
-      (mx, r) => Math.max(mx, textWidth(r.label, fs, theme.fontFamily)),
+    const rowH = Math.round(fs * 1.3);
+    const y0 = Math.round(fs + 5);
+    const groups = legend.filter((e) => !e.missing);
+    const tail = legend.find((e) => e.missing);
+    // Rows whose baseline is 6 px or more above the bottom, so the text
+    // ends inside the widget.
+    const fit = fitLegend(
+      groups.length,
+      tail !== undefined,
+      Math.floor((height - 6 - y0) / rowH) + 1,
+      LEGEND_MAX,
+    );
+    const rows: LegendRow[] = groups
+      .slice(0, fit.shown)
+      .map((e) => ({ label: e.label, color: e.color }));
+    if (fit.more) rows.push({ label: `+${fit.more} more`, color: null });
+    if (fit.missing && tail)
+      rows.push({ label: tail.label, color: tail.color });
+    if (rows.length === 0) return none;
+    const sw = swatchSize();
+    const labels = rows.map((r) => r.label);
+    const longest = labels.reduce(
+      (mx, s) => Math.max(mx, textWidth(s, fs, theme.fontFamily)),
       0,
     );
-    const want =
-      LEGEND_PAD + swatchSize() + 5 + Math.ceil(longest) + LEGEND_PAD;
-    return Math.min(want, Math.floor(width * MAX_LEGEND_SHARE));
+    const want = LEGEND_PAD + sw + 5 + Math.ceil(longest) + LEGEND_PAD;
+    const gutter = Math.min(want, Math.floor(width * MAX_LEGEND_SHARE));
+    const room = gutter - 2 * LEGEND_PAD - sw - 5;
+    if (!legendLabelsFit(labels, room, fs, theme.fontFamily)) return none;
+    return { rows, gutter };
   }
 
   /** Size the graph to the widget less the legend gutter, and draw the legend. */
   function layout() {
-    const rows = legendRows();
-    gutter = gutterWidth(rows);
+    const { rows, gutter: g } = legendLayout();
+    gutter = g;
     host.style.width = `${Math.max(0, width - gutter)}px`;
     host.style.height = `${height}px`;
     svg.setAttribute("width", String(width));

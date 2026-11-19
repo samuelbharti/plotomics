@@ -700,4 +700,69 @@ describe("spatial spot size and legend gutter", () => {
     );
     expect(drawnRight(el)).toBe(300);
   });
+
+  /** Legend texts and swatches whose box runs past the widget's edge. */
+  function outsideBox(el: HTMLElement): string[] {
+    const box = el.getBoundingClientRect();
+    return Array.from(el.querySelectorAll("svg text, svg rect"))
+      .filter((t) => {
+        const r = t.getBoundingClientRect();
+        return r.bottom > box.bottom + 0.5 || r.right > box.right + 0.5;
+      })
+      .map((t) => t.textContent || t.tagName);
+  }
+
+  it("keeps every legend row inside a short widget", () => {
+    const el = container(600, 40);
+    instances.push(createSpatial(el, { data: tissue(["A", "B", "C", null]) }));
+    // Before the fix the rows were "A", "+2 more" and "NA", the last at
+    // baseline 44 in a 40 px widget.
+    expect(svgTexts(el)).toEqual(["A", "+2 more"]);
+    expect(outsideBox(el)).toEqual([]);
+  });
+
+  it("shortens the colour bar to fit a short widget, with the NA key", () => {
+    const el = container(600, 80);
+    instances.push(createSpatial(el, { data: tissue([1, 250, 3000, null]) }));
+    // Before the fix the bar was 90 px tall from y = 18, past the bottom.
+    expect(svgTexts(el)).toContain("NA");
+    expect(outsideBox(el)).toEqual([]);
+  });
+
+  it("leaves the legend out of a widget too short for one row", () => {
+    for (const color of [
+      ["A", "B"],
+      [1, 2],
+    ]) {
+      const el = container(300, 24);
+      instances.push(createSpatial(el, { data: tissue(color) }));
+      expect(svgTexts(el)).toEqual([]);
+    }
+  });
+
+  const narrow: [string, unknown[]][] = [
+    ["legend", ["Cytotoxic T cells", "B cells"]],
+    ["colour bar", [1, 250, 3000]],
+  ];
+  for (const [name, color] of narrow) {
+    it(`leaves the ${name} out when its gutter cannot show the labels`, () => {
+      const el = container(120, 300);
+      instances.push(createSpatial(el, { data: tissue(color) }));
+      // Before the fix the gutter kept 42 px and showed only ellipses.
+      expect(svgTexts(el)).toEqual([]);
+      expect(drawnRight(el)).toBe(120);
+    });
+  }
+
+  it("keeps a legend whose labels show a few characters", () => {
+    const el = container(200, 300);
+    instances.push(
+      createSpatial(el, { data: tissue(["Cytotoxic T cells", "B cells"]) }),
+    );
+    const texts = svgTexts(el);
+    expect(texts.length).toBe(2);
+    expect(texts[1]?.endsWith("\u2026")).toBe(true);
+    for (const t of texts) expect(t.length).toBeGreaterThanOrEqual(4);
+    expect(outsideBox(el)).toEqual([]);
+  });
 });
