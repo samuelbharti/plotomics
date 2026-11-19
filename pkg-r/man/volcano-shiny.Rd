@@ -32,12 +32,12 @@ and interactive R Markdown / Quarto documents.
 }
 \examples{
 if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-  ui <- fluidPage(volcanoOutput("v"))
+  ui <- shiny::fluidPage(volcanoOutput("v"))
   server <- function(input, output) {
     output$v <- renderVolcano({
       volcano(data.frame(x = rnorm(100), y = abs(rnorm(100)) * 3))
     })
   }
-  shinyApp(ui, server)
+  shiny::shinyApp(ui, server)
 }
 }

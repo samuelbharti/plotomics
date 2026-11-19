@@ -183,7 +183,7 @@ network <- function(nodes,
 #'   `renderNetwork()` returns a Shiny render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-#'   ui <- fluidPage(networkOutput("net"))
+#'   ui <- shiny::fluidPage(networkOutput("net"))
 #'   server <- function(input, output) {
 #'     output$net <- renderNetwork({
 #'       network(
@@ -192,7 +192,7 @@ network <- function(nodes,
 #'       )
 #'     })
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name network-shiny
 #' @export

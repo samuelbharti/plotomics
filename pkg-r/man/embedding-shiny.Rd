@@ -38,12 +38,12 @@ every completed selection and is \code{NULL} until the first one.
 }
 \examples{
 if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-  ui <- fluidPage(embeddingOutput("emb"))
+  ui <- shiny::fluidPage(embeddingOutput("emb"))
   server <- function(input, output) {
     output$emb <- renderEmbedding({
       embedding(data.frame(x = rnorm(200), y = rnorm(200)))
     })
   }
-  shinyApp(ui, server)
+  shiny::shinyApp(ui, server)
 }
 }

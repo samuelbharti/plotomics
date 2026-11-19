@@ -153,14 +153,17 @@ treemap <- function(data,
 #'   `renderTreemap()` returns a Shiny render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-#'   ui <- fluidPage(treemapOutput("tm"))
+#'   ui <- shiny::fluidPage(treemapOutput("tm"))
 #'   server <- function(input, output) {
 #'     output$tm <- renderTreemap({
-#'       treemap(id = c("root", "A", "B"), parent = c(NA, "root", "root"),
-#'               value = c(NA, 3, 7))
+#'       treemap(data.frame(
+#'         id = c("root", "A", "B"),
+#'         parent = c(NA, "root", "root"),
+#'         value = c(0, 3, 7)
+#'       ))
 #'     })
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name treemap-shiny
 #' @export
