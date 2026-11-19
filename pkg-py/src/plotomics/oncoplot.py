@@ -117,10 +117,10 @@ class Oncoplot(PlotomicsWidget):
         of ``samples``, so it needs ``samples``. The levels of a strip, in
         legend order, are the categories of a pandas Categorical, unused ones
         included, and otherwise the distinct values in code point order, as
-        in R. ``colors`` as a dict, or a pandas Series indexed by level,
-        gives each level the colour under its name, whatever the order, and
-        every level needs one. A list of ``colors``, or a Series indexed by
-        row number, goes to the levels in that order.
+        in R. ``colors`` as a dict, or a pandas Series whose index names
+        levels, gives each level the colour under its name, whatever the
+        order, and every level needs one. A list of ``colors``, or a Series
+        whose index names no level, goes to the levels in that order.
     show_burden, show_frequency, show_annotations, show_legend:
         Toggle the surrounding panels.
     empty_color:
@@ -400,20 +400,19 @@ def _level_colors(colors: Any, levels: list[str], name: str) -> list[str]:
     """Annotation colours in the order of the levels.
 
     The browser gives level i the colour i. A dict, or a pandas Series
-    indexed by level, is put in level order by name, so it colours the right
-    levels whatever its order; each level needs a colour. A list, or a Series
-    indexed by row number, is taken in the order given, as the annotation
-    values are.
+    whose index names levels, is put in level order by name, so it colours
+    the right levels whatever its order; each level needs a colour. A list,
+    or a Series whose index names no level (row numbers, as left by
+    filtering), is taken in the order given, by the rule the annotation
+    values follow.
     """
     keyed = None
     if isinstance(colors, Mapping):
         keyed = dict(colors.items())
-    elif (
-        hasattr(colors, "to_dict")
-        and hasattr(colors, "index")
-        and type(colors.index).__name__ != "RangeIndex"
-    ):
-        keyed = dict(zip(colors.index, colors.tolist()))
+    elif hasattr(colors, "to_dict") and hasattr(colors, "index"):
+        index = [str(k) for k in colors.index]
+        if set(index) & set(levels):
+            keyed = dict(zip(index, colors.tolist()))
     if keyed is not None:
         keyed = {str(k): str(v) for k, v in keyed.items()}
         missing = [lv for lv in levels if lv not in keyed]

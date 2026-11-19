@@ -357,8 +357,13 @@ bv_tidy_survfit <- function(fit, risk_times = NULL, env = parent.frame()) {
 #' `", I(age > 65)="` built from the variable names, so a variable name or a
 #' level may hold "=" or ", ", as `cut(age, breaks = c(0, 60, 100))` and its
 #' level `"(0,60]"` do. The level of a `strata()` term is cut the same way
-#' by the arguments of that term. When the names cannot be read from the
-#' fit, or a stratum name does not have them, every name is kept as it is.
+#' by the arguments of that term. A `cluster()` term is one of the
+#' variables when the names have it, as survival 3.8 writes them, and is
+#' left out when they do not. Every name is kept as it is when the names
+#' cannot be read from the fit, when a stratum name does not have them,
+#' when a name can be cut in more than one way, or when the names have a
+#' variable the formula does not, as when the formula held in a variable
+#' was changed after the fit.
 #'
 #' @param x Stratum names, `names(fit$strata)`.
 #' @param vars The variable names from `bv_strata_vars()`, or `NULL`.
@@ -369,22 +374,69 @@ bv_strata_labels <- function(x, vars) {
   if (is.null(vars) || length(vars$names) == 0L) {
     return(whole)
   }
-  parts <- lapply(x, bv_split_strata, vars = vars$names)
-  if (any(vapply(parts, is.null, logical(1)))) {
-    return(whole)
+  tries <- list(rep(TRUE, length(vars$names)))
+  if (any(vars$cluster)) tries <- c(tries, list(!vars$cluster))
+  for (use in tries) {
+    if (!any(use)) next
+    inner <- vars$inner[use]
+    # The level of a strata() term holds its own "name=" parts; its
+    # arguments account for them below.
+    parts <- bv_split_all(x, vars$names[use], check = lengths(inner) == 0L)
+    if (is.null(parts)) next
+    for (j in seq_along(inner)) {
+      if (length(inner[[j]]) == 0L) next
+      # A strata() term of factors or text names its levels without the
+      # arguments; then no level starts with them and it is kept.
+      cut <- bv_split_all(vapply(parts, `[[`, character(1), j), inner[[j]])
+      if (is.null(cut)) next
+      for (i in seq_along(parts)) {
+        parts[[i]][[j]] <- paste(cut[[i]], collapse = ", ")
+      }
+    }
+    return(vapply(parts, paste, character(1), collapse = ", "))
   }
-  for (j in seq_along(vars$names)) {
-    inner <- vars$inner[[j]]
-    if (length(inner) == 0L) next
-    # A strata() term of factors or text names its levels without the
-    # arguments; then no level starts with them and it is kept.
-    cut <- lapply(parts, function(p) bv_split_strata(p[[j]], inner))
-    if (any(vapply(cut, is.null, logical(1)))) next
-    for (i in seq_along(parts)) {
-      parts[[i]][[j]] <- paste(cut[[i]], collapse = ", ")
+  whole
+}
+
+#' The levels of every stratum name, when the variables account for them
+#'
+#' A variable the names have and `vars` lack sits inside a level of every
+#' name as the same `", name="`, as `"1, ph.ecog=0"` does when `vars` is
+#' only `"sex"`. Then the names are not cut.
+#'
+#' @param x Stratum names.
+#' @param vars The variable names in order.
+#' @param check Whether to look for such a variable in each level.
+#' @return A list with the levels of each name, or `NULL`.
+#' @noRd
+bv_split_all <- function(x, vars, check = rep(TRUE, length(vars))) {
+  parts <- lapply(x, bv_split_strata, vars = vars)
+  if (any(vapply(parts, is.null, logical(1)))) {
+    return(NULL)
+  }
+  for (j in which(check)) {
+    bits <- lapply(parts, function(p) bv_named_bits(p[[j]]))
+    shared <- Reduce(intersect, bits)
+    if (length(shared) > 0L) {
+      return(NULL)
     }
   }
-  vapply(parts, paste, character(1), collapse = ", ")
+  parts
+}
+
+#' Every piece of a level that starts with ", " and ends with "="
+#' @noRd
+bv_named_bits <- function(s) {
+  starts <- gregexpr(", ", s, fixed = TRUE)[[1L]]
+  ends <- gregexpr("=", s, fixed = TRUE)[[1L]]
+  if (starts[[1L]] < 0L || ends[[1L]] < 0L) {
+    return(character())
+  }
+  out <- character()
+  for (a in starts) {
+    for (b in ends[ends > a + 1L]) out <- c(out, substring(s, a, b))
+  }
+  unique(out)
 }
 
 #' The levels in one stratum name, given its variable names
@@ -392,46 +444,65 @@ bv_strata_labels <- function(x, vars) {
 #' @param x One stratum name, such as `"sex=1, ph.ecog > 1=FALSE"`.
 #' @param vars The variable names in order, such as `c("sex", "ph.ecog > 1")`.
 #' @return One level per variable, or `NULL` when `x` does not have the
-#'   variable names in that order.
+#'   variable names in that order, or has them in more than one way, as
+#'   `"tricky=x, sex=1, sex=1"` does for `c("tricky", "sex")`.
 #' @noRd
 bv_split_strata <- function(x, vars) {
   first <- paste0(vars[[1L]], "=")
   if (!startsWith(x, first)) {
     return(NULL)
   }
-  rest <- substring(x, nchar(first) + 1L)
-  out <- character(length(vars))
-  for (j in seq_along(vars)) {
-    if (j == length(vars)) {
-      out[[j]] <- rest
-      break
-    }
-    sep <- paste0(", ", vars[[j + 1L]], "=")
-    at <- regexpr(sep, rest, fixed = TRUE)
-    if (at < 0L) {
-      return(NULL)
-    }
-    out[[j]] <- substring(rest, 1L, at - 1L)
-    rest <- substring(rest, at + nchar(sep))
+  ways <- bv_split_rest(substring(x, nchar(first) + 1L), vars[-1L])
+  if (length(ways) != 1L) {
+    return(NULL)
   }
   # strata() pads each part after the first with spaces to a common width.
-  sub("\\s+$", "", out)
+  sub("\\s+$", "", ways[[1L]])
+}
+
+#' The ways to cut the rest of a stratum name into levels
+#'
+#' @param rest The name after its first `"variable="`.
+#' @param vars The variables after the first.
+#' @return A list of the ways found, each one level per variable; it stops
+#'   at two, which is enough to tell that the cut is not unique.
+#' @noRd
+bv_split_rest <- function(rest, vars) {
+  if (length(vars) == 0L) {
+    return(list(rest))
+  }
+  sep <- paste0(", ", vars[[1L]], "=")
+  at <- gregexpr(sep, rest, fixed = TRUE)[[1L]]
+  if (at[[1L]] < 0L) {
+    return(list())
+  }
+  ways <- list()
+  for (a in at) {
+    tails <- bv_split_rest(substring(rest, a + nchar(sep)), vars[-1L])
+    for (tl in tails) {
+      ways <- c(ways, list(c(substring(rest, 1L, a - 1L), tl)))
+    }
+    if (length(ways) > 1L) break
+  }
+  ways
 }
 
 #' The stratum variable names of a survfit, as survfit writes them
 #'
 #' A survfit from a formula names its strata by the term labels of the
-#' formula, without backticks and without `cluster()` terms. A survfit from
-#' a Cox model names them by the arguments of the `strata()` terms of the
+#' formula, without backticks. survival 3.8 names a `cluster()` term too,
+#' and older versions leave it out, so those terms are marked. A survfit
+#' from a Cox model names them by the arguments of the `strata()` terms of the
 #' model. The formula, or the model, is read from the call of the fit; a
 #' name in that call is looked up in `env`. Nothing is evaluated but that
 #' lookup.
 #'
 #' @param fit A `survfit` object.
 #' @param env Where a name in the call of the fit is looked up.
-#' @return A list with `names`, the variable names in order, and `inner`, the
-#'   arguments of each `strata()` term (`NULL` for other terms); `NULL` when
-#'   the names cannot be read.
+#' @return A list with `names`, the variable names in order, `inner`, the
+#'   arguments of each `strata()` term (`NULL` for other terms), and
+#'   `cluster`, whether each is a `cluster()` term; `NULL` when the names
+#'   cannot be read.
 #' @noRd
 bv_strata_vars <- function(fit, env) {
   found <- tryCatch(
@@ -451,7 +522,6 @@ bv_strata_vars <- function(fit, env) {
   if (length(labels) == 0L) {
     return(NULL)
   }
-  labels <- labels[!startsWith(labels, "cluster(")]
   tick <- startsWith(labels, "`") & endsWith(labels, "`")
   labels[tick] <- substring(labels[tick], 2L, nchar(labels[tick]) - 1L)
   inner <- lapply(labels, bv_strata_args)
@@ -460,9 +530,12 @@ bv_strata_vars <- function(fit, env) {
     if (length(args) == 0L) {
       return(NULL)
     }
-    return(list(names = args, inner = vector("list", length(args))))
+    n <- length(args)
+    return(list(names = args, inner = vector("list", n),
+                cluster = rep(FALSE, n)))
   }
-  list(names = labels, inner = inner)
+  list(names = labels, inner = inner,
+       cluster = startsWith(labels, "cluster("))
 }
 
 #' The formula behind a survfit call

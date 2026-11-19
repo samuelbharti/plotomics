@@ -329,6 +329,64 @@ test_that("km() cuts stratum names at the variable names of the fit", {
   expect_equal(groups(fit), c("g=x", "g=c, d=e", "g=a=b"))
 })
 
+test_that("km() keeps stratum names when the formula found is not the fit's", {
+  skip_if_not_installed("survival")
+  lung <- survival::lung
+  groups <- function(fit) as.character(km(fit)$x$data$meta$groups)
+  as_fitted <- c("sex=1, ph.ecog=0", "sex=1, ph.ecog=1", "sex=1, ph.ecog=2")
+  # The formula held in `fo` changes after the fit. Before the fix this
+  # gave "1, ph.ecog=0".
+  fo <- survival::Surv(time, status) ~ sex + ph.ecog
+  fit <- survival::survfit(fo, data = lung)
+  fo <- survival::Surv(time, status) ~ sex
+  expect_equal(utils::head(groups(fit), 3), as_fitted)
+  # A helper's own `fo`, with another `fo` where km() is called.
+  fit_in_helper <- function() {
+    fo <- survival::Surv(time, status) ~ sex + ph.ecog
+    survival::survfit(fo, data = lung)
+  }
+  expect_equal(utils::head(groups(fit_in_helper()), 3), as_fitted)
+})
+
+test_that("km() names a cluster() term as survfit does", {
+  skip_if_not_installed("survival")
+  lung <- survival::lung
+  fit <- survival::survfit(
+    survival::Surv(time, status) ~ sex + survival::cluster(inst), data = lung
+  )
+  groups <- as.character(km(fit)$x$data$meta$groups)
+  if (startsWith(names(fit$strata)[[1L]], "sex=1, cluster(inst)=")) {
+    # survival 3.8 names it; before the fix this gave "1, cluster(inst)=1".
+    expect_equal(utils::head(groups, 2), c("1, 1", "1, 2"))
+  } else {
+    expect_equal(utils::head(groups, 2), c("1", "2"))
+  }
+  # Names without the cluster() term, as older versions of survival write
+  # them, are cut without it.
+  vars <- list(
+    names = c("sex", "cluster(inst)"), inner = list(NULL, NULL),
+    cluster = c(FALSE, TRUE)
+  )
+  expect_equal(bv_strata_labels(c("sex=1", "sex=2"), vars), c("1", "2"))
+})
+
+test_that("km() keeps a stratum name that can be cut in two ways", {
+  skip_if_not_installed("survival")
+  d <- data.frame(
+    t = 1:6, e = 1,
+    tricky = c("x, sex=1", "x, sex=1", "y", "y", "z", "z"),
+    sex = c(1, 2, 1, 2, 1, 2)
+  )
+  fit <- survival::survfit(survival::Surv(t, e) ~ tricky + sex, data = d)
+  # "tricky=x, sex=1, sex=1" is the level "x" and "1, sex=1", or "x, sex=1"
+  # and "1". Before the fix it read "x, 1, sex=1".
+  expect_equal(
+    as.character(km(fit)$x$data$meta$groups),
+    c("tricky=x, sex=1, sex=1", "tricky=x, sex=1, sex=2", "tricky=y, sex=1",
+      "tricky=y, sex=2", "tricky=z, sex=1", "tricky=z, sex=2")
+  )
+})
+
 test_that("km() stops on a multi-state fit with a clear message", {
   skip_if_not_installed("survival")
   lung <- survival::lung

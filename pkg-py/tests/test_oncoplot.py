@@ -374,6 +374,12 @@ def test_annotation_colours_follow_categories_and_colour_names():
     assert a["colors"] == ["#00AA00", "#FFA500", "#FF0000"]
     a = strip(risk, pd.Series(["#111111", "#222222", "#333333"]))
     assert a["colors"] == ["#111111", "#222222", "#333333"]
+    # A filtered Series keeps row numbers that name no level, 0, 2 and 3
+    # here; it goes by position too. Before the fix it raised "no colour
+    # for level(s)".
+    pal = pd.Series(["#111111", "#999999", "#222222", "#333333"])
+    a = strip(risk, pal[pal != "#999999"])
+    assert a["colors"] == ["#111111", "#222222", "#333333"]
     msg = "annotation 'Risk' has no colour for level(s): Medium, High"
     with pytest.raises(ValueError, match=re.escape(msg)):
         strip(risk, {"Low": "#00AA00"})
