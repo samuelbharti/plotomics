@@ -126,6 +126,8 @@ export interface UpsetLayout {
   setPanelW: number;
   /** Width of the set-name column. */
   nameW: number;
+  /** Baseline of the "N total" label at the top right. */
+  totalY: number;
 }
 
 /**
@@ -152,9 +154,64 @@ export function layoutUpset(
   countWidth = 24,
   /** Text sizes; those of the default theme when omitted. */
   sizes: TextSizes = DEFAULT_SIZES,
+  /** Width in px of the "N total" label at the label size; 0 for none. */
+  totalWidth = 0,
 ): UpsetLayout {
+  // The baseline of a line of text at the top of the widget.
+  const firstLine = Math.ceil(ASCENT * sizes.label) + 2;
   // Room above the bars for the total, drawn 2 px under the top.
-  const top = Math.max(14, Math.ceil(ASCENT * sizes.label) + 2);
+  const base = frameUpset(
+    width,
+    height,
+    nSets,
+    nIntersections,
+    opts,
+    nameWidth,
+    countWidth,
+    sizes,
+    Math.max(14, firstLine),
+  );
+  // The total ends at the right edge, level with the top tick label, which
+  // ends 6 px left of the bars. A total wider than the space between them
+  // takes a line of its own, and the bars start low enough that the line
+  // of the top tick label, centred 6 px under their top, starts 1 px under
+  // the line of the total, whose letters reach 0.3 of its size below its
+  // baseline.
+  if (totalWidth > 0 && width - RIGHT - totalWidth < base.left - 6 + 4) {
+    const label = sizes.label;
+    const top = Math.ceil(
+      firstLine + 0.3 * label + ASCENT * label - midline(label) - 6 + 1,
+    );
+    return {
+      ...frameUpset(
+        width,
+        height,
+        nSets,
+        nIntersections,
+        opts,
+        nameWidth,
+        countWidth,
+        sizes,
+        Math.max(base.top, top),
+      ),
+      totalY: firstLine,
+    };
+  }
+  return base;
+}
+
+/** {@link layoutUpset} with the bars starting `top` px down. */
+function frameUpset(
+  width: number,
+  height: number,
+  nSets: number,
+  nIntersections: number,
+  opts: Pick<UpsetOptions, "barFraction" | "showSetSizes">,
+  nameWidth: number,
+  countWidth: number,
+  sizes: TextSizes,
+  top: number,
+): UpsetLayout {
   const bottom = BOTTOM;
   const avail = Math.max(1, height - top - bottom);
   // Clamp the split so neither panel can vanish at extreme aspect ratios.
@@ -191,6 +248,7 @@ export function layoutUpset(
     matrixH,
     setPanelW,
     nameW,
+    totalY: top + 2,
   };
 }
 
@@ -346,6 +404,8 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       (m, n) => Math.max(m, textWidth(n, fontSizes.label)),
       0,
     );
+    const total = totalText();
+    const totalWidth = total ? textWidth(total, fontSizes.label) : 0;
     const frame = (countWidth: number) =>
       layoutUpset(
         width,
@@ -356,6 +416,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
         nameWidth,
         countWidth,
         fontSizes,
+        totalWidth,
       );
     // The bar height does not depend on the width of the set sizes, so the
     // axis comes first and the set sizes can print in its unit.
@@ -366,21 +427,33 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     ctx.fillRect(0, 0, width, height);
     const empty = !s.length || !names.length;
     // Whole-number ticks, as many as the bar panel holds without crowding.
-    const axis = empty
-      ? zeroTicks(1, 4)
-      : fitZeroTicks(finiteMax(s), layout.barH - 6, {
-          integer: true,
-          minGapPx: fontSizes.label + 5,
-          endGapPx: fontSizes.label + 2,
-        });
+    const fitAxis = () =>
+      empty
+        ? zeroTicks(1, 4)
+        : fitZeroTicks(finiteMax(s), layout.barH - 6, {
+            integer: true,
+            minGapPx: fontSizes.label + 5,
+            endGapPx: fontSizes.label + 2,
+          });
     const ssAll = setSizes();
-    let countWidth = 0;
-    if (ssAll) {
-      for (const label of setSizeLabels(ssAll, axis)) {
-        countWidth = Math.max(countWidth, textWidth(label, fontSizes.label));
+    const countsWidth = (a: { ticks: number[]; step: number }) => {
+      let w = 0;
+      if (ssAll) {
+        for (const label of setSizeLabels(ssAll, a)) {
+          w = Math.max(w, textWidth(label, fontSizes.label));
+        }
       }
+      return w;
+    };
+    let axis = fitAxis();
+    const top = layout.top;
+    layout = frame(countsWidth(axis));
+    // Counts that widen the left gutter can push the total onto a line of
+    // its own, which shortens the bars: the axis is fitted again to them.
+    if (layout.top !== top) {
+      axis = fitAxis();
+      layout = frame(countsWidth(axis));
     }
-    layout = frame(countWidth);
 
     // Gridlines first, so the bars are drawn over them. A grid colour that
     // paints nothing, such as "none", draws no line.
@@ -488,6 +561,12 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     renderOverlay(axis);
   }
 
+  /** The "N total" label, or null when the data gives no total. */
+  function totalText(): string | null {
+    const total = data.meta?.total as number | undefined;
+    return total ? `${total.toLocaleString()} total` : null;
+  }
+
   /** y of the bar axis tick at `v`, on an axis that ends at `top`. */
   function tickY(v: number, top: number): number {
     return layout.barBaseline - (v / top) * (layout.barH - 6);
@@ -591,13 +670,13 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       }
     }
 
-    const total = data.meta?.total as number | undefined;
+    const total = totalText();
     if (total) {
       svg.appendChild(
         text(
           width - RIGHT,
-          layout.top + 2,
-          `${total.toLocaleString()} total`,
+          layout.totalY,
+          total,
           theme.muted,
           "end",
           fontSizes.label,

@@ -32,6 +32,7 @@ import {
   ramp,
   type RampName,
   categoricalColors,
+  formatTick,
 } from "../core/index.js";
 import { uniqueId } from "../core/dom.js";
 import {
@@ -555,8 +556,11 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       if (v > hi) hi = v;
     }
     const fs = sizes.label;
-    const loText = fmt(lo);
-    const hiText = hi > lo ? fmt(hi) : "";
+    // The ends of the key are not round values, so each prints as the value
+    // it is, up to six significant digits, and both in one notation: never
+    // "4.0e-3" next to "15.75".
+    const loText = formatTick(lo, 0);
+    const hiText = hi > lo ? formatTick(hi, 0) : "";
     const hiW = textWidth(hiText, fs, theme.fontFamily);
     const loW = textWidth(loText, fs, theme.fontFamily);
     const barW = 90;

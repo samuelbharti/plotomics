@@ -54,6 +54,7 @@ import {
   afterQuiet,
   categoricalColors,
 } from "../core/index.js";
+import { fitAxisTicks } from "../core/ticks.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
@@ -143,6 +144,30 @@ export interface EmbeddingInstance extends PlotomicsInstance<EmbeddingOptions> {
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+/** Space around the plot area, in px. */
+interface Margins {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/** Whether two sets of margins are the same on every side. */
+function sameSides(a: Margins, b: Margins): boolean {
+  return (
+    a.top === b.top &&
+    a.right === b.right &&
+    a.bottom === b.bottom &&
+    a.left === b.left
+  );
+}
+
+/**
+ * The largest shares of the plot box that the left and right axis margins
+ * take for long tick labels.
+ */
+const MAX_LEFT_SHARE = 0.4;
+const MAX_RIGHT_SHARE = 0.2;
 /** With no axes, the theme padding is the room around the plot area. */
 const BARE_MARGIN = { top: 0, right: 0, bottom: 0, left: 0 };
 /** Room between the plot area and the legend in the gutter right of it. */
@@ -427,14 +452,11 @@ export function niceTicks(domain: [number, number], count = 6): number[] {
  * Margins around the plot area when the axes are drawn. They hold the tick
  * labels and the axis titles, so they grow with the text: 16, 18, 46 and 60
  * px at the default sizes of 11 px ticks and 13 px titles. The left margin
- * fits the y title and tick labels of about five characters.
+ * fits the y title and tick labels of about five characters; the plot
+ * widens it, and the right margin, for longer tick labels (see
+ * fitTickMargins).
  */
-function axisMargins(sizes: TextSizes): {
-  top: number;
-  right: number;
-  bottom: number;
-  left: number;
-} {
+function axisMargins(sizes: TextSizes): Margins {
   return {
     top: Math.round(sizes.label + 5),
     right: Math.round(sizes.label + 7),
@@ -471,9 +493,16 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     initial.options,
   );
   let theme = resolveTheme(opts.theme);
-  // Text sizes and the axis margins that hold the text, from the theme.
+  // Text sizes and the axis margins that hold the text, from the theme:
+  // those the text sizes give, and those in use, whose left and right sides
+  // widen for long tick labels.
   let sizes = textSizes(theme);
-  let axisMargin = axisMargins(sizes);
+  let baseAxisMargin = axisMargins(sizes);
+  let axisMargin = baseAxisMargin;
+  // True while the plot area takes axis margins just widened. The view it
+  // then reports may only widen them again, so a change never undoes
+  // itself.
+  let settling = false;
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   // Layout / view state.
@@ -606,6 +635,72 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   const pxY = (v: number) =>
     margin().top +
     (1 - (v - yDomain[0]) / (yDomain[1] - yDomain[0])) * innerH();
+
+  const labelWidth = (s: string) => textWidth(s, sizes.label, theme.fontFamily);
+  const widest = (labels: string[]) =>
+    labels.reduce((w, s) => Math.max(w, labelWidth(s)), 0);
+  /** The baseline of the y title, turned upright. */
+  const yTitleX = () => Math.round(3 + sizes.axisTitle);
+  /**
+   * The left margin that y tick labels `labels` need: the y title, whose
+   * letters reach 0.3 of its size right of its baseline, 4 px, the
+   * labels, and the 8 px from their end to the axis.
+   */
+  const leftFor = (labels: string[]) =>
+    Math.ceil(yTitleX() + 0.3 * sizes.axisTitle + 4 + widest(labels) + 8);
+
+  /**
+   * Round ticks with exact labels in one unit per axis, for the current
+   * view and plot area: as many as keep the labels clear of each other,
+   * so fewer on a short axis or with large text.
+   */
+  function axisTicks() {
+    return {
+      x: fitAxisTicks(xDomain[0], xDomain[1], innerW(), labelWidth, {
+        maxCount: 6,
+        gapPx: 8,
+      }),
+      y: fitAxisTicks(yDomain[0], yDomain[1], innerH(), () => sizes.label, {
+        maxCount: 6,
+        gapPx: 5,
+      }),
+    };
+  }
+
+  /**
+   * With the axes drawn, fit the left margin to the widest y tick label in
+   * view, and the right margin to half the widest x tick label, which is
+   * centred on a tick that can sit at the right end of the plot area; the
+   * legend gutter, when there is one, gives that label room too and keeps
+   * its width. Deep in a zoom, exact labels run to seven characters and
+   * more, longer than the margins the text sizes give, and would run under
+   * the y title or past the edge. A margin stays between the one the text
+   * sizes give and a share of the plot box; with `growOnly` it only
+   * widens. Returns whether a margin changed: the plot area then takes its
+   * new size and keeps its view, which it reports on the next frame.
+   */
+  function fitTickMargins(growOnly: boolean): boolean {
+    if (!opts.showAxes) return false;
+    const { x, y } = axisTicks();
+    const base = baseAxisMargin;
+    let left = Math.min(
+      Math.max(base.left, leftFor(y.labels)),
+      Math.max(base.left, Math.floor(MAX_LEFT_SHARE * width)),
+    );
+    let right = Math.min(
+      Math.max(base.right, Math.ceil(widest(x.labels) / 2 + 1 - gutter)),
+      Math.max(base.right, Math.floor(MAX_RIGHT_SHARE * width)),
+    );
+    if (growOnly) {
+      left = Math.max(left, axisMargin.left);
+      right = Math.max(right, axisMargin.right);
+    }
+    if (left === axisMargin.left && right === axisMargin.right) return false;
+    axisMargin = { ...axisMargin, left, right };
+    layoutCanvas();
+    void resizeView(scatterplot, innerW(), innerH());
+    return true;
+  }
 
   function layoutCanvas() {
     const m = margin();
@@ -760,6 +855,10 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       while (layer.firstChild) layer.removeChild(layer.firstChild);
     }
     if (!width || !height) return;
+    // Axis margins widened for long tick labels apply to the plot area at
+    // once. Its view follows on the next frame, and draws the overlay
+    // again.
+    settling = fitTickMargins(settling);
     if (opts.showAxes) renderAxes();
     if (opts.showLegend && legend) renderLegend();
   }
@@ -770,27 +869,35 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     const gridColor = theme.grid;
     // Baseline offset that centres a tick label on its tick.
     const mid = Math.round(sizes.label * 0.35);
+    const { x: xAxis, y: yAxis } = axisTicks();
     // Gridlines go in the SVG under the canvas, so no line crosses a point.
-    for (const t of niceTicks(xDomain)) {
+    // A label that would still leave the plot box, past a margin at its
+    // largest share, is left out; its gridline stays.
+    xAxis.ticks.forEach((t, i) => {
       const x = pxX(t);
-      if (x < m.left - 1 || x > width - m.right + 1) continue;
+      if (x < m.left - 1 || x > width - m.right + 1) return;
       under.appendChild(line(x, m.top, x, height - m.bottom, gridColor, 1));
+      const label = xAxis.labels[i] ?? "";
+      const half = labelWidth(label) / 2;
+      if (x - half < 0 || x + half > width) return;
       svg.appendChild(
         text(
           x,
           height - m.bottom + 5 + sizes.label,
-          fmt(t),
+          label,
           axisColor,
           "middle",
         ),
       );
-    }
-    for (const t of niceTicks(yDomain)) {
+    });
+    yAxis.ticks.forEach((t, i) => {
       const y = pxY(t);
-      if (y < m.top - 1 || y > height - m.bottom + 1) continue;
+      if (y < m.top - 1 || y > height - m.bottom + 1) return;
       under.appendChild(line(m.left, y, width - m.right, y, gridColor, 1));
-      svg.appendChild(text(m.left - 8, y + mid, fmt(t), axisColor, "end"));
-    }
+      const label = yAxis.labels[i] ?? "";
+      if (m.left - 8 - labelWidth(label) < 0) return;
+      svg.appendChild(text(m.left - 8, y + mid, label, axisColor, "end"));
+    });
     svg.appendChild(
       line(
         m.left,
@@ -814,21 +921,25 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         sizes.axisTitle,
       ),
     );
-    // The y title's baseline, one title size in from the left edge.
-    const titleX = Math.round(3 + sizes.axisTitle);
-    const yTitle = text(
-      titleX,
-      m.top + innerH() / 2,
-      opts.yLabel,
-      theme.foreground,
-      "middle",
-      sizes.axisTitle,
-    );
-    yTitle.setAttribute(
-      "transform",
-      `rotate(-90 ${titleX} ${m.top + innerH() / 2})`,
-    );
-    svg.appendChild(yTitle);
+    // The y title's baseline, one title size in from the left edge. When
+    // the left margin at its largest share is still too narrow for it and
+    // the tick labels, the title is left out, so no label runs under it.
+    const titleX = yTitleX();
+    if (leftFor(yAxis.labels) <= m.left) {
+      const yTitle = text(
+        titleX,
+        m.top + innerH() / 2,
+        opts.yLabel,
+        theme.foreground,
+        "middle",
+        sizes.axisTitle,
+      );
+      yTitle.setAttribute(
+        "transform",
+        `rotate(-90 ${titleX} ${m.top + innerH() / 2})`,
+      );
+      svg.appendChild(yTitle);
+    }
   }
 
   function renderLegend() {
@@ -1204,7 +1315,11 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       theme = resolveTheme(opts.theme);
       sizes = textSizes(theme);
       fitBox();
-      axisMargin = axisMargins(sizes);
+      const prevBase = baseAxisMargin;
+      baseAxisMargin = axisMargins(sizes);
+      // New text sizes start the axis margins again from their own; the
+      // overlay widens them as its tick labels need.
+      if (!sameSides(baseAxisMargin, prevBase)) axisMargin = baseAxisMargin;
       // The legend gutter follows showLegend and the text size.
       gutter = legendGutter();
       // aspect and padding decide the fitted range, so a change to either
@@ -1212,14 +1327,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       // plot area's size, which refits while the view is untouched, as a
       // resize does. The wrappers may resend every option, so compare
       // values.
-      const m = margin();
       const areaChanged =
-        m.top !== prevMargin.top ||
-        m.right !== prevMargin.right ||
-        m.bottom !== prevMargin.bottom ||
-        m.left !== prevMargin.left ||
-        width !== prevW ||
-        height !== prevH;
+        !sameSides(margin(), prevMargin) || width !== prevW || height !== prevH;
       const refit =
         opts.aspect !== prev.aspect ||
         opts.padding !== prev.padding ||

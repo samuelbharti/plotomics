@@ -454,3 +454,247 @@ describe("volcano gridlines", () => {
     expect(el.querySelectorAll("svg").length).toBe(0);
   });
 });
+
+describe("volcano tick labels", () => {
+  /** Numeric tick labels with `anchor`, in order along their axis. */
+  function axisLabels(el: HTMLElement, anchor: string) {
+    const x = anchor === "middle";
+    return (
+      Array.from(
+        el.querySelectorAll(`svg text[text-anchor="${anchor}"]`),
+      ) as SVGTextElement[]
+    )
+      .filter((t) => /^-?[\d.]+$/.test(t.textContent ?? ""))
+      .map((t) => ({
+        text: t.textContent ?? "",
+        at: Number(t.getAttribute(x ? "x" : "y")) * (x ? 1 : -1),
+      }))
+      .sort((a, b) => a.at - b.at);
+  }
+
+  /**
+   * Labels that each state a different value, one step from the next, at
+   * one spacing along the axis.
+   */
+  function expectExact(labels: { text: string; at: number }[]) {
+    expect(labels.length).toBeGreaterThan(1);
+    const values = labels.map((l) => Number(l.text));
+    expect(new Set(labels.map((l) => l.text)).size).toBe(labels.length);
+    const step = (values[1] as number) - (values[0] as number);
+    const gap = (labels[1]?.at as number) - (labels[0]?.at as number);
+    expect(step).toBeGreaterThan(0);
+    for (let i = 1; i < labels.length; i += 1) {
+      expect((values[i] as number) - (values[i - 1] as number)).toBeCloseTo(
+        step,
+        9,
+      );
+      expect(
+        (labels[i]?.at as number) - (labels[i - 1]?.at as number),
+      ).toBeCloseTo(gap, 0);
+    }
+  }
+
+  it("labels a narrow range once per tick, in one format", async () => {
+    // Before the fix the y axis over 0 to 0.03 read "0, 5.0e-3, 0.01,
+    // 0.01, 0.02, 0.03, 0.03", and an x axis over -0.03 to 0.03 also
+    // repeated its labels.
+    const n = 40;
+    const narrowY = container(800, 480);
+    instances.push(
+      createVolcano(narrowY, {
+        data: {
+          columns: {
+            x: Array.from({ length: n }, (_, i) => -0.5 + i / n),
+            y: Array.from({ length: n }, (_, i) => (i / n) * 0.03),
+          },
+        },
+        options: { labelTopN: 0 },
+      }),
+    );
+    const narrowX = container(800, 480);
+    instances.push(
+      createVolcano(narrowX, {
+        data: {
+          columns: {
+            x: Array.from({ length: n }, (_, i) => -0.03 + (i / n) * 0.06),
+            y: Array.from({ length: n }, (_, i) => i / 4),
+          },
+        },
+        options: { labelTopN: 0 },
+      }),
+    );
+    await expect
+      .poll(() => axisLabels(narrowY, "end").map((l) => l.text), poll)
+      .toEqual(["0.000", "0.005", "0.010", "0.015", "0.020", "0.025", "0.030"]);
+    expectExact(axisLabels(narrowY, "end"));
+    await expect
+      .poll(() => axisLabels(narrowX, "middle").map((l) => l.text), poll)
+      .toEqual(["-0.03", "-0.02", "-0.01", "0.00", "0.01", "0.02", "0.03"]);
+    expectExact(axisLabels(narrowX, "middle"));
+  });
+
+  it("keeps the labels exact after a deep zoom", async () => {
+    // 20,000 genes, zoomed in with 20 wheel steps. Before the fix the x
+    // axis read "-0.01, -0.01, -5.0e-3, 0, 5.0e-3, 0.01, 0.01".
+    let s = 3;
+    const r = () => {
+      s = (s * 1103515245 + 12345) % 2147483648;
+      return s / 2147483648;
+    };
+    const n = 20000;
+    const x = Array.from(
+      { length: n },
+      () => (r() - 0.5) * 2 * (r() < 0.05 ? 6 : 0.6),
+    );
+    const y = Array.from(
+      { length: n },
+      () => -Math.log10(Math.max(1e-60, r() ** (r() < 0.03 ? 40 : 1))),
+    );
+    const el = container(800, 480);
+    instances.push(
+      createVolcano(el, {
+        data: { columns: { x, y } },
+        options: { labelTopN: 0 },
+      }),
+    );
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(1000);
+    await frame();
+    await frame();
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const box = canvas.getBoundingClientRect();
+    for (let i = 0; i < 20; i += 1) {
+      canvas.dispatchEvent(
+        new WheelEvent("wheel", {
+          deltaY: -120,
+          clientX: box.left + box.width / 2,
+          clientY: box.top + box.height * 0.95,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await frame();
+    }
+    // The x axis has zoomed to a step of a hundredth or less.
+    await expect
+      .poll(() => {
+        const l = axisLabels(el, "middle");
+        return Math.abs(Number(l[1]?.text) - Number(l[0]?.text));
+      }, slow)
+      .toBeLessThanOrEqual(0.01);
+    await new Promise((res) => setTimeout(res, 300));
+    expectExact(axisLabels(el, "middle"));
+    expectExact(axisLabels(el, "end"));
+  });
+});
+
+describe("volcano tick labels deep in a zoom", () => {
+  it("keeps every tick label clear of the axis titles and inside the plot", async () => {
+    // The 20,000 genes of the zoom test above, zoomed 40 and then 60 wheel
+    // steps. Before the fix the exact y labels, such as "0.85630" and
+    // "0.8562928", ran under the y title, as the margin held about five
+    // characters.
+    let s = 3;
+    const r = () => {
+      s = (s * 1103515245 + 12345) % 2147483648;
+      return s / 2147483648;
+    };
+    const n = 20000;
+    const x = Array.from(
+      { length: n },
+      () => (r() - 0.5) * 2 * (r() < 0.05 ? 6 : 0.6),
+    );
+    const y = Array.from(
+      { length: n },
+      () => -Math.log10(Math.max(1e-60, r() ** (r() < 0.03 ? 40 : 1))),
+    );
+    const el = container(800, 480);
+    instances.push(
+      createVolcano(el, {
+        data: { columns: { x, y } },
+        options: { labelTopN: 0 },
+      }),
+    );
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(1000);
+    await frame();
+    await frame();
+
+    const all = () =>
+      Array.from(el.querySelectorAll("svg text")) as SVGTextElement[];
+    const numeric = (anchor: string) =>
+      all().filter(
+        (t) =>
+          t.getAttribute("text-anchor") === anchor &&
+          /^-?[\d.]+$/.test(t.textContent ?? ""),
+      );
+    const titleBox = (label: string) =>
+      (
+        all().find((t) => t.textContent === label) as SVGTextElement
+      ).getBoundingClientRect();
+    const overlap = (a: DOMRect, b: DOMRect) =>
+      a.left < b.right &&
+      b.left < a.right &&
+      a.top < b.bottom &&
+      b.top < a.bottom;
+
+    let steps = 0;
+    for (const target of [40, 60]) {
+      for (; steps < target; steps += 1) {
+        const box = (
+          el.querySelector("canvas") as HTMLCanvasElement
+        ).getBoundingClientRect();
+        (el.querySelector("canvas") as HTMLCanvasElement).dispatchEvent(
+          new WheelEvent("wheel", {
+            deltaY: -120,
+            clientX: box.left + box.width / 2,
+            clientY: box.top + box.height * 0.95,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        await frame();
+      }
+      // The y labels carry six or more characters at this zoom.
+      await expect
+        .poll(
+          () =>
+            Math.max(
+              0,
+              ...numeric("end").map((t) => t.textContent?.length ?? 0),
+            ),
+          slow,
+        )
+        .toBeGreaterThanOrEqual(target === 40 ? 6 : 8);
+      await new Promise((res) => setTimeout(res, 300));
+      const yTitle = titleBox("-log10 p-value");
+      const xTitle = titleBox("log2 fold change");
+      const plot = (
+        el.querySelector("svg") as SVGSVGElement
+      ).getBoundingClientRect();
+      const ys = numeric("end");
+      const xs = numeric("middle");
+      expect(ys.length, `${target} steps`).toBeGreaterThan(1);
+      expect(xs.length, `${target} steps`).toBeGreaterThan(1);
+      for (const t of [...ys, ...xs]) {
+        const b = t.getBoundingClientRect();
+        const what = `${t.textContent} after ${target} steps`;
+        expect(overlap(b, yTitle), what).toBe(false);
+        expect(overlap(b, xTitle), what).toBe(false);
+        expect(b.left, what).toBeGreaterThanOrEqual(plot.left);
+        expect(b.right, what).toBeLessThanOrEqual(plot.right);
+      }
+      // The labels stay exact: none repeats.
+      const values = ys.map((t) => Number(t.textContent)).sort((a, b) => a - b);
+      expect(new Set(values).size).toBe(values.length);
+    }
+  });
+});

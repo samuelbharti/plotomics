@@ -173,3 +173,26 @@ describe("treemap in a browser", () => {
     }
   });
 });
+
+describe("treemap value key", () => {
+  it("prints both ends as the values they are, in one notation", () => {
+    // Before the fix the key read "4.0e-3" and "15.75".
+    const el = container();
+    instances.push(
+      createTreemap(el, {
+        data: {
+          columns: {
+            id: ["root", "P1", "P2", "a", "b", "c", "d"],
+            parent: ["", "root", "root", "P1", "P1", "P2", "P2"],
+            value: [0, 0, 0, 0.004, 3, 7.5, 15.75],
+          },
+        },
+        options: { colorBy: "value" },
+      }),
+    );
+    const drawn = texts(el);
+    expect(drawn).toContain("0.004");
+    expect(drawn).toContain("15.75");
+    expect(drawn.filter((t) => /\de[+-]/.test(t))).toEqual([]);
+  });
+});

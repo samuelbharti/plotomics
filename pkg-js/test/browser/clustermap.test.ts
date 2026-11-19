@@ -305,11 +305,12 @@ describe("clustermap in a browser", () => {
     expect(tr.top).toBeGreaterThanOrEqual(box.top);
     expect(tr.bottom).toBeLessThanOrEqual(box.bottom);
     expect(tr.right).toBeLessThanOrEqual(box.right);
-    // The middle tick reads -2.0e+3, the widest of the three.
-    const mid = texts.find(
-      (t) => t.textContent === "-2.0e+3",
-    ) as SVGTextElement;
-    expect(mid.getBoundingClientRect().right + 2).toBeLessThanOrEqual(tr.left);
+    // Every tick label of the colour bar, -3000 to -1000, ends left of it.
+    const ticks = texts.filter((t) => /^-\d+$/.test(t.textContent ?? ""));
+    expect(ticks.map((t) => t.textContent)).toContain("-2000");
+    for (const t of ticks) {
+      expect(t.getBoundingClientRect().right + 2).toBeLessThanOrEqual(tr.left);
+    }
   });
 
   it("labels the middle of a symmetric colour range 0", () => {
@@ -363,9 +364,10 @@ describe("clustermap colours in a browser", () => {
       }),
     );
     // The 0 cell takes the cream middle of the ramp, and the scale runs
-    // from -3 to 3.
+    // from -3 to 3, labelled at -2, 0 and 2.
     expect(cellPixel(el, 0.25, 0.25)).toEqual([244, 238, 224]);
-    expect(svgTexts(el)).toContain("-3");
+    expect(svgTexts(el)).toContain("-2");
+    expect(svgTexts(el)).toContain("2");
   });
 
   it("draws z-scores with rdbu unless a colormap is given", () => {
@@ -510,5 +512,70 @@ describe("clustermap colours in a browser", () => {
     // In the data, the outer 5% at each end of the range hold 10% of the
     // cells; pooled to their means, fewer pixels reach those ends.
     expect(ends / n).toBeLessThan(0.1);
+  });
+});
+
+describe("clustermap colour bar labels", () => {
+  /** The colour bar's tick labels, top first, with the y of each. */
+  function barLabels(el: HTMLElement): { text: string; y: number }[] {
+    return (
+      Array.from(
+        el.querySelectorAll('svg text[text-anchor="start"]'),
+      ) as SVGTextElement[]
+    )
+      .filter((t) => /^-?\d/.test(t.textContent ?? ""))
+      .map((t) => ({
+        text: t.textContent ?? "",
+        y: Number(t.getAttribute("y")),
+      }))
+      .sort((a, b) => a.y - b.y);
+  }
+
+  it("labels round values in one format, each at its value", () => {
+    // In R: clustermap(matrix(c(0.004, 3, 100, 1532, 7, 0.5, 22, 900, 1, 2,
+    // 3, 4), 4, 3)), here row by row. Before the fix the bar read its raw
+    // ends and middle in mixed formats: "1.5e+3", "766" and "4.0e-3".
+    const el = container(600, 480);
+    instances.push(
+      createClustermap(el, {
+        data: {
+          columns: {
+            values: [0.004, 7, 1, 3, 0.5, 2, 100, 22, 3, 1532, 900, 4],
+          },
+          meta: { nrows: 4, ncols: 3 },
+        },
+      }),
+    );
+    const bar = barLabels(el);
+    expect(bar.map((b) => b.text)).toEqual(["1500", "1000", "500"]);
+    // Equal steps in value are equal steps along the bar.
+    const [a, b, c] = bar.map((l) => l.y) as [number, number, number];
+    expect(b - a).toBeCloseTo(c - b, 6);
+  });
+
+  it("labels z-scores on round values about 0", () => {
+    // Rows with one or two high values, whose z-scores reach 2.66. Before
+    // the fix the bar read "2.66", "0" and "-2.66".
+    const values: number[] = [];
+    for (let r = 0; r < 4; r += 1) {
+      const row = new Array(10).fill(0);
+      row[r] = 2;
+      row[r + 1] = 1;
+      values.push(...row);
+    }
+    const el = container(600, 480);
+    instances.push(
+      createClustermap(el, {
+        data: { columns: { values }, meta: { nrows: 4, ncols: 10 } },
+        options: { zScore: true },
+      }),
+    );
+    expect(barLabels(el).map((b) => b.text)).toEqual([
+      "2",
+      "1",
+      "0",
+      "-1",
+      "-2",
+    ]);
   });
 });

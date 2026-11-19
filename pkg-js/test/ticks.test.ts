@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   domainTicks,
+  fitAxisTicks,
   fitDomainTicks,
   fitZeroTicks,
   formatTick,
@@ -393,5 +394,62 @@ describe("colour bar ticks far from 0", () => {
     expect(domainTicks(0, Math.fround(0.7), 7).ticks.at(-1)).toBe(0.7);
     expect(snapRatio(10000004.999999998)).toBe(10000005);
     expect(snapRatio(1500011.23)).toBe(1500011.23);
+  });
+});
+
+describe("axis ticks fitted to their labels", () => {
+  /** Width of a label at about 6 px a character. */
+  const wide = (s: string) => 6 * s.length;
+
+  it("labels a narrow range once per tick, at every zoom", () => {
+    // A volcano y axis over 0 to 0.03, and an x axis zoomed to -0.015 to
+    // 0.015. Before the fix the labels were rounded to 2 decimals and
+    // repeated: "0.01, 0.01" and "0.03, 0.03".
+    expect(fitAxisTicks(0, 0.03, 400, () => 11).labels).toEqual([
+      "0.000",
+      "0.005",
+      "0.010",
+      "0.015",
+      "0.020",
+      "0.025",
+      "0.030",
+    ]);
+    const x = fitAxisTicks(-0.0165, 0.0165, 700, wide);
+    expect(x.labels).toEqual([
+      "-0.015",
+      "-0.010",
+      "-0.005",
+      "0.000",
+      "0.005",
+      "0.010",
+      "0.015",
+    ]);
+    expect(x.ticks).toEqual([-0.015, -0.01, -0.005, 0, 0.005, 0.01, 0.015]);
+  });
+
+  it("takes fewer ticks when the labels would touch", () => {
+    // Six intervals over -17 to 27 put labels 13 px wide 30 px from each
+    // other on a 150 px axis, closer than they need.
+    const t = fitAxisTicks(-17, 27, 150, wide, { maxCount: 6, gapPx: 8 });
+    expect(t.ticks).toEqual([-10, 0, 10, 20]);
+    expect(t.labels).toEqual(["-10", "0", "10", "20"]);
+    const room = (t.step / 44) * 150;
+    for (const s of t.labels) expect(room).toBeGreaterThanOrEqual(wide(s) + 8);
+  });
+
+  it("keeps every k-th tick when one interval is still too close", () => {
+    const t = fitAxisTicks(0, 10, 20, () => 11, { gapPx: 5 });
+    // Ticks at 0, 5 and 10 would sit 10 px from each other, for labels
+    // that need 16.
+    expect(t.ticks).toEqual([0, 10]);
+    expect(t.labels).toEqual(["0", "10"]);
+  });
+
+  it("prints a flat range as its one value", () => {
+    expect(fitAxisTicks(5, 5, 300, wide)).toEqual({
+      ticks: [5],
+      step: 0,
+      labels: ["5"],
+    });
   });
 });

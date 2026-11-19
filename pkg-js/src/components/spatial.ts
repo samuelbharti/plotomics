@@ -55,6 +55,10 @@ import {
   compositePNG,
   ramp,
   categoricalColors,
+  domainTicks,
+  fitDomainTicks,
+  formatTicks,
+  isFlatRange,
 } from "../core/index.js";
 import { setCanvasColour } from "../core/paint.js";
 
@@ -101,6 +105,16 @@ const BAR_W = 10;
 /** Top of the colour bar, and its height when the widget has room. */
 const BAR_TOP = 18;
 const BAR_MAX = 90;
+/** The most intervals between the colour bar's ticks. */
+const BAR_TICKS = 4;
+/**
+ * From the bottom of the colour bar down to the baseline of the NA key, at
+ * label size `fs`: room for the half of a label centred on the bottom of
+ * the bar, and the key's own line.
+ */
+function naRowHeight(fs: number): number {
+  return Math.round(fs * 1.35 + 5);
+}
 /**
  * Spot diameter in image px when none is given and the spots give no
  * spacing to derive one from: a single spot, or all at one place.
@@ -381,8 +395,11 @@ function coreRange(values: readonly number[]): [number, number] {
   ];
 }
 
-/** Min/max of a numeric column, ignoring non-finite entries. */
-export function numericExtent(col: ArrayLike<number>): [number, number] {
+/**
+ * Min/max of a numeric column, ignoring non-finite entries, or null when it
+ * has no finite entry.
+ */
+function finiteExtent(col: ArrayLike<number>): [number, number] | null {
   let lo = Infinity;
   let hi = -Infinity;
   for (let i = 0; i < col.length; i += 1) {
@@ -391,9 +408,15 @@ export function numericExtent(col: ArrayLike<number>): [number, number] {
     if (v < lo) lo = v;
     if (v > hi) hi = v;
   }
-  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return [0, 1];
-  if (lo === hi) return [lo, lo + 1];
-  return [lo, hi];
+  return Number.isFinite(lo) && Number.isFinite(hi) ? [lo, hi] : null;
+}
+
+/** Min/max of a numeric column, ignoring non-finite entries. */
+export function numericExtent(col: ArrayLike<number>): [number, number] {
+  const e = finiteExtent(col);
+  if (!e) return [0, 1];
+  if (e[0] === e[1]) return [e[0], e[0] + 1];
+  return e;
 }
 
 /** A missing value: null (R's NA), undefined, or NaN. */
@@ -668,7 +691,9 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       // render before the numeric column replaces the categorical one, and
       // doing arithmetic on those strings yields NaN and took the panel down.
       const nums = col as unknown as ArrayLike<number>;
-      const [lo, hi] = numericExtent(nums);
+      // The colour bar states values the spots have: when they all have
+      // one value, lo equals hi, and the bar labels that value once.
+      const [lo, hi] = finiteExtent(nums) ?? [0, 1];
       let missing = false;
       for (let i = 0; i < x.length; i += 1) {
         const v = nums[i] as number;
@@ -737,14 +762,16 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       const nums = col as unknown as ArrayLike<number>;
       const { lo, hi } = legendState;
       const fn = ramp(opts.colormap);
-      const span = hi - lo || 1;
+      // Spots of a flat range take the middle of the ramp, where the
+      // colour bar labels their value.
+      const flat = isFlatRange(lo, hi);
       for (let i = 0; i < x.length; i += 1) {
         const v = nums[i] as number;
         if (isMissing(v) || !Number.isFinite(v)) {
           dot(i, MISSING_COLOR);
           continue;
         }
-        dot(i, fn((v - lo) / span));
+        dot(i, fn(flat ? 0.5 : (v - lo) / (hi - lo)));
       }
     } else {
       for (let i = 0; i < x.length; i += 1) dot(i, theme.foreground);
@@ -775,6 +802,11 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
         lo: number;
         hi: number;
         barH: number;
+        /** Round values inside the range, and their labels. */
+        ticks: number[];
+        labels: string[];
+        /** A flat range: one tick, at the middle of the bar. */
+        flat: boolean;
         missing: boolean;
         gutter: number;
       }
@@ -789,7 +821,9 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
    * cuts a long label to the gutter, but not below a few characters. The
    * colour bar is 90 px tall, or shorter to fit the height with the NA key
    * under it, down to two label heights; then the NA key goes, then the bar.
-   * Its numbers are not cut.
+   * It labels round values inside the range, in one unit, as many as its
+   * height holds a line and a half of text from each other. Its numbers are
+   * not cut.
    *
    * Whether the gutter is wide enough does not depend on the height: it is
    * checked for every label the legend can show at some height, so a taller
@@ -838,26 +872,45 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       );
       return { kind: "categorical", rows, gutter };
     }
-    // The gutter holds the NA key whether or not the height leaves it room.
-    const labelW = Math.max(w(fmt(legend.lo)), w(fmt(legend.hi)));
+    // The last baseline is 6 px or more above the bottom, as for the rows;
+    // a label centred on the bottom of the bar has its baseline a third of
+    // a label below it.
+    const avail = height - 6 - BAR_TOP - Math.round(fs * 0.35);
+    const naRow = naRowHeight(fs);
+    const least = Math.round(fs * 2);
+    const missing = legend.missing && avail - naRow >= least;
+    const barH = Math.min(BAR_MAX, avail - (missing ? naRow : 0));
+    const { ticks, step } = fitDomainTicks(legend.lo, legend.hi, barH, {
+      maxCount: BAR_TICKS,
+      minGapPx: 1.6 * fs,
+    });
+    const labels = formatTicks(ticks, step);
+    // The gutter fits the labels of every tick count the bar can show, so
+    // a taller widget, with more ticks, never loses the legend. It holds
+    // the NA key whether or not the height leaves it room.
+    let labelW = 0;
+    for (const s of labels) labelW = Math.max(labelW, w(s));
+    for (let count = 1; count <= BAR_TICKS; count += 1) {
+      const t = domainTicks(legend.lo, legend.hi, count);
+      for (const s of formatTicks(t.ticks, t.step)) {
+        labelW = Math.max(labelW, w(s));
+      }
+    }
     const inner = Math.max(
       BAR_W + 5 + labelW,
       legend.missing ? sw + 5 + w("NA") : 0,
     );
     const gutter = LEGEND_PAD + Math.ceil(inner) + LEGEND_PAD;
-    if (gutter > cap) return null;
-    // The last baseline is 6 px or more above the bottom, as for the rows.
-    const avail = height - 6 - BAR_TOP;
-    const naRow = Math.round(fs + 7);
-    const least = Math.round(fs * 2);
-    const missing = legend.missing && avail - naRow >= least;
-    const barH = Math.min(BAR_MAX, avail - (missing ? naRow : 0));
-    if (barH < least) return null;
+    if (gutter > cap || barH < least) return null;
     return {
       kind: "continuous",
       lo: legend.lo,
       hi: legend.hi,
       barH,
+      ticks,
+      labels,
+      // A flat range has one tick and no step.
+      flat: !(step > 0),
       missing,
       gutter,
     };
@@ -890,8 +943,9 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
         y += rowH;
       }
     } else {
-      // Colourbar: a gradient strip with its two ends labelled on its right.
-      const { barH } = layout;
+      // Colourbar: a gradient strip with round values labelled on its
+      // right, each centred on its place by a short tick.
+      const { barH, lo, hi } = layout;
       const y0 = BAR_TOP;
       const id = `plotomics-spatial-grad-${gradSeq++}`;
       const defs = document.createElementNS(SVG_NS, "defs");
@@ -917,28 +971,29 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       rect.setAttribute("height", String(barH));
       rect.setAttribute("fill", `url(#${id})`);
       svg.appendChild(rect);
-      // The top label's cap height lines up with the top of the bar.
-      svg.appendChild(
-        text(
-          x0 + BAR_W + 5,
-          y0 + Math.round(fs * 0.75),
-          fmt(layout.hi),
-          theme.muted,
-          "start",
-          fs,
-        ),
-      );
-      svg.appendChild(
-        text(
-          x0 + BAR_W + 5,
-          y0 + barH,
-          fmt(layout.lo),
-          theme.muted,
-          "start",
-          fs,
-        ),
-      );
-      if (layout.missing) missingKey(x0, y0 + barH + Math.round(fs + 7));
+      layout.ticks.forEach((v, i) => {
+        // The top of the bar is hi; the one tick of a flat range sits in
+        // the middle.
+        const y = y0 + (layout.flat ? 0.5 : (hi - v) / (hi - lo)) * barH;
+        const mark = document.createElementNS(SVG_NS, "rect");
+        mark.setAttribute("x", String(x0 + BAR_W));
+        mark.setAttribute("y", String(y - 0.5));
+        mark.setAttribute("width", "3");
+        mark.setAttribute("height", "1");
+        mark.setAttribute("fill", theme.axis);
+        svg.appendChild(mark);
+        svg.appendChild(
+          text(
+            x0 + BAR_W + 5,
+            y + Math.round(fs * 0.35),
+            layout.labels[i] ?? "",
+            theme.muted,
+            "start",
+            fs,
+          ),
+        );
+      });
+      if (layout.missing) missingKey(x0, y0 + barH + naRowHeight(fs));
     }
   }
 
@@ -1079,11 +1134,6 @@ const TAINTED =
   "leaves out the image and spots.";
 
 // ---- small utilities ----
-function fmt(v: number): string {
-  const a = Math.abs(v);
-  if (a >= 1000 || (a < 0.01 && a > 0)) return v.toExponential(1);
-  return Number(v.toFixed(2)).toString();
-}
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
     c === "&"

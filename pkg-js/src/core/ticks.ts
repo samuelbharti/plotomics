@@ -250,6 +250,49 @@ export function fitDomainTicks(
 }
 
 /**
+ * Round ticks inside `[lo, hi]` for an axis `lengthPx` long, with their
+ * labels as {@link formatTicks} prints them: the most ticks, for up to
+ * `maxCount` intervals over the range, whose labels keep `gapPx` clear of
+ * each other. `labelPx` is the room a label takes along the axis: its width
+ * on a horizontal axis, its height on a vertical one. When even one
+ * interval puts the labels closer, only every k-th tick is kept, so no two
+ * labels touch at any length or zoom.
+ */
+export function fitAxisTicks(
+  lo: number,
+  hi: number,
+  lengthPx: number,
+  labelPx: (label: string) => number,
+  opts: { maxCount?: number; gapPx?: number } = {},
+): { ticks: number[]; step: number; labels: string[] } {
+  const gapPx = opts.gapPx ?? 4;
+  const span = Math.abs(hi - lo);
+  // Neighbouring labels each reach half their size toward the other, so
+  // ticks spaced by the widest label and the gap never touch.
+  const need = (labels: string[]) =>
+    labels.reduce((w, s) => Math.max(w, labelPx(s)), 0) + gapPx;
+  const room = (step: number) => (step / span) * lengthPx;
+  let t = domainTicks(lo, hi, 1);
+  let labels = formatTicks(t.ticks, t.step);
+  for (let count = opts.maxCount ?? 6; count >= 1; count -= 1) {
+    t = domainTicks(lo, hi, count);
+    labels = formatTicks(t.ticks, t.step);
+    // A flat range has one tick and no step.
+    if (!(t.step > 0) || room(t.step) >= need(labels)) {
+      return { ...t, labels };
+    }
+  }
+  const r = room(t.step);
+  const k = r > 0 ? Math.ceil(need(labels) / r - 1e-9) : t.ticks.length;
+  const keep = (_: unknown, i: number) => i % k === 0;
+  return {
+    ticks: t.ticks.filter(keep),
+    step: t.step,
+    labels: labels.filter(keep),
+  };
+}
+
+/**
  * Whole-number ticks along a 1-based axis from 1 to `length` (residues,
  * positions): round multiples of a 1, 2 or 5 step, with 1 and `length` at the
  * ends. An end replaces a round tick that sits too close to it, so two labels

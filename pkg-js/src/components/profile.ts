@@ -45,6 +45,7 @@ import {
   compositePNG,
   zeroTicks,
   fitZeroTicks,
+  formatTick,
   formatTicks,
   snapRatio,
   stepDecimals,
@@ -465,7 +466,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
       ? ` (${((100 * value) / finiteTotal(v)).toFixed(1)}%)`
       : "";
     const body = Number.isFinite(value)
-      ? `${fmtInt(value)}${share}`
+      ? `${fmtValue(value)}${share}`
       : "no value";
     tooltip.show(
       `<b>${esc(lab)}</b> ${esc(g)}<br/>${body}`,
@@ -796,10 +797,15 @@ function readableOn(hex: string): string {
   // colour would be unreadable on one end or the other.
   return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#233038" : "#FFFFFF";
 }
-function fmtInt(v: number): string {
+/**
+ * A value for the tooltip: a count with thousands separators, any other
+ * value to six significant digits, so a fraction such as 0.00084 never
+ * reads 0.00.
+ */
+function fmtValue(v: number): string {
   // -0, from a tiny negative value that float32 rounds, reads 0.
   if (v === 0) return "0";
-  return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2);
+  return Number.isInteger(v) ? v.toLocaleString() : formatTick(v, 0);
 }
 
 function esc(s: string): string {

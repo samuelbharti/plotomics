@@ -901,3 +901,268 @@ describe("embedding colour bar far from 0", () => {
     }
   });
 });
+
+/** A seeded random number generator (mulberry32), for repeatable data. */
+function seeded(seed: number): () => number {
+  let s = seed;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** 2000 cells in 15 clusters, with an expression value for each. */
+function cells() {
+  const rand = seeded(7);
+  const norm = () => {
+    const u = Math.max(1e-12, rand());
+    const v = rand();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+  const n = 2000;
+  const x = new Float32Array(n);
+  const y = new Float32Array(n);
+  const expr = new Float32Array(n);
+  const centres = Array.from({ length: 15 }, () => [norm() * 8, norm() * 8]);
+  for (let i = 0; i < n; i += 1) {
+    const k = Math.floor(rand() * 15);
+    const c = centres[k] as number[];
+    x[i] = (c[0] as number) + norm() * 0.9;
+    y[i] = (c[1] as number) + norm() * 0.9;
+    expr[i] = rand() < 0.6 ? 0 : Math.max(0, norm() * 1.2 + (k % 3));
+  }
+  return { x, y, color: expr };
+}
+
+describe("embedding axes at small sizes", () => {
+  /** The boxes of the tick labels with `anchor`, in order along the axis. */
+  function tickBoxes(el: HTMLElement, anchor: string, along: "x" | "y") {
+    return (
+      Array.from(
+        el.querySelectorAll(`svg text[text-anchor="${anchor}"]`),
+      ) as SVGTextElement[]
+    )
+      .filter((t) => /^-?[\d.]+$/.test(t.textContent ?? ""))
+      .map((t) => t.getBoundingClientRect())
+      .sort((a, b) => (along === "x" ? a.left - b.left : a.top - b.top));
+  }
+
+  // Before the fix the axes always had six d3 ticks: the x labels ran
+  // together at 250 px wide (fontSize 12) and 300 to 350 px (fontSize 16),
+  // and the y labels at 140 px tall (fontSize 12) and 180 px (fontSize 16).
+  const cases: [number, number, number][] = [
+    [250, 400, 12],
+    [300, 400, 16],
+    [350, 400, 16],
+    [600, 140, 12],
+    [600, 180, 16],
+  ];
+  for (const [w, h, fontSize] of cases) {
+    it(`keeps tick labels clear of each other at ${w} x ${h} px, fontSize ${fontSize}`, async () => {
+      const el = container(w, h);
+      instances.push(
+        createEmbedding(el, {
+          data: { columns: cells() },
+          options: { showAxes: true, theme: { fontSize } },
+        }),
+      );
+      // The axes follow the data once the points are drawn.
+      await expect
+        .poll(async () => {
+          const png = await canvasPNG(el);
+          return png ? drawnPixels(png) : 0;
+        }, poll)
+        .toBeGreaterThan(100);
+      await new Promise((r) => setTimeout(r, 300));
+      const xs = tickBoxes(el, "middle", "x");
+      expect(xs.length).toBeGreaterThan(1);
+      for (let i = 1; i < xs.length; i += 1) {
+        expect((xs[i] as DOMRect).left).toBeGreaterThan(
+          (xs[i - 1] as DOMRect).right,
+        );
+      }
+      const ys = tickBoxes(el, "end", "y");
+      expect(ys.length).toBeGreaterThan(1);
+      for (let i = 1; i < ys.length; i += 1) {
+        expect((ys[i] as DOMRect).top).toBeGreaterThanOrEqual(
+          (ys[i - 1] as DOMRect).bottom,
+        );
+      }
+    });
+  }
+});
+
+describe("spatial colour bar labels", () => {
+  /** Spots on a 4 x 4 grid over a 100 x 100 image, coloured by `color`. */
+  function spots(color: number[]) {
+    const x: number[] = [];
+    const y: number[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      for (let j = 0; j < 4; j += 1) {
+        x.push(12.5 + i * 25);
+        y.push(12.5 + j * 25);
+      }
+    }
+    return {
+      columns: {
+        x,
+        y,
+        color: x.map((_, i) => color[i % color.length]) as unknown as string[],
+      },
+      meta: { imgWidth: 100, imgHeight: 100, spotDiameter: 20 },
+    };
+  }
+
+  /** The colour bar's tick labels, top first, with the y of each. */
+  function barLabels(el: HTMLElement): { text: string; y: number }[] {
+    return (Array.from(el.querySelectorAll("svg text")) as SVGTextElement[])
+      .map((t) => ({
+        text: t.textContent ?? "",
+        y: Number(t.getAttribute("y")),
+      }))
+      .sort((a, b) => a.y - b.y);
+  }
+
+  const cases: [string, number[], string[]][] = [
+    // Before the fix: "0.03" over "1.2e-3".
+    ["small values", [0.0012, 0.01, 0.02, 0.03], ["0.03", "0.02", "0.01"]],
+    // Before the fix: "1.2e+6" over "850".
+    ["large values", [850, 4e5, 8e5, 1.2e6], ["1.0M", "0.5M"]],
+  ];
+  for (const [what, color, labels] of cases) {
+    it(`labels round values in one format for ${what}`, () => {
+      const el = container(400, 300);
+      instances.push(flush(el, { data: spots(color) }));
+      const bar = barLabels(el);
+      expect(bar.map((b) => b.text)).toEqual(labels);
+    });
+  }
+
+  it("labels one value once when every spot has it", () => {
+    // Before the fix the bar read "6" over "5", and every spot took the
+    // low end of the ramp.
+    const el = container(400, 300);
+    instances.push(
+      flush(el, {
+        data: spots([5]),
+        options: { showImage: false, spotOpacity: 1 },
+      }),
+    );
+    expect(barLabels(el).map((b) => b.text)).toEqual(["5"]);
+    // The spots take the middle of the ramp, where the bar labels their
+    // value. The first row of spots is centred 37.5 px down.
+    const hex = (rgb: number[]) =>
+      `#${rgb.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+    const row = new Set<string>();
+    for (let x = 0; x < 400; x += 2) row.add(hex(pixel(el, x, 37.5)));
+    expect(row.has(ramp("viridis")(0.5).toLowerCase())).toBe(true);
+    expect(row.has(ramp("viridis")(0).toLowerCase())).toBe(false);
+  });
+});
+
+describe("embedding axes deep in a zoom", () => {
+  it("keeps every tick label clear of the axis titles and inside the plot", async () => {
+    // The 2000 cells above with their axes and colour bar, zoomed 40 and
+    // then 60 wheel steps. Before the fix the exact labels, seven and more
+    // characters long, ran under the y title, as the margin held about
+    // five.
+    const el = container(800, 480);
+    instances.push(
+      createEmbedding(el, {
+        data: { columns: cells() },
+        options: { showAxes: true },
+      }),
+    );
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(100);
+    await new Promise((r) => setTimeout(r, 300));
+
+    const all = () =>
+      Array.from(el.querySelectorAll("svg text")) as SVGTextElement[];
+    const numeric = (anchor: string) =>
+      all().filter(
+        (t) =>
+          t.getAttribute("text-anchor") === anchor &&
+          /^-?[\d.]+$/.test(t.textContent ?? ""),
+      );
+    const titleBox = (label: string) =>
+      (
+        all().find((t) => t.textContent === label) as SVGTextElement
+      ).getBoundingClientRect();
+    const overlap = (a: DOMRect, b: DOMRect) =>
+      a.left < b.right &&
+      b.left < a.right &&
+      a.top < b.bottom &&
+      b.top < a.bottom;
+    const frame = () =>
+      new Promise((r) => requestAnimationFrame(() => r(null)));
+
+    let steps = 0;
+    for (const target of [40, 60]) {
+      for (; steps < target; steps += 1) {
+        const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+        const box = canvas.getBoundingClientRect();
+        canvas.dispatchEvent(
+          new WheelEvent("wheel", {
+            deltaY: -120,
+            clientX: box.left + box.width / 2,
+            clientY: box.top + box.height / 2,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        await frame();
+      }
+      // The y labels carry seven or more characters at this zoom.
+      await expect
+        .poll(
+          () =>
+            Math.max(
+              0,
+              ...numeric("end").map((t) => t.textContent?.length ?? 0),
+            ),
+          { timeout: 30_000, interval: 100 },
+        )
+        .toBeGreaterThanOrEqual(7);
+      await new Promise((r) => setTimeout(r, 300));
+      const yTitle = titleBox("UMAP 2");
+      const xTitle = titleBox("UMAP 1");
+      const plot = (
+        el.querySelector("svg") as SVGSVGElement
+      ).getBoundingClientRect();
+      const canvasBox = (
+        el.querySelector("canvas") as HTMLCanvasElement
+      ).getBoundingClientRect();
+      const ys = numeric("end");
+      const xs = numeric("middle");
+      expect(ys.length, `${target} steps`).toBeGreaterThan(1);
+      expect(xs.length, `${target} steps`).toBeGreaterThan(1);
+      for (const t of [...ys, ...xs]) {
+        const b = t.getBoundingClientRect();
+        const what = `${t.textContent} after ${target} steps`;
+        expect(overlap(b, yTitle), what).toBe(false);
+        expect(overlap(b, xTitle), what).toBe(false);
+        expect(b.left, what).toBeGreaterThanOrEqual(plot.left);
+        expect(b.right, what).toBeLessThanOrEqual(plot.right);
+      }
+      // The labels stay exact: none repeats.
+      const values = ys.map((t) => t.textContent);
+      expect(new Set(values).size).toBe(values.length);
+      // The colour bar keeps its gutter right of the points, inside the
+      // widget.
+      const bar = numeric("start");
+      expect(bar.length).toBeGreaterThan(1);
+      for (const t of bar) {
+        const b = t.getBoundingClientRect();
+        expect(b.left).toBeGreaterThan(canvasBox.right);
+        expect(b.right).toBeLessThanOrEqual(plot.right);
+      }
+    }
+  });
+});
