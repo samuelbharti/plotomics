@@ -43,8 +43,14 @@ npm run app        # Rscript shiny::runApp('r/app.R', port = 8000)
 
 Then open http://localhost:8000 and drag a lasso across the points.
 
-This example sits outside the pnpm workspace on purpose, so its React 19 and
-shiny-react dependencies stay out of the library's own React 18 build.
+This example sits outside the pnpm workspace on purpose, so its shiny-react
+dependencies stay out of the library's own build. It uses React 18, the range
+plotomics accepts for its optional `react` peer. Only the Gosling component
+uses React, but npm checks that range on every install, so in a React 19 app
+`npm install` stops with an `ERESOLVE` error. Until
+[#72](https://github.com/samuelbharti/plotomics/issues/72) lands, install a
+React 19 app with `npm install --legacy-peer-deps` or with an npm override, as
+the [plotomics README](../../pkg-js/README.md#react-19) shows.
 
 To run it against a local build rather than the published package, build the
 library first and link it:

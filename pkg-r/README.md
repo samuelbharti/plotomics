@@ -41,9 +41,9 @@ library(plotomics)
 
 # Differential expression
 volcano(data.frame(
-  x    = res$log2FoldChange,
-  y    = -log10(res$padj),
-  gene = rownames(res)
+  x     = res$log2FoldChange,
+  y     = -log10(res$padj),
+  label = rownames(res)
 ))
 
 # A single-cell embedding: a factor pins the legend order and keeps

@@ -83,7 +83,7 @@ class Oncoplot(PlotomicsWidget):
         R.
     genes, samples:
         Explicit row / column order. Defaults to the memo-sorted order of the
-        genes and samples present in ``data``. Given ``genes`` keep their order
+        genes and samples present in the data. Given ``genes`` keep their order
         and the samples are sorted by it. The frequency bars divide by the
         number of samples shown, so pass ``samples`` to count unaltered
         samples of the cohort too.
