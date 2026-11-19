@@ -127,7 +127,7 @@ ui <- navbarPage(
     "Heatmap",
     sidebarLayout(
       side(
-        selectInput("h_cm", "Colormap", c("viridis", "rdbu")),
+        selectInput("h_cm", "Colormap", c("viridis", "rdbu", "ltc", "ltcdiv")),
         checkboxInput("h_z", "Row z-score", FALSE)
       ),
       main(bioheatmapOutput("heatmap", height = "640px"))
