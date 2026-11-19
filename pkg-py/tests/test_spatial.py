@@ -144,3 +144,31 @@ def test_spatial_sends_numbers_read_as_categories_at_full_precision():
 def test_spatial_rejects_an_unknown_colormap():
     with pytest.raises(ValueError, match="must be one of"):
         Spatial(make_data(), colormap="magma", **IMG)
+
+
+def test_spatial_leaves_the_spot_diameter_to_the_browser_unless_given():
+    w = Spatial(make_data(), **IMG)
+    # The browser takes the median distance between neighbouring spots.
+    assert "spotDiameter" not in w.data["meta"]
+    w = Spatial(make_data(), spot_diameter=np.float32(55), **IMG)
+    assert w.data["meta"]["spotDiameter"] == 55.0
+    for bad in (0, -1.0, float("nan"), float("inf"), "8", True, [4, 8]):
+        with pytest.raises(ValueError, match="`spot_diameter` must be a positive"):
+            Spatial(make_data(), spot_diameter=bad, **IMG)
+
+
+def test_spatial_takes_any_real_spot_diameter():
+    from decimal import Decimal
+    from fractions import Fraction
+
+    for good in (55, 55.0, np.float32(55), np.int64(55), np.array(55.0),
+                 np.array(55), Decimal("55"), Fraction(55)):
+        w = Spatial(make_data(), spot_diameter=good, **IMG)
+        assert w.data["meta"]["spotDiameter"] == 55.0, repr(good)
+        assert type(w.data["meta"]["spotDiameter"]) is float, repr(good)
+    for bad in (np.nan, np.inf, -np.inf, 0, -2, Decimal("NaN"), Decimal("sNaN"),
+                Decimal("-Infinity"), Fraction(-1, 2), np.bool_(True),
+                np.array(True), np.array("55"), np.array([55.0]), (55,),
+                complex(55, 0), np.complex64(55), b"55"):
+        with pytest.raises(ValueError, match="`spot_diameter` must be a positive"):
+            Spatial(make_data(), spot_diameter=bad, **IMG)

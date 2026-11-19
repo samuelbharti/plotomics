@@ -136,3 +136,15 @@ test_that("network() passes a per-edge color column when present", {
   edges_plain <- data.frame(source = "a", target = "b", stringsAsFactors = FALSE)
   expect_null(network(nodes, edges_plain)$x$data$columns$color)
 })
+
+test_that("network() labels default-size nodes and draws a group legend", {
+  nodes <- data.frame(id = c("a", "b"), group = c("G1", "G2"),
+                      stringsAsFactors = FALSE)
+  edges <- data.frame(source = "a", target = "b", stringsAsFactors = FALSE)
+  w <- network(nodes, edges)
+  # A node of the default size 4 reaches the label threshold.
+  expect_equal(w$x$options$labelThreshold, 4)
+  expect_equal(w$x$options$defaultNodeSize, 4)
+  expect_true(w$x$options$showLegend)
+  expect_false(network(nodes, edges, show_legend = FALSE)$x$options$showLegend)
+})

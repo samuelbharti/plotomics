@@ -16,7 +16,8 @@
  *
  * `color` may be categorical (strings, discrete legend) or continuous (numbers,
  * sequential ramp with a colourbar), which is what lets one page toggle between
- * colouring spots by cluster and by a gene's expression.
+ * colouring spots by cluster and by a gene's expression. The legend sits in a
+ * gutter right of the image, so it never covers the tissue.
  *
  * ## Data contract
  * - `columns.x`, `columns.y`  `number[]`  spot centres in IMAGE pixel
@@ -25,7 +26,9 @@
  * - `columns.label`  `string[]`  optional per-spot tooltip label
  * - `meta.image`         `string`  URL of the tissue image
  * - `meta.imgWidth` / `meta.imgHeight`  `number`  its natural size
- * - `meta.spotDiameter`  `number`  spot diameter in image pixels
+ * - `meta.spotDiameter`  `number`  spot diameter in image pixels; when absent,
+ *                                    the median distance from a spot to its
+ *                                    nearest neighbour, so neighbours touch
  * - `meta.levels` / `meta.colors`  `string[]`  fix categorical order and colours
  */
 import {
@@ -41,6 +44,10 @@ import {
   measure,
   releaseContainer,
   textWidth,
+  fitText,
+  fitLegend,
+  legendCandidates,
+  legendLabelsFit,
   dpr,
   serializeSVG,
   compositePNG,
@@ -55,7 +62,7 @@ export interface SpatialOptions {
   colorMode: SpatialColorMode;
   /** Sequential ramp used for continuous colouring. */
   colormap: RampName;
-  /** Multiplier on `meta.spotDiameter`; 1 draws spots at their true size. */
+  /** Multiplier on the spot diameter; 1 draws spots at their true size. */
   spotScale: number;
   /** Spot fill opacity in [0, 1]. Lower it to read the histology underneath. */
   spotOpacity: number;
@@ -82,6 +89,20 @@ export const defaultSpatialOptions: SpatialOptions = {
 const SVG_NS = "http://www.w3.org/2000/svg";
 /** Cap on discrete legend rows before collapsing into a "+N more" line. */
 const LEGEND_MAX = 14;
+/** The largest share of the widget's width that the legend gutter takes. */
+const MAX_LEGEND_SHARE = 0.35;
+/** Space left and right of the legend, in px. */
+const LEGEND_PAD = 8;
+/** Width of the colour bar, in px. */
+const BAR_W = 10;
+/** Top of the colour bar, and its height when the widget has room. */
+const BAR_TOP = 18;
+const BAR_MAX = 90;
+/**
+ * Spot diameter in image px when none is given and the spots give no
+ * spacing to derive one from: a single spot, or all at one place.
+ */
+const FALLBACK_SPOT_DIAMETER = 4;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/spatial.test.ts)
@@ -122,6 +143,239 @@ export function spotRadius(
   spotScale: number,
 ): number {
   return Math.max(1, (diameter * scale * spotScale) / 2);
+}
+
+/**
+ * The median distance from a spot to its nearest neighbour, in the units of
+ * the coordinates. Spots with a missing coordinate are left out, and a spot
+ * at the same place as another is not its neighbour. Null when fewer than
+ * two spots are at different places.
+ *
+ * The spots go into a grid of cells that hold about two spots each, and the
+ * search for a spot's neighbour moves out ring by ring from its own cell,
+ * clipped to the grid, until no closer spot can be left. The grid spans the
+ * 1st to 99th percentile of each coordinate, so a few spots far off do not
+ * crowd the slide into a few cells. Spots at one place are searched for
+ * once, and each cell lists one spot per place, so a slide with many spots
+ * at a few places stays fast. At most `maxQueries` spots, spread over the
+ * input, are measured, which keeps a large slide fast.
+ *
+ * Also null for coordinates so large that a squared distance overflows, or
+ * so small that it underflows to 0: the caller then takes its fallback.
+ */
+export function medianNeighbourDistance(
+  xs: ArrayLike<number | null>,
+  ys: ArrayLike<number | null>,
+  maxQueries = 2000,
+): number | null {
+  const px: number[] = [];
+  const py: number[] = [];
+  const len = Math.min(xs.length, ys.length);
+  for (let i = 0; i < len; i += 1) {
+    const x = xs[i];
+    const y = ys[i];
+    if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) {
+      continue;
+    }
+    px.push(x);
+    py.push(y);
+  }
+  const n = px.length;
+  if (n < 2) return null;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < n; i += 1) {
+    const x = px[i] as number;
+    const y = py[i] as number;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  if (maxX === minX && maxY === minY) return null;
+  // The grid spans the 1st to 99th percentile of each coordinate, and the
+  // spots outside go into its edge cells. A spot moved into an edge cell is
+  // at least as far off as that cell, so the search stays exact. When most
+  // spots share one place, the grid spans them all.
+  let [loX, hiX] = coreRange(px);
+  let [loY, hiY] = coreRange(py);
+  if (loX === hiX && loY === hiY)
+    [loX, hiX, loY, hiY] = [minX, maxX, minY, maxY];
+  const w = hiX - loX;
+  const h = hiY - loY;
+  const ext = Math.max(w, h);
+  // No ring of the search reaches past twice the extent, so its squared
+  // distances stay finite.
+  if (!Number.isFinite(4 * ext * ext)) return null;
+  let m = 0;
+  for (let i = 0; i < n; i += 1) {
+    const x = px[i] as number;
+    const y = py[i] as number;
+    if (x >= loX && x <= hiX && y >= loY && y <= hiY) m += 1;
+  }
+  m = Math.max(m, 2);
+  // About two spots of the span per cell, and no more cells along the long
+  // side than spots, so a thin strip of spots does not make a huge grid.
+  // Each extent has its own square root, so two tiny ones do not underflow.
+  const cell = Math.max(
+    Math.sqrt(2 / m) * Math.sqrt(w) * Math.sqrt(h),
+    (2 * ext) / m,
+  );
+  if (!(cell * cell > 0)) return null;
+  const gx = Math.floor(w / cell) + 1;
+  const gy = Math.floor(h / cell) + 1;
+  const cells = gx * gy;
+  // The sizing gives at most about 1.5 cells a spot.
+  if (!(cells <= 4 * n + 16)) return null;
+  const cellOf = new Uint32Array(n);
+  // Spots sorted by cell: those of cell k are members[start[k]..start[k+1]).
+  const start = new Uint32Array(cells + 1);
+  for (let i = 0; i < n; i += 1) {
+    const cx = Math.max(
+      0,
+      Math.min(gx - 1, Math.floor(((px[i] as number) - loX) / cell)),
+    );
+    const cy = Math.max(
+      0,
+      Math.min(gy - 1, Math.floor(((py[i] as number) - loY) / cell)),
+    );
+    const k = cy * gx + cx;
+    cellOf[i] = k;
+    start[k + 1] = (start[k + 1] as number) + 1;
+  }
+  for (let k = 0; k < cells; k += 1) {
+    start[k + 1] = (start[k + 1] as number) + (start[k] as number);
+  }
+  const fill = start.slice(0, cells);
+  const members = new Uint32Array(n);
+  for (let i = 0; i < n; i += 1) {
+    const k = cellOf[i] as number;
+    members[fill[k] as number] = i;
+    fill[k] = (fill[k] as number) + 1;
+  }
+
+  // One spot per place: cell k lists places[first[k]..first[k+1]), and
+  // placeOf[i] is the spot that stands for the place of spot i.
+  const places = new Uint32Array(n);
+  const first = new Uint32Array(cells + 1);
+  const placeOf = new Uint32Array(n);
+  const byPlace = (a: number, b: number) =>
+    (px[a] as number) - (px[b] as number) ||
+    (py[a] as number) - (py[b] as number);
+  let u = 0;
+  for (let k = 0; k < cells; k += 1) {
+    first[k] = u;
+    const s = start[k] as number;
+    const e = start[k + 1] as number;
+    // A crowded cell is sorted, so a repeat follows the first spot at its
+    // place; in a cell of a few spots each place is checked.
+    const sorted = e - s > 8;
+    if (sorted) members.subarray(s, e).sort(byPlace);
+    for (let m = s; m < e; m += 1) {
+      const i = members[m] as number;
+      let same = -1;
+      const from = sorted ? Math.max(first[k] as number, u - 1) : first[k];
+      for (let v = from as number; v < u; v += 1) {
+        const p = places[v] as number;
+        if (px[p] === px[i] && py[p] === py[i]) {
+          same = p;
+          break;
+        }
+      }
+      if (same >= 0) {
+        placeOf[i] = same;
+      } else {
+        places[u] = i;
+        placeOf[i] = i;
+        u += 1;
+      }
+    }
+  }
+  first[cells] = u;
+
+  /** Distance from the place of spot q to the nearest other place. */
+  const nearestTo = (q: number): number => {
+    const qx = px[q] as number;
+    const qy = py[q] as number;
+    const k = cellOf[q] as number;
+    const cx = k % gx;
+    const cy = (k - cx) / gx;
+    // Squared distance to the nearest place found so far.
+    let best = Infinity;
+    const scan = (x: number, y: number) => {
+      const c = y * gx + x;
+      for (let v = first[c] as number; v < (first[c + 1] as number); v += 1) {
+        const j = places[v] as number;
+        const dx = (px[j] as number) - qx;
+        const dy = (py[j] as number) - qy;
+        const d = dx * dx + dy * dy;
+        if (d > 0 && d < best) best = d;
+      }
+    };
+    for (let r = 0; ; r += 1) {
+      // Ring r, clipped to the grid: on a long thin grid the rows above and
+      // below are not in it, and only the two end cells are walked.
+      const x0 = Math.max(0, cx - r);
+      const x1 = Math.min(gx - 1, cx + r);
+      if (cy - r >= 0) for (let x = x0; x <= x1; x += 1) scan(x, cy - r);
+      if (r > 0 && cy + r < gy) {
+        for (let x = x0; x <= x1; x += 1) scan(x, cy + r);
+      }
+      const y0 = Math.max(0, cy - r + 1);
+      const y1 = Math.min(gy - 1, cy + r - 1);
+      if (r > 0 && cx - r >= 0)
+        for (let y = y0; y <= y1; y += 1) scan(cx - r, y);
+      if (r > 0 && cx + r < gx)
+        for (let y = y0; y <= y1; y += 1) scan(cx + r, y);
+      // A spot outside the rings searched is at least r cells away.
+      if (best <= (r * cell) ** 2) break;
+      if (cx - r <= 0 && cy - r <= 0 && cx + r >= gx - 1 && cy + r >= gy - 1) {
+        break;
+      }
+    }
+    return Math.sqrt(best);
+  };
+
+  const dists: number[] = [];
+  // Distances found so far, by the spot that stands for a place; -1 when not
+  // yet searched.
+  const known = new Float64Array(n).fill(-1);
+  const step = Math.max(1, Math.ceil(n / maxQueries));
+  for (let q = 0; q < n; q += step) {
+    const p = placeOf[q] as number;
+    let d = known[p] as number;
+    if (d < 0) {
+      d = nearestTo(p);
+      known[p] = d;
+    }
+    if (d < Infinity) dists.push(d);
+  }
+  if (dists.length === 0) return null;
+  dists.sort((a, b) => a - b);
+  const mid = dists.length >> 1;
+  return dists.length % 2
+    ? (dists[mid] as number)
+    : ((dists[mid - 1] as number) + (dists[mid] as number)) / 2;
+}
+
+/**
+ * The 1st and 99th percentile of `values`, from at most 10,000 of them
+ * spread over the input.
+ */
+function coreRange(values: readonly number[]): [number, number] {
+  const step = Math.max(1, Math.ceil(values.length / 10_000));
+  const sample = new Float64Array(Math.ceil(values.length / step));
+  for (let i = 0, k = 0; i < values.length; i += step, k += 1) {
+    sample[k] = values[i] as number;
+  }
+  sample.sort();
+  const last = sample.length - 1;
+  return [
+    sample[Math.floor(0.01 * last)] as number,
+    sample[Math.ceil(0.99 * last)] as number,
+  ];
 }
 
 /** Min/max of a numeric column, ignoring non-finite entries. */
@@ -217,6 +471,8 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
 
   let width = 0;
   let height = 0;
+  /** Width of the legend gutter right of the image, 0 without a legend. */
+  let gutter = 0;
   let fit: FitTransform = { scale: 1, offsetX: 0, offsetY: 0 };
   let image: HTMLImageElement | null = null;
   let imageUrl = "";
@@ -238,7 +494,22 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
   const labels = () => (data.columns.label as string[]) ?? [];
   const imgW = () => (data.meta?.imgWidth as number) ?? 1;
   const imgH = () => (data.meta?.imgHeight as number) ?? 1;
-  const spotD = () => (data.meta?.spotDiameter as number) ?? 4;
+  // The diameter derived from the spacing, kept until new data arrives.
+  let derived: { data: PlotomicsData; diameter: number } | null = null;
+  /** Spot diameter in image px: the given one, else from the spacing. */
+  const spotD = (): number => {
+    const given = data.meta?.spotDiameter;
+    if (typeof given === "number" && Number.isFinite(given) && given > 0) {
+      return given;
+    }
+    if (!derived || derived.data !== data) {
+      derived = {
+        data,
+        diameter: medianNeighbourDistance(xs(), ys()) ?? FALLBACK_SPOT_DIAMETER,
+      };
+    }
+    return derived.diameter;
+  };
 
   function levels(): string[] {
     return spatialLevels(
@@ -362,7 +633,41 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
   function render() {
     const ctx = canvas.getContext("2d");
     if (!ctx || !width || !height) return;
-    fit = fitTransform(width, height, imgW(), imgH());
+    const x = xs();
+    const col = colorCol();
+    const cat = isCategorical(col, opts.colorMode);
+    const firstValue = col?.find((v) => !isMissing(v));
+
+    // The legend comes first: its gutter decides where the image goes.
+    let legendState: LegendState = null;
+    if (x.length && cat && col) {
+      const levs = levels();
+      let missing = false;
+      for (let i = 0; i < x.length; i += 1)
+        if (isMissing(col[i])) missing = true;
+      legendState = {
+        kind: "categorical",
+        levels: levs,
+        colors: levelColors(levs.length),
+        missing,
+      };
+    } else if (x.length && col && typeof firstValue === "number") {
+      // The type guard matters because the option and the data arrive
+      // separately: a caller switching to "continuous" gets the new option one
+      // render before the numeric column replaces the categorical one, and
+      // doing arithmetic on those strings yields NaN and took the panel down.
+      const nums = col as unknown as ArrayLike<number>;
+      const [lo, hi] = numericExtent(nums);
+      let missing = false;
+      for (let i = 0; i < x.length; i += 1) {
+        const v = nums[i] as number;
+        if (isMissing(v) || !Number.isFinite(v)) missing = true;
+      }
+      legendState = { kind: "continuous", lo, hi, missing };
+    }
+    const layout = opts.showLegend ? legendLayout(legendState) : null;
+    gutter = layout?.gutter ?? 0;
+    fit = fitTransform(width - gutter, height, imgW(), imgH());
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, width, height);
@@ -383,18 +688,12 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       }
     }
 
-    const x = xs();
-    const y = ys();
     if (!x.length) {
       renderOverlay(null);
       return;
     }
-    const col = colorCol();
-    const cat = isCategorical(col, opts.colorMode);
     const r = spotRadius(spotD(), fit.scale, opts.spotScale);
 
-    let legendState: LegendState = null;
-    let anyMissing = false;
     ctx.globalAlpha = opts.spotOpacity;
     // A spot with a missing coordinate is not drawn; one with a missing colour
     // value is drawn grey and keyed "NA".
@@ -406,109 +705,182 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       ctx.arc(at[0], at[1], r, 0, Math.PI * 2);
       ctx.fill();
     };
-    const firstValue = col?.find((v) => !isMissing(v));
-    if (cat && col) {
-      const levs = levels();
-      const cols = levelColors(levs.length);
+    if (legendState?.kind === "categorical" && col) {
+      const cols = legendState.colors;
       // Keyed by text, so numeric cluster ids match levels sent as text.
       const idx = new Map<string, number>();
-      levs.forEach((lv, i) => {
+      legendState.levels.forEach((lv, i) => {
         idx.set(lv, i);
       });
       for (let i = 0; i < x.length; i += 1) {
         const v = col[i];
         if (isMissing(v)) {
-          anyMissing = true;
           dot(i, MISSING_COLOR);
           continue;
         }
         const li = idx.get(String(v));
         dot(i, li === undefined ? theme.muted : (cols[li] as string));
       }
-      legendState = { kind: "categorical", levels: levs, colors: cols };
-    } else if (col && typeof firstValue === "number") {
-      // The type guard matters because the option and the data arrive
-      // separately: a caller switching to "continuous" gets the new option one
-      // render before the numeric column replaces the categorical one, and
-      // doing arithmetic on those strings yields NaN and took the panel down.
+    } else if (legendState?.kind === "continuous" && col) {
       const nums = col as unknown as ArrayLike<number>;
-      const [lo, hi] = numericExtent(nums);
+      const { lo, hi } = legendState;
       const fn = ramp(opts.colormap);
       const span = hi - lo || 1;
       for (let i = 0; i < x.length; i += 1) {
         const v = nums[i] as number;
         if (isMissing(v) || !Number.isFinite(v)) {
-          anyMissing = true;
           dot(i, MISSING_COLOR);
           continue;
         }
         dot(i, fn((v - lo) / span));
       }
-      legendState = { kind: "continuous", lo, hi };
     } else {
       for (let i = 0; i < x.length; i += 1) dot(i, theme.foreground);
     }
     ctx.globalAlpha = 1;
-    if (legendState) legendState.missing = anyMissing;
 
-    renderOverlay(legendState);
+    renderOverlay(layout);
   }
 
+  type CategoricalLegend = {
+    kind: "categorical";
+    levels: string[];
+    colors: string[];
+    missing: boolean;
+  };
   type LegendState =
-    | {
-        kind: "categorical";
-        levels: string[];
-        colors: string[];
-        missing?: boolean;
-      }
-    | { kind: "continuous"; lo: number; hi: number; missing?: boolean }
+    | CategoricalLegend
+    | { kind: "continuous"; lo: number; hi: number; missing: boolean }
     | null;
 
-  function renderOverlay(legend: LegendState) {
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
-    if (!width || !height || !opts.showLegend || !legend) return;
+  /** A legend row: a level and its colour, or the "+N more" line (no colour). */
+  type LegendRow = { label: string; color: string | null };
+  /** What the overlay draws, as {@link legendLayout} fits it. */
+  type LegendLayout =
+    | { kind: "categorical"; rows: LegendRow[]; gutter: number }
+    | {
+        kind: "continuous";
+        lo: number;
+        hi: number;
+        barH: number;
+        missing: boolean;
+        gutter: number;
+      }
+    | null;
+
+  /**
+   * Fit the legend into the widget, with the width of its gutter right of
+   * the image: the legend and the space around it, at most a share of the
+   * widget. Null, and no gutter, when it does not fit.
+   *
+   * A discrete legend lists the rows the height holds (see fitLegend), and
+   * cuts a long label to the gutter, but not below a few characters. The
+   * colour bar is 90 px tall, or shorter to fit the height with the NA key
+   * under it, down to two label heights; then the NA key goes, then the bar.
+   * Its numbers are not cut.
+   *
+   * Whether the gutter is wide enough does not depend on the height: it is
+   * checked for every label the legend can show at some height, so a taller
+   * widget never loses the legend.
+   */
+  function legendLayout(legend: LegendState): LegendLayout {
+    if (!legend) return null;
     const fs = sizes.label;
     const sw = swatchSize();
-
+    const w = (s: string) => textWidth(s, fs, theme.fontFamily);
+    const cap = Math.floor(width * MAX_LEGEND_SHARE);
     if (legend.kind === "categorical") {
+      const candidates = legendCandidates(
+        legend.levels,
+        legend.missing,
+        LEGEND_MAX,
+      );
+      const widest = cap - 2 * LEGEND_PAD - sw - 5;
+      if (!legendLabelsFit(candidates, widest, fs, theme.fontFamily)) {
+        return null;
+      }
       const rowH = Math.round(fs * 1.3);
       const y0 = Math.round(fs + 5);
-      // Rows the height holds. When the list would run past it, fewer levels
-      // are listed and the rest go into the "+N more" line.
-      const n = legend.levels.length;
-      const fit = Math.max(1, Math.floor((height - 6 - y0) / rowH) + 1);
-      const extra = legend.missing ? 1 : 0;
-      const rowsFor = (cap: number) =>
-        Math.min(n, cap) + (n > cap ? 1 : 0) + extra;
-      let cap = LEGEND_MAX;
-      if (rowsFor(cap) > fit) cap = Math.max(1, fit - 1 - extra);
-      const shown = legend.levels.slice(0, cap);
-      const more = n > shown.length ? `+${n - shown.length} more` : "";
-      // The legend starts 128 px from the right edge, or further left when
-      // its longest entry needs the room.
-      const longest = [...shown, more, legend.missing ? "NA" : ""].reduce(
-        (mx, s) => Math.max(mx, textWidth(s, fs, theme.fontFamily)),
-        0,
+      // Rows whose baseline is 6 px or more above the bottom, so the text
+      // ends inside the widget.
+      const fit = fitLegend(
+        legend.levels.length,
+        legend.missing,
+        Math.floor((height - 6 - y0) / rowH) + 1,
+        LEGEND_MAX,
       );
-      const x0 = width - Math.max(128, sw + 5 + Math.ceil(longest) + 8);
-      let y = y0;
-      for (let i = 0; i < shown.length; i += 1) {
-        swatch(x0, y, legend.colors[i] ?? theme.foreground);
+      const rows: LegendRow[] = legend.levels
+        .slice(0, fit.shown)
+        .map((label, i) => ({
+          label,
+          color: legend.colors[i] ?? theme.foreground,
+        }));
+      if (fit.more) rows.push({ label: `+${fit.more} more`, color: null });
+      if (fit.missing) rows.push({ label: "NA", color: MISSING_COLOR });
+      if (rows.length === 0) return null;
+      const labels = rows.map((r) => r.label);
+      const longest = labels.reduce((mx, s) => Math.max(mx, w(s)), 0);
+      const gutter = Math.min(
+        LEGEND_PAD + sw + 5 + Math.ceil(longest) + LEGEND_PAD,
+        cap,
+      );
+      return { kind: "categorical", rows, gutter };
+    }
+    // The gutter holds the NA key whether or not the height leaves it room.
+    const labelW = Math.max(w(fmt(legend.lo)), w(fmt(legend.hi)));
+    const inner = Math.max(
+      BAR_W + 5 + labelW,
+      legend.missing ? sw + 5 + w("NA") : 0,
+    );
+    const gutter = LEGEND_PAD + Math.ceil(inner) + LEGEND_PAD;
+    if (gutter > cap) return null;
+    // The last baseline is 6 px or more above the bottom, as for the rows.
+    const avail = height - 6 - BAR_TOP;
+    const naRow = Math.round(fs + 7);
+    const least = Math.round(fs * 2);
+    const missing = legend.missing && avail - naRow >= least;
+    const barH = Math.min(BAR_MAX, avail - (missing ? naRow : 0));
+    if (barH < least) return null;
+    return {
+      kind: "continuous",
+      lo: legend.lo,
+      hi: legend.hi,
+      barH,
+      missing,
+      gutter,
+    };
+  }
+
+  function renderOverlay(layout: LegendLayout) {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    if (!width || !height || !layout) return;
+    const fs = sizes.label;
+    const sw = swatchSize();
+    // The left edge of the legend, in the gutter right of the image.
+    const x0 = width - layout.gutter + LEGEND_PAD;
+
+    if (layout.kind === "categorical") {
+      const rowH = Math.round(fs * 1.3);
+      const room = layout.gutter - 2 * LEGEND_PAD - sw - 5;
+      let y = Math.round(fs + 5);
+      for (const row of layout.rows) {
+        if (row.color) swatch(x0, y, row.color);
         svg.appendChild(
-          text(x0 + sw + 5, y, shown[i] ?? "", theme.foreground, "start", fs),
+          text(
+            x0 + sw + 5,
+            y,
+            fitText(row.label, room, fs, theme.fontFamily),
+            row.color ? theme.foreground : theme.muted,
+            "start",
+            fs,
+          ),
         );
         y += rowH;
       }
-      if (more) {
-        svg.appendChild(text(x0 + sw + 5, y, more, theme.muted, "start", fs));
-        y += rowH;
-      }
-      if (legend.missing) missingKey(x0, y);
     } else {
-      // Colourbar: a gradient strip with its two ends labelled.
-      const barH = 90;
-      const x0 = width - 40;
-      const y0 = 18;
+      // Colourbar: a gradient strip with its two ends labelled on its right.
+      const { barH } = layout;
+      const y0 = BAR_TOP;
       const id = `plotomics-spatial-grad-${gradSeq++}`;
       const defs = document.createElementNS(SVG_NS, "defs");
       const grad = document.createElementNS(SVG_NS, "linearGradient");
@@ -529,32 +901,32 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       const rect = document.createElementNS(SVG_NS, "rect");
       rect.setAttribute("x", String(x0));
       rect.setAttribute("y", String(y0));
-      rect.setAttribute("width", "10");
+      rect.setAttribute("width", String(BAR_W));
       rect.setAttribute("height", String(barH));
       rect.setAttribute("fill", `url(#${id})`);
       svg.appendChild(rect);
       // The top label's cap height lines up with the top of the bar.
       svg.appendChild(
         text(
-          x0 - 4,
+          x0 + BAR_W + 5,
           y0 + Math.round(fs * 0.75),
-          fmt(legend.hi),
+          fmt(layout.hi),
           theme.muted,
-          "end",
+          "start",
           fs,
         ),
       );
       svg.appendChild(
-        text(x0 - 4, y0 + barH, fmt(legend.lo), theme.muted, "end", fs),
+        text(
+          x0 + BAR_W + 5,
+          y0 + barH,
+          fmt(layout.lo),
+          theme.muted,
+          "start",
+          fs,
+        ),
       );
-      if (legend.missing) {
-        // Under the bar, moved left when "NA" would pass the right edge.
-        const keyW = sw + 5 + textWidth("NA", fs, theme.fontFamily);
-        missingKey(
-          Math.min(x0, Math.floor(width - 6 - keyW)),
-          y0 + barH + Math.round(fs + 7),
-        );
-      }
+      if (layout.missing) missingKey(x0, y0 + barH + Math.round(fs + 7));
     }
   }
 

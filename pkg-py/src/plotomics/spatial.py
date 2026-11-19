@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import math
+import numbers
+from decimal import Decimal
 from typing import Any, Literal
 
 import numpy as np
@@ -33,7 +36,8 @@ class Spatial(PlotomicsWidget):
 
     ``color`` may be strings (categorical, discrete legend) or numbers
     (continuous, sequential ramp with a colourbar), which is what lets one view
-    toggle between colouring by cluster and by a gene's expression.
+    toggle between colouring by cluster and by a gene's expression. The
+    legend sits in a gutter right of the image, so it never covers the tissue.
 
     Scale
     -----
@@ -58,7 +62,9 @@ class Spatial(PlotomicsWidget):
     img_width, img_height:
         Natural size of that image in pixels.
     spot_diameter:
-        Spot diameter in image pixels.
+        Spot diameter in image pixels. ``None`` (the default) takes the
+        median distance from a spot to its nearest neighbour, so neighbouring
+        spots touch.
     levels, colors:
         Fix the categorical order and colours. ``None`` takes the categories
         of a pandas ``Categorical`` color, else the distinct values (text in
@@ -72,7 +78,7 @@ class Spatial(PlotomicsWidget):
         ``"ltc"`` (an earthy teal to sand to rust sequential ramp) or
         ``"ltcdiv"`` (its diverging counterpart, neutral cream at the midpoint).
     spot_scale:
-        Multiplier on ``spot_diameter``; 1 draws true size.
+        Multiplier on the spot diameter; 1 draws true size.
     spot_opacity, image_opacity:
         Opacities in ``[0, 1]``. Lower the spot opacity to read the histology
         underneath.
@@ -103,7 +109,7 @@ class Spatial(PlotomicsWidget):
         image: str,
         img_width: float,
         img_height: float,
-        spot_diameter: float = 4.0,
+        spot_diameter: float | None = None,
         levels: list[str] | None = None,
         colors: list[str] | None = None,
         color_mode: str = "auto",
@@ -125,6 +131,7 @@ class Spatial(PlotomicsWidget):
             raise ValueError("`image` must be a URL or path the browser can fetch.")
         if img_width <= 0 or img_height <= 0:
             raise ValueError("`img_width` and `img_height` must be positive.")
+        diameter = None if spot_diameter is None else _spot_diameter(spot_diameter)
         _check_choice(colormap, "colormap", ("viridis", "rdbu", "ltc", "ltcdiv"))
         if color_mode not in ("auto", "categorical", "continuous"):
             raise ValueError(
@@ -185,8 +192,10 @@ class Spatial(PlotomicsWidget):
             "image": str(image),
             "imgWidth": float(img_width),
             "imgHeight": float(img_height),
-            "spotDiameter": float(spot_diameter),
         }
+        # Left out when not given, so the browser derives it from the spacing.
+        if diameter is not None:
+            meta["spotDiameter"] = diameter
         if levels is not None:
             meta["levels"] = [str(v) for v in levels]
         if colors is not None:
@@ -212,3 +221,31 @@ class Spatial(PlotomicsWidget):
             _height=height,
             **kwargs,
         )
+
+
+def _spot_diameter(value: Any) -> float:
+    """A given spot diameter as a float.
+
+    Any real number that is not a bool is taken: int, float, Fraction,
+    Decimal, a numpy scalar, or a numpy array of one value with no
+    dimensions. NaN, infinity, zero and negative numbers are not, and
+    neither are strings, bools or sequences.
+    """
+    if isinstance(value, np.ndarray) and value.ndim == 0:
+        value = value.item()
+    out = math.nan
+    # numpy registers its integer and floating scalars as numbers.Real, and
+    # leaves out its complex ones.
+    if isinstance(value, (numbers.Real, Decimal)) and not isinstance(
+        value, (bool, np.bool_)
+    ):
+        try:
+            out = float(value)
+        except (TypeError, ValueError, OverflowError):
+            out = math.nan
+    if not (math.isfinite(out) and out > 0):
+        raise ValueError(
+            "`spot_diameter` must be a positive number, or None to take it "
+            "from the spot spacing."
+        )
+    return out

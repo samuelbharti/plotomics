@@ -583,3 +583,237 @@ describe("spatial colours and missing values", () => {
     expect(pixel(el, 2, 2)).toEqual([255, 255, 255]);
   });
 });
+
+describe("spatial spot size and legend gutter", () => {
+  /** Spots every 100 px on a 2000 px image, as on a full-resolution slide. */
+  function fullRes() {
+    const x: number[] = [];
+    const y: number[] = [];
+    for (let i = 0; i < 20; i += 1) {
+      for (let j = 0; j < 20; j += 1) {
+        x.push(50 + i * 100);
+        y.push(50 + j * 100);
+      }
+    }
+    return { x, y };
+  }
+  const dark = [0x1a, 0x1a, 0x1a];
+  const white = [255, 255, 255];
+
+  it("sizes spots from their spacing when no diameter is given", () => {
+    const el = container(400, 400);
+    instances.push(
+      createSpatial(el, {
+        data: {
+          columns: fullRes(),
+          meta: { imgWidth: 2000, imgHeight: 2000 },
+        },
+        options: { showImage: false, spotOpacity: 1 },
+      }),
+    );
+    // The contain fit takes the image to 0.2, so the first spot is centred
+    // at (10, 10) and its neighbours are 20 px off. Spots of 100 image px
+    // reach 10 px out; before the fix they were 4 image px, cut to the
+    // 1 px floor.
+    expect(pixel(el, 10, 10)).toEqual(dark);
+    expect(pixel(el, 16, 10)).toEqual(dark);
+    expect(pixel(el, 10, 16)).toEqual(dark);
+  });
+
+  it("keeps a given diameter", () => {
+    const el = container(400, 400);
+    instances.push(
+      createSpatial(el, {
+        data: {
+          columns: fullRes(),
+          meta: { imgWidth: 2000, imgHeight: 2000, spotDiameter: 20 },
+        },
+        options: { showImage: false, spotOpacity: 1 },
+      }),
+    );
+    expect(pixel(el, 10, 10)).toEqual(dark);
+    expect(pixel(el, 16, 10)).toEqual(white);
+  });
+
+  /** Spots on a 10 x 10 grid over a 100 x 100 image. */
+  function tissue(color: unknown[]) {
+    const x: number[] = [];
+    const y: number[] = [];
+    for (let i = 0; i < 10; i += 1) {
+      for (let j = 0; j < 10; j += 1) {
+        x.push(5 + i * 10);
+        y.push(5 + j * 10);
+      }
+    }
+    const col = x.map((_, i) => color[i % color.length]);
+    return {
+      columns: { x, y, color: col as unknown as string[] },
+      meta: { imgWidth: 100, imgHeight: 100, spotDiameter: 8 },
+    };
+  }
+
+  /** The right edge of what the canvas draws, on the middle row. */
+  function drawnRight(el: HTMLElement): number {
+    const w = el.getBoundingClientRect().width;
+    const mid = el.getBoundingClientRect().height / 2;
+    for (let x = Math.floor(w) - 1; x >= 0; x -= 1) {
+      if (pixel(el, x, mid).some((v) => v !== 255)) return x + 1;
+    }
+    return 0;
+  }
+
+  const LONG = "Normal epithelium next to the tumour margin";
+
+  const cases: [string, unknown[]][] = [
+    ["legend", ["Tumour", "Stroma", LONG, null]],
+    ["colour bar", [1, 250, 3000, null]],
+  ];
+  for (const [name, color] of cases) {
+    it(`keeps the ${name} in a gutter clear of the image`, () => {
+      const el = container(300, 300);
+      instances.push(createSpatial(el, { data: tissue(color) }));
+      const box = el.getBoundingClientRect();
+      const edge = drawnRight(el);
+      // Before the fix the image took the whole width, under the legend.
+      expect(edge).toBeLessThan(box.width - 8);
+      const texts = svgTexts(el);
+      expect(texts).toContain("NA");
+      for (const t of Array.from(el.querySelectorAll("svg text, svg rect"))) {
+        const r = t.getBoundingClientRect();
+        expect(r.left - box.left).toBeGreaterThanOrEqual(edge);
+        expect(r.right).toBeLessThanOrEqual(box.right + 0.5);
+      }
+      if (name === "legend") {
+        // A long level is cut with an ellipsis to the gutter.
+        expect(texts.some((t) => t.endsWith("\u2026"))).toBe(true);
+      }
+    });
+  }
+
+  it("gives the image the whole width with showLegend false", () => {
+    const el = container(300, 300);
+    instances.push(
+      createSpatial(el, {
+        data: tissue(["Tumour", "Stroma"]),
+        options: { showLegend: false },
+      }),
+    );
+    expect(drawnRight(el)).toBe(300);
+  });
+
+  /** Legend texts and swatches whose box runs past the widget's edge. */
+  function outsideBox(el: HTMLElement): string[] {
+    const box = el.getBoundingClientRect();
+    return Array.from(el.querySelectorAll("svg text, svg rect"))
+      .filter((t) => {
+        const r = t.getBoundingClientRect();
+        return r.bottom > box.bottom + 0.5 || r.right > box.right + 0.5;
+      })
+      .map((t) => t.textContent || t.tagName);
+  }
+
+  it("keeps every legend row inside a short widget", () => {
+    const el = container(600, 40);
+    instances.push(createSpatial(el, { data: tissue(["A", "B", "C", null]) }));
+    // Before the fix the rows were "A", "+2 more" and "NA", the last at
+    // baseline 44 in a 40 px widget.
+    expect(svgTexts(el)).toEqual(["A", "+2 more"]);
+    expect(outsideBox(el)).toEqual([]);
+  });
+
+  it("shortens the colour bar to fit a short widget, with the NA key", () => {
+    const el = container(600, 80);
+    instances.push(createSpatial(el, { data: tissue([1, 250, 3000, null]) }));
+    // Before the fix the bar was 90 px tall from y = 18, past the bottom.
+    expect(svgTexts(el)).toContain("NA");
+    expect(outsideBox(el)).toEqual([]);
+  });
+
+  it("leaves the legend out of a widget too short for one row", () => {
+    for (const color of [
+      ["A", "B"],
+      [1, 2],
+    ]) {
+      const el = container(300, 24);
+      instances.push(createSpatial(el, { data: tissue(color) }));
+      expect(svgTexts(el)).toEqual([]);
+    }
+  });
+
+  const narrow: [string, unknown[]][] = [
+    ["legend", ["Cytotoxic T cells", "B cells"]],
+    ["colour bar", [1, 250, 3000]],
+  ];
+  for (const [name, color] of narrow) {
+    it(`leaves the ${name} out when its gutter cannot show the labels`, () => {
+      const el = container(120, 300);
+      instances.push(createSpatial(el, { data: tissue(color) }));
+      // Before the fix the gutter kept 42 px and showed only ellipses.
+      expect(svgTexts(el)).toEqual([]);
+      expect(drawnRight(el)).toBe(120);
+    });
+  }
+
+  it("keeps a legend whose labels show a few characters", () => {
+    const el = container(200, 300);
+    instances.push(
+      createSpatial(el, { data: tissue(["Cytotoxic T cells", "B cells"]) }),
+    );
+    const texts = svgTexts(el);
+    expect(texts.length).toBe(2);
+    expect(texts[1]?.endsWith("\u2026")).toBe(true);
+    for (const t of texts) expect(t.length).toBeGreaterThanOrEqual(4);
+    expect(outsideBox(el)).toEqual([]);
+  });
+});
+
+describe("spatial legend as the widget grows taller", () => {
+  /** Spots on a 4 x 4 grid over a 100 x 100 image. */
+  function spots(color: unknown[]) {
+    const x: number[] = [];
+    const y: number[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      for (let j = 0; j < 4; j += 1) {
+        x.push(10 + i * 25);
+        y.push(10 + j * 25);
+      }
+    }
+    return {
+      columns: {
+        x,
+        y,
+        color: x.map((_, i) => color[i % color.length]) as unknown as string[],
+      },
+      meta: { imgWidth: 100, imgHeight: 100 },
+    };
+  }
+
+  const cases: [string, unknown[], number[]][] = [
+    // Before the fix, at 150 px, heights 36 to 49 showed "B" and "+2 more"
+    // cut, and from 50 px "Wolfram cells" came in and the legend went away.
+    ["levels", ["B", "C", "Wolfram cells"], [150, 300]],
+    // Before the fix a colour bar that the height left no room for its NA
+    // key showed, and went away once the NA key came in.
+    ["colour bar", [1, 2, null], [100, 110, 120, 130]],
+  ];
+  for (const [name, color, widths] of cases) {
+    it(`never loses the ${name} at a greater height`, () => {
+      for (const width of widths) {
+        const shown: number[] = [];
+        for (let height = 20; height <= 140; height += 2) {
+          const el = container(width, height);
+          const sp = createSpatial(el, { data: spots(color) });
+          if (svgTexts(el).length > 0) shown.push(height);
+          sp.destroy();
+          el.remove();
+        }
+        const first = shown[0] ?? Number.POSITIVE_INFINITY;
+        const gaps: number[] = [];
+        for (let height = 20; height <= 140; height += 2) {
+          if (height > first && !shown.includes(height)) gaps.push(height);
+        }
+        expect(gaps, `${width} px`).toEqual([]);
+      }
+    });
+  }
+});

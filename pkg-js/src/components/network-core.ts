@@ -113,6 +113,43 @@ export function groupColorResolver(
     group == null || group === "" ? defaultColor : scale(group);
 }
 
+/** A legend entry: a node group and the colour its nodes take. */
+export interface GroupLegendEntry {
+  label: string;
+  color: string;
+  /** The entry for nodes with no group. */
+  missing?: boolean;
+}
+
+/**
+ * The node groups of a built graph, in the order they took their colours,
+ * each with the colour of its nodes. When some nodes have a group and some
+ * do not, an "NA" entry in `defaultColor` comes last. Empty when no node has
+ * a group.
+ */
+export function groupLegend(
+  graph: Graph,
+  defaultColor: string,
+): GroupLegendEntry[] {
+  const seen = new Map<string, string>();
+  let ungrouped = false;
+  graph.forEachNode((_, attrs) => {
+    const group = attrs.group as string | undefined;
+    if (group === undefined || group === "") {
+      ungrouped = true;
+      return;
+    }
+    if (!seen.has(group)) seen.set(group, attrs.color as string);
+  });
+  if (seen.size === 0) return [];
+  const out: GroupLegendEntry[] = [...seen].map(([label, color]) => ({
+    label,
+    color,
+  }));
+  if (ungrouped) out.push({ label: "NA", color: defaultColor, missing: true });
+  return out;
+}
+
 /** Whether ForceAtlas2 should run: only in `"forceatlas2"` mode and only when
  * both x and y coordinate columns are absent (partial coords are ignored). */
 export function needsLayout(
