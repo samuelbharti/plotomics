@@ -595,25 +595,44 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     };
   }
   /**
+   * Room for the colour bar's tick labels in its gutter at the largest
+   * share of the widget (see colorbarWidth): all of the gutter but its
+   * 27 px of bar and gaps and the title column.
+   */
+  function colorbarLabelRoom(): number {
+    const cap = Math.max(COLORBAR_W, Math.floor(width * MAX_COLORBAR_SHARE));
+    return cap - 27 - 1.4 * sizes.axisTitle;
+  }
+  /**
    * The colour bar's ticks for a bar `barH` tall: round values inside the
    * colour range, as many as the bar holds a line and a half of text from
-   * each other, labelled in one unit.
+   * each other, labelled in one unit. When those labels are wider than the
+   * gutter can hold, a coarser step takes their place, with fewer and
+   * shorter labels, such as "123457" for "123457.5". The labels are cut
+   * only when even those of the coarsest step do not fit.
    */
   function colorbarTicks(barH: number): {
     ticks: number[];
     labels: string[];
     flat: boolean;
   } {
-    const { ticks, step } = fitDomainTicks(colorLo, colorHi, barH, {
-      maxCount: 4,
-      minGapPx: 1.6 * sizes.label,
-      endGapPx: sizes.label + 2,
-    });
+    const room = colorbarLabelRoom();
+    let best = { ticks: [] as number[], labels: [] as string[], step: 0 };
+    for (let maxCount = 4; maxCount >= 1; maxCount -= 1) {
+      const { ticks, step } = fitDomainTicks(colorLo, colorHi, barH, {
+        maxCount,
+        minGapPx: 1.6 * sizes.label,
+        endGapPx: sizes.label + 2,
+      });
+      const labels = formatTicks(ticks, step);
+      best = { ticks, labels, step };
+      if (labels.every((s) => labelWidth(s) <= room)) break;
+    }
     return {
-      ticks,
-      labels: formatTicks(ticks, step),
+      ticks: best.ticks,
+      labels: best.labels,
       // A flat range has one tick and no step.
-      flat: !(step > 0),
+      flat: !(best.step > 0),
     };
   }
   /**

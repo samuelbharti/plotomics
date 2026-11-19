@@ -560,15 +560,25 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       if (v > hi) hi = v;
     }
     const fs = sizes.label;
-    // The ends of the key are not round values, so each prints as the value
-    // it is, and both in one notation (see keyLabels).
-    const [loText = "", hiText = ""] = keyLabels(hi > lo ? [lo, hi] : [lo]);
-    const hiW = textWidth(hiText, fs, theme.fontFamily);
-    const loW = textWidth(loText, fs, theme.fontFamily);
     const barW = 90;
-    const x = Math.floor(width - 8 - hiW - 4 - barW);
-    // Left out when the min label would meet the breadcrumb.
-    if (x - 4 - loW - 8 < crumbsEnd) return;
+    // The ends of the key are not round values, so each prints as the value
+    // it is, and both in one notation (see keyLabels). Where the breadcrumb
+    // leaves them too little room, they print to fewer significant digits,
+    // down to two; the key is left out when even those meet the breadcrumb.
+    const ends = hi > lo ? [lo, hi] : [lo];
+    let loText = "";
+    let hiText = "";
+    let x = 0;
+    let fits = false;
+    for (const digits of [undefined, 5, 4, 3, 2]) {
+      [loText = "", hiText = ""] = keyLabels(ends, digits);
+      const hiW = textWidth(hiText, fs, theme.fontFamily);
+      const loW = textWidth(loText, fs, theme.fontFamily);
+      x = Math.floor(width - 8 - hiW - 4 - barW);
+      fits = x - 4 - loW - 8 >= crumbsEnd;
+      if (fits) break;
+    }
+    if (!fits) return;
     // The bar and its labels sit on the middle of the strip.
     const midY = breadcrumbH() / 2;
     const baseline = Math.round(midY + fs * 0.35);
@@ -861,17 +871,18 @@ function fmt(v: number): string {
 /**
  * The ends of the value key, each the value it is, to six significant
  * digits and every digit of its whole part (as formatTick prints the one
- * tick of a flat range), all in one notation: never "4.0e-3" next to
- * "15.75", nor "5e-7" next to "3". They print in fixed point, unless that
- * runs past six characters and the exponent form is shorter, as for values
- * below a thousandth: then all of them take the exponent form.
+ * tick of a flat range), or to `digits` significant digits when given, all
+ * in one notation: never "4.0e-3" next to "15.75", nor "5e-7" next to "3".
+ * They print in fixed point, unless that runs past six characters and the
+ * exponent form is shorter, as for values below a thousandth: then all of
+ * them take the exponent form. 0 reads "0" in either.
  */
-function keyLabels(values: readonly number[]): string[] {
+function keyLabels(values: readonly number[], digits?: number): string[] {
   const rounded = values.map((v) => {
     if (!Number.isFinite(v)) return v;
     const whole =
       Math.abs(v) < 1e21 ? Math.trunc(Math.abs(v)).toFixed(0).length : 21;
-    return Number(v.toPrecision(Math.min(21, Math.max(6, whole))));
+    return Number(v.toPrecision(Math.min(21, digits ?? Math.max(6, whole))));
   });
   const fixed = rounded.map((n) => {
     if (!Number.isFinite(n)) return "NA";
@@ -885,7 +896,7 @@ function keyLabels(values: readonly number[]): string[] {
     return n.toFixed(Math.min(100, decimals + Number(text.slice(e + 2))));
   });
   const exponent = rounded.map((n) =>
-    Number.isFinite(n) ? n.toExponential() : "NA",
+    !Number.isFinite(n) ? "NA" : n === 0 ? "0" : n.toExponential(),
   );
   const longest = (labels: string[]) =>
     labels.reduce((k, s) => Math.max(k, s.length), 0);

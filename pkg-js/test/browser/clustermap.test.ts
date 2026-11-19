@@ -1,7 +1,13 @@
 import { agnes } from "ml-hclust";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClustermap } from "../../src/components/clustermap.js";
-import { type PlotomicsInstance, viridis } from "../../src/core/index.js";
+import {
+  type PlotomicsInstance,
+  defaultTheme,
+  textSizes,
+  textWidth,
+  viridis,
+} from "../../src/core/index.js";
 
 // Count the clustering runs; the real agnes still runs.
 vi.mock("ml-hclust", { spy: true });
@@ -679,4 +685,82 @@ describe("clustermap colour bar in a small widget", () => {
       expect(tickLabels(el).length).toBeGreaterThanOrEqual(1);
     }
   });
+});
+
+describe("clustermap colour bar labels too long for the gutter", () => {
+  /** 12 evenly spread values from `lo` to `hi`, in 4 rows of 3. */
+  const spread = (lo: number, hi: number) =>
+    Array.from({ length: 12 }, (_, i) => lo + (i / 11) * (hi - lo));
+  const tickLabels = (el: HTMLElement) =>
+    (
+      Array.from(
+        el.querySelectorAll('svg text[text-anchor="start"]'),
+      ) as SVGTextElement[]
+    )
+      .map((t) => t.textContent ?? "")
+      .filter((s) => /^-?\d/.test(s));
+
+  /**
+   * The width of a widget, with no theme padding, whose colour bar gutter
+   * at its largest share, 45% of the widget, leaves `room` px for the tick
+   * labels: the gutter less 27 px of bar and gaps and the title column.
+   * Labels are measured in the plot's own font, so a case holds in any
+   * font.
+   */
+  function widthFor(room: number, fontSize: number) {
+    const sizes = textSizes({ fontSize });
+    return Math.ceil((room + 27 + 1.4 * sizes.axisTitle) / 0.45);
+  }
+  const widest = (labels: string[], fontSize: number) =>
+    Math.max(
+      ...labels.map((s) =>
+        textWidth(s, textSizes({ fontSize }).label, defaultTheme.fontFamily),
+      ),
+    );
+  const make = (w: number, lo: number, hi: number, fontSize: number) => {
+    const el = container(w, 300);
+    instances.push(
+      createClustermap(el, {
+        data: {
+          columns: { values: spread(lo, hi) },
+          meta: { nrows: 4, ncols: 3 },
+        },
+        options: { theme: { fontSize, padding: 0 } },
+      }),
+    );
+    return el;
+  };
+
+  it("takes a coarser step before it cuts the labels", () => {
+    // 123456.7 to 123458.4 at fontSize 20, in a widget whose gutter holds
+    // "123457" but not "123457.5". Before the fix all three labels were
+    // cut to "12345\u2026".
+    const coarse = ["123457", "123458"];
+    const fine = ["123457.0", "123457.5", "123458.0"];
+    const [a, b] = [widest(coarse, 20), widest(fine, 20)];
+    expect(b - a).toBeGreaterThanOrEqual(6);
+    const el = make(widthFor((a + b) / 2, 20), 123456.7, 123458.4, 20);
+    expect(tickLabels(el)).toEqual(coarse);
+  });
+
+  const pairs: [number, number, number, string[]][] = [
+    [1000, 1000.0001, 20, ["1000.0000", "1000.0001"]],
+    [1000, 1000.0001, 16, ["1000.0000", "1000.0001"]],
+    [0.5, 0.5001, 20, ["0.5000", "0.5001"]],
+  ];
+  for (const [lo, hi, fontSize, ends] of pairs) {
+    it(`cuts only the end pair of ${lo} to ${hi} when even it does not fit, fontSize ${fontSize}`, () => {
+      // Before the fix three to seven labels were cut to one prefix, such
+      // as "1000.0\u2026".
+      const el = make(
+        widthFor(widest(ends, fontSize) - 6, fontSize),
+        lo,
+        hi,
+        fontSize,
+      );
+      const labels = tickLabels(el);
+      expect(labels.length).toBe(2);
+      for (const s of labels) expect(s.endsWith("\u2026")).toBe(true);
+    });
+  }
 });

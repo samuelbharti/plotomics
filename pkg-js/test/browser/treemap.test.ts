@@ -2,8 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createTreemap } from "../../src/components/treemap.js";
 import {
   type PlotomicsInstance,
+  defaultTheme,
   ramp,
   rgbToHex,
+  textSizes,
+  textWidth,
 } from "../../src/core/index.js";
 import { canvasPNG, drawnPixels } from "./helpers.js";
 
@@ -230,5 +233,98 @@ describe("treemap value key in one notation", () => {
     );
     expect(texts(el)).toContain("5e-7");
     expect(texts(el)).toContain("3e+0");
+  });
+});
+
+describe("treemap value key in a narrow widget", () => {
+  const tree = (values: number[]) => ({
+    columns: {
+      id: ["root", ...values.map((_, i) => `leaf${i}`)],
+      parent: ["", ...values.map(() => "root")],
+      value: [0, ...values],
+    },
+  });
+  /**
+   * The width of a widget, with no theme padding, whose breadcrumb strip
+   * holds the key with ends `short` but not with ends `long`: the root
+   * crumb, set bold, then 8 px, the low end, 4 px, the 90 px ramp, 4 px,
+   * the high end and 8 px. Labels are measured in the plot's own font, so
+   * the case holds in any font.
+   */
+  function widthBetween(short: string[], long: string[], fontSize: number) {
+    const sizes = textSizes({ fontSize });
+    const w = (s: string, size: number) =>
+      textWidth(s, size, defaultTheme.fontFamily);
+    const crumbs = 8 + 1.1 * w("root", sizes.axisTitle) + 6;
+    const need = (ends: string[]) =>
+      crumbs + 24 + 90 + ends.reduce((sum, s) => sum + w(s, sizes.label), 0);
+    expect(need(long) - need(short)).toBeGreaterThanOrEqual(8);
+    return Math.ceil((need(short) + need(long)) / 2);
+  }
+  const keyLabels = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll("svg text"))
+      .map((t) => t.textContent ?? "")
+      .filter((s) => /e[+-]\d+$/.test(s));
+
+  const cases: [number[], number, string[], RegExp, RegExp][] = [
+    // Before the fix the key went away at 250 px, fontSize 12, and at
+    // 300 px, fontSize 16, where main showed "1.2e-4" and "1.2e-3".
+    [
+      [0.000123457, 0.0005, 0.00121],
+      12,
+      ["1.23457e-4", "1.21e-3"],
+      /^1\.2\d*e-4$/,
+      /^1\.2\d*e-3$/,
+    ],
+    [
+      [0.000123457, 0.0005, 0.00121],
+      16,
+      ["1.23457e-4", "1.21e-3"],
+      /^1\.2\d*e-4$/,
+      /^1\.2\d*e-3$/,
+    ],
+    [
+      [1.23457e-6, 3, 15.75],
+      12,
+      ["1.23457e-6", "1.575e+1"],
+      /^1\.2\d*e-6$/,
+      /^1\.[56]\d*e\+1$/,
+    ],
+  ];
+  for (const [values, fontSize, full, lo, hi] of cases) {
+    it(`prints ${values[0]} to ${values[values.length - 1]} to fewer digits before leaving the key out, fontSize ${fontSize}`, () => {
+      // The ends to two significant digits, the fewest the key prints.
+      const short = full.map((s) => Number(s).toExponential(1));
+      const width = widthBetween(short, full, fontSize);
+      const el = document.createElement("div");
+      el.style.cssText = `width:${width}px;height:300px;`;
+      document.body.appendChild(el);
+      instances.push(
+        createTreemap(el, {
+          data: tree(values),
+          options: { colorBy: "value", theme: { fontSize, padding: 0 } },
+        }),
+      );
+      const labels = keyLabels(el);
+      expect(labels.length, `${width} px`).toBe(2);
+      expect(labels[0]).toMatch(lo);
+      expect(labels[1]).toMatch(hi);
+      expect(labels).not.toEqual(full);
+    });
+  }
+
+  it("prints a zero end as 0", () => {
+    // Before the fix the key read "0e+0" next to "5e-7".
+    const el = container();
+    instances.push(
+      createTreemap(el, {
+        data: tree([0, 5e-7, 2e-7]),
+        options: { colorBy: "value" },
+      }),
+    );
+    const drawn = texts(el);
+    expect(drawn).toContain("0");
+    expect(drawn).toContain("5e-7");
+    expect(drawn).not.toContain("0e+0");
   });
 });
