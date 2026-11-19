@@ -29,7 +29,8 @@
   labels and legends stay inside it, and exports keep it.
 * Gridlines sit under the data in every plot. A `theme$grid` of "none", a
   transparent colour or an R colour name such as "grey90" draws no grid.
-* Axes and colour bars label round values in one unit per axis.
+* Axes and colour bars label round values in one unit per axis, and keep
+  fewer labels on a short plot so that no two overlap.
 * `violin()` caps the widest violin at `violin_aspect` (0.8) times its row
   height, never narrower than four times the label size; `violin_aspect = NULL`
   turns the cap off.

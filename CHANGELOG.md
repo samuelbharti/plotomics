@@ -89,7 +89,9 @@ be behind the tag.
   draws no grid, and CSS variables resolve. (#102, #202, #206)
 - Axes and colour bars label round values at their place, in one unit per axis
   ("0.8M, 1.0M", not "800k, 1.0M"), and float32 values from Python no longer add
-  a step to an axis. (#101, #202, #207, #208)
+  a step to an axis. On a short plot an axis keeps fewer labels, down to its top
+  alone, so no two tick labels overlap; the KM survival ticks fit the panel the
+  same way. (#101, #202, #207, #208, #211)
 - The embedding, network and spatial legends sit in a gutter right of the plot
   and no longer cover the data; a legend that cannot fit is left out. (#117,
   #118, #120, #202, #205)
