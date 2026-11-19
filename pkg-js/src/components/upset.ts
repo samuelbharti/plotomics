@@ -371,6 +371,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       : fitZeroTicks(finiteMax(s), layout.barH - 6, {
           integer: true,
           minGapPx: fontSizes.label + 5,
+          endGapPx: fontSizes.label + 2,
         });
     const ssAll = setSizes();
     let countWidth = 0;

@@ -499,7 +499,8 @@ export function residueTicks(length: number, count = 6): number[] {
 /**
  * Ticks for the count axis of stems up to `max` on an axis `lengthPx` tall:
  * round values from 0, as many as keep `minGapPx` between neighbouring
- * labels. With `integer`, for counts that are all whole numbers, the steps
+ * labels, and 0 and the top alone when they keep `endGapPx` (see
+ * {@link fitZeroTicks}). With `integer`, for counts that are all whole numbers, the steps
  * are whole numbers too, since a count of samples has no fractions; without
  * it, counts below 1, such as frequencies, get decimal steps. The stems are
  * scaled against `top`, the round value at the top of the axis.
@@ -509,11 +510,13 @@ export function countTicks(
   lengthPx: number,
   minGapPx: number,
   integer = true,
+  endGapPx = minGapPx,
 ): { ticks: number[]; top: number; step: number } {
   return fitZeroTicks(max, lengthPx, {
     integer,
     maxCount: COUNT_TICKS,
     minGapPx,
+    endGapPx,
   });
 }
 
@@ -747,8 +750,8 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   /**
    * Each shown legend entry's x and row, and a "+N more" note when the
    * entries need more rows than the legend may take: a fifth of the height,
-   * less any row that would leave the stems too short for three count
-   * labels.
+   * less any row that would leave the stems too short for the count labels
+   * 0 and the top.
    */
   function legendLayout(): {
     items: { x: number; row: number }[];
@@ -762,9 +765,10 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     const widths = names.map((c) => 12 + textWidth(c, sizes.label));
     const rowH = lollipopText(sizes).legendRowH;
     // A fifth of the height, and no row that would leave the stems less
-    // room than three count labels need (two gaps of the count axis).
+    // room than the count labels 0 and the top need: the label size and
+    // 2 px, as the count axis asks of them.
     let maxRows = Math.max(1, Math.floor((height * 0.2) / rowH));
-    const stemRoom = 2 * (sizes.label + 5);
+    const stemRoom = sizes.label + 2;
     while (maxRows > 1 && frame(maxRows).stemH < stemRoom) maxRows -= 1;
     const all = wrapRows(widths, maxW);
     const items = all.filter((it) => it.row < maxRows);
@@ -895,7 +899,13 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     restack();
     layout = frame(legendRows());
     // As many round counts as the stem area holds without crowding.
-    yAxis = countTicks(maxStack(), layout.stemH, sizes.label + 5, wholeCounts);
+    yAxis = countTicks(
+      maxStack(),
+      layout.stemH,
+      sizes.label + 5,
+      wholeCounts,
+      sizes.label + 2,
+    );
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, width, height);

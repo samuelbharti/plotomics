@@ -243,20 +243,21 @@ export interface ValueAxis {
  * below both 0 and `min` to a round top at or above both 0 and `max`, so the
  * zero line is a tick and a negative bar stays inside the plot. It takes as
  * many intervals, up to `maxCount`, as leave at least `minGapPx` between
- * neighbouring labels; when even one interval crowds, the two ends, or the
- * end farther from 0 alone. With no value below 0 these are the ticks of
- * `fitZeroTicks`.
+ * neighbouring labels; when even one interval crowds, the two ends when
+ * they keep `endGapPx` (by default `minGapPx`), or the end farther from 0
+ * alone. With no value below 0 these are the ticks of `fitZeroTicks`.
  */
 export function valueTicks(
   min: number,
   max: number,
   lengthPx: number,
-  opts: { maxCount?: number; minGapPx?: number } = {},
+  opts: { maxCount?: number; minGapPx?: number; endGapPx?: number } = {},
 ): ValueAxis {
   const lo = Number.isFinite(min) ? Math.min(0, min) : 0;
   if (!(lo < 0)) return { ...fitZeroTicks(max, lengthPx, opts), bottom: 0 };
   const hi = Number.isFinite(max) ? Math.max(0, max) : 0;
   const minGap = opts.minGapPx ?? 16;
+  const endGap = opts.endGapPx ?? minGap;
   let axis = signedTicks(lo, hi, 1);
   for (let count = opts.maxCount ?? 5; count >= 1; count -= 1) {
     axis = signedTicks(lo, hi, count);
@@ -266,7 +267,7 @@ export function valueTicks(
   // end farther from 0 alone, so no two labels come closer than the gap.
   const { bottom, top } = axis;
   const ticks =
-    lengthPx >= minGap
+    lengthPx >= endGap
       ? [bottom, top]
       : lengthPx > 0
         ? [Math.abs(bottom) > Math.abs(top) ? bottom : top]
@@ -515,6 +516,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     const axis: ValueAxis = v.length
       ? valueTicks(finiteMin(v), finiteMax(v), layout.plotH, {
           minGapPx: sizes.label + 5,
+          endGapPx: sizes.label + 2,
         })
       : { ...zeroTicks(1, 4), bottom: 0 };
     let tickWidth = 0;

@@ -118,6 +118,23 @@ describe("ticks for tiny values, whole counts and short axes", () => {
     ]);
   });
 
+  it("keeps 0 and the top when they keep the end gap, closer than the full gap", () => {
+    // Before the fix the last pair needed the full gap: at a 16 px font the
+    // count labels 0 and 50, 19 px from each other, lost the 0 to a gap of
+    // 19.7, though the 14.7 px labels were clear.
+    const opts = { integer: true, minGapPx: 14.7 + 5, endGapPx: 14.7 + 2 };
+    expect(fitZeroTicks(39, 19, opts)).toEqual({
+      ticks: [0, 50],
+      top: 50,
+      step: 50,
+    });
+    expect(fitZeroTicks(39, 16, opts).ticks).toEqual([50]);
+    // Without an end gap the pair asks the full gap, as before.
+    expect(
+      fitZeroTicks(39, 19, { integer: true, minGapPx: 19.7 }).ticks,
+    ).toEqual([50]);
+  });
+
   it("keeps the top alone when 0 and the top do not fit either", () => {
     // Before the fix an axis 19 px long kept 0 and 4, 19 px from each
     // other where the labels need 20.

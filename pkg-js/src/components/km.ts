@@ -324,6 +324,27 @@ export function tickDecimals(ticks: readonly number[]): number {
   return d;
 }
 
+/**
+ * The survival ticks from the axis floor `lo` to 1 (100%) on an axis
+ * `lengthPx` long, for labels `labelPx` in size: four steps, as 0, 25, 50,
+ * 75 and 100% from a floor of 0, or two, when their labels keep `labelPx`
+ * + 5 px from each other; the floor and 1 alone when those keep `labelPx`
+ * + 2 px; 1 alone on a shorter axis, and none on an axis with no length.
+ */
+export function survivalTicks(
+  lo: number,
+  lengthPx: number,
+  labelPx: number,
+): number[] {
+  for (const n of [4, 2]) {
+    if (lengthPx / n >= labelPx + 5) {
+      return Array.from({ length: n + 1 }, (_, k) => lo + (k / n) * (1 - lo));
+    }
+  }
+  if (lengthPx >= labelPx + 2) return [lo, 1];
+  return lengthPx > 0 ? [1] : [];
+}
+
 /** Round `max` up to a readable axis bound and produce evenly spaced ticks. */
 export function timeTicks(max: number, target = 6): number[] {
   if (!isFinite(max) || max <= 0) return [0];
@@ -723,9 +744,12 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     renderOverlay();
   }
 
-  /** The values of the five y ticks, from the axis floor to 100%. */
+  /**
+   * The values of the y ticks and their gridlines, from the axis floor to
+   * 100%, as many as the panel keeps clear (see survivalTicks).
+   */
   function gridValues(lo: number): number[] {
-    return [0, 1, 2, 3, 4].map((k) => lo + (k / 4) * (1 - lo));
+    return survivalTicks(lo, layout.plotH, sizes.label);
   }
 
   function renderOverlay() {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { createLollipop } from "../../src/components/lollipop.js";
+import { PLOTS } from "./plots.js";
 import {
   DEFAULT_PADDING,
   OKABE_ITO,
@@ -393,11 +394,13 @@ describe("lollipop in a browser", () => {
     expect(texts.some((t) => /^\+\d+ more$/.test(t.textContent ?? ""))).toBe(
       true,
     );
+    // The stems keep room for the count labels 0 and 10: the 11 px label
+    // size and 2 px between their baselines.
     const zero = texts.find((t) => t.textContent === "0") as SVGTextElement;
     const ten = texts.find((t) => t.textContent === "10") as SVGTextElement;
     expect(
       Number(zero.getAttribute("y")) - Number(ten.getAttribute("y")),
-    ).toBeGreaterThan(30);
+    ).toBeGreaterThanOrEqual(11 + 2);
     // In the plot box, 20 px less than the widget with the default padding.
     for (const t of texts) {
       const b = t.getBBox();
@@ -1055,5 +1058,104 @@ describe("lollipop counts from Python and large counts", () => {
     };
     expect(at("N1")).toEqual([255, 255, 255]);
     expect(at("N2")).toEqual([255, 0, 255]);
+  });
+});
+
+describe("lollipop count labels and legend rows on a short widget", () => {
+  const CLASSES = [
+    "Missense_Mutation",
+    "Nonsense_Mutation",
+    "Frame_Shift_Del",
+    "Frame_Shift_Ins",
+    "Splice_Site",
+    "In_Frame_Del",
+    "In_Frame_Ins",
+    "Translation_Start_Site",
+  ];
+  /** One stem of each of the eight classes. */
+  const eight = () => ({
+    columns: {
+      position: CLASSES.map((_, i) => 40 + i * 40),
+      count: CLASSES.map((_, i) => 40 - i * 4),
+      class: CLASSES,
+    },
+    meta: { length: 393, classes: CLASSES },
+  });
+  const counts = (el: HTMLElement) => yTicks(el).map((t) => t.textContent);
+  /** Smallest distance between the baselines of two count labels. */
+  function closest(el: HTMLElement): number {
+    const ys = yTicks(el).map((t) => Number(t.getAttribute("y")));
+    let d = Number.POSITIVE_INFINITY;
+    for (let i = 1; i < ys.length; i += 1) {
+      d = Math.min(d, Math.abs((ys[i] as number) - (ys[i - 1] as number)));
+    }
+    return d;
+  }
+
+  it("keeps 0 and the top where they are clear but closer than the full gap", () => {
+    // Before the fix a 200 px widget at a 16 px font showed "50" alone,
+    // where "0" and "50" were 19 px from each other with 14.7 px text.
+    const plot = PLOTS.find((p) => p.name === "lollipop");
+    for (const width of [640, 400, 900]) {
+      const el = container(width, 200);
+      instances.push(
+        plot?.make(el, { fontSize: 16 }) as PlotomicsInstance<unknown>,
+      );
+      expect(counts(el), `${width} px`).toEqual(["0", "50"]);
+      expect(closest(el)).toBeGreaterThanOrEqual(14.7 + 2);
+    }
+  });
+
+  it("keeps the legend rows while 0 and the top count fit", () => {
+    // Before the fix the legend gave up a row for three count labels: at
+    // 640 x 200 it showed four classes and "+4 more".
+    const el = container(640, 200);
+    instances.push(
+      createLollipop(el, {
+        data: eight(),
+        options: { theme: { fontSize: 12 } },
+      }),
+    );
+    const texts = svgTexts(el).map((t) => t.textContent);
+    for (const c of CLASSES) expect(texts).toContain(c);
+    expect(texts.some((t) => /^\+\d+ more$/.test(t ?? ""))).toBe(false);
+    expect(counts(el)).toEqual(["0", "50"]);
+  });
+
+  it("keeps the count labels clear at 800 x 180 with a 16 px font", () => {
+    // Eight classes, and the two stems of one class that #207 checked.
+    const two = {
+      columns: {
+        position: [100, 200],
+        count: [3, 1],
+        class: ["Missense", "Missense"],
+      },
+      meta: { length: 393, classes: ["Missense"] },
+    };
+    for (const data of [eight(), two]) {
+      const el = container(800, 180);
+      instances.push(
+        createLollipop(el, { data, options: { theme: { fontSize: 16 } } }),
+      );
+      expect(counts(el).length).toBeGreaterThanOrEqual(1);
+      expect(closest(el)).toBeGreaterThanOrEqual(14.7 + 2);
+    }
+  });
+
+  it("keeps the layout of the default height", () => {
+    // At the R and Python default of 440 px the legend shows every class
+    // and the count axis its five labels.
+    for (const width of [640, 900]) {
+      const el = container(width, 440);
+      instances.push(
+        createLollipop(el, {
+          data: eight(),
+          options: { theme: { fontSize: 12 } },
+        }),
+      );
+      const texts = svgTexts(el).map((t) => t.textContent);
+      for (const c of CLASSES) expect(texts).toContain(c);
+      expect(counts(el)).toEqual(["0", "10", "20", "30", "40"]);
+    }
   });
 });
