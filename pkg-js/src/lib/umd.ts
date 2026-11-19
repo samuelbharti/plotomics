@@ -92,7 +92,13 @@ function ensureGlobal(): PlotomicsGlobal {
                 lastOptions = sent;
               },
               resize(width: number, h: number) {
-                inst?.resize(width, h);
+                // htmlwidgets passes the border box. The plot fills the
+                // padding box, the size measure() and autoResize give, so
+                // a border no longer pushes it past the element.
+                inst?.resize(
+                  el.clientWidth > 0 ? el.clientWidth : width,
+                  el.clientHeight > 0 ? el.clientHeight : h,
+                );
               },
             };
           },

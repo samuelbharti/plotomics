@@ -44,10 +44,11 @@ barrel import (`plotomics`) down to what you use.
 
 ## Sizing
 
-A plot takes the size of its element, inside any padding, so give the
-element a CSS height. An element with no height of its own gets 480 px, so
-the plot does not cover the content below it. This covers an element added
-to the page after the plot is drawn too, also inside a shadow root. The
+A plot fills the padding box of its element, inside any border, so give
+the element a CSS height. An element with no height of its own gets a
+content height of 480 px, so the plot does not cover the content below it.
+This covers an element added to the page after the plot is drawn too, also
+inside a shadow root. The
 480 px comes from a CSS rule in a cascade layer of its own with the lowest
 priority, so any height your CSS sets wins over it, in a layer or not,
 also one set later. `destroy()` removes it again.

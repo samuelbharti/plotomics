@@ -18,8 +18,6 @@ export function createTooltip(
   theme: PlotomicsTheme,
 ): Tooltip {
   const tip = document.createElement("div");
-  // The tooltip follows the pointer, so it is not moved with the layers.
-  tip.setAttribute(TOOLTIP_ATTR, "");
   Object.assign(tip.style, {
     position: "absolute",
     pointerEvents: "none",
@@ -116,11 +114,10 @@ export function fitText(
 }
 
 /**
- * Measure a container: the size of its content box, inside any padding and
- * border, which is also the size ResizeObserver gives {@link autoResize}.
- * A container with no box, hidden or not in the page, measures as
- * `fallback`. The plot's layers are placed in that content box too, so a
- * padded container keeps its padding clear (see {@link contentOrigin}).
+ * Measure a container: the size of its padding box, inside any border,
+ * which is the box its absolutely placed layers fill, and the size
+ * {@link autoResize} reports too. A container with no box, hidden or not
+ * in the page, measures as `fallback`.
  *
  * A plot drawn at the fallback height into a container with no height
  * would cover the content below it, so two kinds of container are also
@@ -132,22 +129,21 @@ export function fitText(
  * dropped when the page gives it a height. A container hidden at creation,
  * as in a tab not shown, gets no fallback: its size is not known until it
  * is shown, and {@link autoResize} handles it then. Each component's
- * `destroy()` undoes all of this through {@link releaseContainer}.
+ * `destroy()` undoes this through {@link releaseContainer}.
  */
 export function measure(
   el: HTMLElement,
   fallback: { width: number; height: number } = { width: 640, height: 480 },
 ): { width: number; height: number } {
-  let box = contentSize(el);
+  let box = boxSizes(el);
   if (!el.style.height) {
     if (!el.isConnected) {
       applyFallbackHeight(el, fallback.height);
-    } else if (box.laidOut && box.height <= 0) {
+    } else if (box.laidOut && box.contentHeight <= 0) {
       applyFallbackHeight(el, fallback.height);
-      box = contentSize(el);
+      box = boxSizes(el);
     }
   }
-  placeLayers(el);
   return {
     width: box.width > 0 ? box.width : fallback.width,
     height: box.height > 0 ? box.height : fallback.height,
@@ -157,41 +153,33 @@ export function measure(
 /** A CSS length in px as a number; 0 for anything else. */
 const px = (v: string) => Number.parseFloat(v) || 0;
 
-/** The computed style of `el`, read in its own window. */
-function styleOf(el: Element): CSSStyleDeclaration {
-  return (el.ownerDocument.defaultView ?? window).getComputedStyle(el);
-}
-
 /**
- * The content box of `el` in CSS px: its border box less padding and
- * border. `laidOut` is false for an element with no box, one that is
- * hidden or not in the page.
+ * The padding box of `el` in CSS px, and the height of its content box,
+ * which is 0 when nothing gives the element a height. `laidOut` is false
+ * for an element with no box: hidden or not in the page.
  */
-function contentSize(el: Element): {
+function boxSizes(el: Element): {
   width: number;
   height: number;
+  contentHeight: number;
   laidOut: boolean;
 } {
   if (!el.isConnected || el.getClientRects().length === 0) {
-    return { width: 0, height: 0, laidOut: false };
+    return { width: 0, height: 0, contentHeight: 0, laidOut: false };
   }
-  const rect = el.getBoundingClientRect();
-  const cs = styleOf(el);
-  const width =
-    rect.width -
-    px(cs.paddingLeft) -
-    px(cs.paddingRight) -
-    px(cs.borderLeftWidth) -
-    px(cs.borderRightWidth);
-  const height =
-    rect.height -
+  const cs = (el.ownerDocument.defaultView ?? window).getComputedStyle(el);
+  // From the border box, which has no rounding, so a padding of 8.3 px
+  // with no content still reads as no content.
+  const contentHeight =
+    el.getBoundingClientRect().height -
     px(cs.paddingTop) -
     px(cs.paddingBottom) -
     px(cs.borderTopWidth) -
     px(cs.borderBottomWidth);
   return {
-    width: Math.max(0, width),
-    height: Math.max(0, height),
+    width: el.clientWidth,
+    height: el.clientHeight,
+    contentHeight: Math.max(0, contentHeight),
     laidOut: true,
   };
 }
@@ -200,31 +188,15 @@ function contentSize(el: Element): {
 const FALLBACK_ATTR = "data-plotomics-fallback";
 /** The custom property that holds the fallback height. */
 const FALLBACK_VAR = "--plotomics-fallback-height";
-/** Marks a padded container whose layers are moved into its content box. */
-const BOX_ATTR = "data-plotomics-box";
-/** The custom properties that hold the left and top padding. */
-const PAD_X = "--plotomics-pad-x";
-const PAD_Y = "--plotomics-pad-y";
-/** Marks the tooltip, which is placed by the pointer, not moved. */
-const TOOLTIP_ATTR = "data-plotomics-tooltip";
-/** Marks the style element that holds the rules. */
+/** Marks the style element that holds the fallback rule. */
 const RULES_ATTR = "data-plotomics-rules";
 /**
- * The rules: the fallback height, and the shift of a padded container's
- * layers into its content box. Absolutely placed children start at the
- * padding box, so each layer but the tooltip moves by the left and top
- * padding. The rules sit in a cascade layer of their own, declared before
- * any other, which gives them the lowest priority: every page rule wins
- * over them, unlayered or in a layer (as Tailwind's utilities are),
- * whatever its specificity. `:where()` keeps their own specificity at zero
- * too.
+ * The fallback rule. It sits in a cascade layer of its own, declared before
+ * any other, which gives it the lowest priority: every page rule wins over
+ * it, unlayered or in a layer (as Tailwind's utilities are), whatever its
+ * specificity. `:where()` keeps its own specificity at zero too.
  */
-const RULES =
-  "@layer plotomics{" +
-  `:where([${FALLBACK_ATTR}]){height:var(${FALLBACK_VAR},480px)}` +
-  `:where([${BOX_ATTR}])>:where(:not([${TOOLTIP_ATTR}]))` +
-  `{translate:var(${PAD_X},0px) var(${PAD_Y},0px)}` +
-  "}";
+const RULES = `@layer plotomics{:where([${FALLBACK_ATTR}]){height:var(${FALLBACK_VAR},480px)}}`;
 
 /**
  * Give `el` a height of `height` px that every page rule wins over, and
@@ -241,57 +213,15 @@ function applyFallbackHeight(el: HTMLElement, height: number): void {
 }
 
 /**
- * Move the layers of `el` into its content box: set its left and top
- * padding where the rules read them, or clear them when it has none.
- */
-function placeLayers(el: Element): void {
-  if (!el.isConnected || !("style" in el)) return;
-  const html = el as HTMLElement;
-  const cs = styleOf(html);
-  const x = px(cs.paddingLeft);
-  const y = px(cs.paddingTop);
-  if (x > 0 || y > 0) {
-    html.setAttribute(BOX_ATTR, "");
-    html.style.setProperty(PAD_X, `${x}px`);
-    html.style.setProperty(PAD_Y, `${y}px`);
-    addRules(html);
-  } else if (html.hasAttribute(BOX_ATTR)) {
-    html.removeAttribute(BOX_ATTR);
-    html.style.removeProperty(PAD_X);
-    html.style.removeProperty(PAD_Y);
-  }
-}
-
-/**
- * Where the layers of `el` start, in client coordinates: the top-left
- * corner of its content box. A component reads pointer positions relative
- * to this point, as its layers start there.
- */
-export function contentOrigin(el: Element): { left: number; top: number } {
-  const rect = el.getBoundingClientRect();
-  let left = rect.left + el.clientLeft;
-  let top = rect.top + el.clientTop;
-  if (el.hasAttribute(BOX_ATTR) && "style" in el) {
-    const style = (el as HTMLElement).style;
-    left += px(style.getPropertyValue(PAD_X));
-    top += px(style.getPropertyValue(PAD_Y));
-  }
-  return { left, top };
-}
-
-/**
- * Undo what {@link measure} set on `el`: the fallback height, the shift of
- * the layers and the watch. Every component calls this in `destroy()`, so
- * a container used again does not keep the height of a plot that is gone.
+ * Undo what {@link measure} set on `el`: the fallback height and the watch.
+ * Every component calls this in `destroy()`, so a container used again
+ * does not keep the height of a plot that is gone.
  */
 export function releaseContainer(el: HTMLElement): void {
   watchers.get(el)?.disconnect();
   watchers.delete(el);
   el.removeAttribute(FALLBACK_ATTR);
-  el.removeAttribute(BOX_ATTR);
-  for (const name of [FALLBACK_VAR, PAD_X, PAD_Y]) {
-    el.style.removeProperty(name);
-  }
+  el.style.removeProperty(FALLBACK_VAR);
   if (!el.getAttribute("style")) el.removeAttribute("style");
 }
 
@@ -301,12 +231,13 @@ function isShadowRoot(node: Node): node is ShadowRoot {
 }
 
 /**
- * Add the rules to the document or shadow root that holds `el` now, once.
+ * Add the fallback rule to the document or shadow root that holds `el`
+ * now, once.
  *
  * A document rule does not reach inside a shadow root, so a shadow root
- * gets its own. The rules go in a style element placed first, so their
+ * gets its own. The rule goes in a style element placed first, so its
  * layer comes before every other. A Content-Security-Policy with no
- * 'unsafe-inline' for styles blocks that element; the rules then go in a
+ * 'unsafe-inline' for styles blocks that element; the rule then goes in a
  * stylesheet built through the CSSOM, which the policy allows.
  */
 function addRules(el: Element): void {
@@ -329,13 +260,13 @@ function addRules(el: Element): void {
   adoptRules(scope, doc);
 }
 
-/** Whether `scope` has adopted a stylesheet that holds the rules. */
+/** Whether `scope` has adopted a stylesheet that holds the fallback rule. */
 function hasAdoptedRules(scope: DocumentOrShadowRoot): boolean {
   const sheets = scope.adoptedStyleSheets ?? [];
   return sheets.some((sheet) => {
     try {
       return Array.from(sheet.cssRules).some((r) =>
-        r.cssText.includes(BOX_ATTR),
+        r.cssText.includes(FALLBACK_ATTR),
       );
     } catch {
       return false;
@@ -344,9 +275,9 @@ function hasAdoptedRules(scope: DocumentOrShadowRoot): boolean {
 }
 
 /**
- * Add the rules to `scope` as an adopted stylesheet. An adopted sheet
- * comes after the page's own, so a page height in a cascade layer loses to
- * it there; unlayered page rules still win.
+ * Add the fallback rule to `scope` as an adopted stylesheet. An adopted
+ * sheet comes after the page's own, so a page height in a cascade layer
+ * loses to it there; unlayered page rules still win.
  */
 function adoptRules(scope: DocumentOrShadowRoot, doc: Document): void {
   const Sheet = (doc.defaultView as (Window & typeof globalThis) | null)
@@ -366,12 +297,12 @@ const watchers = new WeakMap<Element, ResizeObserver>();
 
 /**
  * Watch a container given the fallback height until its plot is
- * destroyed. Each time its size changes while it is laid out, its layers
- * are placed again and its fallback is fitted where it is now: added to
- * the shadow root it went into, as a document rule does not reach inside
- * one, and dropped when the page gives it a height of its own, as a grid
- * row does. This also covers a container drawn before it is added to the
- * page. It does not resize the plot; {@link autoResize} does.
+ * destroyed. Each time its size changes while it is laid out, its fallback
+ * is fitted where it is now: added to the shadow root it went into, as a
+ * document rule does not reach inside one, and dropped when the page gives
+ * it a height of its own, as a grid row does. This also covers a container
+ * drawn before it is added to the page. It does not resize the plot;
+ * {@link autoResize} does.
  */
 function watch(el: HTMLElement): void {
   if (typeof ResizeObserver === "undefined" || watchers.has(el)) return;
@@ -382,8 +313,6 @@ function watch(el: HTMLElement): void {
     // the same frame, which the browser flags as a loop.
     frame = requestAnimationFrame(() => {
       frame = 0;
-      if (!contentSize(el).laidOut) return;
-      placeLayers(el);
       fitFallback(el);
     });
   });
@@ -402,11 +331,11 @@ function watch(el: HTMLElement): void {
 function fitFallback(el: Element): void {
   if (!("style" in el)) return;
   const html = el as HTMLElement;
-  if (html.style.height || !contentSize(html).laidOut) return;
+  if (html.style.height || !boxSizes(html).laidOut) return;
   if (html.hasAttribute(FALLBACK_ATTR)) {
     html.removeAttribute(FALLBACK_ATTR);
-    if (contentSize(html).height > 0) return;
-  } else if (contentSize(html).height > 0) {
+    if (boxSizes(html).contentHeight > 0) return;
+  } else if (boxSizes(html).contentHeight > 0) {
     return;
   }
   const given = Number.parseFloat(html.style.getPropertyValue(FALLBACK_VAR));
@@ -414,14 +343,14 @@ function fitFallback(el: Element): void {
 }
 
 /**
- * Follow the size of `el`. Each time its content box changes,
- * `target.resize` gets the new width and height in CSS px. A size of 0,
- * as in a hidden tab, is skipped. Returns a function that stops following.
+ * Follow the size of `el`. Each time its padding box changes,
+ * `target.resize` gets its new width and height in CSS px, the size
+ * {@link measure} gives. A size of 0, as in a hidden tab, is skipped.
+ * Returns a function that stops following.
  *
- * It also keeps the fallback height and the layer placement of
- * {@link measure} right as the page changes: an element shown with no
- * content height gets the fallback, and an element the page gives a
- * height of its own drops it.
+ * It also keeps the fallback height of {@link measure} right as the page
+ * changes: an element shown with no content height gets it, and an
+ * element the page gives a height of its own drops it.
  *
  * The R and Python wrappers do this for every plot. In plain JavaScript,
  * call it once the plot is made, and call the function it returns before
@@ -451,20 +380,19 @@ export function autoResize(
       fitFallback(el);
     });
   };
-  const ro = new ResizeObserver((entries) => {
-    const r = entries[entries.length - 1]?.contentRect;
-    if (!r || r.width <= 0) return;
-    // A padding that changed moves the layers; their sizes do not change
-    // the size observed here.
-    placeLayers(el);
-    if (r.height > 0) {
-      target.resize(r.width, r.height);
+  const ro = new ResizeObserver(() => {
+    const box = boxSizes(el);
+    if (!box.laidOut || box.width <= 0) return;
+    if (box.contentHeight > 0) {
+      target.resize(box.width, box.height);
       if (el.hasAttribute(FALLBACK_ATTR)) fit();
     } else {
       fit();
     }
   });
-  ro.observe(el);
+  // The border box, unlike the content box, changes with the padding, so
+  // a new padding around a content box of the same size is seen too.
+  ro.observe(el, { box: "border-box" });
   return () => {
     ro.disconnect();
     if (frame) cancelAnimationFrame(frame);

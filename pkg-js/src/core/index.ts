@@ -60,7 +60,6 @@ export {
   measure,
   autoResize,
   releaseContainer,
-  contentOrigin,
   textWidth,
   fitText,
   dpr,

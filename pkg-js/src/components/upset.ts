@@ -34,7 +34,6 @@ import {
   type Tooltip,
   measure,
   releaseContainer,
-  contentOrigin,
   dpr,
   serializeSVG,
   compositePNG,
@@ -255,7 +254,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
   function onMove(e: MouseEvent) {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
-    const rect = contentOrigin(el);
+    const rect = el.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     const s = sizes();

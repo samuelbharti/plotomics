@@ -41,7 +41,6 @@ import {
   type Tooltip,
   measure,
   releaseContainer,
-  contentOrigin,
   dpr,
   serializeSVG,
   compositePNG,
@@ -533,7 +532,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
   function onMove(e: MouseEvent) {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
-    const rect = contentOrigin(el);
+    const rect = el.getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
     const hit = hitTest(px, py, layout, nrows(), ncols());

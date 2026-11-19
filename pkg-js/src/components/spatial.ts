@@ -40,7 +40,6 @@ import {
   type Tooltip,
   measure,
   releaseContainer,
-  contentOrigin,
   textWidth,
   dpr,
   serializeSVG,
@@ -307,7 +306,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
   function onMove(e: MouseEvent) {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
-    const rect = contentOrigin(el);
+    const rect = el.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     const x = xs();

@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { createGosling } from "../../src/components/gosling.js";
 import { createHeatmap } from "../../src/components/heatmap.js";
+import { createIgv } from "../../src/components/igv.js";
 import { createProfile } from "../../src/components/profile.js";
 import { createVolcano } from "../../src/components/volcano.js";
-import {
-  autoResize,
-  contentOrigin,
-  type PlotomicsInstance,
-} from "../../src/core/index.js";
+import { autoResize, type PlotomicsInstance } from "../../src/core/index.js";
+import { registerComponent } from "../../src/lib/umd.js";
 
 // A plot made in plain JavaScript, with no wrapper to size its element.
 
@@ -275,6 +274,21 @@ function heat(el: HTMLElement) {
 /** The heights of two elements. */
 const el2 = (a: Element, b: Element) => [height(a), height(b)];
 
+/**
+ * Where the SVG layer of a plot sits, relative to the padding box of its
+ * element, where absolutely placed layers start.
+ */
+function svgBox(el: HTMLElement) {
+  const e = el.getBoundingClientRect();
+  const s = (el.querySelector("svg") as SVGSVGElement).getBoundingClientRect();
+  return {
+    x: s.left - e.left - el.clientLeft,
+    y: s.top - e.top - el.clientTop,
+    width: s.width,
+    height: s.height,
+  };
+}
+
 /** Whether `after` starts at or below the bottom of `el`. */
 const below = (el: Element, after: Element) =>
   after.getBoundingClientRect().top >= el.getBoundingClientRect().bottom;
@@ -348,29 +362,28 @@ describe("an element drawn before it is added to the page", () => {
 });
 
 describe("an element with padding and no CSS height", () => {
-  // The plot fills the content box: 480 px, with 8 px of padding above and
-  // below it.
-  it("is drawn at the fallback content height in the page", () => {
+  // The content box gets the fallback 480 px; the plot fills the padding
+  // box around it, 496 px with 8 px of padding above and below.
+  it("is drawn over its padding box in the page", () => {
     const el = document.createElement("div");
-    el.style.padding = "8px";
+    el.style.cssText = "width:600px;padding:8px;";
     const after = paragraph();
     document.body.append(el, after);
     heat(el);
     expect(el.clientHeight).toBe(496);
-    expect(svgHeight(el)).toBe(480);
+    expect(svgBox(el)).toEqual({ x: 0, y: 0, width: 616, height: 496 });
     expect(below(el, after)).toBe(true);
   });
 
   it("keeps the fallback when drawn before it is added, with autoResize", async () => {
     const el = document.createElement("div");
-    el.style.padding = "8px";
+    el.style.cssText = "width:600px;padding:8px;";
     const plot = heat(el);
     const after = paragraph();
     document.body.append(el, after);
     stops.push(autoResize(el, plot));
     await frames(6);
-    expect(el.clientHeight).toBe(496);
-    expect(svgHeight(el)).toBe(480);
+    expect(svgBox(el)).toEqual({ x: 0, y: 0, width: 616, height: 496 });
     expect(el.hasAttribute(FALLBACK)).toBe(true);
     expect(below(el, after)).toBe(true);
   });
@@ -379,7 +392,7 @@ describe("an element with padding and no CSS height", () => {
     const tab = document.createElement("div");
     tab.style.display = "none";
     const el = document.createElement("div");
-    el.style.padding = "8px";
+    el.style.cssText = "width:600px;padding:8px;";
     const after = paragraph();
     tab.append(el, after);
     document.body.appendChild(tab);
@@ -387,8 +400,7 @@ describe("an element with padding and no CSS height", () => {
     stops.push(autoResize(el, plot));
     tab.style.display = "";
     await frames(6);
-    expect(el.clientHeight).toBe(496);
-    expect(svgHeight(el)).toBe(480);
+    expect(svgBox(el)).toEqual({ x: 0, y: 0, width: 616, height: 496 });
     expect(below(el, after)).toBe(true);
   });
 });
@@ -423,34 +435,35 @@ describe("the fallback height", () => {
   });
 });
 
-/** Where the SVG layer of a plot sits, relative to its element's border box. */
-function svgBox(el: HTMLElement) {
-  const e = el.getBoundingClientRect();
-  const s = (el.querySelector("svg") as SVGSVGElement).getBoundingClientRect();
-  return {
-    x: s.left - e.left,
-    y: s.top - e.top,
-    width: s.width,
-    height: s.height,
-  };
+interface Binding {
+  factory(
+    el: HTMLElement,
+    w: number,
+    h: number,
+  ): { renderValue(x: unknown): void; resize(w: number, h: number): void };
+}
+
+/** A padded element with a border, in the page: a 500 x 400 content box. */
+function bordered() {
+  const el = document.createElement("div");
+  el.style.cssText =
+    "width:500px;height:400px;padding:20px 10px 40px 30px;border:3px solid #000;";
+  document.body.appendChild(el);
+  return el;
 }
 
 describe("a padded element", () => {
-  it("has the plot in its content box", () => {
+  it("has the plot fill its padding box", () => {
     const el = document.createElement("div");
     el.style.cssText = "width:600px;height:300px;padding:20px;";
     document.body.appendChild(el);
     instances.push(
       createVolcano(el, { data: volcanoData }) as PlotomicsInstance<unknown>,
     );
-    expect(svgBox(el)).toEqual({ x: 20, y: 20, width: 600, height: 300 });
-    const s = (
-      el.querySelector("svg") as SVGSVGElement
-    ).getBoundingClientRect();
-    expect(contentOrigin(el)).toEqual({ left: s.left, top: s.top });
+    expect(svgBox(el)).toEqual({ x: 0, y: 0, width: 640, height: 340 });
   });
 
-  it("has the plot in its content box with box-sizing: border-box", () => {
+  it("has the plot fill its padding box with box-sizing: border-box", () => {
     const el = document.createElement("div");
     el.style.cssText =
       "box-sizing:border-box;width:600px;height:300px;padding:20px;";
@@ -458,10 +471,16 @@ describe("a padded element", () => {
     instances.push(
       createVolcano(el, { data: volcanoData }) as PlotomicsInstance<unknown>,
     );
-    expect(svgBox(el)).toEqual({ x: 20, y: 20, width: 560, height: 260 });
+    expect(svgBox(el)).toEqual({ x: 0, y: 0, width: 600, height: 300 });
   });
 
-  it("has the plot in its content box when drawn before it is added", async () => {
+  it("has the plot fill its padding box inside a border", () => {
+    const el = bordered();
+    heat(el);
+    expect(svgBox(el)).toEqual({ x: 0, y: 0, width: 540, height: 460 });
+  });
+
+  it("has the plot fill its padding box when drawn before it is added", async () => {
     const el = document.createElement("div");
     el.style.cssText = "width:600px;padding:20px;";
     const plot = heat(el);
@@ -469,12 +488,41 @@ describe("a padded element", () => {
     document.body.append(el, after);
     stops.push(autoResize(el, plot));
     await frames(6);
-    expect(svgBox(el)).toEqual({ x: 20, y: 20, width: 600, height: 480 });
+    expect(svgBox(el)).toEqual({ x: 0, y: 0, width: 640, height: 520 });
     expect(below(el, after)).toBe(true);
   });
 
-  it("reads the pointer from where the plot starts", () => {
-    // Thirty narrow bars: a pointer read 20 px off lands on another bar.
+  it("follows a new padding with autoResize", async () => {
+    // The content box keeps its size; only the padding around it changes.
+    const el = document.createElement("div");
+    el.style.cssText = "width:600px;height:300px;";
+    document.body.appendChild(el);
+    const plot = heat(el);
+    stops.push(autoResize(el, plot));
+    await frames();
+    el.style.padding = "20px";
+    await frames();
+    expect(svgBox(el)).toEqual({ x: 0, y: 0, width: 640, height: 340 });
+  });
+
+  it("takes the padding box from an htmlwidgets resize call", () => {
+    // htmlwidgets passes the border box: 546 x 466 here.
+    registerComponent("heatmap", createHeatmap);
+    const binding = (
+      window as unknown as { plotomics: { htmlwidget(n: string): Binding } }
+    ).plotomics.htmlwidget("heatmap");
+    const el = bordered();
+    const widget = binding.factory(el, el.offsetWidth, el.offsetHeight);
+    widget.renderValue({ data: heatmapData, options: {} });
+    expect(svgBox(el)).toEqual({ x: 0, y: 0, width: 540, height: 460 });
+    widget.resize(el.offsetWidth, el.offsetHeight);
+    expect([el.offsetWidth, el.offsetHeight]).toEqual([546, 466]);
+    expect(svgBox(el)).toEqual({ x: 0, y: 0, width: 540, height: 460 });
+  });
+
+  it("reads the pointer across the whole plot", () => {
+    // A padded element and a plain one with the same padding box draw the
+    // same plot, so the same point over each must name the same bar.
     const n = 30;
     const data = {
       columns: {
@@ -493,11 +541,13 @@ describe("a padded element", () => {
           bubbles: true,
         }),
       );
-      const tip = el.querySelector("[data-plotomics-tooltip]") as HTMLElement;
+      const tip = Array.from(el.children).find(
+        (c) => c.tagName === "DIV",
+      ) as HTMLElement;
       return tip.style.opacity === "1" ? (tip.textContent ?? "") : "";
     };
     const plain = document.createElement("div");
-    plain.style.cssText = "width:600px;height:300px;";
+    plain.style.cssText = "width:640px;height:340px;";
     const padded = document.createElement("div");
     padded.style.cssText = "width:600px;height:300px;padding:20px;";
     document.body.append(plain, padded);
@@ -506,12 +556,46 @@ describe("a padded element", () => {
     for (const [fx, fy] of [
       [0.5, 0.45],
       [0.8, 0.5],
+      [0.97, 0.5],
     ]) {
       const want = tipAt(plain, fx as number, fy as number);
       expect(want).toMatch(/^bar/);
       expect(tipAt(padded, fx as number, fy as number)).toBe(want);
     }
   });
+});
+
+describe("IGV and Gosling with autoResize", () => {
+  // Their hosts sit in normal flow, so the page already places them in the
+  // content box; nothing may move them further.
+  const config = {
+    reference: {
+      id: "tiny",
+      name: "tiny",
+      fastaURL: new URL("./fixtures/tiny.fa", import.meta.url).href,
+      indexed: false,
+    },
+    loadDefaultGenomes: false,
+    locus: "chrT:1-1200",
+  };
+  for (const [name, make] of [
+    ["igv", (el: HTMLElement) => createIgv(el, { options: { config } })],
+    ["gosling", (el: HTMLElement) => createGosling(el, {})],
+  ] as const) {
+    it(`keeps the ${name} host in the content box of a padded element`, async () => {
+      const el = document.createElement("div");
+      el.style.cssText =
+        "width:600px;height:300px;padding:20px 10px 40px 30px;";
+      document.body.appendChild(el);
+      const plot = make(el) as PlotomicsInstance<unknown>;
+      instances.push(plot);
+      stops.push(autoResize(el, plot));
+      await frames(6);
+      const e = el.getBoundingClientRect();
+      const h = (el.firstElementChild as HTMLElement).getBoundingClientRect();
+      expect([h.left - e.left, h.top - e.top]).toEqual([30, 20]);
+    });
+  }
 });
 
 describe("the fallback rules", () => {

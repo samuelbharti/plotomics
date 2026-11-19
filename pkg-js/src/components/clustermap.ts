@@ -40,7 +40,6 @@ import {
   type Tooltip,
   measure,
   releaseContainer,
-  contentOrigin,
   dpr,
   serializeSVG,
   compositePNG,
@@ -792,7 +791,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
     if (nrows === 0 || ncols === 0) return;
-    const rectEl = contentOrigin(el);
+    const rectEl = el.getBoundingClientRect();
     const px = e.clientX - rectEl.left;
     const py = e.clientY - rectEl.top;
     const { heat } = layout;

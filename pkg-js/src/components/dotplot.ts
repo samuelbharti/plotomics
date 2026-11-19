@@ -44,7 +44,6 @@ import {
   type Tooltip,
   measure,
   releaseContainer,
-  contentOrigin,
   dpr,
   serializeSVG,
   compositePNG,
@@ -394,7 +393,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
   function onMove(e: MouseEvent) {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
-    const rect = contentOrigin(el);
+    const rect = el.getBoundingClientRect();
     const i = cellAt(e.clientX - rect.left, e.clientY - rect.top);
     if (i < 0) {
       tooltip.hide();
