@@ -10,7 +10,7 @@ embedding(
   point_scale_mode = c("asinh", "linear", "constant"),
   opacity = 0.8,
   color_mode = c("auto", "categorical", "continuous"),
-  colormap = c("viridis", "rdbu"),
+  colormap = c("viridis", "rdbu", "ltc", "ltcdiv"),
   mouse_mode = c("panZoom", "lasso"),
   aspect = c("fill", "equal"),
   padding = 0.04,
@@ -51,8 +51,9 @@ readable, but both floor at one pixel once the camera scale drops below
 \item{color_mode}{How to interpret the \code{color} column: \code{"auto"} detects from
 its type, or force \code{"categorical"} / \code{"continuous"}.}
 
-\item{colormap}{Sequential color ramp for continuous coloring: \code{"viridis"}
-or \code{"rdbu"}.}
+\item{colormap}{Color ramp for continuous coloring: \code{"viridis"}, \code{"rdbu"},
+\code{"ltc"} (an earthy teal to sand to rust sequential ramp) or \code{"ltcdiv"}
+(its diverging counterpart, neutral cream at the midpoint).}
 
 \item{mouse_mode}{Primary drag gesture: \code{"panZoom"} (default) pans/zooms and
 \code{"lasso"} makes a plain drag draw a selection.}

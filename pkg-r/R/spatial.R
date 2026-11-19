@@ -173,13 +173,21 @@ spatial <- function(data,
 #'   `renderSpatial()` returns a Shiny render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-#'   ui <- fluidPage(spatialOutput("sp"))
+#'   # The browser fetches the image, so put tissue.png in the app's www/
+#'   # folder. Without it the spots are drawn on a blank background.
+#'   ui <- shiny::fluidPage(spatialOutput("sp"))
 #'   server <- function(input, output) {
 #'     output$sp <- renderSpatial({
-#'       spatial(x = runif(50), y = runif(50), color = rnorm(50))
+#'       spots <- data.frame(
+#'         x = runif(50, 0, 600),
+#'         y = runif(50, 0, 600),
+#'         color = rnorm(50)
+#'       )
+#'       spatial(spots, image = "tissue.png", img_width = 600,
+#'               img_height = 600, spot_diameter = 12)
 #'     })
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name spatial-shiny
 #' @export

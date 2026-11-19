@@ -200,14 +200,18 @@ lollipop <- function(variants,
 #'   `renderLollipop()` returns a Shiny render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-#'   ui <- fluidPage(lollipopOutput("lp"))
+#'   ui <- shiny::fluidPage(lollipopOutput("lp"))
 #'   server <- function(input, output) {
 #'     output$lp <- renderLollipop({
-#'       lollipop(position = c(100, 250, 400), label = c("A", "B", "C"),
-#'                protein_length = 500)
+#'       variants <- data.frame(
+#'         position = c(100, 250, 400),
+#'         count = c(12, 5, 3),
+#'         label = c("A", "B", "C")
+#'       )
+#'       lollipop(variants, length = 500)
 #'     })
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name lollipop-shiny
 #' @export

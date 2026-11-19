@@ -21,34 +21,16 @@ import { createDotplot } from "../src/components/dotplot.js";
 import { createUpset } from "../src/components/upset.js";
 import { createViolin } from "../src/components/violin.js";
 import type { PlotomicsData } from "../src/core/index.js";
+import {
+  goslingDemoSpec,
+  igvDemoOptions,
+  syntheticCohort,
+  syntheticProtein,
+  syntheticSurvival,
+} from "./demo-data.js";
 
 type Demo = (el: HTMLElement) => { destroy(): void; resize?(w: number, h: number): void };
 
-// A minimal valid Gosling spec: one bar track over a public multivec tileset
-// hosted by the Gosling team (data streams/tiles from the server).
-const goslingSpec = {
-  title: "Cistrome peaks",
-  subtitle: "single multivec track streamed from the Gosling tile server",
-  tracks: [
-    {
-      data: {
-        url: "https://server.gosling-lang.org/api/v1/tileset_info/?d=cistrome-multivec",
-        type: "multivec",
-        row: "sample",
-        column: "position",
-        value: "peak",
-        categories: ["sample 1"],
-      },
-      mark: "bar",
-      x: { field: "start", type: "genomic", axis: "bottom" },
-      xe: { field: "end", type: "genomic" },
-      y: { field: "peak", type: "quantitative", axis: "right" },
-      color: { field: "peak", type: "quantitative", legend: true },
-      width: 700,
-      height: 200,
-    },
-  ],
-};
 /** Synthetic clustered interaction network: `communities` blobs of nodes with
  * dense intra-community and sparse inter-community edges. No coordinates, so
  * the component runs ForceAtlas2 to lay it out. */
@@ -287,106 +269,6 @@ function syntheticMatrix(nrows: number, ncols: number): PlotomicsData {
   };
 }
 
-// Cohort-scale oncoplot: 60 genes x 1,200 samples is 72,000 cells, which is
-// where per-cell DOM would fall over and canvas does not notice.
-function syntheticCohort(ngenes: number, nsamples: number): PlotomicsData {
-  const classes = ["Missense", "Truncating", "Frameshift", "Splice",
-    "In-frame indel", "Amplification", "Deep deletion", "Multi-hit"];
-  const codes = new Int16Array(ngenes * nsamples);
-  const tmb = new Float32Array(nsamples);
-  const freq = new Float32Array(ngenes);
-  for (let r = 0; r < ngenes; r += 1) {
-    // Decaying prevalence, so the plot has the usual top-heavy shape.
-    const p = 0.42 * Math.exp(-0.06 * r) + 0.02;
-    let hits = 0;
-    for (let c = 0; c < nsamples; c += 1) {
-      if (Math.random() < p) {
-        codes[r * nsamples + c] = 1 + Math.floor(Math.random() * classes.length);
-        tmb[c] += 1;
-        hits += 1;
-      }
-    }
-    freq[r] = (100 * hits) / nsamples;
-  }
-  const subtypes = ["LumA", "LumB", "Basal", "Her2", "Normal"];
-  const stages = ["I", "II", "III", "IV"];
-  const subCodes = new Int16Array(nsamples);
-  const stageCodes = new Int16Array(nsamples);
-  for (let c = 0; c < nsamples; c += 1) {
-    subCodes[c] = Math.floor(Math.random() * subtypes.length);
-    stageCodes[c] = Math.floor(Math.random() * stages.length);
-  }
-  return {
-    columns: { codes, tmb, freq },
-    meta: {
-      nrows: ngenes,
-      ncols: nsamples,
-      genes: Array.from({ length: ngenes }, (_, i) => `GENE${i + 1}`),
-      samples: Array.from({ length: nsamples }, (_, i) => `TCGA-${i}`),
-      classes,
-      classColors: ["#0E7175", "#233038", "#C63F3E", "#ED773C", "#E4A25B",
-        "#9E3F71", "#808BC5", "#245E55"],
-      annotations: [
-        { name: "Subtype", levels: subtypes, codes: subCodes },
-        { name: "Stage", levels: stages, codes: stageCodes },
-      ],
-    },
-  };
-}
-
-// A TP53-shaped protein: 393 residues, real domain bounds, a hotspot pile-up in
-// the DNA-binding domain and a long tail of one-off variants elsewhere.
-function syntheticProtein(nVariants: number): PlotomicsData {
-  const LEN = 393;
-  const classes = ["Missense", "Truncating", "Frameshift", "Splice"];
-  const position = new Float32Array(nVariants);
-  const count = new Float32Array(nVariants);
-  const cls: string[] = [];
-  const label: string[] = [];
-  const hotspots = [175, 245, 248, 273, 282];
-  const aa = "ACDEFGHIKLMNPQRSTVWY";
-  for (let i = 0; i < nVariants; i += 1) {
-    // Two thirds land in the DNA-binding domain, a fifth of those on hotspots.
-    let p: number;
-    if (i % 5 === 0) p = hotspots[i % hotspots.length] as number;
-    else if (i % 3 !== 0) p = 100 + Math.floor(Math.random() * 189);
-    else p = 1 + Math.floor(Math.random() * LEN);
-    position[i] = p;
-    count[i] = hotspots.includes(p)
-      ? 8 + Math.floor(Math.random() * 20)
-      : 1 + Math.floor(Math.random() * 3);
-    cls.push(classes[Math.floor(Math.random() * classes.length)] as string);
-    const ref = aa[Math.floor(Math.random() * aa.length)];
-    const alt = aa[Math.floor(Math.random() * aa.length)];
-    label.push(`${ref}${p}${alt}`);
-  }
-  const order = Array.from({ length: nVariants }, (_, i) => i)
-    .sort((a, b) => (count[b] as number) - (count[a] as number))
-    .slice(0, 12)
-    .sort((a, b) => a - b);
-  return {
-    columns: { position, count, class: cls, label },
-    meta: {
-      length: LEN,
-      gene: "TP53",
-      uniprot: "P04637",
-      classes,
-      classColors: ["#0E7175", "#233038", "#C63F3E", "#ED773C"],
-      domains: [
-        { name: "P53 transactivation motif", start: 6, end: 30 },
-        { name: "Transactivation domain 2", start: 35, end: 59 },
-        { name: "P53 DNA-binding domain", start: 100, end: 288 },
-        { name: "P53 tetramerisation motif", start: 319, end: 357 },
-      ],
-      ptms: [15, 20, 37, 46, 315, 370, 373, 382, 392].map((p) => ({
-        position: p,
-        type: "phospho",
-      })),
-      labelIndex: order,
-    },
-  };
-}
-
 // A Visium-shaped slide: a hex grid of capture spots over a tissue mask, with
 // spatial domains rather than random labels so the clusters form regions.
 function syntheticSlide(): PlotomicsData {
@@ -441,69 +323,6 @@ function syntheticSbs96(): PlotomicsData {
       groups: subs,
       groupColors: ["#03BCEE", "#010101", "#E32926", "#CAC9C9", "#A1CE63", "#EBC6C4"],
       title: "Synthetic APOBEC-like profile",
-    },
-  };
-}
-
-/**
- * Three arms with different hazards, each estimated the way a real KM is: walk
- * the risk set down, drop the survival probability at events, tick at censors.
- * Doing it properly here rather than drawing smooth curves is what exercises
- * the step path and the risk table together.
- */
-function syntheticSurvival(): PlotomicsData {
-  const arms = [
-    { name: "high risk", n: 90, hazard: 0.055 },
-    { name: "intermediate", n: 140, hazard: 0.03 },
-    { name: "low risk", n: 170, hazard: 0.012 },
-  ];
-  const time: number[] = [], surv: number[] = [];
-  const lower: number[] = [], upper: number[] = [], group: string[] = [];
-  const censorTime: number[] = [], censorSurv: number[] = [], censorGroup: string[] = [];
-  const riskTimes = [0, 20, 40, 60, 80, 100];
-  const riskCounts: number[] = [];
-
-  for (const arm of arms) {
-    let atRisk = arm.n;
-    let s = 1;
-    let varSum = 0;
-    time.push(0); surv.push(1); lower.push(1); upper.push(1); group.push(arm.name);
-    const counts = riskTimes.map(() => 0);
-    counts[0] = arm.n;
-    let next = 1;
-    for (let t = 2; t <= 100 && atRisk > 1; t += 2) {
-      const events = Math.min(atRisk, Math.round(atRisk * arm.hazard * Math.random() * 2));
-      const censored = Math.min(atRisk - events, Math.round(atRisk * 0.012 * Math.random() * 2));
-      if (events > 0) {
-        s *= 1 - events / atRisk;
-        // Greenwood's variance, the standard pointwise band.
-        varSum += events / (atRisk * (atRisk - events));
-        const se = s * Math.sqrt(varSum);
-        time.push(t); surv.push(s); group.push(arm.name);
-        lower.push(Math.max(0, s - 1.96 * se));
-        upper.push(Math.min(1, s + 1.96 * se));
-      }
-      if (censored > 0) {
-        censorTime.push(t); censorSurv.push(s); censorGroup.push(arm.name);
-      }
-      atRisk -= events + censored;
-      while (next < riskTimes.length && t >= (riskTimes[next] as number)) {
-        counts[next] = Math.max(0, atRisk);
-        next += 1;
-      }
-    }
-    while (next < riskTimes.length) counts[next++] = Math.max(0, atRisk);
-    riskCounts.push(...counts);
-  }
-
-  return {
-    columns: { time, surv, lower, upper, group },
-    meta: {
-      groups: arms.map((a) => a.name),
-      groupColors: ["#C63F3E", "#E4A25B", "#0E7175"],
-      censorTime, censorSurv, censorGroup,
-      riskTimes, riskCounts,
-      pLabel: "log-rank p < 0.001",
     },
   };
 }
@@ -656,7 +475,7 @@ const demos: Record<string, Demo> = {
   },
   gosling: (el) => {
     const inst = createGosling(el, {
-      options: { spec: goslingSpec },
+      options: { spec: goslingDemoSpec },
     });
     return inst;
   },
@@ -680,22 +499,9 @@ const demos: Record<string, Demo> = {
     });
     return inst;
   },
-  // Genome viewer: hg38 with a small public bigWig track streamed by igv.js.
-  igv: (el) =>
-    createIgv(el, {
-      options: {
-        genome: "hg38",
-        locus: "chr8:127,736,588-127,739,371",
-        tracks: [
-          {
-            name: "CTCF ENCODE",
-            url: "https://www.encodeproject.org/files/ENCFF356YES/@@download/ENCFF356YES.bigWig",
-            format: "bigWig",
-            height: 100,
-          },
-        ],
-      },
-    }),
+  // Genome viewer: a synthetic reference, gene track and signal track from
+  // dev/fixtures, so it opens without the network.
+  igv: (el) => createIgv(el, { options: igvDemoOptions }),
   treemap: (el) => {
     const inst = createTreemap(el, {
       data: syntheticTree(12, 5000),

@@ -141,3 +141,11 @@ def test_heatmap_sends_a_missing_row_or_column_name_as_null():
     assert w.data["meta"]["colLabels"] == [None, "c2"]
     w = Heatmap(np.ones((2, 2)), row_labels=["a", None])
     assert w.data["meta"]["rowLabels"] == ["a", None]
+
+
+def test_heatmap_carries_the_colour_bar_title():
+    m = np.zeros((2, 2), dtype=np.float32)
+    w = Heatmap(m, legend_title="log2 expression")
+    assert w.options["legendTitle"] == "log2 expression"
+    # None asks the browser for its default: "value", or "z-score".
+    assert Heatmap(m).options["legendTitle"] is None

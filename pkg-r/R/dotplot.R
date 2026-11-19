@@ -153,11 +153,11 @@ dotplot <- function(data,
 #'                     stringsAsFactors = FALSE)
 #'   df$pct <- c(88, 4, 6, 91)
 #'   df$value <- c(2.4, 0.1, 0.2, 2.7)
-#'   ui <- fluidPage(dotplotOutput("dp"))
+#'   ui <- shiny::fluidPage(dotplotOutput("dp"))
 #'   server <- function(input, output) {
 #'     output$dp <- renderDotplot(dotplot(df))
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name dotplot-shiny
 #' @export

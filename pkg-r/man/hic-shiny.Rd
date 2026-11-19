@@ -32,12 +32,12 @@ interactive R Markdown / Quarto documents.
 }
 \examples{
 if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-  ui <- fluidPage(hicOutput("h"))
+  ui <- shiny::fluidPage(hicOutput("h"))
   server <- function(input, output) {
     output$h <- renderHic({
       hic(matrix(runif(100), 10, 10))
     })
   }
-  shinyApp(ui, server)
+  shiny::shinyApp(ui, server)
 }
 }

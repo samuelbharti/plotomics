@@ -224,14 +224,14 @@ violin_density <- function(values, n = 64L, adjust = 1) {
 #'   returns a Shiny render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-#'   ui <- fluidPage(violinOutput("vln"))
+#'   ui <- shiny::fluidPage(violinOutput("vln"))
 #'   server <- function(input, output) {
 #'     output$vln <- renderViolin({
-#'       violin(data.frame(feature = rep("G1", 100), group = "A",
-#'                         value = rnorm(100)))
+#'       d <- violin_density(list(`G1|A` = rnorm(100), `G1|B` = rnorm(100, 2)))
+#'       violin(d$data, grid = d$grid, density = d$density, median = d$median)
 #'     })
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name violin-shiny
 #' @export

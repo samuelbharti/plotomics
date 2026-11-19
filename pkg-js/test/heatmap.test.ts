@@ -120,6 +120,22 @@ describe("heatmap helpers", () => {
     expect(lo).toBeLessThan(hi);
   });
 
+  it("widens a domain whose ends differ only in their last digits", () => {
+    // Before the fix 0.3 to 0.1 + 0.2 stayed that narrow, and its cells took
+    // the two ends of the ramp.
+    for (const opts of [
+      { vmin: null, vmax: null },
+      { vmin: 0.3, vmax: 0.1 + 0.2 },
+    ]) {
+      const [lo, hi] = colorDomain([0.3, 0.1 + 0.2], {
+        ...opts,
+        diverging: false,
+      });
+      expect(lo).toBeCloseTo(-0.2, 12);
+      expect(hi).toBeCloseTo(0.8, 12);
+    }
+  });
+
   it("normalizes and clamps values into levels 1 to 255", () => {
     const u8 = normalizeToU8([0, 5, 10, -3, 99], 0, 10);
     expect(u8[0]).toBe(1);

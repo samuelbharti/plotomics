@@ -1,8 +1,9 @@
 /**
  * Publication export helpers. A component's PNG holds its canvases and the
- * SVG overlay (axes, labels, legends) drawn over them, as on screen
- * (`compositePNG`). Its SVG keeps the overlay as vector and stitches each
- * rasterized canvas in as an <image>.
+ * SVG overlay (axes, labels, legends) drawn over them, as on screen, with an
+ * optional SVG underlay (gridlines) under them (`compositePNG`). Its SVG
+ * keeps the overlay as vector and stitches each rasterized canvas in as an
+ * <image>.
  */
 
 import { dpr } from "./dom.js";
@@ -61,6 +62,11 @@ export interface CompositeOptions {
   background: string;
   /** Canvases, bottom first. */
   layers: PNGLayer[];
+  /**
+   * An SVG under the canvases, such as gridlines that sit under the marks.
+   * The canvases over it need a transparent background to show it.
+   */
+  underlay?: SVGSVGElement | null;
   /** The SVG over the canvases: axes, labels, legends. */
   overlay: SVGSVGElement | null;
   /** Multiplier on top of the device pixel ratio. Default 1. */
@@ -68,9 +74,10 @@ export interface CompositeOptions {
 }
 
 /**
- * The widget as one PNG: the background, each canvas at its place, and the
- * SVG overlay on top, as the screen shows them. The image is `width` times
- * `dpr()` times `scale` px wide, the size the canvas alone used to give.
+ * The widget as one PNG: the background, the SVG underlay when there is
+ * one, each canvas at its place, and the SVG overlay on top, as the screen
+ * shows them. The image is `width` times `dpr()` times `scale` px wide, the
+ * size the canvas alone used to give.
  * Resolves to null without a 2D context. Rejects when a layer holds a
  * cross-origin image served without CORS headers, since the browser then
  * refuses to encode the canvas.
@@ -91,9 +98,20 @@ export async function compositePNG(
   ctx.fillStyle = opts.background;
   ctx.fillRect(0, 0, out.width, out.height);
   // Copy the canvases before the first await: a WebGL canvas may hold its
-  // frame only until the browser next paints. Cells and points are scaled
-  // up as they are, without smoothing.
-  ctx.imageSmoothingEnabled = false;
+  // frame only until the browser next paints. An underlay takes an await to
+  // draw, so with one the canvases are first copied to a canvas of their
+  // own. Cells and points are scaled up as they are, without smoothing.
+  let marks: HTMLCanvasElement | null = null;
+  let mctx = ctx;
+  if (opts.underlay) {
+    marks = document.createElement("canvas");
+    marks.width = out.width;
+    marks.height = out.height;
+    const c = marks.getContext("2d");
+    if (!c) return null;
+    mctx = c;
+  }
+  mctx.imageSmoothingEnabled = false;
   for (const layer of opts.layers) {
     const { canvas } = layer;
     if (canvas.width === 0 || canvas.height === 0) continue;
@@ -104,7 +122,7 @@ export async function compositePNG(
       width: canvas.width,
       height: canvas.height,
     };
-    ctx.drawImage(
+    mctx.drawImage(
       canvas,
       s.x,
       s.y,
@@ -115,6 +133,17 @@ export async function compositePNG(
       layer.width * k,
       layer.height * k,
     );
+  }
+  if (marks && opts.underlay) {
+    const image = await svgImage(
+      opts.underlay,
+      opts.width,
+      opts.height,
+      out.width,
+      out.height,
+    );
+    if (image) ctx.drawImage(image, 0, 0, out.width, out.height);
+    ctx.drawImage(marks, 0, 0);
   }
   if (opts.overlay) {
     const image = await svgImage(

@@ -38,6 +38,7 @@ class Gosling(PlotomicsWidget):
     Examples
     --------
     >>> spec = {
+    ...     "responsiveSize": {"width": True},
     ...     "tracks": [
     ...         {
     ...             "data": {

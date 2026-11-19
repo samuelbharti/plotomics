@@ -12,7 +12,8 @@
  * linearly would quadruple the ink for a doubled percentage, which is the
  * classic way a dot plot overstates its strongest cells.
  *
- * Dots are canvas-drawn; labels, gridlines and both legends are an SVG overlay.
+ * Dots, and the gridlines under them, are canvas-drawn; labels and both
+ * legends are an SVG overlay.
  * The component does not order anything: row and column order is the caller's,
  * because sorting genes by the group they best mark is an analysis decision and
  * two renderers breaking ties differently would draw two different figures.
@@ -24,7 +25,7 @@
  * - `columns.value`    `number[]`  expression level (dot colour)
  * - `meta.genes`      `string[]`  row order; defaults to order of appearance
  * - `meta.clusters`   `string[]`  column order; defaults to order of appearance
- * - `meta.valueLabel` `string`    colourbar title
+ * - `meta.valueLabel` `string`    colourbar title; "mean expression" by default
  * - `meta.sizeLabel`  `string`    size-legend title
  */
 import {
@@ -46,6 +47,9 @@ import {
   dpr,
   serializeSVG,
   compositePNG,
+  fitDomainTicks,
+  formatTick,
+  isFlatRange,
 } from "../core/index.js";
 
 export interface DotplotOptions {
@@ -198,8 +202,9 @@ export function dotRadius(pct: number, maxRadius: number): number {
 
 /**
  * Min/max of the finite values of a column, falling back to `[0, 1]` for
- * empty or flat input. A missing value (null from R, NaN from Python) is
- * skipped.
+ * empty input. Flat input, including values that differ only in their last
+ * digits (0.3 and 0.1 + 0.2), widens to `[min, min + 1]`. A missing value
+ * (null from R, NaN from Python) is skipped.
  */
 export function valueExtent(col: ArrayLike<number>): [number, number] {
   let min = Infinity;
@@ -211,7 +216,7 @@ export function valueExtent(col: ArrayLike<number>): [number, number] {
     if (v > max) max = v;
   }
   if (!isFinite(min) || !isFinite(max)) return [0, 1];
-  if (min === max) return [min, min + 1];
+  if (isFlatRange(min, max)) return [min, min + 1];
   return [min, max];
 }
 
@@ -280,7 +285,9 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     const hi = Number.isFinite(given[1]) ? given[1] : auto[1];
     return [lo, hi];
   }
-  const valueTitle = () => (data.meta?.valueLabel as string) ?? "value";
+  // The same default as the R and Python wrappers send.
+  const valueTitle = () =>
+    (data.meta?.valueLabel as string) ?? "mean expression";
   const sizeTitle = () => (data.meta?.sizeLabel as string) ?? "% expressing";
   /** Whether a drawn dot has no value, so the legend keys the open ring. */
   function anyMissing(): boolean {
@@ -311,15 +318,54 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     }
     return lo > 0 ? `${s.slice(0, lo)}\u2026` : "";
   }
-  /** Width of the widest line of the two legends. */
-  function legendWidth(): number {
+  /**
+   * Where the colour bar sits beside a grid laid out as `l`: the baseline of
+   * its title, its top and its height. None of them depends on the right
+   * gutter, so the gutter can be sized from the bar's labels.
+   */
+  function barGeometry(l: DotplotLayout) {
     const { label, axisTitle } = sizes;
+    const titleY = l.top + Math.round(0.8 * axisTitle);
+    // Room above the bar for the top half of a label centred on its top.
+    const barTop =
+      titleY + Math.round(0.3 * axisTitle) + 6 + Math.round(0.4 * label);
+    // Shorter when the widget is too short for it; a label centred on its
+    // bottom stays above the bottom of the widget.
+    const barH = Math.max(
+      2 * label,
+      Math.min(120, l.plotH * 0.4, height - 2 - 0.65 * label - barTop),
+    );
+    return { titleY, barTop, barH };
+  }
+  /**
+   * The colour bar's ticks: round values inside the domain, as many as a bar
+   * `barH` px tall holds a line and a half of text from each other.
+   */
+  function barTicks(barH: number): {
+    ticks: number[];
+    labels: string[];
+    flat: boolean;
+  } {
     const [lo, hi] = domain();
+    const { ticks, step } = fitDomainTicks(lo, hi, barH, {
+      maxCount: 4,
+      minGapPx: 1.6 * sizes.label,
+    });
+    return {
+      ticks,
+      labels: ticks.map((v) => formatTick(v, step)),
+      // A flat domain has one tick and no step.
+      flat: !(step > 0),
+    };
+  }
+  /** Width of the widest line of the two legends. */
+  function legendWidth(barLabels: string[]): number {
+    const { label, axisTitle } = sizes;
     const entry = opts.maxRadius * 2 + 8;
     return Math.max(
       tw(valueTitle(), axisTitle),
       tw(sizeTitle(), axisTitle),
-      14 + Math.max(tw(fmt(hi), label), tw(fmt(lo), label)),
+      14 + barLabels.reduce((m, s) => Math.max(m, tw(s, label)), 0),
       entry + tw("100%", label),
       anyMissing() ? entry + tw("no value", label) : 0,
     );
@@ -353,7 +399,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
       tooltip.hide();
       return;
     }
-    const valueLabel = (data.meta?.valueLabel as string) ?? "value";
+    const valueLabel = valueTitle();
     const pct = pctCol()[i] as number;
     const value = valueCol()[i] as number;
     tooltip.show(
@@ -390,11 +436,24 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     const c = clusters();
     const longest = (labels: string[]) =>
       labels.reduce((m, s) => Math.max(m, tw(s, sizes.label)), 0);
+    const labels = { sizes, rowLabel: longest(g), colLabel: longest(c) };
+    // The colour bar's labels set the right gutter. The bar's height does
+    // not depend on that gutter, so it is read off a layout made without it.
+    let legend = 0;
+    if (opts.showLegend) {
+      const pre = layoutDotplot(
+        width,
+        height,
+        g.length,
+        c.length,
+        opts,
+        labels,
+      );
+      legend = legendWidth(barTicks(barGeometry(pre).barH).labels);
+    }
     layout = layoutDotplot(width, height, g.length, c.length, opts, {
-      sizes,
-      rowLabel: longest(g),
-      colLabel: longest(c),
-      legend: opts.showLegend ? legendWidth() : 0,
+      ...labels,
+      legend,
     });
 
     ctx.clearRect(0, 0, width, height);
@@ -403,6 +462,20 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     if (!g.length || !c.length) {
       renderOverlay();
       return;
+    }
+
+    // Gridlines first, so the dots are drawn over them.
+    if (opts.showGrid) {
+      ctx.strokeStyle = theme.grid;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let r = 0; r < g.length; r += 1) {
+        // On a half pixel, so the 1 px line fills one row of pixels.
+        const y = Math.round(layout.top + (r + 0.5) * layout.cellH) + 0.5;
+        ctx.moveTo(layout.left, y);
+        ctx.lineTo(layout.left + layout.plotW, y);
+      }
+      ctx.stroke();
     }
 
     const [lo, hi] = domain();
@@ -443,7 +516,9 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
         ctx.stroke();
         continue;
       }
-      const t = hi > lo ? (v - lo) / (hi - lo) : 0.5;
+      // A reversed domain (hi below lo) runs the ramp the other way, and a
+      // flat one gives the middle of the ramp.
+      const t = isFlatRange(lo, hi) ? 0.5 : (v - lo) / (hi - lo);
       ctx.fillStyle = paint(Math.max(0, Math.min(1, t)));
       ctx.fill();
     }
@@ -456,15 +531,6 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     if (!width || !height) return;
     const g = genes();
     const c = clusters();
-
-    if (opts.showGrid) {
-      for (let r = 0; r < g.length; r += 1) {
-        const y = layout.top + (r + 0.5) * layout.cellH;
-        svg.appendChild(
-          line(layout.left, y, layout.left + layout.plotW, y, theme.grid),
-        );
-      }
-    }
 
     // Row labels, thinned when the rows are tighter than the type, and cut
     // to the gutter.
@@ -518,12 +584,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     // shorter when the widget is too short for it.
     const paint = ramp(opts.colormap);
     const [lo, hi] = domain();
-    const titleY = layout.top + Math.round(0.8 * axisTitle);
-    const barTop = titleY + Math.round(0.3 * axisTitle) + 6;
-    const barH = Math.max(
-      2 * label,
-      Math.min(120, layout.plotH * 0.4, lowest - 2 - 0.3 * label - barTop),
-    );
+    const { titleY, barTop, barH } = barGeometry(layout);
     const steps = 40;
     for (let i = 0; i < steps; i += 1) {
       const rect = document.createElementNS(SVG_NS, "rect");
@@ -545,26 +606,23 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
         axisTitle,
       ),
     );
-    svg.appendChild(
-      text(
-        lx + 14,
-        barTop + 0.75 * label,
-        fit(fmt(hi), room - 14, label),
-        theme.muted,
-        "start",
-        label,
-      ),
-    );
-    svg.appendChild(
-      text(
-        lx + 14,
-        barTop + barH + 2,
-        fit(fmt(lo), room - 14, label),
-        theme.muted,
-        "start",
-        label,
-      ),
-    );
+    // Round values inside the domain, each centred on its place along the
+    // bar, by a short tick.
+    const bar = barTicks(barH);
+    bar.ticks.forEach((v, i) => {
+      const y = barTop + (bar.flat ? 0.5 : (hi - v) / (hi - lo)) * barH;
+      svg.appendChild(line(lx + 10, y, lx + 13, y, theme.muted));
+      svg.appendChild(
+        text(
+          lx + 14,
+          y + 0.35 * label,
+          fit(bar.labels[i] ?? "", room - 14, label),
+          theme.muted,
+          "start",
+          label,
+        ),
+      );
+    });
 
     // Size legend. Radii come from dotRadius, so the swatches are literally the
     // same scale the dots use rather than a redrawn approximation.
@@ -573,8 +631,12 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
       layout.cellW / 2 - 1,
       layout.cellH / 2 - 1,
     );
+    // Below the baseline of a label centred on the bottom of the bar.
     const sizeTitleY =
-      barTop + barH + 2 + Math.round(0.3 * label + 10 + 0.8 * axisTitle);
+      barTop +
+      barH +
+      Math.round(0.35 * label) +
+      Math.round(0.3 * label + 10 + 0.8 * axisTitle);
     // The size legend, or each of its entries, is left out when it would
     // run past the bottom of the widget; entries are cut to the width. The
     // swatch column is as wide as the largest swatch, and the 4 px ring.
@@ -741,10 +803,6 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
 };
 
 // ---- small utilities ----
-function fmt(v: number): string {
-  if (Math.abs(v) >= 100) return String(Math.round(v));
-  return v.toFixed(Math.abs(v) < 1 ? 2 : 1);
-}
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
     c === "&"

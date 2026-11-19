@@ -316,7 +316,7 @@ oncoplot_memo_sort <- function(alterations, genes = NULL, samples = NULL) {
 #'   `renderOncoplot()` returns a Shiny render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-#'   ui <- fluidPage(oncoplotOutput("onco"))
+#'   ui <- shiny::fluidPage(oncoplotOutput("onco"))
 #'   server <- function(input, output) {
 #'     output$onco <- renderOncoplot({
 #'       oncoplot(data.frame(
@@ -325,7 +325,7 @@ oncoplot_memo_sort <- function(alterations, genes = NULL, samples = NULL) {
 #'       ))
 #'     })
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name oncoplot-shiny
 #' @export

@@ -27,8 +27,9 @@
 #' @param opacity Point opacity in `[0, 1]`.
 #' @param color_mode How to interpret the `color` column: `"auto"` detects from
 #'   its type, or force `"categorical"` / `"continuous"`.
-#' @param colormap Sequential color ramp for continuous coloring: `"viridis"`
-#'   or `"rdbu"`.
+#' @param colormap Color ramp for continuous coloring: `"viridis"`, `"rdbu"`,
+#'   `"ltc"` (an earthy teal to sand to rust sequential ramp) or `"ltcdiv"`
+#'   (its diverging counterpart, neutral cream at the midpoint).
 #' @param mouse_mode Primary drag gesture: `"panZoom"` (default) pans/zooms and
 #'   `"lasso"` makes a plain drag draw a selection.
 #' @param x_label,y_label Axis titles (shown when `show_axes = TRUE`).
@@ -65,7 +66,7 @@ embedding <- function(data,
                       point_scale_mode = c("asinh", "linear", "constant"),
                       opacity = 0.8,
                       color_mode = c("auto", "categorical", "continuous"),
-                      colormap = c("viridis", "rdbu"),
+                      colormap = c("viridis", "rdbu", "ltc", "ltcdiv"),
                       mouse_mode = c("panZoom", "lasso"),
                       aspect = c("fill", "equal"),
                       padding = 0.04,
@@ -159,13 +160,13 @@ embedding <- function(data,
 #'   `renderEmbedding()` returns a Shiny render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-#'   ui <- fluidPage(embeddingOutput("emb"))
+#'   ui <- shiny::fluidPage(embeddingOutput("emb"))
 #'   server <- function(input, output) {
 #'     output$emb <- renderEmbedding({
 #'       embedding(data.frame(x = rnorm(200), y = rnorm(200)))
 #'     })
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name embedding-shiny
 #' @export
