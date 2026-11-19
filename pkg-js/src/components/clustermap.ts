@@ -70,6 +70,8 @@ import {
 } from "./clustermap-cluster.js";
 import { uniqueId } from "../core/dom.js";
 
+export type { Linkage, Metric } from "./clustermap-cluster.js";
+
 export interface ClustermapOptions {
   /** Distance metric for clustering. */
   metric: Metric;

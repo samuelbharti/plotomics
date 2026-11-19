@@ -16,7 +16,12 @@ import { agnes, type AgglomerationMethod, type Cluster } from "ml-hclust";
 /** Above this many rows/cols, refuse to auto-cluster (document precomputed path). */
 export const MAX_CLUSTER_N = 2000;
 
+/** Distance between two rows or columns: euclidean, or 1 minus their
+ * Pearson correlation. */
 export type Metric = "euclidean" | "correlation";
+/** How the distance between two clusters is measured: the mean or the
+ * largest pairwise distance, or Ward's method on squared distances
+ * (`ward.D2` in R). */
 export type Linkage = "average" | "complete" | "ward";
 
 /**

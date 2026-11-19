@@ -37,3 +37,20 @@ def test_gosling_validates_input():
         Gosling("not a spec")
     with pytest.raises(ValueError, match="at least one of"):
         Gosling({"foo": 1})
+
+
+def test_gosling_theme_doc_says_it_is_not_a_plotomics_theme():
+    doc = " ".join((Gosling.__doc__ or "").split())
+    assert "Gosling's own theme, not the plotomics theme" in doc
+    # Every field of a plotomics theme is named as not applying.
+    for field in (
+        "background",
+        "foreground",
+        "muted",
+        "grid",
+        "axis",
+        "fontFamily",
+        "fontSize",
+        "categorical",
+    ):
+        assert f"``{field}``" in doc

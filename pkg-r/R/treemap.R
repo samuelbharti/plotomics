@@ -19,7 +19,11 @@
 #' @param padding_inner Padding between sibling tiles, in pixels.
 #' @param color_by Color leaves by `"parent"` (top-level ancestor, categorical)
 #'   or by `"value"` (a sequential/diverging ramp).
-#' @param colormap Ramp used when `color_by = "value"`: `"viridis"` or `"rdbu"`.
+#' @param colormap Ramp used when `color_by = "value"`: `"viridis"`, `"rdbu"`,
+#'   `"ltc"` (an earthy teal to sand to rust sequential ramp) or `"ltcdiv"`
+#'   (its diverging counterpart, neutral cream at the midpoint). The ramp
+#'   runs from the smallest leaf value in view to the largest, so a
+#'   diverging ramp has its midpoint halfway between the two.
 #' @param label_min_size Minimum tile side (px) before a label is drawn, at
 #'   the default font size. It grows with `theme$fontSize`.
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
@@ -45,7 +49,7 @@ treemap <- function(data,
                     tile = c("squarify", "binary"),
                     padding_inner = 1,
                     color_by = c("parent", "value"),
-                    colormap = c("viridis", "rdbu"),
+                    colormap = c("viridis", "rdbu", "ltc", "ltcdiv"),
                     label_min_size = 32,
                     theme = NULL,
                     width = NULL,

@@ -11,6 +11,7 @@ import {
   pooledSize,
   axisPlan,
   basePlan,
+  windowRange,
   labelEvery,
 } from "../src/components/heatmap.js";
 
@@ -249,6 +250,29 @@ describe("heatmap helpers", () => {
     expect(q.scale).toBeCloseTo(8293 / 8294, 9);
     // Zoomed in to a few rows, the view draws the aligned blocks.
     expect(axisPlan(8292, 1e-3, 424, 8192)).toEqual(p);
+  });
+
+  it("plans a window of the rows in view and as many on each side", () => {
+    // 8292 rows over a limit of 8192, 415 of them in view from row 3800:
+    // the window holds them and 415 more on each side, a texel a row.
+    const start = 3800 / 8292;
+    const view = 415 / 8292;
+    expect(windowRange(8292, start, view, 424, 8192)).toEqual([3385, 4630]);
+    // Near an end, the window stops at it.
+    expect(windowRange(8292, 0, view, 424, 8192)).toEqual([0, 830]);
+    expect(windowRange(8292, 1 - view, view, 424, 8192)).toEqual([7462, 8292]);
+    // Rows that fit the limit go in whole.
+    expect(windowRange(5000, 0.3, 0.05, 424, 8192)).toEqual([0, 5000]);
+  });
+
+  it("plans no window when the rows in view outnumber the pixels", () => {
+    // 509 rows in 424 px: pooling serves them.
+    expect(windowRange(8292, 0.3, 509 / 8292, 424, 8192)).toBeNull();
+    // A margin that would pass the limit is cut to it.
+    const [lo, hi] = windowRange(9000, 0.5, 300 / 9000, 400, 500) as number[];
+    expect(hi - lo).toBeLessThanOrEqual(500);
+    expect(lo).toBeLessThanOrEqual(4500);
+    expect(hi).toBeGreaterThanOrEqual(4800);
   });
 
   it("labels every cell, every k-th cell, or none by the cell size", () => {

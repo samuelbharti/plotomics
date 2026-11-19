@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createTreemap } from "../../src/components/treemap.js";
-import type { PlotomicsInstance } from "../../src/core/index.js";
+import {
+  type PlotomicsInstance,
+  ramp,
+  rgbToHex,
+} from "../../src/core/index.js";
 import { canvasPNG, drawnPixels } from "./helpers.js";
 
 function container() {
@@ -25,6 +29,18 @@ function pathways(withValue: boolean) {
     columns: withValue ? { id, parent, value } : { id, parent },
     meta: { labels },
   };
+}
+
+/** Every colour on the tile canvas, as hex. */
+function tileColours(el: HTMLElement): Set<string> {
+  const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+  const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const out = new Set<string>();
+  for (let i = 0; i < data.length; i += 4) {
+    out.add(rgbToHex([data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0]));
+  }
+  return out;
 }
 
 const texts = (el: HTMLElement) =>
@@ -132,6 +148,28 @@ describe("treemap in a browser", () => {
           lb.y < nb.y + nb.height;
         expect(overlap).toBe(false);
       }
+    }
+  });
+
+  it("colours tiles and the value key with the ltc and ltcdiv ramps", () => {
+    for (const name of ["ltc", "ltcdiv"] as const) {
+      const el = container();
+      const tm = createTreemap(el, {
+        data: pathways(true),
+        options: { colorBy: "value", colormap: name },
+      });
+      instances.push(tm);
+      const fn = ramp(name);
+      // The key shows the whole ramp in nine stops.
+      const stops = Array.from(
+        el.querySelectorAll("svg linearGradient stop"),
+      ).map((s) => s.getAttribute("stop-color"));
+      expect(stops).toEqual(Array.from({ length: 9 }, (_, i) => fn(i / 8)));
+      // Leaf values are weights, never below 0: the smallest leaf takes
+      // the low end of the ramp and the largest the high end.
+      const colours = tileColours(el);
+      expect(colours.has(fn(0))).toBe(true);
+      expect(colours.has(fn(1))).toBe(true);
     }
   });
 });

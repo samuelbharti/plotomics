@@ -31,6 +31,11 @@ class Heatmap(PlotomicsWidget):
     than the GPU's texture limit is averaged in blocks of two or more rows (or
     columns) to fit it, so zoomed in, the rows of a block share their mean.
 
+    In R this plot is ``bioheatmap()``, with the alias
+    ``heatmap_plotomics()``. A function named ``heatmap()`` would mask
+    ``stats::heatmap()`` when the R package is attached. Python has no such
+    clash, so the class keeps the name ``Heatmap``.
+
     Parameters
     ----------
     matrix:

@@ -58,6 +58,8 @@ import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
 
+/** How the `color` column is read: from its type, or forced to categories
+ * or to a continuous ramp. */
 export type EmbeddingColorMode = "auto" | "categorical" | "continuous";
 
 export interface EmbeddingOptions {

@@ -53,6 +53,7 @@ export {
   type Dtype,
   type ColumnSpec,
   type BufferSchema,
+  type TypedArray,
   decodeColumns,
 } from "./transport.js";
 
@@ -90,6 +91,7 @@ export {
 
 export {
   type ScatterplotView,
+  type DomainScale,
   toNdc,
   baseDomains,
   fitView,

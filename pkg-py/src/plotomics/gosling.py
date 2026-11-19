@@ -32,8 +32,13 @@ class Gosling(PlotomicsWidget):
         ``None`` gives Gosling 50: with the 10 px the widget keeps around it,
         the views sit 60 px in, as with Gosling's own default.
     theme:
-        Optional Gosling theme: a built-in name (e.g. ``"dark"``) or a theme
-        dict.
+        Optional Gosling theme: a built-in name such as ``"light"``,
+        ``"dark"`` or ``"ggplot"``, or a Gosling theme dict. This is
+        Gosling's own theme, not the plotomics theme that every other widget
+        takes. Gosling draws its own tracks, so no plotomics theme field
+        applies: ``background``, ``foreground``, ``muted``, ``grid``,
+        ``axis``, ``fontFamily``, ``fontSize`` and ``categorical`` are not
+        read. Set colours and fonts in the Gosling theme or in the spec.
     height:
         Initial widget height in CSS pixels.
 
