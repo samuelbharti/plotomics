@@ -15,8 +15,10 @@ import { dropsOptionKeys } from "./rerender.js";
  * decode is needed on this path.
  */
 
+/** A component factory of any options type, as {@link registerComponent}
+ * takes it. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyFactory = PlotomicsFactory<any>;
+export type AnyFactory = PlotomicsFactory<any>;
 
 interface RenderPayload {
   data: PlotomicsData;

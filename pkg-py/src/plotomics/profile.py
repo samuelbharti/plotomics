@@ -33,6 +33,12 @@ class Profile(PlotomicsWidget):
     Bars are drawn in the order given. For SBS96 that order is part of the
     convention, so the component does not sort.
 
+    In R this plot is ``bioprofile()``, with the alias
+    ``profile_plotomics()``. A function named ``profile()`` would mask the
+    ``stats::profile()`` generic, which profiles a fitted model's
+    likelihood, when the R package is attached. Python has no such clash,
+    so the class keeps the name ``Profile``.
+
     Parameters
     ----------
     data:

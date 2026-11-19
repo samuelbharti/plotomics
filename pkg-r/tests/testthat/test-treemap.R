@@ -97,3 +97,13 @@ test_that("treemap() treats a literal \"NA\" parent as the root", {
   w <- treemap(df)
   expect_equal(w$x$data$columns$parent[1], "")
 })
+
+test_that("treemap() accepts every colormap the browser draws", {
+  df <- data.frame(id = c("r", "a", "b"), parent = c(NA, "r", "r"),
+                   value = c(0, 1, 2))
+  for (cm in c("viridis", "rdbu", "ltc", "ltcdiv")) {
+    w <- treemap(df, color_by = "value", colormap = cm)
+    expect_equal(w$x$options$colormap, cm)
+  }
+  expect_error(treemap(df, colormap = "plasma"), "should be one of")
+})
