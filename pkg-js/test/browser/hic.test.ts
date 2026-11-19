@@ -350,3 +350,101 @@ describe("hic axis text in narrow widgets", () => {
     }
   });
 });
+
+describe("hic cells with no contacts", () => {
+  /** A seeded random number in [0, 1). */
+  function seeded(seed: number) {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /**
+   * Raw counts: a symmetric map of Poisson draws with a mean of
+   * scale / (d + 1)^1.1 at d bins from the diagonal, so far contacts are
+   * mostly zero.
+   */
+  function rawCounts(n: number, scale: number, seed: number) {
+    const rand = seeded(seed);
+    const poisson = (mean: number) => {
+      if (mean > 30) {
+        // Normal approximation for a large mean.
+        const u = Math.max(rand(), 1e-12);
+        const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand());
+        return Math.max(0, Math.round(mean + Math.sqrt(mean) * z));
+      }
+      const floor = Math.exp(-mean);
+      let k = 0;
+      for (let p = rand(); p > floor; p *= rand()) k += 1;
+      return k;
+    };
+    const values = new Float32Array(n * n);
+    for (let r = 0; r < n; r += 1) {
+      for (let c = r; c < n; c += 1) {
+        const v = poisson(scale / (c - r + 1) ** 1.1);
+        values[r * n + c] = v;
+        values[c * n + r] = v;
+      }
+    }
+    return { columns: { values }, meta: { n } };
+  }
+
+  /** The share of the map's pixels that are background, and their mean grey. */
+  async function mapStats(el: HTMLElement) {
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const frame = (
+      el.querySelector('svg rect[fill="none"]') as SVGRectElement
+    ).getBoundingClientRect();
+    const box = canvas.getBoundingClientRect();
+    const ratio = canvas.width / box.width;
+    const bitmap = await createImageBitmap(canvas);
+    const copy = document.createElement("canvas");
+    copy.width = bitmap.width;
+    copy.height = bitmap.height;
+    const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
+    ctx.drawImage(bitmap, 0, 0);
+    const x0 = Math.ceil((frame.left - box.left) * ratio) + 1;
+    const y0 = Math.ceil((frame.top - box.top) * ratio) + 1;
+    const x1 = Math.floor((frame.right - box.left) * ratio) - 1;
+    const y1 = Math.floor((frame.bottom - box.top) * ratio) - 1;
+    const px = ctx.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+    let blank = 0;
+    let grey = 0;
+    for (let k = 0; k < px.length; k += 4) {
+      const [r, g, b] = [px[k], px[k + 1], px[k + 2]] as number[];
+      if (r === 255 && g === 255 && b === 255) blank += 1;
+      grey += ((r as number) + (g as number) + (b as number)) / 3;
+    }
+    const count = px.length / 4;
+    return { blank: blank / count, grey: grey / count };
+  }
+
+  // A cell with no contacts is background, as a missing one is, but in the
+  // overview it is blended into its neighbours as the value under the scale.
+  // Drawn as missing, it took the whole pixel it fell on: far contacts
+  // shrank to specks and single zeros near the diagonal turned to white
+  // specks. The bounds hold the overview with zeros blended in (58.1%
+  // background and a mean grey of 174.5; then 0.05% background) and leave
+  // out the overview that drew zeros as missing (82.1% and 223.4; then 3.1%).
+  it("dims the far contacts of raw counts, not blanks them", async () => {
+    const el = container(700, 700);
+    instances.push(createHic(el, { data: rawCounts(2000, 30, 1) }));
+    const { blank, grey } = await mapStats(el);
+    expect(blank).toBeGreaterThan(0.5);
+    expect(blank).toBeLessThan(0.66);
+    expect(grey).toBeGreaterThan(165);
+    expect(grey).toBeLessThan(185);
+  });
+
+  it("draws no white specks for single zeros near the diagonal", async () => {
+    const el = container(700, 700);
+    instances.push(createHic(el, { data: rawCounts(800, 2000, 2) }));
+    const { blank } = await mapStats(el);
+    expect(blank).toBeLessThan(0.002);
+  });
+});

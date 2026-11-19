@@ -5,9 +5,10 @@
  * millions of cells) and heavily skewed, so the intensity is shown on a log
  * scale with a perceptually-uniform sequential colormap. Each level of the
  * matrix is normalized on the CPU into an 8-bit single-channel texture (byte 0
- * is "no data", bytes 1-255 span the color scale) and drawn as one textured
- * quad via `regl`; the colormap lookup runs in the fragment shader, so pan/zoom
- * is just a UV-space affine transform (no per-cell DOM, no re-upload). 8-bit
+ * is a missing cell, byte 1 a cell with no signal, bytes 2-255 span the color
+ * scale) and drawn as one textured quad via `regl`; the colormap lookup runs
+ * in the fragment shader, so pan/zoom is just a UV-space affine transform (no
+ * per-cell DOM, no re-upload). 8-bit
  * textures need no WebGL extension, unlike float textures. A precomputed
  * level-of-detail (LOD) pyramid of mean-pooled downsamples keeps very large
  * matrices smooth: at each zoom level the coarsest texture whose resolution
@@ -204,11 +205,14 @@ export function normalizeIntensity(
 }
 
 /**
- * Encode raw intensities as texture bytes for the shader. Byte 0 means "draw
- * the background" (NaN, or a value at or below a floor of no signal); bytes
- * 1-255 map linearly onto the color scale. The floor counts as background
- * with the log transform and whenever `vmin >= 0`; with the linear transform
- * and a negative `vmin`, low values clamp to the lowest color instead.
+ * Encode raw intensities as texture bytes for the shader. Byte 0 is a missing
+ * cell (NaN), byte 1 a cell at or below a floor of no signal, and bytes 2-255
+ * map linearly onto the color scale. Both 0 and 1 draw the background, but a
+ * missing cell is left out when the shader blends neighbouring cells, while a
+ * cell with no signal is blended in as the value under the scale. The floor
+ * counts as no signal with the log transform and whenever `vmin >= 0`; with
+ * the linear transform and a negative `vmin`, low values clamp to the lowest
+ * color instead.
  */
 export function encodeIntensity(
   values: ArrayLike<number>,
@@ -222,8 +226,7 @@ export function encodeIntensity(
     const v = values[k] as number;
     if (Number.isNaN(v)) continue;
     const t = normalizeIntensity(v, vmin, vmax, transform);
-    if (t <= 0 && floorIsBackground) continue;
-    out[k] = 1 + Math.round(t * 254);
+    out[k] = t <= 0 && floorIsBackground ? 1 : 2 + Math.round(t * 253);
   }
   return out;
 }
@@ -499,7 +502,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       frag: `
         precision highp float;
         varying vec2 uv;
-        uniform sampler2D matrix;   // luminance byte: 0 = background, 1-255 = scale
+        uniform sampler2D matrix;   // byte: 0 = missing, 1 = no signal, 2-255 = scale
         uniform sampler2D cmap;     // 256x1 colormap LUT
         uniform vec3 background;
         uniform float levelSize;    // texels on a side of the matrix texture
@@ -514,9 +517,9 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
             return;
           }
           // The four texels around uv, weighted as linear filtering would
-          // weight them. The filtering is done here, over the texels with
-          // data only: blending byte 0 (no data) into its neighbours would
-          // draw a missing bin as a smaller value, a colour of the scale.
+          // weight them. The filtering is done here, over the texels that are
+          // not missing: blending byte 0 into its neighbours would draw a
+          // missing bin as a smaller value, a colour of the scale.
           vec2 p = uv * levelSize - 0.5;
           vec2 i = floor(p);
           vec2 f = p - i;
@@ -535,9 +538,14 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
           );
           vec4 has = step(0.5, b);
           float weight = dot(w, has);
-          // Background where most of the pixel falls on texels without data.
+          // Background where most of the pixel falls on missing texels.
           if (weight < 0.5) { gl_FragColor = vec4(background, 1.0); return; }
-          float t = clamp((dot(w * has, b) / weight - 1.0) / 254.0, 0.0, 1.0);
+          // No signal blends in as 0 and the scale runs from 1 to 254, so a
+          // cell with no contacts dims its neighbours, and the background
+          // shows only where nearly all of the pixel has no contacts.
+          float v = dot(w * has, b - 1.0) / weight;
+          if (v < 0.5) { gl_FragColor = vec4(background, 1.0); return; }
+          float t = clamp((v - 1.0) / 253.0, 0.0, 1.0);
           gl_FragColor = texture2D(cmap, vec2(t, 0.5));
         }`,
       attributes: {

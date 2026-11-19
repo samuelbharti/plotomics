@@ -151,3 +151,22 @@ test_that("hic() reads NA as an unset numeric argument", {
   expect_null(w$x$options$vmaxPercentile)
   expect_null(hic(m, vmin = NULL)$x$options$vmin)
 })
+
+test_that("hic() sends a named or 1x1 matrix argument as a plain value", {
+  trip <- data.frame(i = 0, j = 1, v = 5)
+  w <- hic(trip,
+    n = 2, symmetric = c(a = FALSE), bin_size = c(b = 5000),
+    vmin = matrix(1), vmax = c(top = 9), vmax_percentile = matrix(0.9)
+  )
+  expect_identical(w$x$options$symmetric, FALSE)
+  expect_identical(
+    hic(trip, n = 2, symmetric = matrix(TRUE))$x$options$symmetric, TRUE
+  )
+  expect_identical(w$x$data$meta$binSize, 5000)
+  expect_identical(w$x$options$vmin, 1)
+  expect_identical(w$x$options$vmax, 9)
+  expect_identical(w$x$options$vmaxPercentile, 0.9)
+  json <- as.character(htmlwidgets:::toJSON(w$preRenderHook(w)$x))
+  expect_match(json, '"symmetric":false', fixed = TRUE)
+  expect_match(json, '"vmax":9', fixed = TRUE)
+})

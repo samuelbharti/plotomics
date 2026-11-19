@@ -130,6 +130,8 @@ class HiC(PlotomicsWidget):
                 raise ValueError(
                     "`vmax` must be greater than 0 with the log transform."
                 )
+        if isinstance(symmetric, np.ndarray) and symmetric.ndim == 0:
+            symmetric = symmetric.item()
         if not isinstance(symmetric, (bool, np.bool_)):
             raise ValueError("`symmetric` must be a single true or false value.")
 
@@ -227,6 +229,9 @@ def _number(
     NaN, an infinite value, text, a bool, a sequence, or a value ``ok``
     refuses raises ``ValueError("`name` must be what.")``, as R does.
     """
+    # A 0-d array holds one value, as a NumPy scalar does.
+    if isinstance(value, np.ndarray) and value.ndim == 0:
+        value = value.item()
     if value is None:
         return None
     number = math.nan

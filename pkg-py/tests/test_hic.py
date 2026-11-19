@@ -213,3 +213,23 @@ def test_hic_reads_none_as_an_unset_numeric_argument():
     assert "binSize" not in w.data["meta"]
     for key in ("vmin", "vmax", "vmaxPercentile"):
         assert key not in w.options
+
+
+def test_hic_takes_a_0d_array_as_one_value():
+    m = np.random.rand(2, 2)
+    w = HiC(
+        m,
+        bin_size=np.array(5000),
+        vmin=np.array(1.0),
+        vmax=np.array(2.0),
+        vmax_percentile=np.array(0.9),
+        transform="linear",
+        symmetric=np.array(False),
+    )
+    assert w.data["meta"]["binSize"] == 5000.0
+    assert w.options["vmin"] == 1.0
+    assert w.options["vmax"] == 2.0
+    assert w.options["vmaxPercentile"] == 0.9
+    assert w.options["symmetric"] is False
+    with pytest.raises(ValueError, match="`vmax` must be a single finite number"):
+        HiC(m, vmax=np.array([2.0]))

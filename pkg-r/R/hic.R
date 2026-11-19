@@ -91,6 +91,9 @@ hic <- function(mat,
   if (!is.logical(symmetric) || length(symmetric) != 1L || is.na(symmetric)) {
     stop("`symmetric` must be a single true or false value.", call. = FALSE)
   }
+  # A plain TRUE or FALSE: a name or a dim would reach the browser as an
+  # object or an array, which reads as true.
+  symmetric <- isTRUE(symmetric)
 
   columns <- list()
   if (is.matrix(mat) || (is.array(mat) && length(dim(mat)) == 2)) {
@@ -220,5 +223,6 @@ hic_number <- function(x, name, what = "a single finite number", ok = NULL) {
     (!is.null(ok) && !ok(x))) {
     stop(sprintf("`%s` must be %s.", name, what), call. = FALSE)
   }
+  # as.numeric() drops a name or a dim, so the browser gets a plain number.
   as.numeric(x)
 }
