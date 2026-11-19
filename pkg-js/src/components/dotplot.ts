@@ -466,7 +466,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
 
     // Gridlines first, so the dots are drawn over them. A grid colour that
     // paints nothing, such as "none", draws no line.
-    if (opts.showGrid && setCanvasColour(ctx, "strokeStyle", theme.grid)) {
+    if (opts.showGrid && setCanvasColour(ctx, "strokeStyle", theme.grid, el)) {
       ctx.lineWidth = 1;
       ctx.beginPath();
       for (let r = 0; r < g.length; r += 1) {

@@ -359,7 +359,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
 
     // Gridlines first, so the bars are drawn over them. A grid colour that
     // paints nothing, such as "none", draws no line.
-    if (setCanvasColour(ctx, "strokeStyle", theme.grid)) {
+    if (setCanvasColour(ctx, "strokeStyle", theme.grid, el)) {
       ctx.lineWidth = 1;
       ctx.beginPath();
       for (const v of axis.ticks) {
@@ -390,7 +390,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     // Membership matrix: alternating row bands, then the dots and the spine
     // connecting the filled ones. A grid colour that paints nothing leaves
     // the bands out.
-    if (setCanvasColour(ctx, "fillStyle", theme.grid)) {
+    if (setCanvasColour(ctx, "fillStyle", theme.grid, el)) {
       ctx.globalAlpha = 0.25;
       for (let r = 0; r < names.length; r += 2) {
         ctx.fillRect(
@@ -407,6 +407,11 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       layout.colW / 2 - 1,
       layout.rowH / 2 - 1,
     );
+    // The colour of the empty dots, read once; null when it paints nothing,
+    // so an empty dot is left out and never takes the colour of a filled one.
+    const emptyColour = setCanvasColour(ctx, "fillStyle", emptyFill(), el)
+      ? ctx.fillStyle
+      : null;
     for (let i = 0; i < s.length; i += 1) {
       const cx = layout.left + (i + 0.5) * layout.colW;
       const row = membershipRow(mem, i, names.length);
@@ -426,10 +431,9 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
         ctx.stroke();
       }
       for (let k = 0; k < names.length; k += 1) {
-        // An empty dot whose colour paints nothing is left out, so it never
-        // takes the colour of a filled one.
         if (row[k]) ctx.fillStyle = barFill();
-        else if (!setCanvasColour(ctx, "fillStyle", emptyFill())) continue;
+        else if (emptyColour !== null) ctx.fillStyle = emptyColour;
+        else continue;
         ctx.beginPath();
         ctx.arc(
           cx,

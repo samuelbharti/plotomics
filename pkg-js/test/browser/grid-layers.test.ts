@@ -9,6 +9,11 @@ import {
   defaultTheme,
   textSizes,
 } from "../../src/core/index.js";
+import {
+  colourAlpha,
+  resolveColour,
+  setCanvasColour,
+} from "../../src/core/paint.js";
 
 // Gridlines drawn on a canvas: a grid colour that paints nothing draws no
 // line, and the KM gridlines sit under its bands and curves.
@@ -287,5 +292,135 @@ describe("KM gridlines", () => {
       .slice(image + 1)
       .filter((n) => n.getAttribute("stroke") === "#e5e7eb");
     expect(gridAfter).toEqual([]);
+  });
+});
+
+describe("grid colours that depend on the page", () => {
+  // The SVG gridlines of main took a custom property and the text colour.
+  // Before the fix a canvas could not read var(), so the gridline was left
+  // out, and it drew currentColor in black.
+  const RED = [255, 0, 0];
+  const GREEN = [0, 160, 0];
+
+  /** A plot in a container that sets --rvgrid to red and text to green. */
+  function inPage(make: (el: HTMLElement) => PlotomicsInstance<unknown>) {
+    const el = container(500, 400);
+    el.style.setProperty("--rvgrid", "#ff0000");
+    el.style.color = "rgb(0, 160, 0)";
+    instances.push(make(el));
+    return el;
+  }
+
+  /** The profile pixel between its first two bars, on the gridline at 4. */
+  function profileGrid(el: HTMLElement) {
+    const t = label(el, "4");
+    const left = t.x + 8;
+    const slot = (500 - left - 14) / 4;
+    return pixel(el, left + slot, Math.round(t.y));
+  }
+
+  /** The KM pixel on the 50% gridline at time 5, clear of the curve. */
+  function kmGrid(el: HTMLElement) {
+    const x0 = label(el, "0", "middle").x;
+    const x10 = label(el, "10", "middle").x;
+    return pixel(el, (x0 + x10) / 2, Math.round(label(el, "50%").y));
+  }
+
+  for (const [grid, colour] of [
+    ["var(--rvgrid)", RED],
+    ["currentColor", GREEN],
+  ] as const) {
+    it(`draws a ${grid} profile gridline in the colour the page gives`, () => {
+      const el = inPage((e) =>
+        createProfile(e, {
+          data: { columns: { value: [10, 2, 7, 4] } },
+          options: { theme: { grid } },
+        }),
+      );
+      expect(far(profileGrid(el), [...colour])).toBeLessThanOrEqual(2);
+    });
+
+    it(`draws a ${grid} KM gridline in the colour the page gives`, () => {
+      const el = inPage((e) =>
+        createKm(e, {
+          data: {
+            columns: { time: [0, 10, 30], surv: [1, 0.5, 0.5] },
+            meta: { riskTimes: [0, 10, 20, 30] },
+          },
+          options: { showLegend: false, theme: { grid } },
+        }),
+      );
+      expect(far(kmGrid(el), [...colour])).toBeLessThanOrEqual(2);
+    });
+  }
+
+  it("draws no gridline for a custom property the page does not set", () => {
+    const el = inPage((e) =>
+      createProfile(e, {
+        data: { columns: { value: [10, 2, 7, 4] } },
+        options: { theme: { grid: "var(--not-set)" } },
+      }),
+    );
+    expect(profileGrid(el)).toEqual(WHITE);
+  });
+});
+
+describe("setCanvasColour", () => {
+  const ctx = document
+    .createElement("canvas")
+    .getContext("2d") as CanvasRenderingContext2D;
+
+  it("paints nothing with a colour whose alpha is 0, in any syntax", () => {
+    // Before the fix only the rgba(r, g, b, 0) form was caught, so these
+    // returned true though nothing painted.
+    for (const colour of [
+      "color(display-p3 1 0 0 / 0)",
+      "oklch(0.7 0.1 200 / 0)",
+      "oklch(0.7 0.1 200 / 0%)",
+      "rgb(255 0 0 / 0)",
+      "hsl(120 50% 50% / 0)",
+      "rgba(255, 0, 0, 0)",
+      "transparent",
+    ]) {
+      expect(setCanvasColour(ctx, "strokeStyle", colour), colour).toBe(false);
+    }
+  });
+
+  it("paints with an opaque or a translucent colour", () => {
+    for (const colour of [
+      "#e5e7eb",
+      "rgb(255, 0, 0)",
+      "rgb(0, 0, 0)",
+      "rgba(0, 0, 0, 0.2)",
+      "rgb(255 0 0 / 50%)",
+      "oklch(0.7 0.1 200)",
+      "color(display-p3 1 0 0)",
+    ]) {
+      expect(setCanvasColour(ctx, "strokeStyle", colour), colour).toBe(true);
+    }
+  });
+
+  it("reads the alpha of each syntax", () => {
+    expect(colourAlpha("#e5e7eb")).toBe(1);
+    expect(colourAlpha("rgb(255, 0, 0)")).toBe(1);
+    expect(colourAlpha("rgba(255, 0, 0, 0.25)")).toBe(0.25);
+    expect(colourAlpha("oklch(0.7 0.1 200 / 40%)")).toBeCloseTo(0.4, 10);
+    expect(colourAlpha("color(display-p3 1 0 0 / 0)")).toBe(0);
+  });
+
+  it("resolves var() and currentColor against the plot's element", () => {
+    const el = container(100, 100);
+    el.style.setProperty("--rvgrid", "#ff0000");
+    el.style.color = "rgb(0, 160, 0)";
+    expect(resolveColour("var(--rvgrid)", el)).toBe("rgb(255, 0, 0)");
+    expect(resolveColour("currentColor", el)).toBe("rgb(0, 160, 0)");
+    expect(resolveColour("var(--not-set)", el)).toBe("none");
+    // The probe leaves nothing behind.
+    expect(el.children.length).toBe(0);
+    expect(setCanvasColour(ctx, "strokeStyle", "var(--rvgrid)", el)).toBe(true);
+    expect(ctx.strokeStyle).toBe("#ff0000");
+    // Out of the document nothing resolves, and the colour is kept as given.
+    const loose = document.createElement("div");
+    expect(resolveColour("#123456", loose)).toBe("#123456");
   });
 });

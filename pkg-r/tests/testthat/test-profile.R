@@ -66,10 +66,30 @@ test_that("bioprofile() refuses negative values as shares", {
     "`as_fraction` needs every `value` to be 0 or more; found 1 negative value(s).",
     fixed = TRUE
   )
+  # The sign is read as given: -1e-50 is negative, as in Python.
+  expect_error(
+    bioprofile(data.frame(value = c(-1e-50, 2)), as_fraction = TRUE),
+    "found 1 negative value(s).",
+    fixed = TRUE
+  )
   # Without as_fraction the bars of negative values go down from 0.
   w <- bioprofile(data.frame(value = c(2, -2, 1)))
   expect_equal(w$x$data$columns$value, c(2, -2, 1))
   expect_false(w$x$options$asFraction)
+})
+
+test_that("bioprofile() takes as_fraction as one TRUE or FALSE", {
+  # Before the fix as_fraction = 1 skipped the check for negative values,
+  # while the plot took 1 as true.
+  df <- data.frame(value = c(2, -2, 1))
+  for (bad in list(1, NA, c(TRUE, FALSE), "yes")) {
+    expect_error(
+      bioprofile(df, as_fraction = bad),
+      "`as_fraction` must be a single true or false value.",
+      fixed = TRUE
+    )
+  }
+  expect_true(bioprofile(profile_fixture(), as_fraction = TRUE)$x$options$asFraction)
 })
 
 test_that("bioprofile() validates its input", {

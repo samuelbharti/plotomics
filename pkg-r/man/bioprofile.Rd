@@ -52,8 +52,8 @@ categorical palette.}
 
 \item{bar_width}{Fraction of each slot the bar occupies, in \verb{(0, 1]}.}
 
-\item{as_fraction}{Show each value as a share of the total, in place of
-the raw count. Every finite value must then be 0 or more.}
+\item{as_fraction}{\code{TRUE} to show each value as a share of the total, in
+place of the raw count. Every finite value must then be 0 or more.}
 
 \item{show_header, show_bar_labels}{Toggle the header band and tick labels.}
 

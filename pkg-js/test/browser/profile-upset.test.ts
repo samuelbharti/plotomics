@@ -377,3 +377,19 @@ describe("profile with negative values", () => {
     expect(image(shares)).toBe(image(plain));
   });
 });
+
+describe("profile tooltip of a negative zero", () => {
+  it("reads 0, not -0", () => {
+    // Python sends -0 for a tiny negative value that float32 rounds. Before
+    // the fix the tooltip read "-0 (0.0%)".
+    const el = container(500, 300);
+    instances.push(
+      createProfile(el, {
+        data: { columns: { value: Float32Array.from([-0, 4]) } },
+      }),
+    );
+    const tip = hoverAt(el, profileBarX(el, 0, 2, 500), tick(el, "0").y - 5);
+    expect(tip).toContain("0 (0.0%)");
+    expect(tip).not.toContain("-0");
+  });
+});

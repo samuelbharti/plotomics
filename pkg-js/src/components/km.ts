@@ -593,7 +593,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
 
     // y gridlines first, so the bands and the curves are drawn over them. A
     // grid colour that paints nothing, such as "none", draws no line.
-    if (setCanvasColour(ctx, "strokeStyle", theme.grid)) {
+    if (setCanvasColour(ctx, "strokeStyle", theme.grid, el)) {
       ctx.lineWidth = 1;
       ctx.beginPath();
       for (const v of gridValues(lo)) {

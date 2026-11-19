@@ -507,7 +507,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
 
     // Gridlines first, so the bars are drawn over them. A grid colour that
     // paints nothing, such as "none", draws no line.
-    if (setCanvasColour(ctx, "strokeStyle", theme.grid)) {
+    if (setCanvasColour(ctx, "strokeStyle", theme.grid, el)) {
       ctx.lineWidth = 1;
       ctx.beginPath();
       for (const val of axis.ticks) {
@@ -765,6 +765,8 @@ function readableOn(hex: string): string {
   return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#233038" : "#FFFFFF";
 }
 function fmtInt(v: number): string {
+  // -0, from a tiny negative value that float32 rounds, reads 0.
+  if (v === 0) return "0";
   return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2);
 }
 

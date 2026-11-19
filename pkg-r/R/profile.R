@@ -28,8 +28,8 @@
 #'   categorical palette.
 #' @param title Optional title drawn above the header band.
 #' @param bar_width Fraction of each slot the bar occupies, in `(0, 1]`.
-#' @param as_fraction Show each value as a share of the total, in place of
-#'   the raw count. Every finite value must then be 0 or more.
+#' @param as_fraction `TRUE` to show each value as a share of the total, in
+#'   place of the raw count. Every finite value must then be 0 or more.
 #' @param show_header,show_bar_labels Toggle the header band and tick labels.
 #' @param y_label Axis label.
 #' @param theme Optional named list of theme overrides.
@@ -67,11 +67,16 @@ bioprofile <- function(data,
   if (bar_width <= 0 || bar_width > 1) {
     stop("`bar_width` must be in (0, 1].", call. = FALSE)
   }
+  # One TRUE or FALSE, so the check below and the plot read it alike.
+  if (!is.logical(as_fraction) || length(as_fraction) != 1L ||
+    is.na(as_fraction)) {
+    stop("`as_fraction` must be a single true or false value.", call. = FALSE)
+  }
 
   value <- bv_require_numeric(data$value, "value")
   bv_check_finite(value, "value")
   # Shares of a total with negative values are not defined.
-  if (isTRUE(as_fraction)) {
+  if (as_fraction) {
     negative <- sum(is.finite(value) & value < 0)
     if (negative > 0L) {
       stop(sprintf(
