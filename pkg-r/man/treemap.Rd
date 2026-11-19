@@ -9,7 +9,7 @@ treemap(
   tile = c("squarify", "binary"),
   padding_inner = 1,
   color_by = c("parent", "value"),
-  colormap = c("viridis", "rdbu"),
+  colormap = c("viridis", "rdbu", "ltc", "ltcdiv"),
   label_min_size = 32,
   theme = NULL,
   width = NULL,
@@ -34,7 +34,11 @@ groups are named in a header strip when their tile has room.}
 \item{color_by}{Color leaves by \code{"parent"} (top-level ancestor, categorical)
 or by \code{"value"} (a sequential/diverging ramp).}
 
-\item{colormap}{Ramp used when \code{color_by = "value"}: \code{"viridis"} or \code{"rdbu"}.}
+\item{colormap}{Ramp used when \code{color_by = "value"}: \code{"viridis"}, \code{"rdbu"},
+\code{"ltc"} (an earthy teal to sand to rust sequential ramp) or \code{"ltcdiv"}
+(its diverging counterpart, neutral cream at the midpoint). The ramp
+runs from the smallest leaf value in view to the largest, so a
+diverging ramp has its midpoint halfway between the two.}
 
 \item{label_min_size}{Minimum tile side (px) before a label is drawn, at
 the default font size. It grows with \code{theme$fontSize}.}

@@ -1,4 +1,7 @@
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, it, expect } from "vitest";
+import { defaultTheme } from "../src/core/theme.js";
 import {
   isValidSpec,
   embedOptions,
@@ -44,5 +47,38 @@ describe("gosling helpers", () => {
     // no patch -> shallow copy
     expect(mergeGoslingOptions(base)).toEqual(base);
     expect(mergeGoslingOptions(base)).not.toBe(base);
+  });
+});
+
+/** The doc comment of one member of the GoslingOptions interface. */
+function goslingOptionDoc(member: string): string {
+  const file = fileURLToPath(
+    new URL("../src/components/gosling-spec.ts", import.meta.url),
+  );
+  const program = ts.createProgram([file], { noEmit: true });
+  const checker = program.getTypeChecker();
+  const source = program.getSourceFile(file);
+  const options = source?.statements.find(
+    (s): s is ts.InterfaceDeclaration =>
+      ts.isInterfaceDeclaration(s) && s.name.text === "GoslingOptions",
+  );
+  const node = options?.members.find(
+    (m) => m.name !== undefined && m.name.getText(source) === member,
+  );
+  const symbol = node?.name ? checker.getSymbolAtLocation(node.name) : null;
+  if (!symbol) return "";
+  return ts
+    .displayPartsToString(symbol.getDocumentationComment(checker))
+    .replace(/\s+/g, " ");
+}
+
+describe("GoslingOptions.theme", () => {
+  it("says it is a Gosling theme and that no plotomics theme field applies", () => {
+    const doc = goslingOptionDoc("theme");
+    expect(doc).toContain("Gosling's own theme");
+    expect(doc).toContain("It is not a plotomics theme");
+    for (const field of Object.keys(defaultTheme)) {
+      expect(doc).toContain(`\`${field}\``);
+    }
   });
 });

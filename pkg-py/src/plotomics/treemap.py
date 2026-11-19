@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
 from ._base import (
     STATIC,
     PlotomicsWidget,
+    _check_choice,
     _column,
     _text_or_none,
     _to_float32,
     pack_columns,
 )
+
+_COLORMAPS = ("viridis", "rdbu", "ltc", "ltcdiv")
 
 
 class Treemap(PlotomicsWidget):
@@ -45,7 +48,12 @@ class Treemap(PlotomicsWidget):
         Color leaves by ``"parent"`` (top-level ancestor, categorical) or by
         ``"value"`` (a ramp).
     colormap:
-        Ramp used when ``color_by="value"``: ``"viridis"`` or ``"rdbu"``.
+        Ramp used when ``color_by="value"``: ``"viridis"``, ``"rdbu"``,
+        ``"ltc"`` (an earthy teal to sand to rust sequential ramp) or
+        ``"ltcdiv"`` (its diverging counterpart, neutral cream at the
+        midpoint). The ramp runs from the smallest leaf value in view to
+        the largest, so a diverging ramp has its midpoint halfway between
+        the two.
     label_min_size:
         Minimum tile side (px) before a label is drawn, at the default font
         size. It grows with ``theme["fontSize"]``.
@@ -75,7 +83,7 @@ class Treemap(PlotomicsWidget):
         tile: str = "squarify",
         padding_inner: float = 1.0,
         color_by: str = "parent",
-        colormap: str = "viridis",
+        colormap: Literal["viridis", "rdbu", "ltc", "ltcdiv"] = "viridis",
         label_min_size: float = 32.0,
         theme: dict | None = None,
         height: int = 480,
@@ -89,8 +97,7 @@ class Treemap(PlotomicsWidget):
             raise ValueError("`tile` must be 'squarify' or 'binary'.")
         if color_by not in ("parent", "value"):
             raise ValueError("`color_by` must be 'parent' or 'value'.")
-        if colormap not in ("viridis", "rdbu"):
-            raise ValueError("`colormap` must be 'viridis' or 'rdbu'.")
+        _check_choice(colormap, "colormap", _COLORMAPS)
 
         # String columns travel as JSON. Missing / NaN parents mark the root and
         # are normalized to empty strings (the JS side treats "" / "NA" as root).

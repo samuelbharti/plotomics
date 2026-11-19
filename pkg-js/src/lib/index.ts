@@ -9,8 +9,8 @@
 // Re-export each component factory + its options type here. Keep entries sorted
 // so parallel PRs append cleanly.
 
-export { makeAnywidget } from "./anywidget.js";
-export { registerComponent } from "./umd.js";
+export { makeAnywidget, type AnyModel } from "./anywidget.js";
+export { registerComponent, type AnyFactory } from "./umd.js";
 export { decodeModelData } from "./decode-model.js";
 // Lets a plot made in plain JavaScript follow the size of its element.
 export { autoResize } from "../core/dom.js";
@@ -19,12 +19,15 @@ export {
   createClustermap,
   defaultClustermapOptions,
   type ClustermapOptions,
+  type Linkage,
+  type Metric,
 } from "../components/clustermap.js";
 
 export {
   createEmbedding,
   defaultEmbeddingOptions,
   type EmbeddingOptions,
+  type EmbeddingColorMode,
 } from "../components/embedding.js";
 
 export {
@@ -79,6 +82,7 @@ export {
   createNetwork,
   defaultNetworkOptions,
   type NetworkOptions,
+  type NetworkLayout,
 } from "../components/network.js";
 
 export {

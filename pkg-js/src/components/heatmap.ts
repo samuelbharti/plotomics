@@ -263,6 +263,39 @@ export function axisPlan(
   return { key: `e${count}`, count, size: 0, scale: 1 };
 }
 
+/**
+ * The rows (or columns) of a window texture, from `lo` up to `hi`, for a
+ * view that starts at the fraction `start` of `n` rows and shows the
+ * fraction `view` of them across `px` device pixels, within the texture
+ * limit `max`: the rows in view, and as many again on each side so a pan
+ * stays inside it, cut to the limit and to the matrix. Past the limit the
+ * whole matrix goes in blocks of rows; a window holds a texel a row, so
+ * rows that each have a pixel show one by one. Null when the rows in view
+ * outnumber the pixels, which pooling serves, or pass the limit.
+ */
+export function windowRange(
+  n: number,
+  start: number,
+  view: number,
+  px: number,
+  max: number,
+): [number, number] | null {
+  if (!(n * view <= px + 1e-9)) return null;
+  const [first, last] = rowsInView(n, start, view);
+  if (last - first > max) return null;
+  if (n <= max) return [0, n];
+  const pad = Math.min(last - first, Math.floor((max - (last - first)) / 2));
+  return [Math.max(0, first - pad), Math.min(n, last + pad)];
+}
+
+/** The rows of `n` a view starting at `start` and `view` long shows. */
+function rowsInView(n: number, start: number, view: number): [number, number] {
+  return [
+    Math.max(0, Math.floor(start * n + 1e-6)),
+    Math.min(n, Math.ceil((start + view) * n - 1e-6)),
+  ];
+}
+
 /** The block of each of `n` rows under `plan`. */
 function blocksFor(plan: AxisPlan, n: number): Blocks {
   return plan.size === 0
@@ -433,6 +466,16 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   const pooled = new Map<string, PooledTexture>();
   // Pending pooling for the view once a wheel or a drag lets it rest.
   let settleTimer: ReturnType<typeof setTimeout> | null = null;
+  // A window of the matrix at a texel a row and column, for a view at rest
+  // past the texture limit (see windowRange), and the rows and columns it
+  // holds; one at a time.
+  let windowTex: {
+    rows: [number, number];
+    cols: [number, number];
+    texture: PooledTexture;
+  } | null = null;
+  // Where the texture the next draw reads starts, in data coordinates.
+  let drawOffset: [number, number] = [0, 0];
   // The texture the next draw reads, and its scale.
   let drawTex: Texture2D | null = null;
   let drawScale: [number, number] = [1, 1];
@@ -499,9 +542,10 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         uniform sampler2D valueTex;
         uniform sampler2D lut;
         uniform vec2 texScale;
+        uniform vec2 texOffset;
         varying vec2 uv;
         void main() {
-          float level = floor(texture2D(valueTex, uv * texScale).r * 255.0 + 0.5);
+          float level = floor(texture2D(valueTex, (uv - texOffset) * texScale).r * 255.0 + 0.5);
           gl_FragColor = texture2D(lut, vec2((level + 0.5) / 256.0, 0.5));
         }
       `,
@@ -534,6 +578,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         viewOrigin: () => [viewX, viewY] as [number, number],
         viewSize: () => [viewW, viewH] as [number, number],
         texScale: () => drawScale,
+        texOffset: () => drawOffset,
       },
       count: 4,
       primitive: "triangle strip",
@@ -766,7 +811,9 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
    * {@link standIn}), and the view's own texture is pooled once the view
    * rests for SETTLE_MS. A few pooled copies are kept, the one for the
    * whole matrix always among them, until the matrix or its colours change,
-   * so a pan or a zoom back draws without pooling.
+   * so a pan or a zoom back draws without pooling. Past the texture limit, a
+   * view whose rows and columns each have a pixel draws from a window of the
+   * matrix at a texel a row (see {@link windowRange}), built at rest.
    */
   function viewTexture(moving: boolean): PooledTexture {
     const base: PooledTexture = {
@@ -774,6 +821,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       rows: basePlans?.[0] ?? basePlan(shape.nrows, Number.POSITIVE_INFINITY),
       cols: basePlans?.[1] ?? basePlan(shape.ncols, Number.POSITIVE_INFINITY),
       scale: baseScale,
+      offset: [0, 0],
     };
     if (!regl || !basePlans) return base;
     // The texture for the whole matrix fits every view, so it is the one a
@@ -787,6 +835,19 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       wholeRows.key === basePlans[0].key && wholeCols.key === basePlans[1].key;
     if (!moving && !wholeIsBase && !pooled.has(whole)) {
       pooled.set(whole, pooledTexture(wholeRows, wholeCols));
+    }
+    // Past the texture limit, rows that each have a pixel come from a
+    // window at a texel a row. It is drawn whenever it holds the view, a
+    // moving one too, and built only at rest.
+    const win = viewWindow();
+    if (win) {
+      if (windowTex && holdsView(windowTex)) return windowTex.texture;
+      if (!moving) {
+        windowTex?.texture.tex.destroy();
+        windowTex = { ...win, texture: windowTexture(win.rows, win.cols) };
+        return windowTex.texture;
+      }
+      settleLater();
     }
     const rows = axisPlan(shape.nrows, viewH, canvas.height, maxTex);
     const cols = axisPlan(shape.ncols, viewW, canvas.width, maxTex);
@@ -821,6 +882,69 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       rows,
       cols,
       scale: [cols.scale, rows.scale],
+      offset: [0, 0],
+    };
+  }
+
+  /**
+   * The window the view wants: past the texture limit on either axis, when
+   * the rows and columns in view each have a pixel; else null.
+   */
+  function viewWindow(): {
+    rows: [number, number];
+    cols: [number, number];
+  } | null {
+    if (!basePlans || (basePlans[0].size <= 1 && basePlans[1].size <= 1)) {
+      return null;
+    }
+    const rows = windowRange(shape.nrows, viewY, viewH, canvas.height, maxTex);
+    const cols = windowRange(shape.ncols, viewX, viewW, canvas.width, maxTex);
+    return rows && cols ? { rows, cols } : null;
+  }
+
+  /** Whether a window holds every row and column in view. */
+  function holdsView(w: {
+    rows: [number, number];
+    cols: [number, number];
+  }): boolean {
+    const [r0, r1] = rowsInView(shape.nrows, viewY, viewH);
+    const [c0, c1] = rowsInView(shape.ncols, viewX, viewW);
+    return (
+      w.rows[0] <= r0 && r1 <= w.rows[1] && w.cols[0] <= c0 && c1 <= w.cols[1]
+    );
+  }
+
+  /**
+   * The rows `rows` and columns `cols` of the matrix as a texture, a texel
+   * each, placed over them by its offset and scale.
+   */
+  function windowTexture(
+    rows: [number, number],
+    cols: [number, number],
+  ): PooledTexture {
+    const [r0, r1] = rows;
+    const [c0, c1] = cols;
+    const h = r1 - r0;
+    const w = c1 - c0;
+    const cells = new Float32Array(h * w);
+    for (let r = 0; r < h; r += 1) {
+      const from = (r0 + r) * shape.ncols + c0;
+      cells.set(scaled.subarray(from, from + w), r * w);
+    }
+    const plan = (n: number, count: number): AxisPlan => ({
+      key: "w",
+      count,
+      size: 1,
+      scale: n / count,
+    });
+    return {
+      tex: (regl as Regl).texture(
+        textureOptions(normalizeToU8(cells, domain[0], domain[1]), h, w),
+      ),
+      rows: plan(shape.nrows, h),
+      cols: plan(shape.ncols, w),
+      scale: [shape.ncols / w, shape.nrows / h],
+      offset: [c0 / shape.ncols, r0 / shape.nrows],
     };
   }
 
@@ -855,6 +979,8 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   function dropPooled() {
     for (const p of pooled.values()) p.tex.destroy();
     pooled.clear();
+    windowTex?.texture.tex.destroy();
+    windowTex = null;
   }
 
   function rebuildLUT() {
@@ -896,6 +1022,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       const view = viewTexture(moving);
       drawTex = view.tex;
       drawScale = view.scale;
+      drawOffset = view.offset;
       draw();
     } catch {
       drawFailed = true;
@@ -1339,12 +1466,16 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
 };
 
 // ---- small utilities ------------------------------------------------------
-/** A texture of the matrix, the plans it was pooled by, and its scale. */
+/**
+ * A texture of the matrix, the plans it was pooled by, and its scale and
+ * offset from data to texture coordinates.
+ */
 interface PooledTexture {
   tex: Texture2D;
   rows: AxisPlan;
   cols: AxisPlan;
   scale: [number, number];
+  offset: [number, number];
 }
 /** Texture options for an `nrows` x `ncols` matrix of levels. */
 function textureOptions(data: Uint8Array, nrows: number, ncols: number) {
