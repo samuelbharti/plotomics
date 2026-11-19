@@ -3,6 +3,7 @@ import { page } from "vitest/browser";
 import { createProfile } from "../../src/components/profile.js";
 import { createUpset } from "../../src/components/upset.js";
 import {
+  DEFAULT_PADDING,
   type PlotomicsInstance,
   defaultTheme,
   textSizes,
@@ -108,12 +109,18 @@ async function gridUnderBar(
 ) {
   const fill = pixel(el, at.barX, at.y - 5);
   const row = Math.round(at.y);
+  // The plot box sits inside the theme padding, which the PNG keeps.
+  const box = (
+    el.querySelector("svg") as SVGSVGElement
+  ).getBoundingClientRect();
+  const e = el.getBoundingClientRect();
+  const [ox, oy] = [box.left - e.left, box.top - e.top];
   let across = 0;
   let beside = 255;
   for (let dy = -1; dy <= 1; dy += 1) {
-    const p = await pngPixel(png, cssWidth, at.barX, row + dy);
+    const p = await pngPixel(png, cssWidth, at.barX + ox, row + dy + oy);
     across = Math.max(across, far(p, fill));
-    const g = await pngPixel(png, cssWidth, at.gapX, row + dy);
+    const g = await pngPixel(png, cssWidth, at.gapX + ox, row + dy + oy);
     beside = Math.min(beside, far(g, GRID));
   }
   return { across, beside, fill };
@@ -144,10 +151,11 @@ describe("profile gridlines", () => {
   /** The gridline at 4: it crosses the first bar, of 10. */
   function where(el: HTMLElement) {
     const t = tick(el, "4");
-    // Tick labels end 8 px left of the bars; the plot keeps 14 px on the
-    // right, and each of the four bars sits in the middle of its slot.
+    // Tick labels end 8 px left of the bars; the plot keeps 4 px on the
+    // right of its box, and each of the four bars sits in the middle of
+    // its slot.
     const left = t.x + 8;
-    const slot = (W - left - 14) / 4;
+    const slot = (boxWidth(el) - left - 4) / 4;
     return { y: t.y, barX: left + slot / 2, gapX: left + slot };
   }
 
@@ -184,10 +192,11 @@ describe("upset gridlines", () => {
   /** The gridline at 40: it crosses the first bar, of 124. */
   function where(el: HTMLElement) {
     const t = tick(el, "40");
-    // Tick labels end 6 px left of the bars; the plot keeps 12 px on the
-    // right, and each of the three bars sits in the middle of its column.
+    // Tick labels end 6 px left of the bars; the plot keeps 2 px on the
+    // right of its box, and each of the three bars sits in the middle of
+    // its column.
     const left = t.x + 6;
-    const col = (W - left - 12) / 3;
+    const col = (boxWidth(el) - left - 2) / 3;
     return { y: t.y, barX: left + col / 2, gapX: left + col };
   }
 
@@ -231,6 +240,11 @@ function yTicks(el: HTMLElement): string[] {
  * x of the middle of bar `i` of `n` in a profile `width` px wide, from the
  * x of its y tick labels, which end 8 px left of the bars.
  */
+/**
+ * The x of the middle of bar `i` of `n` in a profile: the bars run from 8 px
+ * right of the tick labels to 4 px from the right edge of the plot box,
+ * the element `width` px wide less the theme padding.
+ */
 function profileBarX(
   el: HTMLElement,
   i: number,
@@ -239,7 +253,15 @@ function profileBarX(
   zero = "0",
 ) {
   const left = tick(el, zero).x + 8;
-  return left + ((width - left - 14) / n) * (i + 0.5);
+  const box = width - 2 * DEFAULT_PADDING;
+  return left + ((box - left - 4) / n) * (i + 0.5);
+}
+
+/** The width of the plot box: the element less the theme padding. */
+function boxWidth(el: HTMLElement): number {
+  return Number(
+    (el.querySelector("svg") as SVGSVGElement).getAttribute("width"),
+  );
 }
 
 describe("profile with values that are not finite, as shares", () => {
@@ -355,9 +377,10 @@ describe("profile with negative values", () => {
     expect(ink(neg, zero + 3)).toBe(true);
     expect(ink(neg, at3 - 3)).toBe(true);
     expect(ink(neg, at3 + 3)).toBe(false);
-    // Nothing below the plot: the band of bar labels and the bottom row.
+    // Nothing below the plot: the band of bar labels and the bottom row
+    // of the plot box, inside the theme padding.
     expect(ink(neg, bottom + 3)).toBe(false);
-    expect(ink(neg, 299)).toBe(false);
+    expect(ink(neg, 300 - 2 * DEFAULT_PADDING - 1)).toBe(false);
     // A positive bar rises from the zero line and stops there.
     const pos = profileBarX(el, 0, 3, W);
     expect(ink(pos, zero - 3)).toBe(true);

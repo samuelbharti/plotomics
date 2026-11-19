@@ -271,14 +271,25 @@ export function rangeTicks(length: number, count = 6): number[] {
  * Round ticks from 0 that fit an axis `lengthPx` long: the most intervals,
  * up to `maxCount`, whose labels keep a gap of at least `minGapPx`. When
  * even the coarsest round step puts the labels closer, the axis keeps two
- * labels, 0 and its round top, with that top as the step.
+ * labels, 0 and its round top, with that top as the step, when they keep
+ * `endGapPx` between them: two labels alone need only to stay clear of
+ * each other, so the label size and a px or two do (by default the axis
+ * asks `minGapPx` of them too). When those two do not fit either, it keeps
+ * the top alone, and no tick at all on an axis with no length. So no two
+ * labels ever come closer than `minGapPx`, or `endGapPx` for that pair.
  */
 export function fitZeroTicks(
   max: number,
   lengthPx: number,
-  opts: { integer?: boolean; maxCount?: number; minGapPx?: number } = {},
+  opts: {
+    integer?: boolean;
+    maxCount?: number;
+    minGapPx?: number;
+    endGapPx?: number;
+  } = {},
 ): { ticks: number[]; top: number; step: number } {
   const minGap = opts.minGapPx ?? 16;
+  const endGap = opts.endGapPx ?? minGap;
   for (let count = opts.maxCount ?? 5; count >= 1; count -= 1) {
     const t = zeroTicks(max, count, opts);
     if (lengthPx / Math.max(1, t.ticks.length - 1) >= minGap) return t;
@@ -286,7 +297,8 @@ export function fitZeroTicks(
   // The coarsest step can still leave two intervals, such as 0, 2 and 4
   // for a top count of 3: three labels where only two fit.
   const { top } = zeroTicks(max, 1, opts);
-  return { ticks: [0, top], top, step: top };
+  const ticks = lengthPx >= endGap ? [0, top] : lengthPx > 0 ? [top] : [];
+  return { ticks, top, step: top };
 }
 
 /**

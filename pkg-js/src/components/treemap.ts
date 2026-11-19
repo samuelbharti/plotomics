@@ -19,12 +19,14 @@ import {
   resolveTheme,
   textSizes,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   releaseContainer,
   textWidth,
   dpr,
   serializeSVG,
+  padSVG,
   compositePNG,
   categoricalScale,
   ramp,
@@ -247,8 +249,18 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   svg.style.cssText =
     "position:absolute;inset:0;pointer-events:none;overflow:visible;";
-  el.appendChild(canvas);
-  el.appendChild(svg);
+  // The size of the element, and the plot box inside its padding: `width`
+  // and `height` are the box, which every layer and coordinate is in.
+  const plot = createPlotBox(el);
+  let outerW = 0;
+  let outerH = 0;
+  /** Fit the plot box to an element `w` x `h` px and take its size. */
+  function fitBox(w = outerW, h = outerH) {
+    outerW = w;
+    outerH = h;
+    ({ width, height } = plot.fit(w, h, theme));
+  }
+  plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
   // SVG text in the current theme font.
@@ -712,8 +724,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
   }
 
   function doResize(w: number, h: number) {
-    width = w;
-    height = h;
+    fitBox(w, h);
     computeLayout();
     render();
   }
@@ -721,8 +732,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
   // Initial sizing from the container (or sensible defaults when detached).
   {
     const m = measure(el);
-    width = m.width;
-    height = m.height;
+    fitBox(m.width, m.height);
     rebuild();
   }
 
@@ -737,6 +747,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       theme = resolveTheme(opts.theme);
       sizes = textSizes(theme);
       assignPalette();
+      fitBox();
       // Keep the current focus; only re-layout + recolor.
       computeLayout();
       render();
@@ -754,7 +765,9 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       img.setAttribute("height", String(plotH()));
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
-      return serializeSVG(out);
+      return serializeSVG(
+        padSVG(out, width, height, plot.padding, theme.background),
+      );
     },
     async exportPNG(scale = 2) {
       // The tiles below the breadcrumb, with the labels over them.
@@ -762,6 +775,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
         width,
         height,
         scale,
+        padding: plot.padding,
         background: theme.background,
         layers: [
           { canvas, x: 0, y: plotTop(), width: plotW(), height: plotH() },
@@ -775,8 +789,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       canvas.removeEventListener("mouseleave", onLeave);
       canvas.removeEventListener("click", onClick);
       tooltip.destroy();
-      canvas.remove();
-      svg.remove();
+      plot.remove();
     },
   };
 

@@ -42,7 +42,11 @@ class Volcano(PlotomicsWidget):
     show_threshold_lines:
         Draw the fold-change / p-value threshold guide lines.
     theme:
-        Optional theme overrides forwarded to the JS renderer.
+        Optional theme overrides forwarded to the JS renderer. Its
+        ``padding`` entry is the space in px between the edge of the widget
+        and the plot: one number for every side, or a dict with any of the
+        keys ``top``, ``right``, ``bottom`` and ``left``, a side left out
+        keeping the default of 10.
     height:
         Initial widget height in CSS pixels.
 

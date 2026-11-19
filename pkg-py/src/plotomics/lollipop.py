@@ -82,7 +82,10 @@ class Lollipop(PlotomicsWidget):
     theme:
         Optional theme overrides forwarded to the JS renderer. Its
         ``categorical`` palette colours the variant classes only, not the
-        domains; see ``domain_colors``.
+        domains; see ``domain_colors``. Its ``padding`` entry is the space in
+        px between the edge of the widget and the plot: one number for every
+        side, or a dict with any of the keys ``top``, ``right``, ``bottom`` and
+        ``left``, a side left out keeping the default of 10.
     height:
         Initial widget height in CSS pixels.
 

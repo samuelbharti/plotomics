@@ -8,6 +8,7 @@ serialized as JSON. anywidget delivers the buffer to the browser as a
 
 from __future__ import annotations
 
+import math
 import warnings
 from pathlib import Path
 from typing import Any, Mapping
@@ -229,6 +230,62 @@ def _reject_lazy(data: Any) -> None:
         )
 
 
+_PADDING_SIDES = ("top", "right", "bottom", "left")
+_PADDING_ERROR = (
+    "theme['padding'] must be a number of 0 or more, or a dict of them "
+    "with keys from top, right, bottom and left."
+)
+
+
+def _padding_number(value: Any) -> float | None:
+    """``value`` as a float when it is a finite number of 0 or more, else None."""
+    if isinstance(value, (bool, np.bool_)):
+        return None
+    if not isinstance(value, (int, float, np.integer, np.floating)):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:
+        # An int past the float range, such as 10**400.
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
+
+
+def _check_theme_padding(options: Mapping[str, Any]) -> dict[str, Any]:
+    """Check ``options["theme"]["padding"]`` and shape it for the browser.
+
+    The padding is the space in px between the edge of the widget and the
+    plot. A number of 0 or more sets all four sides and is sent as a number.
+    A dict with keys from top, right, bottom and left sets those sides and is
+    sent as an object. ``None`` sends no padding. Anything else (a negative
+    number, NaN, infinity, text, another key) raises the ValueError that R
+    raises too.
+    """
+    theme = options.get("theme")
+    if not isinstance(theme, Mapping) or "padding" not in theme:
+        return dict(options)
+    padding = theme["padding"]
+    theme = dict(theme)
+    if padding is None:
+        del theme["padding"]
+        return {**options, "theme": theme}
+    if isinstance(padding, Mapping):
+        sides = {k: _padding_number(v) for k, v in padding.items()}
+        if (
+            not sides
+            or any(k not in _PADDING_SIDES for k in sides)
+            or any(v is None for v in sides.values())
+        ):
+            raise ValueError(_PADDING_ERROR)
+        theme["padding"] = sides
+    else:
+        number = _padding_number(padding)
+        if number is None:
+            raise ValueError(_PADDING_ERROR)
+        theme["padding"] = number
+    return {**options, "theme": theme}
+
+
 class PlotomicsWidget(anywidget.AnyWidget):
     """Base class for all plotomics widgets.
 
@@ -249,6 +306,16 @@ class PlotomicsWidget(anywidget.AnyWidget):
     # or a single clicked node id (a string) or None for a click selection
     # (Network). Observe it with ``widget.observe(fn, names="selected")``.
     selected = traitlets.Any(default_value=[]).tag(sync=True)
+    # Whether ``options["theme"]`` is a plotomics theme, whose padding is
+    # checked. Gosling takes a Gosling theme there.
+    _plotomics_theme = True
+
+    @traitlets.validate("options")
+    def _validate_options(self, proposal: Any) -> dict[str, Any]:
+        options = proposal["value"]
+        if not self._plotomics_theme:
+            return options
+        return _check_theme_padding(options)
 
     def export(self, fmt: str = "png") -> None:
         """Download the current on-screen view as ``"png"`` or ``"svg"``.

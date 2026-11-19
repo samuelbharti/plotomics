@@ -34,6 +34,7 @@ import {
   resolveTheme,
   textSizes,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   textWidth,
@@ -42,6 +43,7 @@ import {
   legendCandidates,
   legendLabelsFit,
   serializeSVG,
+  padSVG,
   compositePNG,
   releaseContainer,
   categoricalColors,
@@ -132,6 +134,8 @@ const LEGEND_MAX = 14;
 const MAX_LEGEND_SHARE = 0.35;
 /** Space left and right of the legend, in px. */
 const LEGEND_PAD = 8;
+/** Room sigma keeps by default between the node centres and its edges. */
+const STAGE_PADDING = 30;
 /** Sigma's canvases, bottom first. A hovered node is redrawn on hoverNodes
  * above the label box that hovers paints. */
 const LAYER_ORDER = [
@@ -241,13 +245,23 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   el.style.position = el.style.position || "relative";
   el.style.background = theme.background;
   const host = document.createElement("div");
-  host.style.cssText = "position:absolute;left:0;top:0;";
-  el.appendChild(host);
+  host.style.cssText = "position:absolute;left:0;top:0;overflow:hidden;";
   // The legend, over the gutter right of the graph.
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   svg.style.cssText =
     "position:absolute;inset:0;pointer-events:none;overflow:visible;";
-  el.appendChild(svg);
+  // Sigma and the legend draw in the plot box: the element less the theme
+  // padding. `width` and `height` below are the size of the box.
+  const plot = createPlotBox(el);
+  plot.box.append(host, svg);
+  let outerW = 0;
+  let outerH = 0;
+  /** Fit the plot box to an element `w` x `h` px and take its size. */
+  function fitBox(w = outerW, h = outerH) {
+    outerW = w;
+    outerH = h;
+    ({ width, height } = plot.fit(w, h, theme));
+  }
   const tooltip: Tooltip = createTooltip(el, theme);
 
   let width = 0;
@@ -323,6 +337,11 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     renderer?.kill();
     const labelSize = textSizes(theme).label;
     renderer = new Sigma(graph, host, {
+      stagePadding: stagePadding(),
+      // The padding can take the whole element, which leaves sigma's
+      // container no width or height. Sigma would throw there; with this
+      // setting it draws 1 px canvases, which the host hides.
+      allowInvalidContainer: true,
       defaultNodeColor: opts.defaultNodeColor,
       defaultEdgeColor: opts.defaultEdgeColor,
       labelColor: { color: theme.foreground },
@@ -383,6 +402,31 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     renderer.on("clickStage", () => {
       opts.onSelect?.(null);
     });
+  }
+
+  /**
+   * Room sigma keeps between the node centres and the edges of the plot
+   * box. Sigma keeps 30 px of its own; the theme padding now gives part of
+   * it, so sigma keeps 30 px less the smallest side of the padding, and the
+   * total stays 30 px with the default. It never keeps less than the
+   * radius of the largest node and the 2 px of its hover box, nor less
+   * than the label size and 4 px, so the label and the hover box of a node
+   * at the edge are not cut.
+   */
+  function stagePadding(): number {
+    const p = plot.padding;
+    let largest = 0;
+    graph.forEachNode((_, attrs) => {
+      const size = Number(attrs.size);
+      if (Number.isFinite(size) && size > largest) largest = size;
+    });
+    const pad = Math.min(p.top, p.right, p.bottom, p.left);
+    const label = textSizes(theme).label;
+    return Math.max(
+      Math.ceil(largest + 2),
+      Math.ceil(label + 4),
+      STAGE_PADDING - pad,
+    );
   }
 
   /** Side of a legend swatch: 9 px next to the default 11 px labels. */
@@ -510,8 +554,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   // Initial render.
   {
     const m = measure(el);
-    width = m.width;
-    height = m.height;
+    fitBox(m.width, m.height);
     applyData();
   }
 
@@ -524,11 +567,11 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       el.style.background = theme.background;
+      fitBox();
       applyData();
     },
     resize(w, h) {
-      width = w;
-      height = h;
+      fitBox(w, h);
       layout();
       renderer?.resize();
       renderer?.refresh();
@@ -541,11 +584,6 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       if (!canvas) return null;
       const out = svg.cloneNode(true) as SVGSVGElement;
       out.removeAttribute("style");
-      out.setAttribute("viewBox", `0 0 ${width} ${height}`);
-      const bg = document.createElementNS(SVG_NS, "rect");
-      bg.setAttribute("width", String(width));
-      bg.setAttribute("height", String(height));
-      bg.setAttribute("fill", theme.background);
       const img = document.createElementNS(SVG_NS, "image");
       img.setAttribute("x", "0");
       img.setAttribute("y", "0");
@@ -553,8 +591,11 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       img.setAttribute("height", String(height));
       img.setAttributeNS(XLINK_NS, "xlink:href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
-      out.insertBefore(bg, out.firstChild);
-      return serializeSVG(out);
+      // The theme padding goes around the plot, with the background under
+      // all of it.
+      return serializeSVG(
+        padSVG(out, width, height, plot.padding, theme.background),
+      );
     },
     async exportPNG(scale = 2) {
       const layers = sigmaLayers();
@@ -565,6 +606,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
         width,
         height,
         scale,
+        padding: plot.padding,
         background: theme.background,
         layers: layers.map((canvas) => ({
           canvas,
@@ -582,8 +624,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       tooltip.destroy();
       renderer?.kill();
       renderer = null;
-      host.remove();
-      svg.remove();
+      plot.remove();
     },
   };
 
@@ -592,12 +633,15 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
    * there is nothing to export.
    */
   function sigmaLayers(): HTMLCanvasElement[] | null {
-    if (!renderer) return null;
+    // A hidden container (a collapsed notebook output), or a plot box the
+    // padding takes whole, has no size: there is nothing to export.
+    if (!renderer || host.offsetWidth === 0 || host.offsetHeight === 0) {
+      return null;
+    }
     // Sigma's WebGL layers do not keep their drawing buffer, so a copy taken
     // after the frame was shown reads a cleared canvas. refresh() renders
     // synchronously, and the caller copies the canvases before the browser
-    // clears them. A hidden container (a collapsed notebook output) has no
-    // size, and Sigma then throws; there is nothing to export in that case.
+    // clears them.
     try {
       renderer.refresh();
     } catch {

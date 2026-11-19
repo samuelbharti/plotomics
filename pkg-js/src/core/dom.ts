@@ -1,6 +1,10 @@
 /** Small DOM helpers shared by components (tooltip, sizing, element reset). */
 
-import type { PlotomicsTheme } from "./theme.js";
+import {
+  type PlotPadding,
+  type PlotomicsTheme,
+  themePadding,
+} from "./theme.js";
 
 export function clearElement(el: HTMLElement): void {
   while (el.firstChild) el.removeChild(el.firstChild);
@@ -37,7 +41,9 @@ export function createTooltip(
   if (getComputedStyle(container).position === "static") {
     container.style.position = "relative";
   }
-  container.appendChild(tip);
+  // The tip goes first, before the frame of the plot (see createPlotBox),
+  // so it stays the first div in the container.
+  container.insertBefore(tip, container.firstChild);
 
   return {
     show(html, clientX, clientY) {
@@ -54,6 +60,78 @@ export function createTooltip(
     },
     destroy() {
       tip.remove();
+    },
+  };
+}
+
+/**
+ * The frame of a plot and the box in it that holds the plot's layers.
+ *
+ * The frame fills the element's padding box and takes the theme
+ * background. The box sits the theme padding in from each side of the
+ * frame, so every layer in it, and every coordinate a layer draws at,
+ * starts inside the padding.
+ */
+export interface PlotBox {
+  /** The element the plot's layers go in. */
+  readonly box: HTMLDivElement;
+  /** The padding in px, from the last {@link PlotBox.fit}. */
+  readonly padding: PlotPadding;
+  /**
+   * Place the box in an element `width` x `height` px, with the padding and
+   * the background of `theme`. Returns the size of the box: the size of the
+   * element less the padding, never below 0.
+   */
+  fit(
+    width: number,
+    height: number,
+    theme: Pick<PlotomicsTheme, "padding" | "background">,
+  ): { width: number; height: number };
+  /**
+   * The point `clientX`, `clientY` in px from the top left corner of the
+   * box. It is read from the box itself, so it lines up with the layers in
+   * an element with a CSS border too.
+   */
+  pointer(clientX: number, clientY: number): { x: number; y: number };
+  /** Remove the frame and the layers in it. */
+  remove(): void;
+}
+
+/**
+ * Add the frame of a plot to `el`, with the box for its layers inside
+ * (see {@link PlotBox}). Call `fit` with the size of the element and the
+ * theme before the first draw, and again on each resize and new theme.
+ */
+export function createPlotBox(el: HTMLElement): PlotBox {
+  const frame = document.createElement("div");
+  frame.style.cssText = "position:absolute;inset:0;";
+  const box = document.createElement("div");
+  box.style.cssText = "position:absolute;left:0;top:0;";
+  frame.appendChild(box);
+  el.appendChild(frame);
+  let padding: PlotPadding = { top: 0, right: 0, bottom: 0, left: 0 };
+  return {
+    box,
+    get padding() {
+      return padding;
+    },
+    fit(width, height, theme) {
+      padding = themePadding(theme);
+      frame.style.background = theme.background;
+      const w = Math.max(0, width - padding.left - padding.right);
+      const h = Math.max(0, height - padding.top - padding.bottom);
+      box.style.left = `${padding.left}px`;
+      box.style.top = `${padding.top}px`;
+      box.style.width = `${w}px`;
+      box.style.height = `${h}px`;
+      return { width: w, height: h };
+    },
+    pointer(clientX, clientY) {
+      const r = box.getBoundingClientRect();
+      return { x: clientX - r.left, y: clientY - r.top };
+    },
+    remove() {
+      frame.remove();
     },
   };
 }

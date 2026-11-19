@@ -411,9 +411,12 @@ describe("clustermap colours in a browser", () => {
     const blob = (await plot.exportPNG(1)) as Blob;
     const png = await createImageBitmap(blob);
     const k = png.width / el.clientWidth;
-    const x = (canvas.offsetLeft + canvas.clientWidth / 2) * k;
-    const y0 = (canvas.offsetTop + 2) * k;
-    const y1 = (canvas.offsetTop + canvas.clientHeight - 2) * k;
+    // The canvas sits inside the theme padding, which the PNG keeps.
+    const c = canvas.getBoundingClientRect();
+    const e = el.getBoundingClientRect();
+    const x = (c.left - e.left + c.width / 2) * k;
+    const y0 = (c.top - e.top + 2) * k;
+    const y1 = (c.bottom - e.top - 2) * k;
     expect(columnRuns(png, png.width, png.height, x, lit, y0, y1)).toBe(
       outliers.length,
     );

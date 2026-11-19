@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createNetwork } from "../../src/components/network.js";
-import { OKABE_ITO, type PlotomicsInstance } from "../../src/core/index.js";
+import {
+  DEFAULT_PADDING,
+  OKABE_ITO,
+  type PlotomicsInstance,
+} from "../../src/core/index.js";
 import { drawnPixels } from "./helpers.js";
 
 // Sigma draws with WebGL, so export and the renderer's own checks need a
@@ -233,7 +237,12 @@ describe("network labels and group legend", () => {
       const el = container();
       instances.push(createNetwork(el, { data, options }));
       expect(legendTexts(el)).toEqual([]);
-      expect(graphRight(el)).toBeCloseTo(el.getBoundingClientRect().right, 0);
+      // The graph runs to the right edge of the plot box, inside the theme
+      // padding.
+      expect(graphRight(el)).toBeCloseTo(
+        el.getBoundingClientRect().right - DEFAULT_PADDING,
+        0,
+      );
     }
   });
 
@@ -282,6 +291,17 @@ describe("network labels and group legend", () => {
   });
 });
 
+/**
+ * A network with no theme padding, for tests that read its layout at the
+ * widget's own size.
+ */
+function flush(el: HTMLElement, args: Parameters<typeof createNetwork>[1]) {
+  return createNetwork(el, {
+    ...args,
+    options: { ...args.options, theme: { padding: 0 } },
+  });
+}
+
 describe("network legend in a small widget", () => {
   /** Four nodes with the given groups. */
   function grouped(groups: (string | null)[]) {
@@ -293,7 +313,7 @@ describe("network legend in a small widget", () => {
 
   it("keeps every legend row inside a short widget", () => {
     const el = container(600, 40);
-    instances.push(createNetwork(el, { data: grouped(["A", "B", "C", null]) }));
+    instances.push(flush(el, { data: grouped(["A", "B", "C", null]) }));
     // Before the fix the rows were "A", "+2 more" and "NA", the last at
     // baseline 44 in a 40 px widget.
     expect(legendTexts(el).map((t) => t.textContent)).toEqual(["A", "+2 more"]);
@@ -307,7 +327,7 @@ describe("network legend in a small widget", () => {
 
   it("leaves the legend out of a widget too short for one row", () => {
     const el = container(600, 24);
-    instances.push(createNetwork(el, { data: grouped(["A", "B", "C", null]) }));
+    instances.push(flush(el, { data: grouped(["A", "B", "C", null]) }));
     expect(legendTexts(el)).toEqual([]);
     expect(graphRight(el)).toBeCloseTo(el.getBoundingClientRect().right, 0);
   });
@@ -315,7 +335,7 @@ describe("network legend in a small widget", () => {
   it("leaves the legend out when its gutter cannot show the names", () => {
     const el = container(120, 300);
     const groups = ["Cytotoxic T cells", "B cells", "B cells", "B cells"];
-    instances.push(createNetwork(el, { data: grouped(groups) }));
+    instances.push(flush(el, { data: grouped(groups) }));
     // Before the fix the legend read "\u2026" twice and the graph kept 78 px.
     expect(legendTexts(el)).toEqual([]);
     expect(graphRight(el)).toBeCloseTo(el.getBoundingClientRect().right, 0);
@@ -324,7 +344,7 @@ describe("network legend in a small widget", () => {
   it("keeps a legend whose names show a few characters", () => {
     const el = container(200, 300);
     const groups = ["Cytotoxic T cells", "B cells", "B cells", "B cells"];
-    instances.push(createNetwork(el, { data: grouped(groups) }));
+    instances.push(flush(el, { data: grouped(groups) }));
     const shown = legendTexts(el).map((t) => t.textContent ?? "");
     expect(shown.length).toBe(2);
     expect(shown[0]?.endsWith("\u2026")).toBe(true);
@@ -350,8 +370,10 @@ describe("network legend as the widget grows taller", () => {
         });
         if (legendTexts(el).length > 0) shown.push(height);
         else {
+          // The graph runs to the right edge of the plot box, inside the
+          // theme padding, also where the padding takes the whole height.
           expect(graphRight(el)).toBeCloseTo(
-            el.getBoundingClientRect().right,
+            el.getBoundingClientRect().right - DEFAULT_PADDING,
             0,
           );
         }
