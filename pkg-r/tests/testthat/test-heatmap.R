@@ -71,6 +71,26 @@ test_that("bioheatmap() forwards a theme override", {
   expect_null(bioheatmap(m)$x$options$theme)
 })
 
+test_that("bioheatmap() leaves the colormap to the browser unless one is given", {
+  m <- matrix(rnorm(6), nrow = 2)
+  # With no colormap the key is left out, and the browser draws z-scores
+  # with "rdbu" and other values with "viridis".
+  expect_null(formals(bioheatmap)$colormap)
+  expect_false("colormap" %in% names(bioheatmap(m, z_score = TRUE)$x$options))
+  expect_false("colormap" %in% names(bioheatmap(m)$x$options))
+  # A colormap that is given wins over the z-score default.
+  w <- bioheatmap(m, colormap = "viridis", z_score = TRUE)
+  expect_equal(w$x$options$colormap, "viridis")
+})
+
+test_that("bioheatmap() accepts every colormap the browser draws", {
+  m <- matrix(1:4, nrow = 2)
+  for (cm in c("viridis", "rdbu", "ltc", "ltcdiv")) {
+    expect_equal(bioheatmap(m, colormap = cm)$x$options$colormap, cm)
+  }
+  expect_error(bioheatmap(m, colormap = "plasma"), "should be one of")
+})
+
 test_that("bioheatmap() carries the colour bar title", {
   m <- matrix(1:4, nrow = 2)
   w <- bioheatmap(m, legend_title = "log2 expression")

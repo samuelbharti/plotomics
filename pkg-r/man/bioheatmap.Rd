@@ -7,7 +7,7 @@
 \usage{
 bioheatmap(
   mat,
-  colormap = c("viridis", "rdbu"),
+  colormap = NULL,
   z_score = FALSE,
   vmin = NULL,
   vmax = NULL,
@@ -21,7 +21,7 @@ bioheatmap(
 
 heatmap_plotomics(
   mat,
-  colormap = c("viridis", "rdbu"),
+  colormap = NULL,
   z_score = FALSE,
   vmin = NULL,
   vmax = NULL,
@@ -37,16 +37,23 @@ heatmap_plotomics(
 \item{mat}{A numeric matrix (rows x columns). \code{rownames(mat)} and
 \code{colnames(mat)}, when present, are used as row/column tick labels. A
 missing cell (\code{NA}, \code{NaN} or an infinite value) is drawn grey and left
-out of the colour range and the z-score, with a warning.}
+out of the colour range and the z-score, with a warning. Where several
+rows or columns share a pixel, the pixel shows the mean of their
+finite cells, so it is grey only when all of them are missing.}
 
-\item{colormap}{Color ramp: \code{"viridis"} (sequential) or \code{"rdbu"} (diverging).}
+\item{colormap}{Color ramp: sequential \code{"viridis"} or \code{"ltc"} (an earthy
+teal to sand to rust ramp), or diverging \code{"rdbu"} or \code{"ltcdiv"} (its
+counterpart, neutral cream at the midpoint). \code{NULL} (the default) uses
+\code{"rdbu"} when \code{z_score} is \code{TRUE}, so values above and below the row
+mean get opposite colours, and \code{"viridis"} otherwise.}
 
 \item{z_score}{Logical; if \code{TRUE}, each row is z-score normalized before
 coloring (a row-centered heatmap).}
 
 \item{vmin, vmax}{Lower/upper clamp of the color domain. \code{NULL} (the default)
-auto-scales from the data; for \code{"rdbu"} the auto domain is symmetric about
-zero.}
+auto-scales from the data. For a diverging colormap the auto domain is
+symmetric about zero, and a positive \code{vmax} or a negative \code{vmin} given
+alone is mirrored about zero, so zero keeps the neutral colour.}
 
 \item{show_colorbar}{Logical; draw the colorbar legend.}
 
@@ -71,8 +78,12 @@ fragment shader (via \code{regl}), so matrices with a million or more cells pan
 and zoom smoothly. The colorbar legend and row/column tick labels are drawn
 as crisp vector overlays; when rows or columns are too tight for every
 label, every second, third or fourth one is drawn, and zooming in shows
-the rest. A matrix larger than the GPU's texture limit is averaged down to
-the limit for drawing.
+the rest. A matrix with more rows or columns than the plot has pixels
+is pooled for drawing: each pixel shows the mean of the cells under it,
+so a lone outlier row still shows, fainter the more rows share its pixel.
+A matrix with more rows or columns than the GPU's texture limit is
+averaged in blocks of two or more rows (or columns) to fit it, so zoomed
+in, the rows of a block share their mean.
 }
 \details{
 The function is exported as \code{bioheatmap()} (and aliased as \code{heatmap_plotomics()})
