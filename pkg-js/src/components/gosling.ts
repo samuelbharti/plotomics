@@ -33,6 +33,7 @@ import {
   type GoslingOptions,
   defaultGoslingOptions,
   embedOptions,
+  goslingPadding,
   isValidSpec,
   mergeGoslingOptions,
 } from "./gosling-spec.js";
@@ -106,7 +107,12 @@ export const createGosling: PlotomicsFactory<GoslingOptions> = (
         // which throws if the view is unmounted first. Without it the new
         // spec applies at once, as each embed() call did.
         reactive: false,
-        ...embedOptions(opts),
+        // The host already pads by the theme default, so Gosling, unless
+        // told otherwise, pads by the rest of its own 60 px.
+        ...embedOptions({
+          ...opts,
+          padding: goslingPadding(opts.padding, pad.top),
+        }),
       }),
     );
   }

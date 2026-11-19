@@ -46,7 +46,9 @@ export function zeroTicks(
 /**
  * A tick label with the decimals its step needs. `percent` prints a fraction
  * as a percentage. Large values print as thousands ("k") or millions ("M")
- * when the step is a whole number of them, so the label stays exact. A step
+ * when the step is a whole number of them, so the label stays exact. A value
+ * of a million or more prints in millions whenever the step is a whole
+ * number of ten thousands, so "1.5M" never reads "1500k". A step
  * of 0 marks the one tick of a flat range, which has no step: it prints the
  * value itself, every digit of its whole part and up to six significant
  * digits in all, in exponent form below 1e-6, so a small value never reads
@@ -70,7 +72,11 @@ export function formatTick(
   if (opts.percent) {
     return `${(value * 100).toFixed(stepDecimals(step * 100))}%`;
   }
-  if (value !== 0 && step >= 1e6 && step % 1e5 === 0) {
+  if (
+    value !== 0 &&
+    (step >= 1e6 || Math.abs(value) >= 1e6) &&
+    step % 1e4 === 0
+  ) {
     return `${(value / 1e6).toFixed(stepDecimals(step / 1e6))}M`;
   }
   if (value !== 0 && step >= 1e3 && step % 100 === 0) {
@@ -196,7 +202,9 @@ export function rangeTicks(length: number, count = 6): number[] {
 
 /**
  * Round ticks from 0 that fit an axis `lengthPx` long: the most intervals,
- * up to `maxCount`, whose labels keep a gap of at least `minGapPx`.
+ * up to `maxCount`, whose labels keep a gap of at least `minGapPx`. When
+ * even the coarsest round step puts the labels closer, the axis keeps two
+ * labels, 0 and its round top, with that top as the step.
  */
 export function fitZeroTicks(
   max: number,
@@ -208,7 +216,10 @@ export function fitZeroTicks(
     const t = zeroTicks(max, count, opts);
     if (lengthPx / Math.max(1, t.ticks.length - 1) >= minGap) return t;
   }
-  return zeroTicks(max, 1, opts);
+  // The coarsest step can still leave two intervals, such as 0, 2 and 4
+  // for a top count of 3: three labels where only two fit.
+  const { top } = zeroTicks(max, 1, opts);
+  return { ticks: [0, top], top, step: top };
 }
 
 /**

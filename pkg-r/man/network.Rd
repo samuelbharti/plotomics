@@ -11,10 +11,11 @@ network(
   iterations = 200,
   default_node_color = "#7c8598",
   default_edge_color = "#d6dae1",
-  label_threshold = 8,
+  label_threshold = 4,
   default_node_size = 4,
   directed = FALSE,
   palette = NULL,
+  show_legend = TRUE,
   theme = NULL,
   width = NULL,
   height = NULL,
@@ -43,7 +44,10 @@ missing) or \code{"precomputed"} (require and use \code{x}/\code{y} from \code{n
 
 \item{default_edge_color}{Edge color.}
 
-\item{label_threshold}{Minimum node size (px) for its label to render.}
+\item{label_threshold}{Minimum node size (px) on screen for its label to
+render. At the default of 4, nodes of the default size are labelled at
+the starting zoom, and the renderer's label grid keeps the labels from
+crowding.}
 
 \item{default_node_size}{Node radius (px) used when \code{size} is absent.}
 
@@ -53,6 +57,9 @@ the graph is undirected and a reciprocal pair collapses to one line.}
 
 \item{palette}{Optional character vector of hex colors overriding the default
 categorical palette used for node groups.}
+
+\item{show_legend}{Draw a legend of the node groups, in a gutter on the
+right, when \code{nodes} has a \code{group} column.}
 
 \item{theme}{Optional named list of theme overrides (colors, fonts, ...)
 merged over the component defaults in the browser. \code{NULL} uses the default
@@ -77,9 +84,10 @@ node coordinates are not supplied, a bounded ForceAtlas2 layout positions the
 nodes in the browser; otherwise the supplied \code{x}/\code{y} are used. Categorical
 node groups take the theme's palette: Okabe-Ito (colour-blind safe) for up
 to 8 groups, and a 20-colour palette past 8. Hovering a node
-highlights it and its neighbors; zoom and pan use sigma's camera. In a Shiny
-app, clicking a node sets \verb{input$<id>_selected} to the clicked node id, and
-clicking the empty canvas clears it.
+highlights it and its neighbors; zoom and pan use sigma's camera. When the
+nodes have groups, a legend of the groups sits in a gutter on the right. In
+a Shiny app, clicking a node sets \verb{input$<id>_selected} to the clicked node
+id, and clicking the empty canvas clears it.
 }
 \examples{
 set.seed(1)

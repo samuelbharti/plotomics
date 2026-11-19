@@ -23,7 +23,8 @@ class Network(PlotomicsWidget):
     bounded ForceAtlas2 layout positions them in the browser; otherwise the
     supplied ``x``/``y`` are used. Categorical node groups take the theme's
     palette: Okabe-Ito (colour-blind safe) for up to 8 groups, and a 20-colour
-    palette past 8. Hovering a node highlights it and its neighbors.
+    palette past 8. Hovering a node highlights it and its neighbors. When the
+    nodes have groups, a legend of the groups sits in a gutter on the right.
 
     Parameters
     ----------
@@ -50,7 +51,9 @@ class Network(PlotomicsWidget):
     default_edge_color:
         Edge color.
     label_threshold:
-        Minimum node size (px) for its label to render.
+        Minimum node size (px) on screen for its label to render. At the
+        default of 4, nodes of the default size are labelled at the starting
+        zoom, and the renderer's label grid keeps the labels from crowding.
     default_node_size:
         Node radius (px) used when ``size`` is absent.
     directed:
@@ -59,6 +62,9 @@ class Network(PlotomicsWidget):
         the graph is undirected and a reciprocal pair collapses to one line.
     palette:
         Optional list of hex colors overriding the default categorical palette.
+    show_legend:
+        Draw a legend of the node groups, in a gutter on the right, when
+        ``nodes`` has a ``group`` column.
     theme:
         Optional theme overrides forwarded to the JS renderer. Its
         ``padding`` entry is the space in px between the edge of the widget
@@ -97,10 +103,11 @@ class Network(PlotomicsWidget):
         iterations: int = 200,
         default_node_color: str = "#7c8598",
         default_edge_color: str = "#d6dae1",
-        label_threshold: float = 8.0,
+        label_threshold: float = 4.0,
         default_node_size: float = 4.0,
         directed: bool = False,
         palette: list[str] | None = None,
+        show_legend: bool = True,
         theme: dict | None = None,
         height: int = 480,
         **kwargs: Any,
@@ -199,6 +206,7 @@ class Network(PlotomicsWidget):
             "labelThreshold": label_threshold,
             "defaultNodeSize": default_node_size,
             "directed": directed,
+            "showLegend": show_legend,
         }
         if palette is not None:
             options["palette"] = list(palette)

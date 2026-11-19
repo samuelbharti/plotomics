@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  DOMAIN_PALETTE,
+  countTicks,
+  domainTextColor,
   headRadius,
   layoutLollipop,
   placeLabels,
@@ -8,7 +11,58 @@ import {
   topLabelIndex,
   wrapRows,
 } from "../src/components/lollipop.js";
-import { textSizes } from "../src/core/theme.js";
+import { OKABE_ITO, PALETTE_20, textSizes } from "../src/core/theme.js";
+import { formatTick } from "../src/core/ticks.js";
+
+/** sRGB hex as linear RGB. */
+function linearRGB(hex: string): number[] {
+  const h = hex.replace("#", "");
+  return [0, 2, 4].map((i) => {
+    const s = Number.parseInt(h.slice(i, i + 2), 16) / 255;
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  });
+}
+
+/**
+ * CIELAB (D65) of a hex colour as a reader sees it: in normal vision, or in
+ * deuteranopia or protanopia as Machado, Oliveira and Fernandes (2009)
+ * simulate them at full severity, in linear RGB.
+ */
+function seenLab(hex: string, vision: "normal" | "deutan" | "protan") {
+  const m = {
+    normal: [
+      [1, 0, 0],
+      [0, 1, 0],
+      [0, 0, 1],
+    ],
+    deutan: [
+      [0.367322, 0.860646, -0.227968],
+      [0.280085, 0.672501, 0.047413],
+      [-0.01182, 0.04294, 0.968881],
+    ],
+    protan: [
+      [0.152286, 1.052583, -0.204868],
+      [0.114503, 0.786281, 0.099216],
+      [-0.003882, -0.048116, 1.051998],
+    ],
+  }[vision];
+  const lin = linearRGB(hex);
+  const [r, g, b] = m.map((row) =>
+    Math.min(
+      1,
+      Math.max(
+        0,
+        row.reduce((s, v, i) => s + v * (lin[i] ?? 0), 0),
+      ),
+    ),
+  ) as [number, number, number];
+  const x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
+  const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
+  const f = (t: number) =>
+    t > 216 / 24389 ? Math.cbrt(t) : ((24389 / 27) * t + 16) / 116;
+  return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
+}
 
 describe("lollipop default labels", () => {
   it("picks the most recurrent variants, in row order", () => {
@@ -339,6 +393,97 @@ describe("lollipop residue ticks", () => {
       1, 50, 100, 150, 200, 250, 300, 350, 403,
     ]);
     expect(residueTicks(781).slice(-2)).toEqual([700, 781]);
+  });
+});
+
+describe("lollipop count axis", () => {
+  it("steps by whole numbers, never by halves, for small counts", () => {
+    expect(countTicks(2, 300, 16).ticks).toEqual([0, 1, 2]);
+    expect(countTicks(3, 300, 16).ticks).toEqual([0, 1, 2, 3]);
+    expect(countTicks(1, 300, 16)).toEqual({ ticks: [0, 1], top: 1, step: 1 });
+  });
+
+  it("rounds the top up to a round count over the tallest stem", () => {
+    expect(countTicks(39, 300, 16)).toEqual({
+      ticks: [0, 10, 20, 30, 40],
+      top: 40,
+      step: 10,
+    });
+    expect(countTicks(86, 300, 16).top).toBe(100);
+  });
+
+  it("steps by decimals when the counts are not whole numbers", () => {
+    // Frequencies up to 0.3 keep their scale: the axis tops out at 0.3,
+    // not at 1.
+    const t = countTicks(0.3, 300, 16, false);
+    expect(t.top).toBeCloseTo(0.3);
+    expect(t.ticks.map((v) => formatTick(v, t.step))).toEqual([
+      "0.00",
+      "0.05",
+      "0.10",
+      "0.15",
+      "0.20",
+      "0.25",
+      "0.30",
+    ]);
+  });
+
+  it("takes fewer labels on a short axis, each gap at least minGapPx", () => {
+    const t = countTicks(86, 30, 16);
+    expect(t.ticks).toEqual([0, 100]);
+    for (const [len, gap] of [
+      [300, 16],
+      [120, 16],
+      [60, 25],
+    ] as const) {
+      const { ticks } = countTicks(86, len, gap);
+      expect(len / (ticks.length - 1)).toBeGreaterThanOrEqual(gap);
+    }
+  });
+});
+
+describe("lollipop domain names", () => {
+  it("writes dark text on a light fill and light text on a dark one", () => {
+    expect(domainTextColor("#F0E442")).toBe("#233038");
+    expect(domainTextColor("#56B4E9")).toBe("#233038");
+    expect(domainTextColor(" #e69f00 ")).toBe("#233038");
+    expect(domainTextColor("#fff")).toBe("#233038");
+    expect(domainTextColor("#0072B2")).toBe("#FBF7EF");
+    expect(domainTextColor("#D55E00")).toBe("#FBF7EF");
+    expect(domainTextColor("#000")).toBe("#FBF7EF");
+  });
+
+  it("keeps the light text for a fill that is not a hex colour", () => {
+    expect(domainTextColor("steelblue")).toBe("#FBF7EF");
+    expect(domainTextColor("")).toBe("#FBF7EF");
+  });
+
+  it("has a palette that no default class colour uses", () => {
+    const classColors = new Set(
+      [...OKABE_ITO, ...PALETTE_20].map((c) => c.toLowerCase()),
+    );
+    expect(DOMAIN_PALETTE.length).toBeGreaterThanOrEqual(8);
+    for (const c of DOMAIN_PALETTE) {
+      expect(classColors.has(c.toLowerCase())).toBe(false);
+      // Light enough for the dark domain name.
+      expect(domainTextColor(c)).toBe("#233038");
+    }
+    expect(new Set(DOMAIN_PALETTE).size).toBe(DOMAIN_PALETTE.length);
+  });
+
+  it("keeps neighbouring domain colours distinct for colour-blind readers", () => {
+    // CIE76 distance between neighbours, the eighth and the first included.
+    // The earlier palette had sage next to dusty rose at 4.8 for a
+    // deuteranope.
+    const n = DOMAIN_PALETTE.length;
+    for (const vision of ["normal", "deutan", "protan"] as const) {
+      for (let i = 0; i < n; i += 1) {
+        const a = seenLab(DOMAIN_PALETTE[i] as string, vision);
+        const b = seenLab(DOMAIN_PALETTE[(i + 1) % n] as string, vision);
+        const d = Math.hypot(...a.map((v, k) => v - (b[k] as number)));
+        expect(d).toBeGreaterThanOrEqual(20);
+      }
+    }
   });
 });
 

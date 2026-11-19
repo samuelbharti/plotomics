@@ -21,7 +21,11 @@ export interface GoslingOptions {
    * own `data` blocks; the factory's `data` argument is ignored. Typed as
    * `unknown` here to avoid importing `gosling.js`; `gosling.ts` narrows it. */
   spec: unknown;
-  /** Passed through to `embed()`'s options (outer padding, px). */
+  /**
+   * Gosling's own outer padding in px, passed to its component. Unset, it
+   * is 50: with the theme padding of 10 px that the host keeps, the views
+   * sit 60 px in, as with Gosling's own default.
+   */
   padding?: number;
   /** Gosling theme name or object, forwarded to `embed()`. */
   theme?: unknown;
@@ -42,6 +46,22 @@ export function isValidSpec(spec: unknown): spec is Record<string, unknown> {
     return false;
   }
   return SPEC_KEYS.some((k) => k in (spec as Record<string, unknown>));
+}
+
+/** Gosling's own default outer padding, in px. */
+export const GOSLING_PADDING = 60;
+
+/**
+ * The outer padding to give Gosling: the one set, or what is left of
+ * Gosling's default of 60 px after the `hostPadding` px the host keeps
+ * around it, so the views sit 60 px in.
+ */
+export function goslingPadding(
+  padding: number | undefined,
+  hostPadding: number,
+): number {
+  if (padding !== undefined) return padding;
+  return Math.max(0, GOSLING_PADDING - hostPadding);
 }
 
 /** Build the option object passed to `embed()` from component options,

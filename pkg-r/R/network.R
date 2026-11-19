@@ -7,9 +7,10 @@
 #' nodes in the browser; otherwise the supplied `x`/`y` are used. Categorical
 #' node groups take the theme's palette: Okabe-Ito (colour-blind safe) for up
 #' to 8 groups, and a 20-colour palette past 8. Hovering a node
-#' highlights it and its neighbors; zoom and pan use sigma's camera. In a Shiny
-#' app, clicking a node sets `input$<id>_selected` to the clicked node id, and
-#' clicking the empty canvas clears it.
+#' highlights it and its neighbors; zoom and pan use sigma's camera. When the
+#' nodes have groups, a legend of the groups sits in a gutter on the right. In
+#' a Shiny app, clicking a node sets `input$<id>_selected` to the clicked node
+#' id, and clicking the empty canvas clears it.
 #'
 #' @param nodes A data frame of nodes. Must contain an `id` column (coerced to
 #'   character). Optional columns: `x`, `y` (precomputed coordinates), `size`
@@ -26,13 +27,18 @@
 #' @param iterations Number of ForceAtlas2 iterations (bounded internally).
 #' @param default_node_color Fallback node color for nodes without a `group`.
 #' @param default_edge_color Edge color.
-#' @param label_threshold Minimum node size (px) for its label to render.
+#' @param label_threshold Minimum node size (px) on screen for its label to
+#'   render. At the default of 4, nodes of the default size are labelled at
+#'   the starting zoom, and the renderer's label grid keeps the labels from
+#'   crowding.
 #' @param default_node_size Node radius (px) used when `size` is absent.
 #' @param directed Draw the graph as directed, with arrowheads. When `TRUE`,
 #'   `A -> B` and `B -> A` are kept as distinct edges; when `FALSE` (the default)
 #'   the graph is undirected and a reciprocal pair collapses to one line.
 #' @param palette Optional character vector of hex colors overriding the default
 #'   categorical palette used for node groups.
+#' @param show_legend Draw a legend of the node groups, in a gutter on the
+#'   right, when `nodes` has a `group` column.
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
 #'   merged over the component defaults in the browser. `NULL` uses the default
 #'   theme.
@@ -61,10 +67,11 @@ network <- function(nodes,
                     iterations = 200,
                     default_node_color = "#7c8598",
                     default_edge_color = "#d6dae1",
-                    label_threshold = 8,
+                    label_threshold = 4,
                     default_node_size = 4,
                     directed = FALSE,
                     palette = NULL,
+                    show_legend = TRUE,
                     theme = NULL,
                     width = NULL,
                     height = NULL,
@@ -151,7 +158,8 @@ network <- function(nodes,
     defaultEdgeColor = default_edge_color,
     labelThreshold = label_threshold,
     defaultNodeSize = default_node_size,
-    directed = directed
+    directed = directed,
+    showLegend = show_legend
   )
   if (!is.null(palette)) {
     options$palette <- as.character(palette)

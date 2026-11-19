@@ -9,7 +9,7 @@ spatial(
   image,
   img_width,
   img_height,
-  spot_diameter = 4,
+  spot_diameter = NULL,
   levels = NULL,
   colors = NULL,
   color_mode = c("auto", "categorical", "continuous"),
@@ -34,7 +34,9 @@ spatial(
 
 \item{img_width, img_height}{Natural size of that image in pixels.}
 
-\item{spot_diameter}{Spot diameter in image pixels.}
+\item{spot_diameter}{Spot diameter in image pixels. \code{NULL} (the default)
+takes the median distance from a spot to its nearest neighbour, so
+neighbouring spots touch.}
 
 \item{levels, colors}{Character vectors fixing the categorical order and
 colours. \code{NULL} takes the levels of a factor \code{color}, else the distinct
@@ -50,7 +52,7 @@ and keyed "NA", and a spot with a missing \code{x} or \code{y} is not drawn.}
 \code{"rdbu"}, \code{"ltc"} (an earthy teal to sand to rust sequential ramp) or
 \code{"ltcdiv"} (its diverging counterpart, neutral cream at the midpoint).}
 
-\item{spot_scale}{Multiplier on \code{spot_diameter}; 1 draws true size.}
+\item{spot_scale}{Multiplier on the spot diameter; 1 draws true size.}
 
 \item{spot_opacity, image_opacity}{Opacities in \verb{[0, 1]}. Lower the spot
 opacity to read the histology underneath.}
@@ -83,7 +85,8 @@ and overlay cannot drift apart on resize, full-screen, or a high-DPI display.
 
 \code{color} may be a character vector (categorical, discrete legend) or numeric
 (continuous, sequential ramp with a colourbar), which is what lets one view
-toggle between colouring by cluster and by a gene's expression.
+toggle between colouring by cluster and by a gene's expression. The legend
+sits in a gutter right of the image, so it never covers the tissue.
 }
 \section{Scale}{
 

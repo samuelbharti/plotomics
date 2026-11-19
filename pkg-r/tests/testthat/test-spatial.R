@@ -91,3 +91,20 @@ test_that("spatial() takes extra colours for a factor and stops on too few", {
     "one entry per level"
   )
 })
+
+test_that("spatial() leaves the spot diameter to the browser unless given", {
+  w <- spatial(spots_fixture(), image = "t.png", img_width = 600,
+               img_height = 600)
+  # The browser takes the median distance between neighbouring spots.
+  expect_false("spotDiameter" %in% names(w$x$data$meta))
+  w <- spatial(spots_fixture(), image = "t.png", img_width = 600,
+               img_height = 600, spot_diameter = 55)
+  expect_equal(w$x$data$meta$spotDiameter, 55)
+  for (bad in list(0, -1, NA_real_, Inf, "8", c(4, 8))) {
+    expect_error(
+      spatial(spots_fixture(), image = "t.png", img_width = 600,
+              img_height = 600, spot_diameter = bad),
+      "`spot_diameter` must be a positive number"
+    )
+  }
+})

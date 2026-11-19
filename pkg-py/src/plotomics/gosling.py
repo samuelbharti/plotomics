@@ -29,6 +29,8 @@ class Gosling(PlotomicsWidget):
         ``tracks``, ``views``, ``arrangement``, ``alignment`` or ``template``.
     padding:
         Optional outer padding (pixels) forwarded to Gosling's embed options.
+        ``None`` gives Gosling 50: with the 10 px the widget keeps around it,
+        the views sit 60 px in, as with Gosling's own default.
     theme:
         Optional Gosling theme: a built-in name (e.g. ``"dark"``) or a theme
         dict.

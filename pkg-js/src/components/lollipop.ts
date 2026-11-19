@@ -12,8 +12,10 @@
  * coordinates, and a lollipop works in amino-acid coordinates over a domain
  * architecture that has no genomic extent.
  *
- * Stems and domains are canvas-drawn so a protein with thousands of variants
- * stays responsive; labels, the axis and the legend are an SVG overlay.
+ * Stems, domains and the gridlines under the stems are canvas-drawn so a
+ * protein with thousands of variants stays responsive; labels, the axes and
+ * the legend are an SVG overlay. The count axis has round, whole-number
+ * ticks (see {@link countTicks}).
  *
  * Variants at one residue stack on one stem (see {@link stackVariants}), so
  * equal counts never hide each other and the top of a stem is the residue's
@@ -36,7 +38,8 @@
  * - `meta.domains`      `{ name, start, end }[]` domain rectangles
  * - `meta.ptms`         `{ position, type }[]`   modification sites
  * - `meta.classes` / `meta.classColors`  legend levels and colours
- * - `meta.domainColors` `string[]`  one colour per domain
+ * - `meta.domainColors` `string[]`  one colour per domain; without it the
+ *   domains take {@link DOMAIN_PALETTE}, never `theme.categorical`
  * - `meta.labelIndex`   `number[]`  indices of variants to label; an empty
  *   array labels none
  */
@@ -57,6 +60,9 @@ import {
   compositePNG,
   rangeTicks,
   spaceTicks,
+  zeroTicks,
+  fitZeroTicks,
+  formatTick,
   defaultTheme,
   type TextSizes,
   textSizes,
@@ -64,6 +70,7 @@ import {
   fitText,
   categoricalColors,
 } from "../core/index.js";
+import { setCanvasColour } from "../core/paint.js";
 
 export interface LollipopOptions {
   /** Radius of the smallest stem head, in pixels. */
@@ -86,6 +93,10 @@ export interface LollipopOptions {
   backboneColor: string;
   stemColor: string;
   yLabel: string;
+  /**
+   * Theme overrides. `categorical` colours the variant classes only; the
+   * domains take `meta.domainColors` or {@link DOMAIN_PALETTE}.
+   */
   theme: Partial<PlotomicsTheme>;
 }
 
@@ -124,6 +135,36 @@ const PTM_H = 14;
 const LABEL_H = 12;
 /** Label rows a label may climb above its own head to find free space. */
 const LABEL_MAX_ROWS = 4;
+/**
+ * Intervals the count axis aims for at most. A round step can give a few
+ * more, as {@link zeroTicks} covers the tallest stem with whole steps.
+ */
+const COUNT_TICKS = 5;
+/** Domain name colours: light on a dark fill, dark on a light one. */
+const DOMAIN_TEXT_LIGHT = "#FBF7EF";
+const DOMAIN_TEXT_DARK = "#233038";
+/**
+ * Fills of the domains when `meta.domainColors` is not given, in place of
+ * `theme.categorical`, which colours the variant classes: muted tones that
+ * no default class colour uses, so a domain never reads as a variant class.
+ * Each is light enough for a dark domain name. Neighbours, the eighth and
+ * the first included, differ by a CIEDE2000 of 26 or more in normal vision
+ * and in deuteranopia and protanopia as Machado et al. (2009) simulate them.
+ * The colours repeat past the eighth domain. The R and Python docs of
+ * `domain_colors` list them.
+ */
+export const DOMAIN_PALETTE: readonly string[] = [
+  "#9F95C3", // lavender
+  "#B2C28C", // pale olive
+  "#84B2C0", // powder blue
+  "#AD9967", // khaki
+  "#B6BAD4", // pale periwinkle
+  "#CE9B79", // terracotta
+  "#7EA3D4", // cornflower
+  "#7DAB88", // sage
+];
+/** Fewest characters of a cut domain name, before its ellipsis. */
+const DOMAIN_MIN_CHARS = 3;
 /**
  * Room a line of text takes above and below its baseline, as a share of its
  * size. This covers the font box of the common system fonts.
@@ -455,6 +496,47 @@ export function residueTicks(length: number, count = 6): number[] {
   return rangeTicks(length, count);
 }
 
+/**
+ * Ticks for the count axis of stems up to `max` on an axis `lengthPx` tall:
+ * round values from 0, as many as keep `minGapPx` between neighbouring
+ * labels. With `integer`, for counts that are all whole numbers, the steps
+ * are whole numbers too, since a count of samples has no fractions; without
+ * it, counts below 1, such as frequencies, get decimal steps. The stems are
+ * scaled against `top`, the round value at the top of the axis.
+ */
+export function countTicks(
+  max: number,
+  lengthPx: number,
+  minGapPx: number,
+  integer = true,
+): { ticks: number[]; top: number; step: number } {
+  return fitZeroTicks(max, lengthPx, {
+    integer,
+    maxCount: COUNT_TICKS,
+    minGapPx,
+  });
+}
+
+/**
+ * Colour of a domain name on a domain filled with `fill`: dark text on a
+ * light fill, such as yellow or sky blue, and light text on a dark one.
+ * `fill` is a hex colour; the plot first reads a named, translucent or
+ * var() colour as the canvas draws it. Any other value keeps the light
+ * text.
+ */
+export function domainTextColor(fill: string): string {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(fill.trim())?.[1];
+  if (!hex) return DOMAIN_TEXT_LIGHT;
+  const full = hex.length === 3 ? hex.replace(/./g, (c) => c + c) : hex;
+  const r = Number.parseInt(full.slice(0, 2), 16);
+  const g = Number.parseInt(full.slice(2, 4), 16);
+  const b = Number.parseInt(full.slice(4, 6), 16);
+  // Rec. 601 luma, the rule the profile banner uses for its group names.
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150
+    ? DOMAIN_TEXT_DARK
+    : DOMAIN_TEXT_LIGHT;
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -514,10 +596,11 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     if (given && given.length) return given;
     return categoricalColors(theme.categorical, classes().length);
   }
-  function domainColors(): string[] {
+  /** Domain fills, used in turn: the given ones or the domain palette. */
+  function domainColors(): readonly string[] {
     const given = data.meta?.domainColors as string[] | undefined;
     if (given && given.length) return given;
-    return categoricalColors(theme.categorical, domains().length);
+    return DOMAIN_PALETTE;
   }
   // Variants at one residue share a stem; see stackVariants. The largest
   // single count (the head size scale) and the tallest stem (the y scale)
@@ -525,12 +608,21 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   let stack = stackVariants([], []);
   let countMax = 1;
   let stackMax = 1;
+  // Whether every count is a whole number, which gives the count axis
+  // whole-number steps.
+  let wholeCounts = true;
+  // The count axis, fitted to the stem area on each render. The stems are
+  // scaled against its round top.
+  let yAxis = zeroTicks(1, 1, { integer: true });
   function restack() {
     stack = stackVariants(positions(), counts());
     const c = counts();
     countMax = 0;
+    wholeCounts = true;
     for (let i = 0; i < c.length; i += 1) {
       countMax = Math.max(countMax, countOf(c[i]));
+      const v = c[i] as number;
+      if (Number.isFinite(v) && !Number.isInteger(v)) wholeCounts = false;
     }
     stackMax = 0;
     for (const t of stack.top) stackMax = Math.max(stackMax, t);
@@ -541,7 +633,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   function maxCount(): number {
     return countMax;
   }
-  /** The tallest stem, which sets the y scale. */
+  /** The tallest stem, which the count axis covers. */
   function maxStack(): number {
     return stackMax;
   }
@@ -577,14 +669,74 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     return fitText(s, maxW, size, theme.fontFamily);
   }
   /**
+   * A domain name that fits `maxW` px: the whole name, or its first
+   * characters and an ellipsis. A trailing number, such as the 2 of
+   * "Transactivation domain 2", is kept after the ellipsis, so numbered
+   * domains can still be told from each other. Empty when fewer than three
+   * characters of the name would show.
+   */
+  function domainLabel(name: string, maxW: number): string {
+    const size = sizes.small;
+    const whole = fit(name, maxW, size);
+    if (whole === name) return name;
+    const numbered = /^(.*\S)\s+(\d+)$/.exec(name);
+    if (numbered) {
+      const tail = ` ${numbered[2]}`;
+      const head = fit(
+        numbered[1] as string,
+        maxW - textWidth(tail, size),
+        size,
+      );
+      // A cut head is its first characters and one ellipsis.
+      if (head.length - 1 >= DOMAIN_MIN_CHARS) return head + tail;
+    }
+    return whole.length - 1 >= DOMAIN_MIN_CHARS ? whole : "";
+  }
+  // One pixel to read the colour a domain name is written on.
+  const probe = document
+    .createElement("canvas")
+    .getContext("2d", { willReadFrequently: true });
+  if (probe) {
+    probe.canvas.width = 1;
+    probe.canvas.height = 1;
+  }
+  /**
+   * The colour a domain name is written on, as a hex colour: the domain's
+   * fill over the backbone over the background, as the canvas draws them.
+   * So a named or var() fill counts as the colour it shows, a translucent
+   * one as its blend with the backbone, and one that paints nothing as the
+   * backbone.
+   */
+  function shownFill(fill: string): string {
+    if (!probe) return fill;
+    probe.clearRect(0, 0, 1, 1);
+    for (const colour of [theme.background, opts.backboneColor, fill]) {
+      if (setCanvasColour(probe, "fillStyle", colour, el)) {
+        probe.fillRect(0, 0, 1, 1);
+      }
+    }
+    const d = probe.getImageData(0, 0, 1, 1).data;
+    return `#${[d[0], d[1], d[2]]
+      .map((v) => (v ?? 0).toString(16).padStart(2, "0"))
+      .join("")}`;
+  }
+  /**
    * The layout for the current size, data and text sizes, with `legendRows`
    * rows of legend. Call {@link restack} first.
    */
   function frame(legendRows: number): LollipopLayout {
-    const tickWidth = Math.max(
-      textWidth("0", sizes.label),
-      textWidth(String(maxStack()), sizes.label),
-    );
+    // The widest label of any count axis the stems could get, so the left
+    // gutter, and with it the legend rows, do not depend on the stem height.
+    let tickWidth = 0;
+    for (let n = 1; n <= COUNT_TICKS; n += 1) {
+      const t = zeroTicks(maxStack(), n, { integer: wholeCounts });
+      for (const v of t.ticks) {
+        tickWidth = Math.max(
+          tickWidth,
+          textWidth(formatTick(v, t.step), sizes.label),
+        );
+      }
+    }
     return layoutLollipop(
       width,
       height,
@@ -639,7 +791,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   const px = (residue: number) =>
     layout.left + ((residue - 1) / Math.max(1, plen() - 1)) * layout.innerW;
   const py = (count: number) =>
-    layout.baseline - (count / maxStack()) * layout.stemH;
+    layout.baseline - (count / yAxis.top) * layout.stemH;
 
   // ---- pointer ----
   const lastPointer = { x: 0, y: 0 };
@@ -730,6 +882,8 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     if (!ctx || !width || !height) return;
     restack();
     layout = frame(legendRows());
+    // As many round counts as the stem area holds without crowding.
+    yAxis = countTicks(maxStack(), layout.stemH, sizes.label + 5, wholeCounts);
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, width, height);
@@ -738,6 +892,22 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     if (L <= 1) {
       renderOverlay();
       return;
+    }
+
+    // Gridlines first, so the stems and heads are drawn over them. The
+    // baseline needs none: the backbone marks it. A grid colour that paints
+    // nothing, such as "none", draws no line.
+    if (setCanvasColour(ctx, "strokeStyle", theme.grid, el)) {
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const v of yAxis.ticks) {
+        if (v <= 0) continue;
+        // On a half pixel, so the 1 px line fills one row of pixels.
+        const y = Math.round(py(v)) + 0.5;
+        ctx.moveTo(layout.left, y);
+        ctx.lineTo(width - layout.right, y);
+      }
+      ctx.stroke();
     }
 
     // Backbone.
@@ -750,9 +920,12 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     if (opts.showDomains) {
       const dcols = domainColors();
       domains().forEach((d, i) => {
+        // A fill that paints nothing leaves the backbone showing.
+        if (!setCanvasColour(ctx, "fillStyle", dcols[i % dcols.length], el)) {
+          return;
+        }
         const x0 = px(d.start);
         const x1 = px(d.end);
-        ctx.fillStyle = dcols[i % dcols.length] as string;
         ctx.fillRect(x0, layout.backboneTop, Math.max(1, x1 - x0), bandH);
       });
     }
@@ -817,28 +990,19 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     const tx = lollipopText(sizes);
     const mid = midline(sizes.label);
 
-    // y axis: a tick at 0 and at the tallest stem.
-    const top = maxStack();
-    svg.appendChild(
-      text(
-        layout.left - 8,
-        layout.baseline + mid,
-        "0",
-        theme.muted,
-        "end",
-        sizes.label,
-      ),
-    );
-    svg.appendChild(
-      text(
-        layout.left - 8,
-        py(top) + mid,
-        String(top),
-        theme.muted,
-        "end",
-        sizes.label,
-      ),
-    );
+    // y axis: a label at each round count, where its gridline runs.
+    for (const v of yAxis.ticks) {
+      svg.appendChild(
+        text(
+          layout.left - 8,
+          py(v) + mid,
+          formatTick(v, yAxis.step),
+          theme.muted,
+          "end",
+          sizes.label,
+        ),
+      );
+    }
     // The y title is centred on the stems and may reach down to the axis.
     const yTitleCy = layout.top + layout.stemH / 2;
     svg.appendChild(
@@ -855,21 +1019,31 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       ),
     );
 
-    // Domain names, centred, dropped when the rectangle is too narrow to hold
-    // the text rather than overflowing into its neighbours.
+    // Domain names, centred and kept inside their rectangles, so a name
+    // never runs into its neighbours. A name too long for its rectangle is
+    // cut with an ellipsis, and left out when fewer than three of its
+    // characters would show; the tooltip on the domain gives it in full.
+    // Each name is dark or light, whichever reads on its domain's fill.
     if (opts.showDomains) {
       const bandH = layout.backboneBottom - layout.backboneTop;
       const midY = layout.backboneTop + bandH / 2 + midline(sizes.small);
-      domains().forEach((d) => {
+      const dcols = domainColors();
+      // The text colour of each fill, read once per draw.
+      const inks = new Map<string, string>();
+      domains().forEach((d, i) => {
         const x0 = px(d.start);
         const x1 = px(d.end);
-        const w = x1 - x0;
-        const label = shortDomain(d.name);
-        if (w > textWidth(label, sizes.small) + 6) {
-          svg.appendChild(
-            text((x0 + x1) / 2, midY, label, "#FBF7EF", "middle", sizes.small),
-          );
+        const label = domainLabel(shortDomain(d.name), x1 - x0 - 6);
+        if (!label) return;
+        const fill = dcols[i % dcols.length] ?? "";
+        let ink = inks.get(fill);
+        if (ink === undefined) {
+          ink = domainTextColor(shownFill(fill));
+          inks.set(fill, ink);
         }
+        svg.appendChild(
+          text((x0 + x1) / 2, midY, label, ink, "middle", sizes.small),
+        );
       });
     }
 

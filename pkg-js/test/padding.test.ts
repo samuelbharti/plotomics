@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { goslingPadding } from "../src/components/gosling-spec.js";
 import {
   DEFAULT_PADDING,
   defaultTheme,
@@ -57,5 +58,18 @@ describe("themePadding", () => {
   it("comes through resolveTheme", () => {
     expect(themePadding(resolveTheme({ padding: 24 }))).toEqual(all(24));
     expect(themePadding(resolveTheme({ fontSize: 16 }))).toEqual(all(10));
+  });
+});
+
+describe("goslingPadding", () => {
+  it("gives Gosling the rest of its 60 px after the host padding", () => {
+    expect(goslingPadding(undefined, 10)).toBe(50);
+    expect(goslingPadding(undefined, 0)).toBe(60);
+    expect(goslingPadding(undefined, 80)).toBe(0);
+  });
+
+  it("keeps a padding that is set", () => {
+    expect(goslingPadding(30, 10)).toBe(30);
+    expect(goslingPadding(0, 10)).toBe(0);
   });
 });

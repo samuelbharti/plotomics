@@ -153,3 +153,14 @@ def test_network_sends_missing_groups_and_labels_as_null():
     w = Network(nodes, {"source": ["a"], "target": ["b"]})
     assert w.data["meta"]["nodeGroup"] == ["g1", None, None, "g2"]
     assert w.data["meta"]["nodeLabels"] == ["A", None, "C", None]
+
+
+def test_network_labels_default_size_nodes_and_draws_a_group_legend():
+    nodes = {"id": ["a", "b"], "group": ["G1", "G2"]}
+    edges = {"source": ["a"], "target": ["b"]}
+    w = Network(nodes, edges)
+    # A node of the default size 4 reaches the label threshold.
+    assert w.options["labelThreshold"] == 4
+    assert w.options["defaultNodeSize"] == 4
+    assert w.options["showLegend"] is True
+    assert Network(nodes, edges, show_legend=False).options["showLegend"] is False

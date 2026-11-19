@@ -15,10 +15,14 @@
  * element cleared, also when destroy() races a pending browser.
  */
 import {
+  type PlotPadding,
   type PlotomicsData,
   type PlotomicsFactory,
   type PlotomicsInstance,
   clearElement,
+  defaultTheme,
+  padSVG,
+  serializeSVG,
   themePadding,
 } from "../core/index.js";
 // Import the runtime value from the ESM build explicitly: the package's `main`
@@ -46,6 +50,40 @@ export {
   defaultIgvOptions,
   trackKey,
 } from "./igv-config.js";
+
+/**
+ * An SVG of igv.js with `pad` around it, on the default theme background.
+ * Text that is not an SVG of a known size comes back as it is.
+ */
+function padIgvSVG(svgText: string, pad: PlotPadding): string {
+  const doc = new DOMParser().parseFromString(svgText, "image/svg+xml");
+  const svg = doc.documentElement;
+  const width = Number.parseFloat(svg.getAttribute("width") ?? "");
+  const height = Number.parseFloat(svg.getAttribute("height") ?? "");
+  // A view box other than the plain one of its size would need scaling.
+  const box = (svg.getAttribute("viewBox") ?? `0 0 ${width} ${height}`)
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  if (
+    svg.localName !== "svg" ||
+    !(width > 0) ||
+    !(height > 0) ||
+    doc.querySelector("parsererror") ||
+    box.join(" ") !== `0 0 ${width} ${height}`
+  ) {
+    return svgText;
+  }
+  return serializeSVG(
+    padSVG(
+      svg as unknown as SVGSVGElement,
+      width,
+      height,
+      pad,
+      defaultTheme.background,
+    ),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -164,8 +202,11 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
       if (browser) void igv.visibilityChange();
     },
     exportSVG() {
-      // igv.js can serialize the current view to SVG once the browser is live.
-      return browser ? browser.toSVG() : null;
+      // igv.js can serialize the current view to SVG once the browser is
+      // live. It draws it at the size of its own view, so the padding the
+      // host keeps goes around it, as in the other plots' exports.
+      if (!browser) return null;
+      return padIgvSVG(browser.toSVG(), pad);
     },
     destroy() {
       destroyed = true;

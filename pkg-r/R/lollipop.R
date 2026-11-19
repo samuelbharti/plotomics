@@ -25,7 +25,12 @@
 #'   assignment. Defaults to the classes present, most frequent first, equal
 #'   counts by name in code point order, as in Python.
 #' @param class_colors,domain_colors Character vectors of hex colours. `NULL`
-#'   uses the component's categorical palette.
+#'   gives the classes the categorical palette of the theme. The domains never
+#'   take that palette: `NULL` gives them a muted palette of their own that
+#'   the default class colours do not use, `#9F95C3`, `#B2C28C`, `#84B2C0`,
+#'   `#AD9967`, `#B6BAD4`, `#CE9B79`, `#7EA3D4` and `#7DAB88`, repeated past
+#'   the eighth domain. Each domain name is dark or light, whichever reads on
+#'   its fill.
 #' @param label_top_n Label the `n` most recurrent variants. Which stems get a
 #'   label is resolved here and sent to the browser, so a redraw, an export and
 #'   any static counterpart all label the same ones. `0` labels none.
@@ -37,10 +42,11 @@
 #' @param y_label Axis title for the recurrence axis.
 #' @param backbone_color,stem_color Hex colours for the protein backbone
 #'   rectangle and the mutation stems.
-#' @param theme Optional named list of theme overrides.
-#'   Its `padding` entry is the space in px between the edge of the widget
-#'   and the plot: one number for every side, or numbers named `top`,
-#'   `right`, `bottom` and `left` in a list or vector, a side left out
+#' @param theme Optional named list of theme overrides. Its `categorical`
+#'   palette colours the variant classes only, not the domains; see
+#'   `domain_colors`. Its `padding` entry is the space in px between the edge
+#'   of the widget and the plot: one number for every side, or numbers named
+#'   `top`, `right`, `bottom` and `left` in a list or vector, a side left out
 #'   keeping the default of 10.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.

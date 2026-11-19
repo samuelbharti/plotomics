@@ -20,8 +20,9 @@ import type {
 } from "../../src/core/index.js";
 
 // Each of the 15 components with data that draws all of its parts: axes,
-// titles, legends, colour bars, a risk table, banners and dendrograms. The
-// heights are the default widget heights of the R and Python packages.
+// titles, legends, colour bars, a risk table, banners and dendrograms, and
+// the spatial colour bar and network legend besides. The heights are the
+// default widget heights of the R and Python packages.
 
 type Theme = Partial<PlotomicsTheme>;
 
@@ -306,7 +307,8 @@ function embeddingData(): PlotomicsData {
 }
 
 const REGIONS = ["Tumour", "Stroma", "Immune infiltrate", "Normal epithelium"];
-function spatialData(): PlotomicsData {
+/** Spots coloured by region, or by a value with a missing one. */
+function spatialData(continuous = false): PlotomicsData {
   const x: number[] = [];
   const y: number[] = [];
   for (let i = 0; i < 16; i += 1) {
@@ -315,9 +317,11 @@ function spatialData(): PlotomicsData {
       y.push(5 + j * 10);
     }
   }
-  const color = x.map((_, i) => REGIONS[i % REGIONS.length] as string);
+  const color = continuous
+    ? x.map((v, i) => (i % 17 === 0 ? null : v * 12.5))
+    : x.map((_, i) => REGIONS[i % REGIONS.length] as string);
   return {
-    columns: { x, y, color },
+    columns: { x, y, color: color as string[] },
     meta: { imgWidth: 160, imgHeight: 100, spotDiameter: 8 },
   };
 }
@@ -336,8 +340,10 @@ const NET = [
   "AKT1",
   "EGFR",
 ];
-function networkData(): PlotomicsData {
+/** Twelve genes on a ring, with a legend of three pathways when grouped. */
+function networkData(grouped = false): PlotomicsData {
   const n = NET.length;
+  const pathways = ["p53 pathway", "Cell cycle", "PI3K signalling"];
   return {
     columns: {
       id: NET,
@@ -345,7 +351,12 @@ function networkData(): PlotomicsData {
       y: NET.map((_, i) => Math.sin((2 * Math.PI * i) / n) * 10),
       size: NET.map(() => 10),
     },
-    meta: { edges: NET.map((g, i) => [g, NET[(i + 1) % n]]) },
+    meta: {
+      edges: NET.map((g, i) => [g, NET[(i + 1) % n]]),
+      ...(grouped
+        ? { nodeGroup: NET.map((_, i) => pathways[i % 3] as string) }
+        : {}),
+    },
   };
 }
 
@@ -460,9 +471,23 @@ export const PLOTS: Plot[] = [
     make: (el, t) => createSpatial(el, { data: spatialData(), options: o(t) }),
   },
   {
+    name: "spatial colour bar",
+    height: 560,
+    make: (el, t) =>
+      createSpatial(el, { data: spatialData(true), options: o(t) }),
+  },
+  {
     name: "network",
     height: 480,
     make: (el, t) => createNetwork(el, { data: networkData(), options: o(t) }),
+    hoverMake: (el, t) =>
+      createNetwork(el, { data: latticeData(), options: o(t) }),
+  },
+  {
+    name: "network legend",
+    height: 480,
+    make: (el, t) =>
+      createNetwork(el, { data: networkData(true), options: o(t) }),
     hoverMake: (el, t) =>
       createNetwork(el, { data: latticeData(), options: o(t) }),
   },
@@ -482,7 +507,10 @@ export const PLOTS: Plot[] = [
 /** Wait for the component in `el` to finish drawing. */
 export async function settled(name: string): Promise<void> {
   // regl-scatterplot and sigma draw on later frames.
-  const ms = ["volcano", "embedding", "network"].includes(name) ? 400 : 60;
+  const slow = ["volcano", "embedding", "network"].some((n) =>
+    name.startsWith(n),
+  );
+  const ms = slow ? 400 : 60;
   await new Promise((r) => setTimeout(r, ms));
   await new Promise((r) => requestAnimationFrame(() => r(null)));
 }

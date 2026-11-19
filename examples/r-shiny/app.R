@@ -138,7 +138,7 @@ ui <- navbarPage(
     sidebarLayout(
       side(
         sliderInput("n_it", "Layout iterations", 0, 400, 200, 20),
-        sliderInput("n_lbl", "Label threshold", 0, 20, 8, 1)
+        sliderInput("n_lbl", "Label threshold", 0, 20, 4, 1)
       ),
       main(networkOutput("network", height = "640px"))
     )

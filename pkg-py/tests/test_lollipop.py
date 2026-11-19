@@ -75,6 +75,16 @@ def test_lollipop_domains_and_ptms():
     assert meta["domainColors"] == ["#abc"]
 
 
+def test_lollipop_domain_colors_sent_only_when_given():
+    # Without domain_colors the browser fills the domains from its own muted
+    # palette, as it does for R.
+    w = Lollipop(
+        make_data(), length=393,
+        domains=[{"name": "P53 DNA-binding", "start": 100, "end": 288}],
+    )
+    assert "domainColors" not in w.data["meta"]
+
+
 def test_lollipop_options_passthrough():
     w = Lollipop(make_data(), length=393, show_ptms=False, show_domains=False,
                  show_legend=False, theme={"background": "#000"})

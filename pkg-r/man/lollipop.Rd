@@ -50,7 +50,12 @@ assignment. Defaults to the classes present, most frequent first, equal
 counts by name in code point order, as in Python.}
 
 \item{class_colors, domain_colors}{Character vectors of hex colours. \code{NULL}
-uses the component's categorical palette.}
+gives the classes the categorical palette of the theme. The domains never
+take that palette: \code{NULL} gives them a muted palette of their own that
+the default class colours do not use, \verb{#9F95C3}, \verb{#B2C28C}, \verb{#84B2C0},
+\verb{#AD9967}, \verb{#B6BAD4}, \verb{#CE9B79}, \verb{#7EA3D4} and \verb{#7DAB88}, repeated past
+the eighth domain. Each domain name is dark or light, whichever reads on
+its fill.}
 
 \item{label_top_n}{Label the \code{n} most recurrent variants. Which stems get a
 label is resolved here and sent to the browser, so a redraw, an export and
@@ -68,10 +73,11 @@ rest and you want the difference to read at a glance.}
 \item{backbone_color, stem_color}{Hex colours for the protein backbone
 rectangle and the mutation stems.}
 
-\item{theme}{Optional named list of theme overrides.
-Its \code{padding} entry is the space in px between the edge of the widget
-and the plot: one number for every side, or numbers named \code{top},
-\code{right}, \code{bottom} and \code{left} in a list or vector, a side left out
+\item{theme}{Optional named list of theme overrides. Its \code{categorical}
+palette colours the variant classes only, not the domains; see
+\code{domain_colors}. Its \code{padding} entry is the space in px between the edge
+of the widget and the plot: one number for every side, or numbers named
+\code{top}, \code{right}, \code{bottom} and \code{left} in a list or vector, a side left out
 keeping the default of 10.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}

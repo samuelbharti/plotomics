@@ -82,6 +82,13 @@ export {
 } from "./dom.js";
 
 export {
+  type LegendFit,
+  fitLegend,
+  legendCandidates,
+  legendLabelsFit,
+} from "./legend.js";
+
+export {
   type ScatterplotView,
   toNdc,
   baseDomains,
