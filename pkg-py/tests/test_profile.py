@@ -79,6 +79,21 @@ def test_profile_warns_on_values_that_are_not_finite_and_keeps_them():
     assert w.options["asFraction"] is True
 
 
+def test_profile_refuses_negative_values_as_shares():
+    # Shares of a total with negative values are not defined. A value that
+    # is not finite is left out of the count, as the plot leaves it out.
+    with pytest.raises(ValueError) as err:
+        Profile({"value": [2, -2, 1, -np.inf, np.nan]}, as_fraction=True)
+    assert str(err.value) == (
+        "`as_fraction` needs every `value` to be 0 or more; "
+        "found 1 negative value(s)."
+    )
+    # Without as_fraction the bars of negative values go down from 0.
+    w = Profile({"value": [2, -2, 1]})
+    assert np.frombuffer(w.buffer, dtype=np.float32).tolist() == [2, -2, 1]
+    assert w.options["asFraction"] is False
+
+
 def test_profile_validates_its_input():
     d = make_data()
 

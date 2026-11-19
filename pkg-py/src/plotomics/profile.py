@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+
 from ._base import (
     STATIC,
     PlotomicsWidget,
@@ -45,7 +47,8 @@ class Profile(PlotomicsWidget):
     bar_width:
         Fraction of each slot the bar occupies, in ``(0, 1]``.
     as_fraction:
-        Show values as a share of the total rather than raw counts.
+        Show each value as a share of the total, in place of the raw
+        count. Every finite value must then be 0 or more.
     show_header, show_bar_labels:
         Toggle the header band and the tick labels.
     y_label:
@@ -92,6 +95,15 @@ class Profile(PlotomicsWidget):
         value = _to_float32(val, "value")
         if value.size == 0:
             raise ValueError("`data` must contain at least one row.")
+        # Shares of a total with negative values are not defined.
+        if as_fraction:
+            finite = value[np.isfinite(value)]
+            negative = int(np.count_nonzero(finite < 0))
+            if negative:
+                raise ValueError(
+                    "`as_fraction` needs every `value` to be 0 or more; "
+                    f"found {negative} negative value(s)."
+                )
 
         buffer, schema = pack_columns({"value": value})
 

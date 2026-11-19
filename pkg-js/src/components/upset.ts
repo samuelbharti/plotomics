@@ -46,6 +46,7 @@ import {
   textWidth as measureText,
   fitText,
 } from "../core/index.js";
+import { setCanvasColour } from "../core/paint.js";
 
 export interface UpsetOptions {
   /** Fraction of the height given to the intersection bars, in (0, 1). */
@@ -356,17 +357,19 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
           minGapPx: fontSizes.label + 5,
         });
 
-    // Gridlines first, so the bars are drawn over them.
-    ctx.strokeStyle = theme.grid;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (const v of axis.ticks) {
-      // On a half pixel, so the 1 px line fills one row of pixels.
-      const y = Math.round(tickY(v, axis.top)) + 0.5;
-      ctx.moveTo(layout.left, y);
-      ctx.lineTo(width - 12, y);
+    // Gridlines first, so the bars are drawn over them. A grid colour that
+    // paints nothing, such as "none", draws no line.
+    if (setCanvasColour(ctx, "strokeStyle", theme.grid)) {
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const v of axis.ticks) {
+        // On a half pixel, so the 1 px line fills one row of pixels.
+        const y = Math.round(tickY(v, axis.top)) + 0.5;
+        ctx.moveTo(layout.left, y);
+        ctx.lineTo(width - 12, y);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
     if (empty) {
       renderOverlay(axis);
       return;
@@ -385,17 +388,18 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     }
 
     // Membership matrix: alternating row bands, then the dots and the spine
-    // connecting the filled ones.
-    for (let r = 0; r < names.length; r += 1) {
-      if (r % 2 === 1) continue;
-      ctx.fillStyle = theme.grid;
+    // connecting the filled ones. A grid colour that paints nothing leaves
+    // the bands out.
+    if (setCanvasColour(ctx, "fillStyle", theme.grid)) {
       ctx.globalAlpha = 0.25;
-      ctx.fillRect(
-        layout.left,
-        layout.barBaseline + r * layout.rowH,
-        width - layout.left - 12,
-        layout.rowH,
-      );
+      for (let r = 0; r < names.length; r += 2) {
+        ctx.fillRect(
+          layout.left,
+          layout.barBaseline + r * layout.rowH,
+          width - layout.left - 12,
+          layout.rowH,
+        );
+      }
       ctx.globalAlpha = 1;
     }
     const r = Math.min(
@@ -422,6 +426,10 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
         ctx.stroke();
       }
       for (let k = 0; k < names.length; k += 1) {
+        // An empty dot whose colour paints nothing is left out, so it never
+        // takes the colour of a filled one.
+        if (row[k]) ctx.fillStyle = barFill();
+        else if (!setCanvasColour(ctx, "fillStyle", emptyFill())) continue;
         ctx.beginPath();
         ctx.arc(
           cx,
@@ -430,7 +438,6 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
           0,
           Math.PI * 2,
         );
-        ctx.fillStyle = row[k] ? barFill() : emptyFill();
         ctx.fill();
       }
     }

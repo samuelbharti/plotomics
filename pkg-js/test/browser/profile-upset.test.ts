@@ -220,22 +220,37 @@ describe("upset gridlines", () => {
   });
 });
 
+/** The y tick labels of a profile, top to bottom. */
+function yTicks(el: HTMLElement): string[] {
+  return texts(el)
+    .filter((t) => t.getAttribute("text-anchor") === "end")
+    .map((t) => t.textContent ?? "");
+}
+
+/**
+ * x of the middle of bar `i` of `n` in a profile `width` px wide, from the
+ * x of its y tick labels, which end 8 px left of the bars.
+ */
+function profileBarX(
+  el: HTMLElement,
+  i: number,
+  n: number,
+  width: number,
+  zero = "0",
+) {
+  const left = tick(el, zero).x + 8;
+  return left + ((width - left - 14) / n) * (i + 0.5);
+}
+
 describe("profile with values that are not finite, as shares", () => {
   // Python sends NaN as it is; R sends NA, NaN and Inf as null.
   const python = { columns: { value: Float32Array.from([3, Number.NaN, 5]) } };
   const r = { columns: { value: [3, null, 5] as unknown as number[] } };
   const W = 500;
 
-  function yTicks(el: HTMLElement): string[] {
-    return texts(el)
-      .filter((t) => t.getAttribute("text-anchor") === "end")
-      .map((t) => t.textContent ?? "");
-  }
-
   /** x of the middle of bar `i` of three. */
   function barX(el: HTMLElement, i: number) {
-    const left = tick(el, "0%").x + 8;
-    return left + ((W - left - 14) / 3) * (i + 0.5);
+    return profileBarX(el, i, 3, W, "0%");
   }
 
   it("leaves a NaN out of the total, so the bars and the percent axis agree", () => {
@@ -283,5 +298,82 @@ describe("profile with values that are not finite, as shares", () => {
       expect(hoverAt(el, barX(el, 2), y)).toContain("5 (62.5%)");
       expect(hoverAt(el, barX(el, 1), y)).toContain("no value");
     }
+  });
+});
+
+describe("profile shares that are not defined", () => {
+  const W = 500;
+
+  it("draws the values on a plain number axis, with no share on hover", () => {
+    // Shares of a total with mixed signs, or of a total of 0, are not
+    // defined. Before the fix [2, -2, 1, -1] read 0% to 200% with a tooltip
+    // of "2 (0.0%)", and [3, -1] drew bars of 150% and -50%.
+    for (const value of [
+      [2, -2, 1, -1],
+      [3, -1],
+      [0, 0],
+    ]) {
+      const el = container(W, 300);
+      instances.push(
+        createProfile(el, {
+          data: { columns: { value } },
+          options: { asFraction: true },
+        }),
+      );
+      const ticks = yTicks(el);
+      expect(ticks).toContain("0");
+      expect(ticks.filter((s) => s.endsWith("%"))).toEqual([]);
+      const x = profileBarX(el, 0, value.length, W);
+      const tip = hoverAt(el, x, tick(el, "0").y - 5);
+      expect(tip).toContain(String(value[0]));
+      expect(tip).not.toContain("%");
+    }
+  });
+});
+
+describe("profile with negative values", () => {
+  const W = 500;
+  const data = { columns: { value: [5, -3, 2], label: ["a", "b", "c"] } };
+
+  it("keeps a negative bar inside the plot, down from the zero line", () => {
+    // Before the fix the axis started at 0, and the bar of -3 ran from the
+    // bottom of the plot down through the bar labels and off the canvas.
+    const el = container(W, 300);
+    instances.push(createProfile(el, { data }));
+    // The bar labels are right-aligned too; the tick labels are numbers.
+    const values = yTicks(el).map(Number).filter(Number.isFinite);
+    expect(values).toContain(0);
+    const lowest = Math.min(...values);
+    expect(lowest).toBeLessThanOrEqual(-3);
+    const zero = tick(el, "0").y;
+    const bottom = tick(el, String(lowest)).y;
+    // y of -3, on the line from the zero line to the lowest tick.
+    const at3 = zero + ((bottom - zero) * -3) / lowest;
+    const ink = (x: number, y: number) =>
+      far(pixel(el, x, y), [255, 255, 255]) > 60;
+    const neg = profileBarX(el, 1, 3, W);
+    expect(ink(neg, zero + 3)).toBe(true);
+    expect(ink(neg, at3 - 3)).toBe(true);
+    expect(ink(neg, at3 + 3)).toBe(false);
+    // Nothing below the plot: the band of bar labels and the bottom row.
+    expect(ink(neg, bottom + 3)).toBe(false);
+    expect(ink(neg, 299)).toBe(false);
+    // A positive bar rises from the zero line and stops there.
+    const pos = profileBarX(el, 0, 3, W);
+    expect(ink(pos, zero - 3)).toBe(true);
+    expect(ink(pos, zero + 3)).toBe(false);
+  });
+
+  it("draws the same with asFraction, since shares are not defined", () => {
+    const plain = container(W, 300);
+    const shares = container(W, 300);
+    instances.push(
+      createProfile(plain, { data }),
+      createProfile(shares, { data, options: { asFraction: true } }),
+    );
+    expect(yTicks(shares)).toEqual(yTicks(plain));
+    const image = (el: HTMLElement) =>
+      (el.querySelector("canvas") as HTMLCanvasElement).toDataURL();
+    expect(image(shares)).toBe(image(plain));
   });
 });

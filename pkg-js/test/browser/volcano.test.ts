@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { createVolcano } from "../../src/components/volcano.js";
-import type { PlotomicsInstance } from "../../src/core/index.js";
+import { type PlotomicsInstance, darkTheme } from "../../src/core/index.js";
 import { canvasPNG, drawnPixels, type MarkBox, markBox } from "./helpers.js";
 
 // Volcano behaviour that needs a real browser: framing with p = 0 and missing
@@ -261,7 +261,11 @@ describe("volcano gridlines", () => {
    * are from the points beside it; and how far the pixel on the gridline at
    * -2, in empty space, is from the grid colour.
    */
-  async function gridOf(el: HTMLElement, png: Blob) {
+  async function gridOf(
+    el: HTMLElement,
+    png: Blob,
+    gridColour = [0xe5, 0xe7, 0xeb],
+  ) {
     const inside = gridAt(el, "3");
     const point = await pngPixel(png, W, inside.x + 3, inside.y);
     let across = 0;
@@ -273,7 +277,7 @@ describe("volcano gridlines", () => {
     let grid = 255;
     for (const dx of [-1, 0, 1]) {
       const p = await pngPixel(png, W, empty.x + dx, empty.y);
-      grid = Math.min(grid, far(p, [0xe5, 0xe7, 0xeb]));
+      grid = Math.min(grid, far(p, gridColour));
     }
     return { across, grid, point };
   }
@@ -292,6 +296,113 @@ describe("volcano gridlines", () => {
       expect(g.across).toBeLessThan(12);
       expect(g.grid).toBeLessThan(12);
     }
+  });
+
+  it("draws the gridlines under the points in the dark theme", async () => {
+    const el = container(W, 400);
+    const plot = createVolcano(el, {
+      data: blockData(),
+      options: { ...options, theme: darkTheme },
+    });
+    instances.push(plot);
+    await ready(el);
+    // #0b0f19 and #1f2937: the dark background and its grid colour, which
+    // differ by 30 in blue. A 1 px line between two pixels covers at least
+    // half of one of them, so that pixel is within about 15 of the grid
+    // colour, and more than 15 from the background.
+    const background = [0x0b, 0x0f, 0x19];
+    const grid = [0x1f, 0x29, 0x37];
+    for (const png of [await screenPNG(el), await plot.exportPNG?.(1)]) {
+      const g = await gridOf(el, png as Blob, grid);
+      expect(far(g.point, background)).toBeGreaterThan(60);
+      expect(g.across).toBeLessThan(12);
+      expect(g.grid).toBeLessThan(0.6 * far(grid, background));
+    }
+  });
+
+  /** The x of the x tick labels, joined, to see when the view moves. */
+  function labelXs(el: HTMLElement): string {
+    return Array.from(el.querySelectorAll('svg text[text-anchor="middle"]'))
+      .filter((t) => Number.isFinite(Number(t.textContent)))
+      .map((t) => t.getAttribute("x"))
+      .join(",");
+  }
+
+  /**
+   * Whether each gridline in the SVG under the points sits on a tick label:
+   * a vertical line on the x of each x label, a horizontal line through the
+   * middle of each y label.
+   */
+  function gridOnLabels(el: HTMLElement): void {
+    const [under, over] = Array.from(el.querySelectorAll("svg"));
+    const lines = Array.from((under as SVGSVGElement).querySelectorAll("line"));
+    const labels = Array.from(
+      (over as SVGSVGElement).querySelectorAll("text"),
+    ).filter((t) => Number.isFinite(Number(t.textContent)));
+    const at = (t: Element, name: string) => Number(t.getAttribute(name));
+    const xs = labels
+      .filter((t) => t.getAttribute("text-anchor") === "middle")
+      .map((t) => at(t, "x"));
+    // A y label's baseline is the rounded 0.35 of the 11 px label size below
+    // its line.
+    const ys = labels
+      .filter((t) => t.getAttribute("text-anchor") === "end")
+      .map((t) => at(t, "y") - 4);
+    const vertical = lines
+      .filter((l) => at(l, "x1") === at(l, "x2"))
+      .map((l) => at(l, "x1"));
+    const horizontal = lines
+      .filter((l) => at(l, "y1") === at(l, "y2"))
+      .map((l) => at(l, "y1"));
+    expect(xs.length).toBeGreaterThan(2);
+    expect(ys.length).toBeGreaterThan(2);
+    expect(vertical).toEqual(xs);
+    expect(horizontal).toEqual(ys);
+  }
+
+  it("keeps the gridlines on the tick labels after a zoom and a pan", async () => {
+    const el = container(W, 400);
+    instances.push(createVolcano(el, { data: blockData(), options }));
+    await ready(el);
+    gridOnLabels(el);
+    const start = labelXs(el);
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const r = canvas.getBoundingClientRect();
+    const centre = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+
+    // Zoom in at the centre with the mouse wheel.
+    for (let i = 0; i < 5; i += 1) {
+      canvas.dispatchEvent(
+        new WheelEvent("wheel", {
+          deltaY: -120,
+          clientX: centre.x,
+          clientY: centre.y,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }
+    await expect.poll(() => labelXs(el), poll).not.toBe(start);
+    await new Promise((res) => setTimeout(res, 300));
+    gridOnLabels(el);
+    const zoomed = labelXs(el);
+
+    // Drag the view 80 px to the right.
+    const at = (dx: number) => ({
+      clientX: centre.x + dx,
+      clientY: centre.y,
+      bubbles: true,
+      buttons: 1,
+    });
+    canvas.dispatchEvent(new MouseEvent("mousedown", at(0)));
+    for (let s = 1; s <= 10; s += 1) {
+      window.dispatchEvent(new MouseEvent("mousemove", at(8 * s)));
+      await new Promise((res) => setTimeout(res, 10));
+    }
+    window.dispatchEvent(new MouseEvent("mouseup", at(80)));
+    await expect.poll(() => labelXs(el), poll).not.toBe(zoomed);
+    await new Promise((res) => setTimeout(res, 300));
+    gridOnLabels(el);
   });
 
   it("keeps the gridlines under the points in the SVG export", async () => {

@@ -50,6 +50,7 @@ import {
   formatTick,
   isFlatRange,
 } from "../core/index.js";
+import { setCanvasColour } from "../core/paint.js";
 
 export interface DotplotOptions {
   /** Sequential ramp for the expression channel. */
@@ -463,9 +464,9 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
       return;
     }
 
-    // Gridlines first, so the dots are drawn over them.
-    if (opts.showGrid) {
-      ctx.strokeStyle = theme.grid;
+    // Gridlines first, so the dots are drawn over them. A grid colour that
+    // paints nothing, such as "none", draws no line.
+    if (opts.showGrid && setCanvasColour(ctx, "strokeStyle", theme.grid)) {
       ctx.lineWidth = 1;
       ctx.beginPath();
       for (let r = 0; r < g.length; r += 1) {

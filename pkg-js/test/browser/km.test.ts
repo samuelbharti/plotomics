@@ -298,6 +298,8 @@ describe("km in a browser", () => {
       const canvas = el.querySelector("canvas") as HTMLCanvasElement;
       const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
       const ratio = canvas.width / canvas.clientWidth;
+      // Ink is any colour but the white background and the grey of the
+      // gridline, which the canvas draws under the curves.
       const inkAt = (x: number, y: number) => {
         for (let dy = -3; dy <= 3; dy += 1) {
           const [r, g, b] = ctx.getImageData(
@@ -306,7 +308,9 @@ describe("km in a browser", () => {
             1,
             1,
           ).data;
-          if (!(r === 255 && g === 255 && b === 255)) return true;
+          const white = r === 255 && g === 255 && b === 255;
+          const grid = r === 0xe5 && g === 0xe7 && b === 0xeb;
+          if (!white && !grid) return true;
         }
         return false;
       };

@@ -57,6 +57,21 @@ test_that("bioprofile() warns on values that are not finite and keeps their rows
   expect_true(w$x$options$asFraction)
 })
 
+test_that("bioprofile() refuses negative values as shares", {
+  # Shares of a total with negative values are not defined. A value that is
+  # not finite is left out of the count, as the plot leaves it out.
+  df <- data.frame(value = c(2, -2, 1, -Inf, NaN))
+  expect_error(
+    suppressWarnings(bioprofile(df, as_fraction = TRUE)),
+    "`as_fraction` needs every `value` to be 0 or more; found 1 negative value(s).",
+    fixed = TRUE
+  )
+  # Without as_fraction the bars of negative values go down from 0.
+  w <- bioprofile(data.frame(value = c(2, -2, 1)))
+  expect_equal(w$x$data$columns$value, c(2, -2, 1))
+  expect_false(w$x$options$asFraction)
+})
+
 test_that("bioprofile() validates its input", {
   df <- profile_fixture()
   expect_error(bioprofile(list(value = 1)), "must be a data frame")
