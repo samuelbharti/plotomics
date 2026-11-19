@@ -144,3 +144,14 @@ def test_spatial_sends_numbers_read_as_categories_at_full_precision():
 def test_spatial_rejects_an_unknown_colormap():
     with pytest.raises(ValueError, match="must be one of"):
         Spatial(make_data(), colormap="magma", **IMG)
+
+
+def test_spatial_leaves_the_spot_diameter_to_the_browser_unless_given():
+    w = Spatial(make_data(), **IMG)
+    # The browser takes the median distance between neighbouring spots.
+    assert "spotDiameter" not in w.data["meta"]
+    w = Spatial(make_data(), spot_diameter=np.float32(55), **IMG)
+    assert w.data["meta"]["spotDiameter"] == 55.0
+    for bad in (0, -1.0, float("nan"), float("inf"), "8", True, [4, 8]):
+        with pytest.raises(ValueError, match="`spot_diameter` must be a positive"):
+            Spatial(make_data(), spot_diameter=bad, **IMG)

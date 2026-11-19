@@ -2,10 +2,24 @@ import { describe, it, expect } from "vitest";
 import {
   fitTransform,
   isCategorical,
+  medianNeighbourDistance,
   numericExtent,
   spatialLevels,
   spotRadius,
 } from "../src/components/spatial.js";
+
+/** Spots on a square grid, with `step` between neighbours. */
+function grid(cols: number, rows: number, step: number) {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      xs.push(c * step);
+      ys.push(r * step);
+    }
+  }
+  return { xs, ys };
+}
 
 describe("spatial fit transform", () => {
   it("letterboxes a square image into a wide container", () => {
@@ -120,5 +134,55 @@ describe("spatial levels and missing values", () => {
       "1",
       "1.5",
     ]);
+  });
+});
+
+describe("spatial spot spacing", () => {
+  it("measures the spacing of a square grid", () => {
+    const { xs, ys } = grid(20, 15, 10);
+    expect(medianNeighbourDistance(xs, ys)).toBeCloseTo(10);
+  });
+
+  it("measures the spacing of a hexagonal grid like Visium", () => {
+    // Rows offset by half a step, so every neighbour is 100 away.
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let r = 0; r < 30; r += 1) {
+      for (let c = 0; c < 30; c += 1) {
+        xs.push(c * 100 + (r % 2) * 50);
+        ys.push(r * 50 * Math.sqrt(3));
+      }
+    }
+    expect(medianNeighbourDistance(xs, ys)).toBeCloseTo(100);
+  });
+
+  it("measures spots on one line", () => {
+    expect(medianNeighbourDistance([20, 60, 100, 140], [50, 50, 50, 50])).toBe(
+      40,
+    );
+    expect(medianNeighbourDistance([5, 5, 5], [0, 30, 60])).toBe(30);
+  });
+
+  it("leaves out missing coordinates and spots at the same place", () => {
+    const xs = [0, 0, 5, null, Number.NaN];
+    const ys = [0, 0, 0, 3, 1];
+    expect(medianNeighbourDistance(xs, ys)).toBe(5);
+  });
+
+  it("gives null when the spots show no spacing", () => {
+    expect(medianNeighbourDistance([], [])).toBeNull();
+    expect(medianNeighbourDistance([3], [4])).toBeNull();
+    expect(medianNeighbourDistance([3, 3], [4, 4])).toBeNull();
+    expect(medianNeighbourDistance([3, null], [4, 9])).toBeNull();
+  });
+
+  it("measures a large slide from a sample, and a thin strip", () => {
+    const { xs, ys } = grid(300, 300, 12);
+    expect(medianNeighbourDistance(xs, ys)).toBeCloseTo(12);
+    // Nearly flat: the grid keeps no more cells than spots along the strip.
+    const n = 5000;
+    const sx = Array.from({ length: n }, (_, i) => i * 2);
+    const sy = Array.from({ length: n }, (_, i) => (i % 2) * 1e-9);
+    expect(medianNeighbourDistance(sx, sy)).toBeCloseTo(2);
   });
 });

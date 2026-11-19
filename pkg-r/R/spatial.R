@@ -11,7 +11,8 @@
 #'
 #' `color` may be a character vector (categorical, discrete legend) or numeric
 #' (continuous, sequential ramp with a colourbar), which is what lets one view
-#' toggle between colouring by cluster and by a gene's expression.
+#' toggle between colouring by cluster and by a gene's expression. The legend
+#' sits in a gutter right of the image, so it never covers the tissue.
 #'
 #' @section Scale:
 #' Spots are drawn one at a time on a 2-D canvas, which suits a Visium-scale
@@ -27,7 +28,9 @@
 #'   `label` (tooltip text) columns.
 #' @param image URL or path of the tissue image, as the browser will fetch it.
 #' @param img_width,img_height Natural size of that image in pixels.
-#' @param spot_diameter Spot diameter in image pixels.
+#' @param spot_diameter Spot diameter in image pixels. `NULL` (the default)
+#'   takes the median distance from a spot to its nearest neighbour, so
+#'   neighbouring spots touch.
 #' @param levels,colors Character vectors fixing the categorical order and
 #'   colours. `NULL` takes the levels of a factor `color`, else the distinct
 #'   values (text in natural order, "2" before "10"; numbers by value), and
@@ -39,7 +42,7 @@
 #' @param colormap Sequential ramp for continuous colouring: `"viridis"`,
 #'   `"rdbu"`, `"ltc"` (an earthy teal to sand to rust sequential ramp) or
 #'   `"ltcdiv"` (its diverging counterpart, neutral cream at the midpoint).
-#' @param spot_scale Multiplier on `spot_diameter`; 1 draws true size.
+#' @param spot_scale Multiplier on the spot diameter; 1 draws true size.
 #' @param spot_opacity,image_opacity Opacities in `[0, 1]`. Lower the spot
 #'   opacity to read the histology underneath.
 #' @param show_image,show_legend Toggle the underlay and the legend.
@@ -59,7 +62,7 @@ spatial <- function(data,
                     image,
                     img_width,
                     img_height,
-                    spot_diameter = 4,
+                    spot_diameter = NULL,
                     levels = NULL,
                     colors = NULL,
                     color_mode = c("auto", "categorical", "continuous"),
@@ -88,6 +91,15 @@ spatial <- function(data,
   if (!is.numeric(img_width) || !is.numeric(img_height) ||
         img_width <= 0 || img_height <= 0) {
     stop("`img_width` and `img_height` must be positive.", call. = FALSE)
+  }
+  if (!is.null(spot_diameter) &&
+        (!is.numeric(spot_diameter) || length(spot_diameter) != 1L ||
+           !is.finite(spot_diameter) || spot_diameter <= 0)) {
+    stop(
+      "`spot_diameter` must be a positive number, or NULL to take it from ",
+      "the spot spacing.",
+      call. = FALSE
+    )
   }
 
   x <- bv_require_numeric(data$x, "x")
@@ -128,9 +140,10 @@ spatial <- function(data,
   meta <- list(
     image = as.character(image)[1],
     imgWidth = as.numeric(img_width)[1],
-    imgHeight = as.numeric(img_height)[1],
-    spotDiameter = as.numeric(spot_diameter)[1]
+    imgHeight = as.numeric(img_height)[1]
   )
+  # Left out when not given, so the browser derives it from the spacing.
+  if (!is.null(spot_diameter)) meta$spotDiameter <- as.numeric(spot_diameter)
   # I() so a single level or colour still crosses as a JSON array.
   if (!is.null(levels)) meta$levels <- I(as.character(levels))
   if (!is.null(colors)) meta$colors <- I(as.character(colors))

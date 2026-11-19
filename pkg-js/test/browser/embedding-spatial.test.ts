@@ -314,3 +314,121 @@ describe("spatial colours and missing values", () => {
     expect(pixel(el, 2, 2)).toEqual([255, 255, 255]);
   });
 });
+
+describe("spatial spot size and legend gutter", () => {
+  /** Spots every 100 px on a 2000 px image, as on a full-resolution slide. */
+  function fullRes() {
+    const x: number[] = [];
+    const y: number[] = [];
+    for (let i = 0; i < 20; i += 1) {
+      for (let j = 0; j < 20; j += 1) {
+        x.push(50 + i * 100);
+        y.push(50 + j * 100);
+      }
+    }
+    return { x, y };
+  }
+  const dark = [0x1a, 0x1a, 0x1a];
+  const white = [255, 255, 255];
+
+  it("sizes spots from their spacing when no diameter is given", () => {
+    const el = container(400, 400);
+    instances.push(
+      createSpatial(el, {
+        data: {
+          columns: fullRes(),
+          meta: { imgWidth: 2000, imgHeight: 2000 },
+        },
+        options: { showImage: false, spotOpacity: 1 },
+      }),
+    );
+    // The contain fit takes the image to 0.2, so the first spot is centred
+    // at (10, 10) and its neighbours are 20 px off. Spots of 100 image px
+    // reach 10 px out; before the fix they were 4 image px, cut to the
+    // 1 px floor.
+    expect(pixel(el, 10, 10)).toEqual(dark);
+    expect(pixel(el, 16, 10)).toEqual(dark);
+    expect(pixel(el, 10, 16)).toEqual(dark);
+  });
+
+  it("keeps a given diameter", () => {
+    const el = container(400, 400);
+    instances.push(
+      createSpatial(el, {
+        data: {
+          columns: fullRes(),
+          meta: { imgWidth: 2000, imgHeight: 2000, spotDiameter: 20 },
+        },
+        options: { showImage: false, spotOpacity: 1 },
+      }),
+    );
+    expect(pixel(el, 10, 10)).toEqual(dark);
+    expect(pixel(el, 16, 10)).toEqual(white);
+  });
+
+  /** Spots on a 10 x 10 grid over a 100 x 100 image. */
+  function tissue(color: unknown[]) {
+    const x: number[] = [];
+    const y: number[] = [];
+    for (let i = 0; i < 10; i += 1) {
+      for (let j = 0; j < 10; j += 1) {
+        x.push(5 + i * 10);
+        y.push(5 + j * 10);
+      }
+    }
+    const col = x.map((_, i) => color[i % color.length]);
+    return {
+      columns: { x, y, color: col as unknown as string[] },
+      meta: { imgWidth: 100, imgHeight: 100, spotDiameter: 8 },
+    };
+  }
+
+  /** The right edge of what the canvas draws, on the middle row. */
+  function drawnRight(el: HTMLElement): number {
+    const w = el.getBoundingClientRect().width;
+    const mid = el.getBoundingClientRect().height / 2;
+    for (let x = Math.floor(w) - 1; x >= 0; x -= 1) {
+      if (pixel(el, x, mid).some((v) => v !== 255)) return x + 1;
+    }
+    return 0;
+  }
+
+  const LONG = "Normal epithelium next to the tumour margin";
+
+  const cases: [string, unknown[]][] = [
+    ["legend", ["Tumour", "Stroma", LONG, null]],
+    ["colour bar", [1, 250, 3000, null]],
+  ];
+  for (const [name, color] of cases) {
+    it(`keeps the ${name} in a gutter clear of the image`, () => {
+      const el = container(300, 300);
+      instances.push(createSpatial(el, { data: tissue(color) }));
+      const box = el.getBoundingClientRect();
+      const edge = drawnRight(el);
+      // Before the fix the image took the whole width, under the legend.
+      expect(edge).toBeLessThan(box.width - 8);
+      const texts = svgTexts(el);
+      expect(texts).toContain("NA");
+      for (const t of Array.from(el.querySelectorAll("svg text, svg rect"))) {
+        const r = t.getBoundingClientRect();
+        expect(r.left - box.left).toBeGreaterThanOrEqual(edge);
+        expect(r.right).toBeLessThanOrEqual(box.right + 0.5);
+      }
+      if (name === "legend") {
+        // A long level is cut with an ellipsis to the gutter.
+        expect(texts.some((t) => t.endsWith("\u2026"))).toBe(true);
+      }
+    });
+  }
+
+  it("gives the image the whole width with showLegend false", () => {
+    const el = container(300, 300);
+    instances.push(
+      createSpatial(el, {
+        data: tissue(["Tumour", "Stroma"]),
+        options: { showLegend: false },
+      }),
+    );
+    expect(drawnRight(el)).toBe(300);
+  });
+});
