@@ -35,9 +35,11 @@ import {
   type PlotomicsTheme,
   type RampName,
   resolveTheme,
+  textSizes,
   createTooltip,
   type Tooltip,
   measure,
+  textWidth,
   dpr,
   serializeSVG,
   compositePNG,
@@ -209,6 +211,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     initial.options,
   );
   let theme = resolveTheme(opts.theme);
+  let sizes = textSizes(theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   let width = 0;
@@ -463,38 +466,43 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
   function renderOverlay(legend: LegendState) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height || !opts.showLegend || !legend) return;
+    const fs = sizes.label;
+    const sw = swatchSize();
 
     if (legend.kind === "categorical") {
-      const shown = legend.levels.slice(0, LEGEND_MAX);
-      let y = 16;
+      const rowH = Math.round(fs * 1.3);
+      const y0 = Math.round(fs + 5);
+      // Rows the height holds. When the list would run past it, fewer levels
+      // are listed and the rest go into the "+N more" line.
+      const n = legend.levels.length;
+      const fit = Math.max(1, Math.floor((height - 6 - y0) / rowH) + 1);
+      const extra = legend.missing ? 1 : 0;
+      const rowsFor = (cap: number) =>
+        Math.min(n, cap) + (n > cap ? 1 : 0) + extra;
+      let cap = LEGEND_MAX;
+      if (rowsFor(cap) > fit) cap = Math.max(1, fit - 1 - extra);
+      const shown = legend.levels.slice(0, cap);
+      const more = n > shown.length ? `+${n - shown.length} more` : "";
+      // The legend starts 128 px from the right edge, or further left when
+      // its longest entry needs the room.
+      const longest = [...shown, more, legend.missing ? "NA" : ""].reduce(
+        (mx, s) => Math.max(mx, textWidth(s, fs, theme.fontFamily)),
+        0,
+      );
+      const x0 = width - Math.max(128, sw + 5 + Math.ceil(longest) + 8);
+      let y = y0;
       for (let i = 0; i < shown.length; i += 1) {
-        const sw = document.createElementNS(SVG_NS, "rect");
-        sw.setAttribute("x", String(width - 128));
-        sw.setAttribute("y", String(y - 8));
-        sw.setAttribute("width", "9");
-        sw.setAttribute("height", "9");
-        sw.setAttribute("rx", "2");
-        sw.setAttribute("fill", legend.colors[i] ?? theme.foreground);
-        svg.appendChild(sw);
+        swatch(x0, y, legend.colors[i] ?? theme.foreground);
         svg.appendChild(
-          text(width - 114, y, shown[i] ?? "", theme.foreground, "start", 10),
+          text(x0 + sw + 5, y, shown[i] ?? "", theme.foreground, "start", fs),
         );
-        y += 14;
+        y += rowH;
       }
-      if (legend.levels.length > shown.length) {
-        svg.appendChild(
-          text(
-            width - 114,
-            y,
-            `+${legend.levels.length - shown.length} more`,
-            theme.muted,
-            "start",
-            10,
-          ),
-        );
-        y += 14;
+      if (more) {
+        svg.appendChild(text(x0 + sw + 5, y, more, theme.muted, "start", fs));
+        y += rowH;
       }
-      if (legend.missing) missingKey(width - 128, y);
+      if (legend.missing) missingKey(x0, y);
     } else {
       // Colourbar: a gradient strip with its two ends labelled.
       const barH = 90;
@@ -524,27 +532,55 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       rect.setAttribute("height", String(barH));
       rect.setAttribute("fill", `url(#${id})`);
       svg.appendChild(rect);
+      // The top label's cap height lines up with the top of the bar.
       svg.appendChild(
-        text(x0 - 4, y0 + 8, fmt(legend.hi), theme.muted, "end", 9),
+        text(
+          x0 - 4,
+          y0 + Math.round(fs * 0.75),
+          fmt(legend.hi),
+          theme.muted,
+          "end",
+          fs,
+        ),
       );
       svg.appendChild(
-        text(x0 - 4, y0 + barH, fmt(legend.lo), theme.muted, "end", 9),
+        text(x0 - 4, y0 + barH, fmt(legend.lo), theme.muted, "end", fs),
       );
-      if (legend.missing) missingKey(x0, y0 + barH + 18);
+      if (legend.missing) {
+        // Under the bar, moved left when "NA" would pass the right edge.
+        const keyW = sw + 5 + textWidth("NA", fs, theme.fontFamily);
+        missingKey(
+          Math.min(x0, Math.floor(width - 6 - keyW)),
+          y0 + barH + Math.round(fs + 7),
+        );
+      }
     }
+  }
+
+  /** Side of a legend swatch: 9 px next to the default 11 px labels. */
+  function swatchSize(): number {
+    return Math.round((sizes.label * 9) / 11);
+  }
+
+  /** A legend swatch beside the label whose baseline is at `y`. */
+  function swatch(x: number, y: number, fill: string) {
+    const sw = swatchSize();
+    const r = document.createElementNS(SVG_NS, "rect");
+    r.setAttribute("x", String(x));
+    r.setAttribute("y", String(y - Math.round(sizes.label * 0.35 + sw / 2)));
+    r.setAttribute("width", String(sw));
+    r.setAttribute("height", String(sw));
+    r.setAttribute("rx", "2");
+    r.setAttribute("fill", fill);
+    svg.appendChild(r);
   }
 
   /** A grey swatch and "NA", for spots whose colour value is missing. */
   function missingKey(x: number, y: number) {
-    const sw = document.createElementNS(SVG_NS, "rect");
-    sw.setAttribute("x", String(x));
-    sw.setAttribute("y", String(y - 8));
-    sw.setAttribute("width", "9");
-    sw.setAttribute("height", "9");
-    sw.setAttribute("rx", "2");
-    sw.setAttribute("fill", MISSING_COLOR);
-    svg.appendChild(sw);
-    svg.appendChild(text(x + 14, y, "NA", theme.foreground, "start", 10));
+    swatch(x, y, MISSING_COLOR);
+    svg.appendChild(
+      text(x + swatchSize() + 5, y, "NA", theme.foreground, "start"),
+    );
   }
 
   function text(
@@ -553,7 +589,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     content: string,
     fill: string,
     anchor: string,
-    size = 10,
+    size = sizes.label,
   ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
@@ -591,6 +627,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      sizes = textSizes(theme);
       render();
     },
     resize(w, h) {

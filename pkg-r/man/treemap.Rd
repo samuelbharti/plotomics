@@ -36,7 +36,8 @@ or by \code{"value"} (a sequential/diverging ramp).}
 
 \item{colormap}{Ramp used when \code{color_by = "value"}: \code{"viridis"} or \code{"rdbu"}.}
 
-\item{label_min_size}{Minimum tile side (px) before a label is drawn.}
+\item{label_min_size}{Minimum tile side (px) before a label is drawn, at
+the default font size. It grows with \code{theme$fontSize}.}
 
 \item{theme}{Optional named list of theme overrides (colors, fonts, ...)
 merged over the component defaults in the browser. \code{NULL} uses the default

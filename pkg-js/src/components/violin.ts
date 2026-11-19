@@ -35,7 +35,11 @@ import {
   type PlotomicsFactory,
   type PlotomicsInstance,
   type PlotomicsTheme,
+  type TextSizes,
   resolveTheme,
+  defaultTheme,
+  textSizes,
+  textWidth,
   createTooltip,
   type Tooltip,
   measure,
@@ -69,8 +73,14 @@ export const defaultViolinOptions: ViolinOptions = {
   theme: {},
 };
 
-/** Right gutter that holds the value axis and its labels. */
+/** Right gutter that holds the value axis and its labels, at the least. */
 const VALUE_AXIS_W = 44;
+/** Bounds of the left gutter; the upper one is for the default text size. */
+const MIN_LEFT = 50;
+const MAX_LEFT = 150;
+/** The largest share of the widget's width or height that a gutter takes. */
+const MAX_GUTTER_SHARE = 0.35;
+const DEFAULT_SIZES = textSizes(defaultTheme);
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -88,7 +98,25 @@ export interface ViolinLayout {
   bottom: number;
 }
 
-/** Frame the grid of violins, widening the left gutter for feature names. */
+/** Widths in px of the text that sets the gutters of {@link layoutViolin}. */
+export interface ViolinText {
+  /** Text sizes of the plot; the default theme's when absent. */
+  sizes?: TextSizes;
+  /** The longest feature label. */
+  rowLabel?: number;
+  /** The longest group label. */
+  colLabel?: number;
+  /** The widest value axis label. */
+  valueLabel?: number;
+}
+
+/**
+ * Frame the grid of violins. The left gutter takes the longest feature
+ * name, the bottom gutter the longest group name turned 45 degrees and the
+ * right gutter the value axis labels, all measured at the theme's text
+ * size. A gutter takes at most a share of the widget; the plot cuts a
+ * longer label to fit.
+ */
 export function layoutViolin(
   width: number,
   height: number,
@@ -96,14 +124,42 @@ export function layoutViolin(
   nGroups: number,
   opts: Pick<ViolinOptions, "showFeatureLabels"> &
     Partial<Pick<ViolinOptions, "showValueAxis">>,
-  longestLabel = 8,
+  text: ViolinText = {},
 ): ViolinLayout {
-  const left = opts.showFeatureLabels
-    ? Math.min(150, Math.max(50, longestLabel * 6.4 + 12))
+  const size = (text.sizes ?? DEFAULT_SIZES).label;
+  // Eight characters of a label, for a width that was not measured.
+  const guess = 8 * 0.58 * size;
+  const maxLeft = Math.min(
+    (MAX_LEFT * size) / DEFAULT_SIZES.label,
+    Math.floor(width * MAX_GUTTER_SHARE),
+  );
+  // Value labels start 9 px right of the grid and keep 4 px from the edge.
+  const right = opts.showValueAxis
+    ? Math.max(VALUE_AXIS_W, Math.ceil((text.valueLabel ?? 0) + 13))
+    : 14;
+  // Room above the first row for the top of its label when rows are tight.
+  const top = Math.max(10, Math.ceil(0.8 * size));
+  const colLabel = text.colLabel ?? guess;
+  const bottom = Math.min(
+    Math.ceil((colLabel + 0.3 * size) * Math.SQRT1_2) + 12,
+    Math.floor(height * MAX_GUTTER_SHARE),
+  );
+  let left = opts.showFeatureLabels
+    ? Math.min(
+        Math.max(MIN_LEFT, (text.rowLabel ?? guess) + 12),
+        Math.max(MIN_LEFT, maxLeft),
+      )
     : 16;
-  const right = opts.showValueAxis ? VALUE_AXIS_W : 14;
-  const top = 10;
-  const bottom = 70;
+  // The first group label runs down and to the left of its column; widen
+  // the gutter until that label stays inside the widget.
+  if (nGroups > 0) {
+    const reach =
+      (Math.min(colLabel, colLabelRoom(bottom, size)) + 1.1 * size) *
+        Math.SQRT1_2 +
+      2;
+    const half = 1 / (2 * nGroups);
+    left = Math.max(left, (reach - (width - right) * half) / (1 - half));
+  }
   const plotW = Math.max(1, width - left - right);
   const plotH = Math.max(1, height - top - bottom);
   return {
@@ -115,6 +171,14 @@ export function layoutViolin(
     plotH,
     bottom,
   };
+}
+
+/**
+ * Length in px a group label may take, turned 45 degrees under the grid in
+ * a gutter `bottom` px tall, at `size` px.
+ */
+function colLabelRoom(bottom: number, size: number): number {
+  return Math.max(0, (bottom - 12) * Math.SQRT2 - 0.3 * size);
 }
 
 /**
@@ -194,11 +258,12 @@ export function violinPolygon(
 export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
   let opts: ViolinOptions = mergeOptions(defaultViolinOptions, initial.options);
   let theme = resolveTheme(opts.theme);
+  let sizes = textSizes(theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   let width = 0;
   let height = 0;
-  let layout = layoutViolin(0, 0, 0, 0, opts);
+  let layout = layoutViolin(0, 0, 0, 0, opts, { sizes });
 
   el.style.position = el.style.position || "relative";
   const canvas = document.createElement("canvas");
@@ -230,6 +295,39 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     if (given && given.length) return given;
     return categoricalColors(theme.categorical, groups().length);
   }
+  // ---- text ----
+  const tw = (s: string, size: number) => textWidth(s, size, theme.fontFamily);
+  /** `s` cut with an ellipsis to fit `maxW` px at `size` px. */
+  function fit(s: string, maxW: number, size: number): string {
+    if (tw(s, size) <= maxW) return s;
+    let lo = 0;
+    let hi = s.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (tw(`${s.slice(0, mid)}\u2026`, size) <= maxW) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo > 0 ? `${s.slice(0, lo)}\u2026` : "";
+  }
+  /** Width of the widest value axis label. */
+  function valueLabelWidth(nFeatures: number): number {
+    const gr = grid();
+    if (!opts.showValueAxis || !gr.length) return 0;
+    const grs = grids();
+    let w = 0;
+    for (let r = 0; r < nFeatures; r += 1) {
+      const rowGrid = gridForRow(gr, grs, r);
+      const lo = rowGrid[0] as number;
+      const hi = rowGrid[rowGrid.length - 1] as number;
+      w = Math.max(
+        w,
+        tw(fmtAxis(lo), sizes.label),
+        tw(fmtAxis(hi), sizes.label),
+      );
+    }
+    return w;
+  }
+
   /** Index of the violin for (feature, group), or -1. */
   function violinIndex(feature: string, group: string): number {
     const fc = featureCol();
@@ -301,8 +399,14 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     const f = features();
     const g = groups();
     const gr = grid();
-    const longest = f.reduce((m, s) => Math.max(m, s.length), 4);
-    layout = layoutViolin(width, height, f.length, g.length, opts, longest);
+    const longest = (labels: string[]) =>
+      labels.reduce((m, s) => Math.max(m, tw(s, sizes.label)), 0);
+    layout = layoutViolin(width, height, f.length, g.length, opts, {
+      sizes,
+      rowLabel: opts.showFeatureLabels ? longest(f) : 0,
+      colLabel: longest(g),
+      valueLabel: valueLabelWidth(f.length),
+    });
 
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
@@ -397,17 +501,18 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       );
     }
 
+    const { label } = sizes;
     if (opts.showFeatureLabels) {
-      const step = Math.max(1, Math.ceil(9 / layout.rowH));
+      const step = Math.max(1, Math.ceil(label / layout.rowH));
       for (let r = 0; r < f.length; r += step) {
         svg.appendChild(
           text(
             layout.left - 7,
-            layout.top + (r + 0.5) * layout.rowH + 3,
-            f[r] ?? "",
+            layout.top + (r + 0.5) * layout.rowH + 0.35 * label,
+            fit(f[r] ?? "", layout.left - 9, label),
             theme.foreground,
             "end",
-            9,
+            label,
           ),
         );
       }
@@ -421,7 +526,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     if (opts.showValueAxis && gr.length) {
       const grs = grids();
       const x = layout.left + layout.plotW + 4;
-      const step = Math.max(1, Math.ceil(9 / layout.rowH));
+      const step = Math.max(1, Math.ceil(label / layout.rowH));
       for (let r = 0; r < f.length; r += step) {
         const rowGrid = gridForRow(gr, grs, r);
         const lo = rowGrid[0] as number;
@@ -431,22 +536,53 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
         svg.appendChild(line(x, yTop, x, yBot, theme.axis));
         svg.appendChild(line(x, yTop, x + 3, yTop, theme.axis));
         svg.appendChild(
-          text(x + 5, yTop + 6, fmtAxis(hi), theme.muted, "start", 8),
+          text(
+            x + 5,
+            yTop + 0.75 * label,
+            fmtAxis(hi),
+            theme.muted,
+            "start",
+            label,
+          ),
         );
-        if (yBot - yTop >= 20) {
+        if (yBot - yTop >= 2 * label + 2) {
+          // Large text sits a little higher, clear of the next row's top
+          // label 4 px under it.
           svg.appendChild(line(x, yBot, x + 3, yBot, theme.axis));
           svg.appendChild(
-            text(x + 5, yBot, fmtAxis(lo), theme.muted, "start", 8),
+            text(
+              x + 5,
+              yBot - Math.max(0, 0.3 * label - 3.5),
+              fmtAxis(lo),
+              theme.muted,
+              "start",
+              label,
+            ),
           );
         }
       }
     }
 
     // Group labels, rotated: cluster names are long and would collide flat.
-    for (let c = 0; c < g.length; c += 1) {
+    // Turned 45 degrees, the lines of two neighbours are cellW / sqrt(2)
+    // from each other; when that is less than the label size, only every
+    // k-th label is drawn.
+    const colRoom = colLabelRoom(layout.bottom, label);
+    const colStep = Math.max(
+      1,
+      Math.ceil(label / (layout.cellW * Math.SQRT1_2) - 1e-9),
+    );
+    for (let c = 0; c < g.length; c += colStep) {
       const x = layout.left + (c + 0.5) * layout.cellW;
       const y = layout.top + layout.plotH + 8;
-      const t = text(x, y, g[c] ?? "", theme.foreground, "end", 9);
+      const t = text(
+        x,
+        y,
+        fit(g[c] ?? "", colRoom, label),
+        theme.foreground,
+        "end",
+        label,
+      );
       t.setAttribute("transform", `rotate(-45 ${x} ${y})`);
       svg.appendChild(t);
     }
@@ -459,7 +595,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     content: string,
     fill: string,
     anchor: string,
-    size = 10,
+    size: number,
   ) {
     const t = document.createElementNS(SVG_NS, "text");
     t.setAttribute("x", String(x));
@@ -508,6 +644,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
+      sizes = textSizes(theme);
       render();
     },
     resize(w, h) {

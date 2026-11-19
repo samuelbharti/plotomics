@@ -75,12 +75,53 @@ describe("violin helpers", () => {
   });
 
   it("widens the left gutter for long feature names and can drop it", () => {
-    const short = layoutViolin(800, 600, 4, 4, { showFeatureLabels: true }, 4);
-    const long = layoutViolin(800, 600, 4, 4, { showFeatureLabels: true }, 30);
-    const none = layoutViolin(800, 600, 4, 4, { showFeatureLabels: false }, 30);
+    const at = (showFeatureLabels: boolean, rowLabel: number) =>
+      layoutViolin(800, 600, 4, 4, { showFeatureLabels }, { rowLabel });
+    // Widths in px of labels of 4 and 30 characters.
+    const short = at(true, 26);
+    const long = at(true, 192);
+    const none = at(false, 192);
     expect(long.left).toBeGreaterThan(short.left);
     expect(long.left).toBeLessThanOrEqual(150);
     expect(none.left).toBeLessThan(short.left);
+  });
+
+  it("sizes the bottom gutter from the longest group label", () => {
+    const at = (colLabel: number) =>
+      layoutViolin(800, 600, 4, 4, { showFeatureLabels: true }, { colLabel });
+    // Turned 45 degrees, a label 100 px longer reaches 100 / sqrt(2) lower.
+    expect(at(120).bottom - at(20).bottom).toBeCloseTo(100 * Math.SQRT1_2, 0);
+    expect(at(2000).bottom).toBe(Math.floor(600 * 0.35));
+  });
+
+  it("widens the left gutter so the first group label stays inside", () => {
+    const l = layoutViolin(
+      400,
+      600,
+      4,
+      8,
+      { showFeatureLabels: false },
+      { colLabel: 150 },
+    );
+    expect(l.left).toBeGreaterThan(16);
+    expect(l.left + l.cellW / 2).toBeGreaterThanOrEqual(
+      (150 + 1.1 * 11) * Math.SQRT1_2,
+    );
+  });
+
+  it("widens the value axis gutter for wide labels", () => {
+    const at = (valueLabel: number) =>
+      layoutViolin(
+        800,
+        600,
+        4,
+        3,
+        { showFeatureLabels: true, showValueAxis: true },
+        { valueLabel },
+      );
+    // Labels start 9 px right of the grid and keep 4 px from the edge.
+    expect(800 - at(20).left - at(20).plotW).toBe(44);
+    expect(800 - at(60).left - at(60).plotW).toBe(73);
   });
 
   it("makes room on the right for the value axis", () => {

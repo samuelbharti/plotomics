@@ -16,6 +16,7 @@ import {
   zScoreByRow,
 } from "../src/components/clustermap-cluster.js";
 import { computeLayout } from "../src/components/clustermap.js";
+import { textSizes } from "../src/core/theme.js";
 
 describe("clustermap data helpers", () => {
   it("reads row-major cells", () => {
@@ -355,6 +356,30 @@ describe("clustermap layout from its labels", () => {
     // Capped for very long labels.
     expect(computeLayout(800, 560, flags, 500, 500).labelW).toBe(140);
     expect(computeLayout(800, 560, flags, 500, 500).labelH).toBe(120);
+  });
+
+  it("gives the colour bar the gutter it is measured to need", () => {
+    const base = computeLayout(800, 560, flags, 60, 50);
+    const wide = computeLayout(800, 560, flags, 60, 50, 120);
+    // The heatmap gives up the 42 px past the default 78, and the bar moves
+    // left with it.
+    expect(wide.heat.w).toBe(base.heat.w - 42);
+    expect(wide.colorbarX).toBe(base.colorbarX - 42);
+  });
+
+  it("scales the label caps with the text size", () => {
+    const l = computeLayout(
+      800,
+      560,
+      flags,
+      500,
+      500,
+      78,
+      textSizes({ fontSize: 16 }),
+    );
+    // 140 and 120 px for 11 px labels, times 14.7 / 11.
+    expect(l.labelW).toBe(187);
+    expect(l.labelH).toBe(160);
   });
 
   it("puts the colour bar right of the row labels and gives the height back", () => {

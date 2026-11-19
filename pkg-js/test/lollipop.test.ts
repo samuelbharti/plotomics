@@ -7,6 +7,7 @@ import {
   stackVariants,
   wrapRows,
 } from "../src/components/lollipop.js";
+import { textSizes } from "../src/core/theme.js";
 
 describe("lollipop layout", () => {
   it("stacks the stem area, backbone, PTM track and axis top to bottom", () => {
@@ -34,10 +35,10 @@ describe("lollipop layout", () => {
 
   it("reserves the axis text and the legend rows below the axis", () => {
     const one = layoutLollipop(900, 540, { showPtms: true, showLegend: true });
-    // The title (baseline axisY + 28) ends above the first legend row, whose
-    // baseline is axisY + 44 and whose 10 px text starts near axisY + 35.
-    const firstRow = one.axisY + 44;
-    expect(one.axisY + 28 + 3).toBeLessThan(firstRow - 9);
+    // The title (baseline axisY + 35) ends above the first legend row, whose
+    // baseline is axisY + 52 and whose 11 px text starts near axisY + 41.
+    const firstRow = one.axisY + 52;
+    expect(one.axisY + 35 + 4).toBeLessThan(firstRow - 11);
     // The last legend row's baseline stays inside the element.
     expect(firstRow).toBeLessThanOrEqual(540 - 6);
     const three = layoutLollipop(
@@ -47,13 +48,13 @@ describe("lollipop layout", () => {
       3,
     );
     expect(three.axisY).toBe(one.axisY - 2 * 15);
-    expect(three.axisY + 44 + 2 * 15).toBeLessThanOrEqual(540 - 6);
+    expect(three.axisY + 52 + 2 * 15).toBeLessThanOrEqual(540 - 6);
     // Without a legend, the axis text still fits under the axis.
     const bare = layoutLollipop(900, 540, {
       showPtms: true,
       showLegend: false,
     });
-    expect(bare.axisY + 28 + 3).toBeLessThanOrEqual(540 - 2);
+    expect(bare.axisY + 35 + 4).toBeLessThanOrEqual(540 - 1);
     // A legend with no entries takes no room.
     const empty = layoutLollipop(
       900,
@@ -307,5 +308,53 @@ describe("lollipop residue ticks", () => {
       1, 50, 100, 150, 200, 250, 300, 350, 403,
     ]);
     expect(residueTicks(781).slice(-2)).toEqual([700, 781]);
+  });
+});
+
+describe("lollipop layout at other text sizes", () => {
+  const big = textSizes({ fontSize: 16 });
+  const opts = { showPtms: true, showLegend: true };
+
+  it("widens the left gutter for wider y tick labels", () => {
+    const narrow = layoutLollipop(900, 440, opts, 1, big, 30);
+    const wide = layoutLollipop(900, 440, opts, 1, big, 70);
+    expect(wide.left - narrow.left).toBeGreaterThanOrEqual(39);
+    // The labels end 8 px short of the stems, and the rotated y title keeps
+    // more than an em to the left of them.
+    expect(wide.left - 8 - 70).toBeGreaterThanOrEqual(1.3 * big.axisTitle);
+  });
+
+  it("leaves room for half the last residue label right of the axis", () => {
+    const l = layoutLollipop(900, 440, opts, 1, big, 0, 50);
+    expect(l.right).toBeGreaterThanOrEqual(25);
+    expect(l.innerW).toBe(900 - l.left - l.right);
+    expect(layoutLollipop(900, 440, opts, 1, big, 0, 10).right).toBe(16);
+  });
+
+  it("gives larger text more room under the axis, above and in the backbone", () => {
+    const huge = textSizes({ fontSize: 24 });
+    const small = layoutLollipop(900, 440, opts);
+    const large = layoutLollipop(900, 440, opts, 1, huge);
+    expect(440 - large.axisY).toBeGreaterThan(440 - small.axisY);
+    expect(large.top).toBeGreaterThan(small.top);
+    expect(large.backboneBottom - large.backboneTop).toBeGreaterThan(
+      small.backboneBottom - small.backboneTop,
+    );
+  });
+
+  it("climbs label rows as tall as the label height given", () => {
+    const at = (y: number) => ({ x: 100, y, anchor: "middle" as const });
+    const spots = placeLabels(
+      [
+        { width: 30, spots: [at(100)] },
+        { width: 30, spots: [at(100), at(87), at(74)] },
+      ],
+      [],
+      { left: 0, right: 1000, top: 0 },
+      16,
+    );
+    // A 16 px box at 100 still covers 87, so the second label climbs to 74.
+    // With the 12 px default it would stop at 87.
+    expect(spots[1]?.y).toBe(74);
   });
 });

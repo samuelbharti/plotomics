@@ -4,6 +4,7 @@ import {
   membershipRow,
   finiteMax,
 } from "../src/components/upset.js";
+import { textSizes } from "../src/core/theme.js";
 
 describe("upset helpers", () => {
   it("takes the largest finite value", () => {
@@ -101,5 +102,52 @@ describe("upset helpers", () => {
     });
     expect(l.rowH).toBeGreaterThan(0);
     expect(l.colW).toBeGreaterThan(0);
+  });
+});
+
+describe("upset layout at other text sizes", () => {
+  const big = textSizes({ fontSize: 16 });
+  const opts = { barFraction: 0.55, showSetSizes: true };
+
+  it("draws the names and counts at the label size when the rows hold it", () => {
+    expect(layoutUpset(700, 520, 4, 8, opts, 100, 20, big).rowText).toBe(
+      big.label,
+    );
+  });
+
+  it("shrinks the names and counts to rows shorter than the label size", () => {
+    const cases = [
+      [16, 16],
+      [22, 12],
+      [60, 16],
+    ] as const;
+    for (const [n, fontSize] of cases) {
+      const s = textSizes({ fontSize });
+      const l = layoutUpset(700, 520, n, 30, opts, 100, 20, s);
+      expect(l.rowText).toBeLessThan(s.label);
+      expect(l.rowText).toBeLessThanOrEqual(0.9 * l.rowH);
+    }
+  });
+
+  it("narrows the name and count columns with the text", () => {
+    const few = layoutUpset(700, 520, 4, 8, opts, 120, 30, big);
+    const many = layoutUpset(700, 520, 30, 8, opts, 120, 30, big);
+    expect(many.nameW).toBeLessThan(few.nameW);
+    expect(many.left).toBeLessThan(few.left);
+  });
+
+  it("widens the set-size panel for its title at a large size", () => {
+    // "set size" at 26 px is about 86 px wide.
+    const s = textSizes({ fontSize: 24 });
+    expect(
+      layoutUpset(700, 520, 4, 8, opts, 48, 24, s).setPanelW,
+    ).toBeGreaterThanOrEqual(86);
+  });
+
+  it("leaves room above the bars for the total at a large size", () => {
+    // The total's baseline is 2 px under the top of the bars.
+    const s = textSizes({ fontSize: 24 });
+    const l = layoutUpset(700, 520, 4, 8, opts, 48, 24, s);
+    expect(l.top + 2).toBeGreaterThanOrEqual(1.08 * s.label);
   });
 });
