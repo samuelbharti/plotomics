@@ -169,3 +169,9 @@ def test_heatmap_carries_the_colour_bar_title():
     assert w.options["legendTitle"] == "log2 expression"
     # None asks the browser for its default: "value", or "z-score".
     assert Heatmap(m).options["legendTitle"] is None
+
+
+def test_heatmap_docstring_names_the_r_function_and_why():
+    doc = " ".join((Heatmap.__doc__ or "").split())
+    assert "``bioheatmap()``" in doc
+    assert "``stats::heatmap()``" in doc

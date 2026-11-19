@@ -56,7 +56,7 @@ export interface ScatterplotView {
 }
 
 /** The parts of a d3 scale these helpers use. */
-interface DomainScale {
+export interface DomainScale {
   domain(domain: [number, number]): unknown;
 }
 

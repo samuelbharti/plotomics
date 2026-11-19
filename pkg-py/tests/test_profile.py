@@ -139,3 +139,9 @@ def test_profile_sends_a_missing_group_as_null_as_r_does():
 def test_profile_names_a_missing_group_left_out_of_groups_as_na():
     with pytest.raises(ValueError, match="not present in `groups`: NA"):
         Profile({"value": [1, 2], "group": ["g", None]}, groups=["g"])
+
+
+def test_profile_docstring_names_the_r_function_and_why():
+    doc = " ".join((Profile.__doc__ or "").split())
+    assert "``bioprofile()``" in doc
+    assert "``stats::profile()``" in doc

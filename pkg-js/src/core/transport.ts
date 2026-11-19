@@ -35,7 +35,9 @@ export interface BufferSchema {
   columns: ColumnSpec[];
 }
 
-type TypedArray =
+/** A column as {@link decodeColumns} returns it: the typed array for its
+ * {@link Dtype}. */
+export type TypedArray =
   | Float32Array
   | Float64Array
   | Int32Array

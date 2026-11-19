@@ -141,3 +141,14 @@ def test_treemap_sends_a_missing_label_as_null():
     assert w.data["meta"]["labels"] == [
         "All", "Pathway 1", None, "Gene 1", None, "Gene 3",
     ]
+
+
+@pytest.mark.parametrize("colormap", ["viridis", "rdbu", "ltc", "ltcdiv"])
+def test_treemap_accepts_every_colormap_the_browser_draws(colormap):
+    w = Treemap(_sample(), color_by="value", colormap=colormap)
+    assert w.options["colormap"] == colormap
+
+
+def test_treemap_rejects_an_unknown_colormap():
+    with pytest.raises(ValueError, match="colormap"):
+        Treemap(_sample(), colormap="plasma")
