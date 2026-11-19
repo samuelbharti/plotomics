@@ -46,13 +46,27 @@ export function zeroTicks(
 /**
  * A tick label with the decimals its step needs. `percent` prints a fraction
  * as a percentage. Large values print as thousands ("k") or millions ("M")
- * when the step is a whole number of them, so the label stays exact.
+ * when the step is a whole number of them, so the label stays exact. A step
+ * of 0 marks the one tick of a flat range, which has no step: it prints the
+ * value itself, every digit of its whole part and up to six significant
+ * digits in all, in exponent form below 1e-6, so a small value never reads
+ * as 0 and a large one is never rounded.
  */
 export function formatTick(
   value: number,
   step: number,
   opts: { percent?: boolean } = {},
 ): string {
+  if (!(step > 0)) {
+    const v = opts.percent ? value * 100 : value;
+    if (!Number.isFinite(v)) return "NA";
+    // Digits of the whole part: 7 for 1234567, 1 for 0.25.
+    const whole =
+      Math.abs(v) < 1e21 ? Math.trunc(Math.abs(v)).toFixed(0).length : 21;
+    const digits = Math.min(21, Math.max(6, whole));
+    const text = String(Number(v.toPrecision(digits)));
+    return opts.percent ? `${text}%` : text;
+  }
   if (opts.percent) {
     return `${(value * 100).toFixed(stepDecimals(step * 100))}%`;
   }
@@ -63,6 +77,103 @@ export function formatTick(
     return `${(value / 1e3).toFixed(stepDecimals(step / 1e3))}k`;
   }
   return value.toFixed(stepDecimals(step));
+}
+
+/**
+ * Whether `[lo, hi]` is flat: no width, or narrower than 1e-12 of its
+ * values. A round step that small sits within a few thousand units of the
+ * last digit of the values, and its labels would repeat, so such a range
+ * gets one tick, as a range with no width does.
+ */
+export function isFlatRange(lo: number, hi: number): boolean {
+  return Math.abs(hi - lo) <= 1e-12 * Math.max(Math.abs(lo), Math.abs(hi));
+}
+
+/** The next finer 1, 2 or 5 step: 5 to 2, 2 to 1 and 1 to 0.5. */
+function finerStep(step: number): number {
+  // Built from the power of ten, so 0.05 becomes 0.02, not
+  // 0.020000000000000004.
+  const power = 10 ** Math.floor(Math.log10(step) + 1e-9);
+  const mantissa = Math.round(step / power);
+  return mantissa >= 5 ? 2 * power : mantissa >= 2 ? power : power / 2;
+}
+
+/**
+ * Round ticks inside `[lo, hi]`, a range that need not start at 0, such as
+ * the values of a colour bar: the multiples of a 1, 2 or 5 step, for about
+ * `count` intervals over the range. When that step leaves fewer than two
+ * ticks inside the range, a finer step is taken, so a range with any width
+ * gets at least two. A range with no width, or one too narrow for a round
+ * step to separate its values (0.3 to 0.1 + 0.2, say), is flat: it gets one
+ * tick, at its middle, and a step of 0. Print each tick with
+ * `formatTick(value, step)`.
+ */
+export function domainTicks(
+  lo: number,
+  hi: number,
+  count = 4,
+): { ticks: number[]; step: number } {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+    return { ticks: [], step: 1 };
+  }
+  if (lo > hi) [lo, hi] = [hi, lo];
+  // Halves first, so the middle of the widest range does not overflow.
+  const flat = { ticks: [lo / 2 + hi / 2], step: 0 };
+  if (isFlatRange(lo, hi)) return flat;
+  let step = tickStep(lo, hi, Math.max(1, count));
+  // Two finer steps always reach two ticks; the rest is margin.
+  for (let k = 0; k < 4; k += 1) {
+    if (!(step > 0) || !Number.isFinite(step) || (hi - lo) / step > 1000) {
+      break;
+    }
+    const first = Math.ceil(lo / step - 1e-9);
+    const last = Math.floor(hi / step + 1e-9);
+    // Past 2 ** 53 an index no longer counts by ones.
+    if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last)) break;
+    if (last > first) {
+      const d = stepDecimals(step);
+      const ticks: number[] = [];
+      // At most about 1000 ticks, by the check above.
+      for (let j = 0; j <= last - first; j += 1) {
+        // toFixed drops the float noise of the product, such as
+        // 0.30000000000000004.
+        const v = Number(((first + j) * step).toFixed(d));
+        if (v !== ticks[ticks.length - 1]) ticks.push(v);
+      }
+      return ticks.length > 1 ? { ticks, step } : flat;
+    }
+    step = finerStep(step);
+  }
+  return Number.isFinite(flat.ticks[0] as number)
+    ? flat
+    : { ticks: [], step: 1 };
+}
+
+/**
+ * Round ticks inside `[lo, hi]` for an axis or a colour bar `lengthPx` long:
+ * the most ticks, for up to `maxCount` intervals over the range, with at
+ * least `minGapPx` between neighbours. When even one interval puts them
+ * closer, only every k-th tick is kept, so no two labels touch.
+ */
+export function fitDomainTicks(
+  lo: number,
+  hi: number,
+  lengthPx: number,
+  opts: { maxCount?: number; minGapPx?: number } = {},
+): { ticks: number[]; step: number } {
+  const minGap = opts.minGapPx ?? 16;
+  const span = Math.abs(hi - lo);
+  const gap = (step: number) =>
+    span > 0 ? (step / span) * lengthPx : Number.POSITIVE_INFINITY;
+  let t = domainTicks(lo, hi, 1);
+  for (let count = opts.maxCount ?? 5; count >= 1; count -= 1) {
+    t = domainTicks(lo, hi, count);
+    // A flat range has one tick and no step.
+    if (!(t.step > 0) || gap(t.step) >= minGap) return t;
+  }
+  const g = gap(t.step);
+  const k = g > 0 ? Math.ceil(minGap / g - 1e-9) : t.ticks.length;
+  return { ticks: t.ticks.filter((_, i) => i % k === 0), step: t.step };
 }
 
 /**

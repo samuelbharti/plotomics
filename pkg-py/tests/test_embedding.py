@@ -162,3 +162,9 @@ def test_embedding_rejects_a_choice_the_browser_cannot_draw(kwargs):
 def test_embedding_sends_a_missing_label_as_null():
     d = {"x": [0.0, 1.0], "y": [0.0, 1.0], "label": ["a", float("nan")]}
     assert Embedding(d).data["columns"]["label"] == ["a", None]
+
+
+@pytest.mark.parametrize("colormap", ["viridis", "rdbu", "ltc", "ltcdiv"])
+def test_embedding_takes_every_ramp_the_browser_draws(colormap):
+    d = {"x": [0.0, 1.0], "y": [0.0, 1.0], "color": [0.1, 0.9]}
+    assert Embedding(d, colormap=colormap).options["colormap"] == colormap

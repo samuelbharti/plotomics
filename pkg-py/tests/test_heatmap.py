@@ -149,3 +149,11 @@ def test_heatmap_leaves_the_colormap_to_the_browser_unless_given():
 def test_heatmap_accepts_every_colormap_the_browser_draws(colormap):
     w = Heatmap(np.zeros((2, 2), dtype=np.float32), colormap=colormap)
     assert w.options["colormap"] == colormap
+
+
+def test_heatmap_carries_the_colour_bar_title():
+    m = np.zeros((2, 2), dtype=np.float32)
+    w = Heatmap(m, legend_title="log2 expression")
+    assert w.options["legendTitle"] == "log2 expression"
+    # None asks the browser for its default: "value", or "z-score".
+    assert Heatmap(m).options["legendTitle"] is None

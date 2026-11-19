@@ -12,6 +12,7 @@ bioheatmap(
   vmin = NULL,
   vmax = NULL,
   show_colorbar = TRUE,
+  legend_title = NULL,
   theme = NULL,
   width = NULL,
   height = NULL,
@@ -25,6 +26,7 @@ heatmap_plotomics(
   vmin = NULL,
   vmax = NULL,
   show_colorbar = TRUE,
+  legend_title = NULL,
   theme = NULL,
   width = NULL,
   height = NULL,
@@ -54,6 +56,9 @@ symmetric about zero, and a positive \code{vmax} or a negative \code{vmin} given
 alone is mirrored about zero, so zero keeps the neutral colour.}
 
 \item{show_colorbar}{Logical; draw the colorbar legend.}
+
+\item{legend_title}{Colorbar title. \code{NULL} (the default) uses \code{"value"}, or
+\code{"z-score"} when \code{z_score = TRUE}.}
 
 \item{theme}{Optional named list of theme overrides (colors, fonts, ...)
 merged over the component defaults in the browser. \code{NULL} uses the default

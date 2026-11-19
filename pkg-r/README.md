@@ -55,7 +55,8 @@ embedding(data.frame(
 ))
 
 # Kaplan-Meier, straight from a survfit object
-km(survival::survfit(survival::Surv(time, status) ~ sex, data = lung))
+km(survival::survfit(survival::Surv(time, status) ~ sex,
+                     data = survival::lung))
 ```
 
 ## Components

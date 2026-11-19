@@ -381,6 +381,45 @@ describe("PNG export", () => {
     expect([d[0], d[1], d[2]]).toEqual([255, 0, 0]);
   });
 
+  it("draws an underlay under the canvases", async () => {
+    // Gridlines that sit under the marks go in an underlay. Before the
+    // option there was none, and the PNG had no place for them.
+    const NS = "http://www.w3.org/2000/svg";
+    const under = document.createElementNS(NS, "svg");
+    const red = document.createElementNS(NS, "rect");
+    red.setAttribute("width", "100");
+    red.setAttribute("height", "50");
+    red.setAttribute("fill", "#ff0000");
+    under.append(red);
+    // A canvas whose left half is blue and whose right half is clear.
+    const canvas = document.createElement("canvas");
+    canvas.width = 100;
+    canvas.height = 50;
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+    ctx.fillStyle = "#0000ff";
+    ctx.fillRect(0, 0, 50, 50);
+    const png = await compositePNG({
+      width: 100,
+      height: 50,
+      background: "#ffffff",
+      layers: [{ canvas, x: 0, y: 0, width: 100, height: 50 }],
+      underlay: under,
+      overlay: null,
+      scale: 1,
+    });
+    const k = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.round(100 * k);
+    const d = await pixelsOf(png as Blob, w, Math.round(50 * k));
+    const at = (x: number, y: number) => {
+      const i = (Math.round(y * k) * w + Math.round(x * k)) * 4;
+      return [d[i], d[i + 1], d[i + 2]];
+    };
+    // The canvas covers the underlay, and the underlay shows where the
+    // canvas is clear.
+    expect(at(25, 25)).toEqual([0, 0, 255]);
+    expect(at(75, 25)).toEqual([255, 0, 0]);
+  });
+
   it("scales the whole widget", async () => {
     const el = container();
     const [, make] = cases.find(([name]) => name === "km") as [string, Make];

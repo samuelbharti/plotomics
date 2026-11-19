@@ -34,6 +34,8 @@
 #'   symmetric about zero, and a positive `vmax` or a negative `vmin` given
 #'   alone is mirrored about zero, so zero keeps the neutral colour.
 #' @param show_colorbar Logical; draw the colorbar legend.
+#' @param legend_title Colorbar title. `NULL` (the default) uses `"value"`, or
+#'   `"z-score"` when `z_score = TRUE`.
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
 #'   merged over the component defaults in the browser. `NULL` uses the default
 #'   theme.
@@ -53,6 +55,7 @@ bioheatmap <- function(mat,
                        vmin = NULL,
                        vmax = NULL,
                        show_colorbar = TRUE,
+                       legend_title = NULL,
                        theme = NULL,
                        width = NULL,
                        height = NULL,
@@ -87,12 +90,14 @@ bioheatmap <- function(mat,
     zScore = z_score,
     showColorbar = show_colorbar
   )
-  # A NULL colormap or clamp drops the key (assigning NULL removes a list
-  # element), and the browser then uses its default: "rdbu" for z-scores and
-  # "viridis" otherwise, and an auto clamp.
+  # A NULL colormap, clamp or title drops the key (assigning NULL removes a
+  # list element), and the browser then uses its default: "rdbu" for
+  # z-scores and "viridis" otherwise, "auto" for a clamp, and "value" or
+  # "z-score" for the title.
   options$colormap <- colormap
   options$vmin <- vmin
   options$vmax <- vmax
+  options$legendTitle <- legend_title
   if (!is.null(theme)) options$theme <- theme
 
   plotomics_widget(
@@ -123,13 +128,13 @@ heatmap_plotomics <- bioheatmap
 #'   `renderBioheatmap()` returns a Shiny render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-#'   ui <- fluidPage(bioheatmapOutput("hm"))
+#'   ui <- shiny::fluidPage(bioheatmapOutput("hm"))
 #'   server <- function(input, output) {
 #'     output$hm <- renderBioheatmap({
 #'       bioheatmap(matrix(rnorm(200), 20, 10))
 #'     })
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name bioheatmap-shiny
 #' @export

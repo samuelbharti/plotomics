@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { isFlatRange } from "../src/core/ticks.js";
 import {
   readShape,
   zScoreRows,
@@ -125,6 +126,18 @@ describe("heatmap helpers", () => {
     ).toEqual([-3, 2]);
   });
 
+  it("widens a flat domain past 2 ** 52 and keeps it flat", () => {
+    const [lo, hi] = colorDomain([-7e15, -7e15], {
+      vmin: null,
+      vmax: null,
+      diverging: false,
+    });
+    expect(lo).toBeLessThan(hi);
+    // Still one colour bar label, and the cells at the middle level.
+    expect(isFlatRange(lo, hi)).toBe(true);
+    expect(normalizeToU8([-7e15], lo, hi)[0]).toBe(128);
+  });
+
   it("widens a degenerate (constant) domain", () => {
     const [lo, hi] = colorDomain([3, 3, 3], {
       vmin: null,
@@ -132,6 +145,22 @@ describe("heatmap helpers", () => {
       diverging: false,
     });
     expect(lo).toBeLessThan(hi);
+  });
+
+  it("widens a domain whose ends differ only in their last digits", () => {
+    // Before the fix 0.3 to 0.1 + 0.2 stayed that narrow, and its cells took
+    // the two ends of the ramp.
+    for (const opts of [
+      { vmin: null, vmax: null },
+      { vmin: 0.3, vmax: 0.1 + 0.2 },
+    ]) {
+      const [lo, hi] = colorDomain([0.3, 0.1 + 0.2], {
+        ...opts,
+        diverging: false,
+      });
+      expect(lo).toBeCloseTo(-0.2, 12);
+      expect(hi).toBeCloseTo(0.8, 12);
+    }
   });
 
   it("normalizes and clamps values into levels 1 to 255", () => {

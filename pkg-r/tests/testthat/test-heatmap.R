@@ -90,3 +90,11 @@ test_that("bioheatmap() accepts every colormap the browser draws", {
   }
   expect_error(bioheatmap(m, colormap = "plasma"), "should be one of")
 })
+
+test_that("bioheatmap() carries the colour bar title", {
+  m <- matrix(1:4, nrow = 2)
+  w <- bioheatmap(m, legend_title = "log2 expression")
+  expect_equal(w$x$options$legendTitle, "log2 expression")
+  # NULL drops the key, and the browser shows "value" or "z-score".
+  expect_null(bioheatmap(m)$x$options$legendTitle)
+})
