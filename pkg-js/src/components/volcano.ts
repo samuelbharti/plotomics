@@ -20,6 +20,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseContainer,
   textWidth,
   dpr,
   serializeSVG,
@@ -787,6 +788,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       });
     },
     destroy() {
+      releaseContainer(el);
       destroyed = true;
       loop.stop();
       refitAfterResize.cancel();

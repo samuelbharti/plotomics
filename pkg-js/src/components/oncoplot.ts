@@ -40,6 +40,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseContainer,
   dpr,
   serializeSVG,
   compositePNG,
@@ -940,6 +941,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       });
     },
     destroy() {
+      releaseContainer(el);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();

@@ -1,4 +1,8 @@
-import type { PlotomicsData, PlotomicsFactory, PlotomicsInstance } from "../core/index.js";
+import type {
+  PlotomicsData,
+  PlotomicsFactory,
+  PlotomicsInstance,
+} from "../core/index.js";
 import { dropsOptionKeys } from "./rerender.js";
 
 /**
@@ -40,7 +44,17 @@ function ensureGlobal(): PlotomicsGlobal {
           type: "output",
           factory(el: HTMLElement, _width: number, height: number) {
             el.style.position = "relative";
-            if (height) el.style.height = `${height}px`;
+            // A CSS height on the element, inline such as "100vh", "calc(...)"
+            // or a percentage, or from a stylesheet, is kept, so the plot
+            // still follows the window. Only an element laid out at 0 px
+            // high is given the height htmlwidgets passes.
+            if (
+              height > 0 &&
+              !el.style.height &&
+              el.getBoundingClientRect().height <= 0
+            ) {
+              el.style.height = `${height}px`;
+            }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let inst: PlotomicsInstance<any> | null = null;
             let lastOptions: Record<string, unknown> = {};
@@ -49,7 +63,10 @@ function ensureGlobal(): PlotomicsGlobal {
             return {
               renderValue(x: RenderPayload) {
                 const factory = g.components[name];
-                if (!factory) throw new Error(`plotomics: component "${name}" not registered`);
+                if (!factory)
+                  throw new Error(
+                    `plotomics: component "${name}" not registered`,
+                  );
                 const sent = x.options ?? {};
                 const options = withShinySelection(el, sent, (n) => {
                   hasSelection = n > 0;
@@ -75,7 +92,13 @@ function ensureGlobal(): PlotomicsGlobal {
                 lastOptions = sent;
               },
               resize(width: number, h: number) {
-                inst?.resize(width, h);
+                // htmlwidgets passes the border box. The plot fills the
+                // padding box, the size measure() and autoResize give, so
+                // a border no longer pushes it past the element.
+                inst?.resize(
+                  el.clientWidth > 0 ? el.clientWidth : width,
+                  el.clientHeight > 0 ? el.clientHeight : h,
+                );
               },
             };
           },
@@ -113,7 +136,9 @@ function withShinySelection(
 
 type ShinyWindow = {
   HTMLWidgets?: { shinyMode?: boolean };
-  Shiny?: { setInputValue?: (id: string, value: unknown, opts?: unknown) => void };
+  Shiny?: {
+    setInputValue?: (id: string, value: unknown, opts?: unknown) => void;
+  };
 };
 
 function shinyMode(el: HTMLElement): boolean {

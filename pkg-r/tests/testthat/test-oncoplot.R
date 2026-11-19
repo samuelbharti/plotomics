@@ -173,3 +173,36 @@ test_that("an annotation with two values for one sample fails", {
     "more than one value for sample"
   )
 })
+
+test_that("ties are broken in code point order, as in Python", {
+  # Every class appears twice, and four genes are altered in one sample each.
+  # Python's Oncoplot gives the same order for this table.
+  alt <- data.frame(
+    gene = c("TP53", "tp53", "KRAS", "KRAS", "_X", "EGFR"),
+    sample = c("b", "B", "a", "_s", "a", "c"),
+    class = c("missense", "Missense", "missense", "Missense", "_amp", "_amp"),
+    stringsAsFactors = FALSE
+  )
+  sex <- c(b = "f", B = "F", a = "_x", "_s" = "f", c = NA)
+  w <- with_english_collation(
+    oncoplot(alt, annotations = list(list(name = "sex", values = sex)))
+  )
+  meta <- w$x$data$meta
+  expect_equal(meta$classes, c("Missense", "_amp", "missense"))
+  expect_equal(meta$genes, c("KRAS", "EGFR", "TP53", "_X", "tp53"))
+  expect_equal(meta$samples, c("a", "_s", "c", "b", "B"))
+  expect_equal(as.character(meta$annotations[[1]]$levels), c("F", "_x", "f"))
+  expect_equal(as.integer(meta$annotations[[1]]$codes), c(1L, 2L, -1L, 2L, 0L))
+  expect_equal(
+    with_english_collation(oncoplot_memo_sort(alt))$samples,
+    meta$samples
+  )
+})
+
+test_that("a row with no gene or sample makes no Multi-hit", {
+  nm <- data.frame(gene = c("A", NA, NA), sample = c("s1", "s2", "s2"),
+                   class = c("m", "m", "n"), stringsAsFactors = FALSE)
+  w <- oncoplot(nm)
+  expect_equal(w$x$data$meta$classes, c("m", "n"))
+  expect_equal(w$x$data$meta$genes, "A")
+})

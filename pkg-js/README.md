@@ -42,15 +42,47 @@ const inst = createEmbedding(el, {
 The package sets `"sideEffects": false`, so a bundler also tree-shakes the
 barrel import (`plotomics`) down to what you use.
 
+## Sizing
+
+A plot fills the padding box of its element, inside any border, so give
+the element a CSS height. An element with no height of its own gets a
+content height of 480 px, so the plot does not cover the content below it.
+This covers an element added to the page after the plot is drawn too, also
+inside a shadow root. The
+480 px comes from a CSS rule in a cascade layer of its own with the lowest
+priority, so any height your CSS sets wins over it, in a layer or not,
+also one set later. `destroy()` removes it again.
+
+The R and Python wrappers resize their plots when the page changes size. In
+plain JavaScript, `autoResize` passes each new size of the element to the
+plot. It also gives the 480 px to an element that was hidden when the plot
+was made, such as one in a tab, if it has no height once shown. A plot drawn
+before its element is in the page keeps the size it was first drawn at until
+`autoResize` or a `resize()` call runs. Call the function `autoResize`
+returns before `destroy()`; an observer still running after `destroy()`
+gives the empty element the 480 px again:
+
+```js
+import { createVolcano } from "plotomics/volcano";
+import { autoResize } from "plotomics/core";
+
+const plot = createVolcano(el, { data: { columns: { x, y } } });
+const stop = autoResize(el, plot);
+
+// When the plot is removed:
+stop();
+plot.destroy();
+```
+
 ## The shared core
 
 `plotomics/core` exposes the pieces every component is built on: the component
 contract (`PlotomicsFactory`, `PlotomicsInstance`), theming (`defaultTheme`,
 `darkTheme`, `OKABE_ITO`, `PALETTE_20`), colour ramps and palettes (`viridis`,
 `rdbu`, `ltc`, `ltcdiv`, `categoricalColors`, `categoricalScale`), the binary
-column transport (`decodeColumns`) and the export helpers (`serializeSVG`,
+column transport (`decodeColumns`), the export helpers (`serializeSVG`,
 `canvasToPNG`, and `compositePNG`, which draws the canvases and the SVG
-overlay into one PNG).
+overlay into one PNG) and the sizing helpers (`measure`, `autoResize`).
 
 ```js
 import { defaultTheme, categoricalScale } from "plotomics/core";

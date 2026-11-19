@@ -22,7 +22,8 @@
 #' @param ptms Optional data frame of modification sites with columns
 #'   `position` and `type`.
 #' @param classes Character vector fixing the legend order and colour
-#'   assignment. Defaults to the classes present, most frequent first.
+#'   assignment. Defaults to the classes present, most frequent first, equal
+#'   counts by name in code point order, as in Python.
 #' @param class_colors,domain_colors Character vectors of hex colours. `NULL`
 #'   gives the classes the component's categorical palette, and the domains a
 #'   muted palette of their own that the default class colours do not use:
@@ -30,7 +31,7 @@
 #'   `#86B3AE` and `#BDB27F`, repeated past the eighth domain.
 #' @param label_top_n Label the `n` most recurrent variants. Which stems get a
 #'   label is resolved here and sent to the browser, so a redraw, an export and
-#'   any static counterpart all label the same ones.
+#'   any static counterpart all label the same ones. `0` labels none.
 #' @param show_ptms,show_domains,show_legend Toggle the surrounding tracks.
 #' @param min_head_radius,max_head_radius Stem head radius range in pixels. Head
 #'   *area* is proportional to recurrence, so these bound the mapping rather
@@ -104,7 +105,7 @@ lollipop <- function(variants,
   lab <- if (!is.null(variants$label)) as.character(variants$label) else NULL
 
   if (is.null(classes) && !is.null(cls)) {
-    classes <- names(sort(table(cls), decreasing = TRUE))
+    classes <- bv_by_frequency(cls)
   }
   if (!is.null(classes)) {
     classes <- as.character(classes)
@@ -158,10 +159,12 @@ lollipop <- function(variants,
     })
   }
 
-  # Resolve the labelled stems once, here, rather than letting the renderer
-  # pick independently. 0-based for the JS side.
-  if (!is.null(lab) && label_top_n > 0) {
-    top <- order(-count)[seq_len(min(label_top_n, base::length(count)))]
+  # Resolve the labelled stems once, here, so the renderer does not pick on
+  # its own. 0-based for the JS side. With label_top_n = 0 the list is sent
+  # empty: the browser labels the top 12 when it gets no list at all.
+  if (!is.null(lab)) {
+    n_top <- max(0, min(label_top_n, base::length(count)))
+    top <- order(-count)[seq_len(n_top)]
     meta$labelIndex <- I(as.integer(sort(top) - 1L))
   }
 

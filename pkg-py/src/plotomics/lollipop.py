@@ -13,6 +13,8 @@ from ._base import (
     STATIC,
     PlotomicsWidget,
     _column,
+    _na_text,
+    _not_in,
     _text_or_none,
     _to_float32,
     pack_columns,
@@ -60,7 +62,8 @@ class Lollipop(PlotomicsWidget):
     label_top_n:
         Label the n most recurrent variants. Which stems get a label is
         resolved here and sent to the browser, so a redraw, an export and any
-        static counterpart all label the same ones.
+        static counterpart all label the same ones. ``0`` labels none and
+        ``math.inf`` labels all, as ``Inf`` does in R.
     show_ptms, show_domains, show_legend:
         Toggle the surrounding tracks.
     min_head_radius, max_head_radius:
@@ -103,7 +106,7 @@ class Lollipop(PlotomicsWidget):
         classes: list[str] | None = None,
         class_colors: list[str] | None = None,
         domain_colors: list[str] | None = None,
-        label_top_n: int = 12,
+        label_top_n: int | float = 12,
         show_ptms: bool = True,
         show_domains: bool = True,
         show_legend: bool = True,
@@ -143,20 +146,24 @@ class Lollipop(PlotomicsWidget):
 
         cls_col = _column(data, "class")
         lab_col = _column(data, "label")
-        cls = [str(v) for v in cls_col] if cls_col is not None else None
+        # A missing class is None. R leaves NA out of the classes it counts
+        # and then stops on it, so Python does the same below.
+        cls = _text_or_none(cls_col) if cls_col is not None else None
         # A missing label crosses as null, so the browser draws no text for it.
         lab = _text_or_none(lab_col) if lab_col is not None else None
 
         if classes is None and cls is not None:
-            # Most frequent first, ties by name, as R orders them.
-            counted = Counter(cls)
+            # Most frequent first, ties by name in code point order, as R
+            # orders them.
+            counted = Counter(c for c in cls if c is not None)
             classes = sorted(counted, key=lambda c: (-counted[c], c))
         if classes is not None:
-            classes = [str(c) for c in classes]
-            unknown = sorted(set(cls or []) - set(classes))
+            # A missing class given in `classes` stays None, as R keeps NA.
+            classes = _text_or_none(classes)
+            unknown = _not_in(cls or [], classes)
             if unknown:
                 raise ValueError(
-                    "class(es) not present in `classes`: " + ", ".join(unknown)
+                    "class(es) not present in `classes`: " + _na_text(unknown)
                 )
             if class_colors is not None and len(class_colors) != len(classes):
                 raise ValueError("`class_colors` must have one entry per class.")
@@ -195,10 +202,14 @@ class Lollipop(PlotomicsWidget):
                 for p in ptms
             ]
 
-        # Resolve the labelled stems once, here, rather than letting the
-        # renderer pick independently.
-        if lab is not None and label_top_n > 0:
-            top = np.argsort(-count, kind="stable")[:label_top_n]
+        # Resolve the labelled stems once, here, so the renderer does not
+        # pick on its own. With label_top_n = 0 the list is sent empty: the
+        # browser labels the top 12 when it gets no list at all.
+        if lab is not None:
+            # min() takes math.inf down to the number of variants, and max()
+            # takes -math.inf up to none, before int() sees either.
+            n_top = int(max(0, min(label_top_n, count.size)))
+            top = np.argsort(-count, kind="stable")[:n_top]
             meta["labelIndex"] = sorted(int(i) for i in top)
 
         options: dict[str, Any] = {

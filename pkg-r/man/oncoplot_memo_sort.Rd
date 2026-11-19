@@ -26,8 +26,10 @@ it is what makes mutual exclusivity between drivers visible as a staircase.
 }
 \details{
 Exposed separately so a caller can compute the order once and reuse it for
-both an interactive \code{\link[=oncoplot]{oncoplot()}} and a static rendering, rather than letting
-two implementations tie-break differently.
+both an interactive \code{\link[=oncoplot]{oncoplot()}} and a static rendering, so two
+implementations cannot tie-break differently. Remaining ties go by name in
+code point order, whatever the locale, which is the order Python's
+\code{memo_sort()} uses.
 }
 \examples{
 alt <- data.frame(

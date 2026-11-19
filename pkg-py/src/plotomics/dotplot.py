@@ -12,6 +12,9 @@ from ._base import (
     _category_levels,
     _check_choice,
     _column,
+    _na_text,
+    _not_in,
+    _text_or_none,
     _to_float32,
     pack_columns,
 )
@@ -118,9 +121,10 @@ class Dotplot(PlotomicsWidget):
             raise ValueError("`pct` must be a percentage in [0, 100].")
 
         buffer, schema = pack_columns({"pct": pct, "value": value})
+        # A missing gene or cluster crosses as null, as R sends an NA.
         json_columns: dict[str, list] = {
-            "gene": [str(v) for v in gene],
-            "cluster": [str(v) for v in cluster],
+            "gene": _text_or_none(gene),
+            "cluster": _text_or_none(cluster),
         }
 
         # A pandas Categorical is the caller stating the order they want, which
@@ -140,11 +144,11 @@ class Dotplot(PlotomicsWidget):
         ):
             if order is None:
                 continue
-            order = [str(v) for v in order]
-            unknown = sorted(set(col) - set(order))
+            order = _text_or_none(order)
+            unknown = _not_in(col, order)
             if unknown:
                 raise ValueError(
-                    f"value(s) not present in `{key}`: " + ", ".join(unknown[:5])
+                    f"value(s) not present in `{key}`: " + _na_text(unknown[:5])
                 )
             meta[key] = order
 

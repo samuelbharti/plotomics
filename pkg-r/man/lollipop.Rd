@@ -46,7 +46,8 @@ count is not drawn). Optional \code{class} (variant class) and \code{label} (e.g
 \code{position} and \code{type}.}
 
 \item{classes}{Character vector fixing the legend order and colour
-assignment. Defaults to the classes present, most frequent first.}
+assignment. Defaults to the classes present, most frequent first, equal
+counts by name in code point order, as in Python.}
 
 \item{class_colors, domain_colors}{Character vectors of hex colours. \code{NULL}
 gives the classes the component's categorical palette, and the domains a
@@ -56,7 +57,7 @@ muted palette of their own that the default class colours do not use:
 
 \item{label_top_n}{Label the \code{n} most recurrent variants. Which stems get a
 label is resolved here and sent to the browser, so a redraw, an export and
-any static counterpart all label the same ones.}
+any static counterpart all label the same ones. \code{0} labels none.}
 
 \item{show_ptms, show_domains, show_legend}{Toggle the surrounding tracks.}
 
