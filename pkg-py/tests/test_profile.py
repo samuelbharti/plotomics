@@ -68,6 +68,49 @@ def test_profile_defaults():
     assert "title" not in w.data["meta"]
 
 
+def test_profile_warns_on_values_that_are_not_finite_and_keeps_them():
+    # NaN and Infinity reach the plot as they are. It draws no bar for them
+    # and leaves them out of the total, as it does for R's NA, sent as null.
+    with pytest.warns(UserWarning, match="'value' contains 2 non-finite"):
+        w = Profile({"value": [3, np.nan, np.inf, 5]}, as_fraction=True)
+    values = np.frombuffer(w.buffer, dtype=np.float32)
+    assert values[0] == 3 and values[3] == 5
+    assert np.isnan(values[1]) and np.isinf(values[2])
+    assert w.options["asFraction"] is True
+
+
+def test_profile_refuses_negative_values_as_shares():
+    # Shares of a total with negative values are not defined. A value that
+    # is not finite is left out of the count, as the plot leaves it out.
+    with pytest.raises(ValueError) as err:
+        Profile({"value": [2, -2, 1, -np.inf, np.nan]}, as_fraction=True)
+    assert str(err.value) == (
+        "`as_fraction` needs every `value` to be 0 or more; "
+        "found 1 negative value(s)."
+    )
+    # The sign is read before the float32 rounding, which turns -1e-50 into
+    # -0. Before the fix Python let it through, where R stops.
+    with pytest.raises(ValueError, match=r"found 1 negative value\(s\)\."):
+        Profile({"value": [-1e-50, 2]}, as_fraction=True)
+    # Without as_fraction the bars of negative values go down from 0.
+    w = Profile({"value": [2, -2, 1]})
+    assert np.frombuffer(w.buffer, dtype=np.float32).tolist() == [2, -2, 1]
+    assert w.options["asFraction"] is False
+
+
+def test_profile_takes_as_fraction_as_one_true_or_false():
+    # Before the fix as_fraction=1 passed as true, and R skipped the check
+    # for negative values on it. Both now want one True or False.
+    d = make_data()
+    for bad in (1, 0, None, "yes", [True]):
+        with pytest.raises(
+            ValueError, match="`as_fraction` must be a single true or false value."
+        ):
+            Profile(d, as_fraction=bad)
+    w = Profile(d, as_fraction=np.True_)
+    assert w.options["asFraction"] is True
+
+
 def test_profile_validates_its_input():
     d = make_data()
 

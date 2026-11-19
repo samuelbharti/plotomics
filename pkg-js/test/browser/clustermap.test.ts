@@ -1,7 +1,7 @@
 import { agnes } from "ml-hclust";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createClustermap } from "../../src/components/clustermap.js";
-import type { PlotomicsInstance } from "../../src/core/index.js";
+import { type PlotomicsInstance, viridis } from "../../src/core/index.js";
 
 // Count the clustering runs; the real agnes still runs.
 vi.mock("ml-hclust", { spy: true });
@@ -30,6 +30,65 @@ function cellPixel(el: HTMLElement, fx: number, fy: number): number[] {
     1,
   ).data;
   return [d[0] as number, d[1] as number, d[2] as number];
+}
+
+/** The colour bar's gradient stops, low end first. */
+function stops(el: HTMLElement): string[] {
+  return Array.from(el.querySelectorAll("linearGradient stop")).map(
+    (s) => s.getAttribute("stop-color") ?? "",
+  );
+}
+
+function hex(rgb: number[]): string {
+  return `#${rgb.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * Runs of pixels down column `x` of an image, from row `y0` up to row `y1`,
+ * whose colour passes `hit`.
+ */
+function columnRuns(
+  image: CanvasImageSource,
+  width: number,
+  height: number,
+  x: number,
+  hit: (rgb: number[]) => boolean,
+  y0 = 0,
+  y1 = height,
+): number {
+  const c = document.createElement("canvas");
+  c.width = width;
+  c.height = height;
+  const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+  ctx.drawImage(image, 0, 0);
+  const d = ctx.getImageData(Math.floor(x), 0, 1, height).data;
+  let runs = 0;
+  let inRun = false;
+  for (let y = Math.floor(y0); y < Math.floor(y1); y += 1) {
+    const on = hit([
+      d[y * 4] as number,
+      d[y * 4 + 1] as number,
+      d[y * 4 + 2] as number,
+    ]);
+    if (on && !inRun) runs += 1;
+    inRun = on;
+  }
+  return runs;
+}
+
+/** Any colour but that of 0 in viridis or white. */
+function lit(rgb: number[]): boolean {
+  const [r, g, b] = rgb;
+  return (
+    !(r === 68 && g === 1 && b === 84) && !(r === 255 && g === 255 && b === 255)
+  );
+}
+
+/** A matrix of 0 with 1 in the given rows. */
+function withRows(nrows: number, ncols: number, rows: number[]) {
+  const values = new Float32Array(nrows * ncols);
+  for (const r of rows) values.fill(1, r * ncols, (r + 1) * ncols);
+  return values;
 }
 
 let instances: PlotomicsInstance<unknown>[] = [];
@@ -267,5 +326,186 @@ describe("clustermap in a browser", () => {
       }),
     );
     expect(svgTexts(el)).toContain("0");
+  });
+});
+
+describe("clustermap colours in a browser", () => {
+  const flat = { clusterRows: false, clusterCols: false };
+
+  it("paints the cells with the colour bar's ramp", () => {
+    for (const colormap of ["ltc", "ltcdiv"] as const) {
+      const el = container();
+      instances.push(
+        createClustermap(el, {
+          data: {
+            columns: { values: [-3, -1, 1, 3] },
+            meta: { nrows: 2, ncols: 2 },
+          },
+          options: { ...flat, colormap },
+        }),
+      );
+      const s = stops(el);
+      // The lowest cell is the bottom of the bar, the highest its top.
+      expect(hex(cellPixel(el, 0.25, 0.25)), colormap).toBe(s[0]);
+      expect(hex(cellPixel(el, 0.75, 0.75)), colormap).toBe(s[s.length - 1]);
+    }
+  });
+
+  it("centres ltcdiv on 0, as rdbu is", () => {
+    const el = container();
+    instances.push(
+      createClustermap(el, {
+        data: {
+          columns: { values: [0, 1, 2, 3] },
+          meta: { nrows: 2, ncols: 2 },
+        },
+        options: { ...flat, colormap: "ltcdiv" },
+      }),
+    );
+    // The 0 cell takes the cream middle of the ramp, and the scale runs
+    // from -3 to 3.
+    expect(cellPixel(el, 0.25, 0.25)).toEqual([244, 238, 224]);
+    expect(svgTexts(el)).toContain("-3");
+  });
+
+  it("draws z-scores with rdbu unless a colormap is given", () => {
+    const data = {
+      columns: { values: [1, 2, 3, 4, 5, 6] },
+      meta: { nrows: 2, ncols: 3 },
+    };
+    const a = container();
+    const b = container();
+    instances.push(
+      createClustermap(a, { data, options: { ...flat, zScore: true } }),
+      createClustermap(b, {
+        data,
+        options: { ...flat, zScore: true, colormap: "viridis" },
+      }),
+    );
+    expect(stops(a)[0]).toBe("#2166ac");
+    // The middle column has z = 0, the white middle of rdbu.
+    expect(cellPixel(a, 0.5, 0.25)).toEqual([247, 247, 247]);
+    expect(stops(b)[0]).toBe("#440154");
+  });
+
+  it("keeps lone outlier rows when rows outnumber the heatmap's pixels", async () => {
+    // 3000 rows in about 450 px: about 7 rows to a pixel.
+    const nrows = 3000;
+    const ncols = 3;
+    const outliers = [600, 1201, 1802, 2403];
+    const values = new Float32Array(nrows * ncols);
+    for (const r of outliers) values.fill(1, r * ncols, (r + 1) * ncols);
+    const el = container();
+    const plot = createClustermap(el, {
+      data: { columns: { values }, meta: { nrows, ncols } },
+      options: { ...flat, showLabels: false },
+    });
+    instances.push(plot);
+    // Each pixel shows the mean of its rows: an outlier row fades with the
+    // rows it shares a pixel with, but does not take the colour of 0.
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    expect(
+      columnRuns(canvas, canvas.width, canvas.height, canvas.width / 2, lit),
+    ).toBe(outliers.length);
+    // The exported image draws them too; the scan stays inside the frame.
+    const blob = (await plot.exportPNG(1)) as Blob;
+    const png = await createImageBitmap(blob);
+    const k = png.width / el.clientWidth;
+    const x = (canvas.offsetLeft + canvas.clientWidth / 2) * k;
+    const y0 = (canvas.offsetTop + 2) * k;
+    const y1 = (canvas.offsetTop + canvas.clientHeight - 2) * k;
+    expect(columnRuns(png, png.width, png.height, x, lit, y0, y1)).toBe(
+      outliers.length,
+    );
+  });
+
+  it("keeps lone outlier rows that come second in a block of two", () => {
+    const probe = container();
+    const p0 = createClustermap(probe, {
+      data: {
+        columns: { values: new Float32Array(30) },
+        meta: { nrows: 10, ncols: 3 },
+      },
+      options: { ...flat, showLabels: false },
+    });
+    const h = (probe.querySelector("canvas") as HTMLCanvasElement).height;
+    p0.destroy();
+    probe.remove();
+    // Almost two rows to a pixel: blocks of two rows, and a few of one.
+    const nrows = 2 * h - 1;
+    const rows: number[] = [];
+    for (const i of [
+      Math.floor(h / 5),
+      Math.floor((2 * h) / 5),
+      Math.floor((3 * h) / 5),
+    ]) {
+      const r0 = Math.floor((i * nrows) / h);
+      const r1 = Math.floor(((i + 1) * nrows) / h);
+      if (r1 - r0 === 2) rows.push(r0 + 1);
+    }
+    expect(rows.length).toBeGreaterThan(0);
+    const el = container();
+    instances.push(
+      createClustermap(el, {
+        data: {
+          columns: { values: withRows(nrows, 3, rows) },
+          meta: { nrows, ncols: 3 },
+        },
+        options: { ...flat, showLabels: false },
+      }),
+    );
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    expect(
+      columnRuns(canvas, canvas.width, canvas.height, canvas.width / 2, lit),
+    ).toBe(rows.length);
+  });
+
+  it("draws noise as its average, not pushed to the ends of the ramp", () => {
+    const nrows = 5000;
+    const ncols = 400;
+    const values = new Float32Array(nrows * ncols);
+    let s = 7;
+    for (let i = 0; i < values.length; i += 1) {
+      s = (s * 16807) % 2147483647;
+      values[i] = s / 2147483647;
+    }
+    const el = container();
+    instances.push(
+      createClustermap(el, {
+        data: { columns: { values }, meta: { nrows, ncols } },
+        options: { ...flat, showLabels: false },
+      }),
+    );
+    // Find each sampled pixel's place on the ramp from the nearest of 1001
+    // colours along it.
+    const ramp = Array.from({ length: 1001 }, (_, i) => viridis(i / 1000));
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+    const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let n = 0;
+    let ends = 0;
+    for (let y = 0; y < canvas.height; y += 4) {
+      for (let x = 0; x < canvas.width; x += 4) {
+        const o = (y * canvas.width + x) * 4;
+        let best = Infinity;
+        let t = 0;
+        for (let i = 0; i < ramp.length; i += 1) {
+          const [r, g, b] = ramp[i] as [number, number, number];
+          const dist =
+            (r - (d[o] as number)) ** 2 +
+            (g - (d[o + 1] as number)) ** 2 +
+            (b - (d[o + 2] as number)) ** 2;
+          if (dist < best) {
+            best = dist;
+            t = i / 1000;
+          }
+        }
+        n += 1;
+        if (t <= 0.05 || t >= 0.95) ends += 1;
+      }
+    }
+    // In the data, the outer 5% at each end of the range hold 10% of the
+    // cells; pooled to their means, fewer pixels reach those ends.
+    expect(ends / n).toBeLessThan(0.1);
   });
 });
