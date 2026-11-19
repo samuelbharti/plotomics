@@ -22,9 +22,11 @@ export interface GoslingOptions {
    * `unknown` here to avoid importing `gosling.js`; `gosling.ts` narrows it. */
   spec: unknown;
   /**
-   * Gosling's own outer padding in px, passed to its component. Unset, it
-   * is 50: with the theme padding of 10 px that the host keeps, the views
-   * sit 60 px in, as with Gosling's own default.
+   * Gosling's own outer padding in px, passed to its component. The host
+   * keeps the default theme padding of 10 px around Gosling, so the views
+   * sit this padding plus 10 px in, and 10 px in with a padding of 0.
+   * Unset, it is 50, so the views sit 60 px in, as with Gosling's own
+   * default.
    */
   padding?: number;
   /**
@@ -33,8 +35,9 @@ export interface GoslingOptions {
    * a plotomics theme. Every other component takes a
    * `Partial<PlotomicsTheme>` here, but Gosling draws its own tracks, so no
    * plotomics theme field applies: `background`, `foreground`, `muted`,
-   * `grid`, `axis`, `fontFamily`, `fontSize` and `categorical` are not
-   * read. Set colours and fonts in the Gosling theme or in the spec.
+   * `grid`, `axis`, `fontFamily`, `fontSize`, `categorical` and `padding`
+   * are not read. Set colours and fonts in the Gosling theme or in the
+   * spec; the host keeps the default padding of 10 px around Gosling.
    */
   theme?: unknown;
 }

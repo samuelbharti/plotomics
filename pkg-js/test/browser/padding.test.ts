@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { createGosling } from "../../src/components/gosling.js";
 import { createIgv } from "../../src/components/igv.js";
@@ -6,6 +6,7 @@ import { createNetwork } from "../../src/components/network.js";
 import {
   DEFAULT_PADDING,
   type PlotomicsInstance,
+  autoResize,
 } from "../../src/core/index.js";
 import { PLOTS, type Plot, settled } from "./plots.js";
 
@@ -221,9 +222,9 @@ describe.each(PLOTS)("$name with the theme padding", (plot) => {
   }
 
   // Sigma keeps less room of its own as the padding grows, down to the
-  // radius of its largest node, which it reaches at a padding of 14 px with
-  // the nodes of the hover test. The network compares 20 and 40, where it
-  // draws the same.
+  // radius of its largest node and 2 px, which it reaches at a padding of
+  // 12 px with the nodes of the hover test. The network compares 20 and
+  // 40, where it draws the same.
   const [lo, hi] = plot.name.startsWith("network") ? [20, 40] : [0, 40];
   it(`reads the same item at the same place with a padding of ${lo} and ${hi}`, async () => {
     const d = 2 * (hi - lo);
@@ -411,13 +412,13 @@ describe("network room around the graph", () => {
   }
 
   it("keeps sigma's 30 px less the padding, and whole nodes", async () => {
-    // Sigma keeps 30 px between the node centres and its edges. Before the
-    // fix the theme padding came on top: the top node sat 30 px down with
-    // the default, not 20, and 60 px with a padding of 40.
+    // Sigma keeps 30 px between the node centres and its edges, less the
+    // padding, and at least the 11 px label size and 4 px: with a padding
+    // of 40 the top node, of radius 10, starts 40 + 15 - 10 px down.
     for (const [padding, want] of [
       [0, 20],
       [undefined, 20],
-      [40, 40],
+      [40, 45],
     ] as const) {
       const el = document.createElement("div");
       el.style.cssText = "width:600px;height:400px;";
@@ -431,5 +432,111 @@ describe("network room around the graph", () => {
       const top = await inkTop((await net.exportPNG?.(1)) as Blob);
       expect(Math.abs(top - want)).toBeLessThanOrEqual(1.5);
     }
+  });
+
+  it("keeps the labels of the outer nodes whole in a large padding", async () => {
+    // Before the fix sigma kept only the node radius, 4 px, at a padding
+    // of 40, and the labels of the top and bottom nodes ran into the edge
+    // of the plot box, where the canvas cut them.
+    const labels = Object.fromEntries(ids.map((id, i) => [id, `gpyq ${i}`]));
+    const el = document.createElement("div");
+    el.style.cssText = "width:600px;height:400px;";
+    document.body.appendChild(el);
+    const net = createNetwork(el, {
+      data: {
+        columns: { id: ids, x: ring.columns.x, y: ring.columns.y },
+        meta: { ...ring.meta, nodeLabels: ids.map((id) => labels[id]) },
+      },
+      options: { theme: { padding: 40 } },
+    });
+    instances.push(net as PlotomicsInstance<unknown>);
+    await new Promise((r) => setTimeout(r, 300));
+    const png = (await net.exportPNG?.(1)) as Blob;
+    const { data, w } = await pixels(png);
+    const h = data.length / 4 / w;
+    const rows: number[] = [];
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const i = (y * w + x) * 4;
+        if ((data[i] as number) < 250) {
+          rows.push(y);
+          break;
+        }
+      }
+    }
+    // Nothing reaches the first or the last row of the plot box.
+    expect(Math.min(...rows)).toBeGreaterThan(40 + 1);
+    expect(Math.max(...rows)).toBeLessThan(400 - 40 - 2);
+  });
+});
+
+/** Wait `n` frames. */
+const frames = (n: number) =>
+  new Promise<void>((resolve) => {
+    let k = 0;
+    const step = () => (++k >= n ? resolve() : requestAnimationFrame(step));
+    requestAnimationFrame(step);
+  });
+
+describe.each(PLOTS)("$name with no room inside the padding", (plot) => {
+  it("draws, resizes and exports without an error", async () => {
+    // Before the fix sigma threw "Container has no width/height" when the
+    // padding took the whole element.
+    const errors: string[] = [];
+    const onError = (e: ErrorEvent) => {
+      errors.push(e.message);
+      e.preventDefault();
+    };
+    const onRejection = (e: PromiseRejectionEvent) => {
+      errors.push(String(e.reason));
+      e.preventDefault();
+    };
+    const logged = vi
+      .spyOn(console, "error")
+      .mockImplementation((...args: unknown[]) => {
+        errors.push(args.map(String).join(" "));
+      });
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    const stops: (() => void)[] = [];
+    try {
+      // At creation: elements the default padding fills, and a padding
+      // larger than the element.
+      mount(plot, "width:300px;height:20px;");
+      mount(plot, "width:20px;height:300px;");
+      mount(plot, "width:20px;height:20px;");
+      mount(plot, "width:400px;height:300px;", 150);
+      // Through setOptions.
+      mount(plot, "width:400px;height:300px;");
+      instances[instances.length - 1]?.setOptions({
+        theme: { padding: 150 },
+      });
+      // Under autoResize, as the element shrinks to 18, 8 and 1 px.
+      const el = mount(plot, "width:400px;height:300px;");
+      stops.push(
+        autoResize(
+          el,
+          instances[instances.length - 1] as PlotomicsInstance<unknown>,
+        ),
+      );
+      await settled(plot.name);
+      for (const size of [18, 8, 1]) {
+        el.style.width = `${size}px`;
+        el.style.height = `${size}px`;
+        await frames(3);
+      }
+      await settled(plot.name);
+      for (const inst of instances) {
+        await inst.exportPNG?.(1);
+        inst.exportSVG?.();
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    } finally {
+      for (const stop of stops) stop();
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+      logged.mockRestore();
+    }
+    expect(errors).toEqual([]);
   });
 });

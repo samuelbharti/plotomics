@@ -749,7 +749,9 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   }
   /**
    * Each shown legend entry's x and row, and a "+N more" note when the
-   * entries need more rows than the legend may take (a fifth of the height).
+   * entries need more rows than the legend may take: a fifth of the height,
+   * less any row that would leave the stems too short for three count
+   * labels.
    */
   function legendLayout(): {
     items: { x: number; row: number }[];
@@ -762,7 +764,11 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     const names = classes().map((c) => fit(c, maxW - 12, sizes.label));
     const widths = names.map((c) => 12 + textWidth(c, sizes.label));
     const rowH = lollipopText(sizes).legendRowH;
-    const maxRows = Math.max(1, Math.floor((height * 0.2) / rowH));
+    // A fifth of the height, and no row that would leave the stems less
+    // room than three count labels need (two gaps of the count axis).
+    let maxRows = Math.max(1, Math.floor((height * 0.2) / rowH));
+    const stemRoom = 2 * (sizes.label + 5);
+    while (maxRows > 1 && frame(maxRows).stemH < stemRoom) maxRows -= 1;
     const all = wrapRows(widths, maxW);
     const items = all.filter((it) => it.row < maxRows);
     if (items.length === all.length) return { items, note: null, names };

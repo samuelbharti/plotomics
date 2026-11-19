@@ -143,12 +143,8 @@ export interface EmbeddingInstance extends PlotomicsInstance<EmbeddingOptions> {
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-/**
- * With no axes, the theme padding is the room around the plot area. The
- * 1 px on the right keeps the border of a legend in the gutter inside the
- * plot box.
- */
-const BARE_MARGIN = { top: 0, right: 1, bottom: 0, left: 0 };
+/** With no axes, the theme padding is the room around the plot area. */
+const BARE_MARGIN = { top: 0, right: 0, bottom: 0, left: 0 };
 /** Room between the plot area and the legend in the gutter right of it. */
 const LEGEND_GAP = 8;
 /** The largest share of the widget's width the categorical legend takes. */
@@ -1135,7 +1131,17 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     return r;
   }
   function legendBg(x: number, y: number, w: number, h: number) {
-    const r = rect(x, y, w, h, theme.background, theme.grid, 1);
+    // Half a px in on each side, so the 1 px border stays inside the box,
+    // which can end at the edge of the plot box.
+    const r = rect(
+      x + 0.5,
+      y + 0.5,
+      w - 1,
+      h - 1,
+      theme.background,
+      theme.grid,
+      1,
+    );
     r.setAttribute("fill-opacity", "0.82");
     r.setAttribute("rx", "4");
     return r;

@@ -101,8 +101,8 @@ describe("ticks for tiny values, whole counts and short axes", () => {
 
   it("keeps 0 and the round top when even the coarsest step crowds", () => {
     // A top count of 3 takes a step of 2 at its coarsest, three labels in
-    // all, where an axis 19 px long with 20 px between labels holds two.
-    expect(fitZeroTicks(3, 19, { integer: true, minGapPx: 20 })).toEqual({
+    // all, where an axis 25 px long with 20 px between labels holds two.
+    expect(fitZeroTicks(3, 25, { integer: true, minGapPx: 20 })).toEqual({
       ticks: [0, 4],
       top: 4,
       step: 4,
@@ -114,6 +114,37 @@ describe("ticks for tiny values, whole counts and short axes", () => {
     expect(fitZeroTicks(3, 40, { integer: true, minGapPx: 20 }).ticks).toEqual([
       0, 2, 4,
     ]);
+  });
+
+  it("keeps the top alone when 0 and the top do not fit either", () => {
+    // Before the fix an axis 19 px long kept 0 and 4, 19 px from each
+    // other where the labels need 20.
+    expect(fitZeroTicks(3, 19, { integer: true, minGapPx: 20 })).toEqual({
+      ticks: [4],
+      top: 4,
+      step: 4,
+    });
+    expect(fitZeroTicks(23, 1, { integer: true, minGapPx: 25 }).ticks).toEqual([
+      40,
+    ]);
+    // No tick on an axis with no length.
+    expect(fitZeroTicks(3, 0, { integer: true, minGapPx: 20 }).ticks).toEqual(
+      [],
+    );
+  });
+
+  it("never puts two labels closer than the gap, at any length", () => {
+    for (const max of [0.3, 1, 3, 23, 124, 1000]) {
+      for (let px = 0; px <= 120; px += 1) {
+        const t = fitZeroTicks(max, px, { integer: max >= 1, minGapPx: 16 });
+        for (let i = 1; i < t.ticks.length; i += 1) {
+          const gap =
+            (((t.ticks[i] as number) - (t.ticks[i - 1] as number)) / t.top) *
+            px;
+          expect(gap, `${max} on ${px} px`).toBeGreaterThanOrEqual(16 - 1e-9);
+        }
+      }
+    }
   });
 
   it("uses fewer ticks on a short axis", () => {

@@ -126,22 +126,24 @@ describe("ticks on short or narrow plots", () => {
     return gap;
   }
 
-  it("keeps profile tick labels clear of each other at 150 px", () => {
-    const el = container(900, 150);
-    instances.push(
-      createProfile(el, {
-        data: {
-          columns: {
-            value: [12.4, 3, 7],
-            label: ["A[C>A]A", "A[C>A]C", "A[C>A]G"],
+  it("keeps profile tick labels clear of each other at 150 and 130 px", () => {
+    // Before the fix the plot box of a 130 px widget kept 0 and 20 for a
+    // top of 12.4, 3 px from each other.
+    for (const height of [150, 130]) {
+      const el = container(900, height);
+      instances.push(
+        createProfile(el, {
+          data: {
+            columns: {
+              value: [12.4, 3, 7],
+              label: ["A[C>A]A", "A[C>A]C", "A[C>A]G"],
+            },
+            meta: { title: "Sample 1" },
           },
-          meta: { title: "Sample 1" },
-        },
-        // No theme padding, so the plot itself is 150 px high.
-        options: { theme: { padding: 0 } },
-      }),
-    );
-    expect(minGap(el)).toBeGreaterThanOrEqual(12);
+        }),
+      );
+      expect(minGap(el), `${height} px`).toBeGreaterThanOrEqual(12);
+    }
   });
 
   it("keeps UpSet tick labels clear of each other at 130 px", () => {

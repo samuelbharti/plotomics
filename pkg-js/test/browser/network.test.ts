@@ -362,7 +362,7 @@ describe("network legend as the widget grows taller", () => {
       const shown: number[] = [];
       for (let height = 20; height <= 120; height += 2) {
         const el = container(width, height);
-        const net = flush(el, {
+        const net = createNetwork(el, {
           data: {
             columns: { id: ["a", "b", "c"], x: [0, 1, 2], y: [0, 1, 0] },
             meta: { nodeGroup: ["B", "C", "Wolfram cells"] },
@@ -370,8 +370,10 @@ describe("network legend as the widget grows taller", () => {
         });
         if (legendTexts(el).length > 0) shown.push(height);
         else {
+          // The graph runs to the right edge of the plot box, inside the
+          // theme padding, also where the padding takes the whole height.
           expect(graphRight(el)).toBeCloseTo(
-            el.getBoundingClientRect().right,
+            el.getBoundingClientRect().right - DEFAULT_PADDING,
             0,
           );
         }

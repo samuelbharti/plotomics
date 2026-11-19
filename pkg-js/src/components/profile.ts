@@ -242,7 +242,8 @@ export interface ValueAxis {
  * below both 0 and `min` to a round top at or above both 0 and `max`, so the
  * zero line is a tick and a negative bar stays inside the plot. It takes as
  * many intervals, up to `maxCount`, as leave at least `minGapPx` between
- * neighbouring labels. With no value below 0 these are the ticks of
+ * neighbouring labels; when even one interval crowds, the two ends, or the
+ * end farther from 0 alone. With no value below 0 these are the ticks of
  * `fitZeroTicks`.
  */
 export function valueTicks(
@@ -260,7 +261,16 @@ export function valueTicks(
     axis = signedTicks(lo, hi, count);
     if (lengthPx / Math.max(1, axis.ticks.length - 1) >= minGap) return axis;
   }
-  return axis;
+  // Even the coarsest step crowds: the two ends when they fit, else the
+  // end farther from 0 alone, so no two labels come closer than the gap.
+  const { bottom, top } = axis;
+  const ticks =
+    lengthPx >= minGap
+      ? [bottom, top]
+      : lengthPx > 0
+        ? [Math.abs(bottom) > Math.abs(top) ? bottom : top]
+        : [];
+  return { ...axis, ticks };
 }
 
 /**

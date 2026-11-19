@@ -243,7 +243,11 @@ def _padding_number(value: Any) -> float | None:
         return None
     if not isinstance(value, (int, float, np.integer, np.floating)):
         return None
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError:
+        # An int past the float range, such as 10**400.
+        return None
     return number if math.isfinite(number) and number >= 0 else None
 
 

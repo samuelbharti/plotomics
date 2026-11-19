@@ -245,7 +245,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   el.style.position = el.style.position || "relative";
   el.style.background = theme.background;
   const host = document.createElement("div");
-  host.style.cssText = "position:absolute;left:0;top:0;";
+  host.style.cssText = "position:absolute;left:0;top:0;overflow:hidden;";
   // The legend, over the gutter right of the graph.
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   svg.style.cssText =
@@ -338,6 +338,10 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     const labelSize = textSizes(theme).label;
     renderer = new Sigma(graph, host, {
       stagePadding: stagePadding(),
+      // The padding can take the whole element, which leaves sigma's
+      // container no width or height. Sigma would throw there; with this
+      // setting it draws 1 px canvases, which the host hides.
+      allowInvalidContainer: true,
       defaultNodeColor: opts.defaultNodeColor,
       defaultEdgeColor: opts.defaultEdgeColor,
       labelColor: { color: theme.foreground },
@@ -404,8 +408,10 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
    * Room sigma keeps between the node centres and the edges of the plot
    * box. Sigma keeps 30 px of its own; the theme padding now gives part of
    * it, so sigma keeps 30 px less the smallest side of the padding, and the
-   * total stays 30 px with the default. It never keeps less than the radius
-   * of the largest node, so no node is cut at the edge of the box.
+   * total stays 30 px with the default. It never keeps less than the
+   * radius of the largest node and the 2 px of its hover box, nor less
+   * than the label size and 4 px, so the label and the hover box of a node
+   * at the edge are not cut.
    */
   function stagePadding(): number {
     const p = plot.padding;
@@ -415,7 +421,12 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       if (Number.isFinite(size) && size > largest) largest = size;
     });
     const pad = Math.min(p.top, p.right, p.bottom, p.left);
-    return Math.max(Math.ceil(largest), STAGE_PADDING - pad);
+    const label = textSizes(theme).label;
+    return Math.max(
+      Math.ceil(largest + 2),
+      Math.ceil(label + 4),
+      STAGE_PADDING - pad,
+    );
   }
 
   /** Side of a legend swatch: 9 px next to the default 11 px labels. */
@@ -622,12 +633,15 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
    * there is nothing to export.
    */
   function sigmaLayers(): HTMLCanvasElement[] | null {
-    if (!renderer) return null;
+    // A hidden container (a collapsed notebook output), or a plot box the
+    // padding takes whole, has no size: there is nothing to export.
+    if (!renderer || host.offsetWidth === 0 || host.offsetHeight === 0) {
+      return null;
+    }
     // Sigma's WebGL layers do not keep their drawing buffer, so a copy taken
     // after the frame was shown reads a cleared canvas. refresh() renders
     // synchronously, and the caller copies the canvases before the browser
-    // clears them. A hidden container (a collapsed notebook output) has no
-    // size, and Sigma then throws; there is nothing to export in that case.
+    // clears them.
     try {
       renderer.refresh();
     } catch {

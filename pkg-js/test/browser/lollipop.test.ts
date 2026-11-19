@@ -387,8 +387,6 @@ describe("lollipop in a browser", () => {
           },
           meta: { length: 100, classes },
         },
-        // No theme padding, so the plot itself is 250 x 200 px.
-        options: { theme: { padding: 0 } },
       }),
     );
     const texts = svgTexts(el);
@@ -400,9 +398,10 @@ describe("lollipop in a browser", () => {
     expect(
       Number(zero.getAttribute("y")) - Number(ten.getAttribute("y")),
     ).toBeGreaterThan(30);
+    // In the plot box, 20 px less than the widget with the default padding.
     for (const t of texts) {
       const b = t.getBBox();
-      expect(b.y + b.height).toBeLessThanOrEqual(200);
+      expect(b.y + b.height).toBeLessThanOrEqual(200 - 2 * DEFAULT_PADDING);
     }
   });
 
@@ -863,12 +862,12 @@ describe("lollipop in a browser", () => {
             },
             meta: { length: 393, classes: ["Missense"] },
           },
-          // No theme padding, so the stems keep the room this height gives.
-          options: { theme: { fontSize, padding: 0 } },
+          options: { theme: { fontSize } },
         }),
       );
       const ys = yTicks(el).map((t) => Number(t.getAttribute("y")));
-      expect(ys.length).toBeGreaterThanOrEqual(2);
+      // A stem area too short for two labels keeps its top label alone.
+      expect(ys.length).toBeGreaterThanOrEqual(1);
       // The digits of neighbouring labels do not touch.
       const size = textSizes({ fontSize }).label;
       for (let i = 1; i < ys.length; i += 1) {

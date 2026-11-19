@@ -53,6 +53,8 @@ def test_none_sends_no_padding():
         {"top": "4"},
         {"middle": 4},
         {"top": None},
+        pytest.param(10**400, id="an int past the float range"),
+        pytest.param({"left": 10**400}, id="a side past the float range"),
     ],
 )
 def test_a_bad_padding_raises_the_error_r_raises(bad):

@@ -89,6 +89,29 @@ describe("profile value axis", () => {
     }
   });
 
+  it("never puts two labels closer than the gap, at any length", () => {
+    // Before the fix a short axis kept the coarsest step, whose labels
+    // could crowd.
+    for (const [lo, hi] of [
+      [-3, 5],
+      [-30, 120],
+      [-7, 0],
+      [-1, 1000],
+    ] as const) {
+      for (let px = 0; px <= 80; px += 1) {
+        const a = valueTicks(lo, hi, px, { minGapPx: 16 });
+        const span = a.top - a.bottom || 1;
+        for (let i = 1; i < a.ticks.length; i += 1) {
+          const gap =
+            (((a.ticks[i] as number) - (a.ticks[i - 1] as number)) / span) * px;
+          expect(gap, `${lo} to ${hi} on ${px} px`).toBeGreaterThanOrEqual(
+            16 - 1e-9,
+          );
+        }
+      }
+    }
+  });
+
   it("leaves the label gap on a short axis", () => {
     const a = valueTicks(-30, 120, 60, { minGapPx: 16 });
     expect(60 / (a.ticks.length - 1)).toBeGreaterThanOrEqual(16);

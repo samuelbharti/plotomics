@@ -417,9 +417,9 @@ describe("embedding legend gutter", () => {
     const narrow = parts(el).plot.right;
     expect(narrow).toBeLessThan(450);
     plot.setOptions({ showLegend: false });
-    // The plot area runs to 1 px from the right edge of the plot box,
-    // which is the default theme padding of 10 px in from the widget's.
-    await expect.poll(() => parts(el).plot.right, poll).toBe(489);
+    // The plot area runs to the right edge of the plot box, which is the
+    // default theme padding of 10 px in from the widget's.
+    await expect.poll(() => parts(el).plot.right, poll).toBe(490);
   });
 
   it("cuts a long category name to keep the plot area", async () => {
