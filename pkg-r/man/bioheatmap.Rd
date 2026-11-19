@@ -66,7 +66,12 @@ theme.
 Its \code{padding} entry is the space in px between the edge of the widget
 and the plot: one number for every side, or numbers named \code{top},
 \code{right}, \code{bottom} and \code{left} in a list or vector, a side left out
-keeping the default of 10.}
+keeping the default of 10.
+A colour given as a CSS custom property, such as
+\code{background = "var(--bg)"}, takes the value the page gives it when the
+plot draws. After the page changes the property, what the plot drew on
+a canvas keeps the old colour until it draws again: resize the widget
+or render it again.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 
@@ -86,8 +91,9 @@ the rest. A matrix with more rows or columns than the plot has pixels
 is pooled for drawing: each pixel shows the mean of the cells under it,
 so a lone outlier row still shows, fainter the more rows share its pixel.
 A matrix with more rows or columns than the GPU's texture limit is
-averaged in blocks of two or more rows (or columns) to fit it, so zoomed
-in, the rows of a block share their mean.
+averaged in blocks of two or more rows (or columns) to fit it. Zoomed in
+until each row and column in view has a pixel of its own, the view shows
+every row and column once it stops moving.
 }
 \details{
 The function is exported as \code{bioheatmap()} (and aliased as \code{heatmap_plotomics()})

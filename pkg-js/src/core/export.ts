@@ -7,6 +7,7 @@
  */
 
 import { dpr } from "./dom.js";
+import { plainColour, resolveColour, setCanvasColour } from "./paint.js";
 import type { PlotPadding } from "./theme.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -59,8 +60,16 @@ export interface CompositeOptions {
   width: number;
   /** Widget height in CSS px. */
   height: number;
-  /** Fill under every layer: the theme background. */
+  /**
+   * Fill under every layer: the theme background. A background that paints
+   * nothing, such as "none" or "transparent", leaves the image clear there.
+   */
   background: string;
+  /**
+   * The plot's element. A background given as var() or currentColor takes
+   * the colour it has there, as on screen.
+   */
+  element?: Element;
   /** Canvases, bottom first. */
   layers: PNGLayer[];
   /**
@@ -111,8 +120,10 @@ export async function compositePNG(
   out.height = Math.max(1, Math.round(view.height * k));
   const ctx = out.getContext("2d");
   if (!ctx) return null;
-  ctx.fillStyle = opts.background;
-  ctx.fillRect(0, 0, out.width, out.height);
+  // A canvas cannot read var(), and keeps black for it.
+  if (setCanvasColour(ctx, "fillStyle", opts.background, opts.element)) {
+    ctx.fillRect(0, 0, out.width, out.height);
+  }
   // Copy the canvases before the first await: a WebGL canvas may hold its
   // frame only until the browser next paints. An underlay takes an await to
   // draw, so with one the canvases are first copied to a canvas of their
@@ -151,12 +162,24 @@ export async function compositePNG(
     );
   }
   if (marks && opts.underlay) {
-    const image = await svgImage(opts.underlay, view, out.width, out.height);
+    const image = await svgImage(
+      opts.underlay,
+      view,
+      out.width,
+      out.height,
+      opts.element,
+    );
     if (image) ctx.drawImage(image, 0, 0, out.width, out.height);
     ctx.drawImage(marks, 0, 0);
   }
   if (opts.overlay) {
-    const image = await svgImage(opts.overlay, view, out.width, out.height);
+    const image = await svgImage(
+      opts.overlay,
+      view,
+      out.width,
+      out.height,
+      opts.element,
+    );
     if (image) ctx.drawImage(image, 0, 0, out.width, out.height);
   }
   return new Promise((resolve, reject) => {
@@ -172,18 +195,47 @@ export async function compositePNG(
 const LONE_SURROGATE =
   /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
+/** The attributes of an SVG element that hold a colour. */
+const COLOUR_ATTRS = ["fill", "stroke", "stop-color", "flood-color"];
+
+/**
+ * Write each colour in `svg` that depends on the page, var() and
+ * currentColor, as the colour it has inside `el`, so a copy of the SVG
+ * drawn away from the page, as an image or as a file, shows the colours of
+ * the screen. Returns `svg`.
+ */
+function resolvePageColours(svg: SVGSVGElement, el: Element): SVGSVGElement {
+  const seen = new Map<string, string>();
+  for (const node of [svg, ...Array.from(svg.querySelectorAll("*"))]) {
+    for (const name of COLOUR_ATTRS) {
+      const value = node.getAttribute(name);
+      if (!value || !/var\(|currentcolor/i.test(value)) continue;
+      let colour = seen.get(value);
+      if (colour === undefined) {
+        colour = resolveColour(value, el);
+        seen.set(value, colour);
+      }
+      node.setAttribute(name, colour);
+    }
+  }
+  return svg;
+}
+
 /**
  * The part `view` of an SVG element as an image `outW` x `outH` px. The
  * vector overlay is drawn at the output size, so its text stays sharp at
- * any scale.
+ * any scale. With `el`, the colours that depend on the page are read
+ * there first (see `resolvePageColours`).
  */
 async function svgImage(
   svg: SVGSVGElement,
   view: { x: number; y: number; width: number; height: number },
   outW: number,
   outH: number,
+  el?: Element,
 ): Promise<HTMLImageElement | null> {
   const clone = svg.cloneNode(true) as SVGSVGElement;
+  if (el) resolvePageColours(clone, el);
   clone.setAttribute(
     "viewBox",
     `${view.x} ${view.y} ${view.width} ${view.height}`,
@@ -213,7 +265,10 @@ async function svgImage(
  * minus the left and top padding, so the content keeps its coordinates. A
  * rectangle in `background` goes first and fills the whole SVG, the
  * padding too, as in the PNG. `width` and `height` are the size of the
- * content. Returns `svg`.
+ * content. With `el`, the plot's element, a background given as var() or
+ * currentColor is written as the colour it has there, since the file is
+ * read away from the page, and so is every other var() and currentColor
+ * colour in `svg`. Returns `svg`.
  */
 export function padSVG(
   svg: SVGSVGElement,
@@ -221,6 +276,7 @@ export function padSVG(
   height: number,
   pad: PlotPadding,
   background: string,
+  el?: Element,
 ): SVGSVGElement {
   const w = width + pad.left + pad.right;
   const h = height + pad.top + pad.bottom;
@@ -232,7 +288,8 @@ export function padSVG(
   rect.setAttribute("y", String(-pad.top));
   rect.setAttribute("width", String(w));
   rect.setAttribute("height", String(h));
-  rect.setAttribute("fill", background);
+  if (el) resolvePageColours(svg, el);
+  rect.setAttribute("fill", plainColour(background, el) ?? "none");
   svg.insertBefore(rect, svg.firstChild);
   return svg;
 }

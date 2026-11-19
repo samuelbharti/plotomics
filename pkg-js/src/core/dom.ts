@@ -16,7 +16,59 @@ export interface Tooltip {
   destroy(): void;
 }
 
-/** A lightweight absolutely-positioned tooltip anchored to a container. */
+/** Space in px between the pointer and its tooltip. */
+const TIP_OFFSET = 12;
+/** The widest a tooltip grows, in px. Longer text wraps. */
+const TIP_MAX_WIDTH = 320;
+
+/**
+ * Where a tooltip `size` px long starts along one side of a widget `room`
+ * px long, for the pointer at `at`: `TIP_OFFSET` px past the pointer,
+ * or as far before it when it would run past the end. When neither side has
+ * the room, it is kept inside the widget, against its end, and a tooltip
+ * longer than the widget starts at 0.
+ */
+export function tipStart(at: number, size: number, room: number): number {
+  const after = at + TIP_OFFSET;
+  if (after + size <= room) return after;
+  const before = at - TIP_OFFSET - size;
+  if (before >= 0) return before;
+  return Math.max(0, room - size);
+}
+
+/**
+ * Where a tooltip `w` x `h` px goes in a widget `roomW` x `roomH` px, for
+ * the pointer at (`x`, `y`): along each side as {@link tipStart} places it.
+ * That covers the pointer only when the tooltip fits on neither side of it
+ * along either axis. It then moves below or above the pointer, whichever
+ * runs less past the widget (below on a tie), and stays inside the widget
+ * across. A move to the right or the left would run past the widget there
+ * too, and past the right of the page it would give the page a horizontal
+ * scroll.
+ */
+export function tipPosition(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  roomW: number,
+  roomH: number,
+): { left: number; top: number } {
+  const left = tipStart(x, w, roomW);
+  const top = tipStart(y, h, roomH);
+  const covers = left <= x && x <= left + w && top <= y && y <= top + h;
+  if (!covers) return { left, top };
+  const below = y + TIP_OFFSET;
+  const above = y - TIP_OFFSET - h;
+  return { left, top: -above < below + h - roomH ? above : below };
+}
+
+/**
+ * A lightweight absolutely-positioned tooltip anchored to a container. It
+ * sits right of and below the pointer, and flips to the left or above it
+ * near the right or bottom edge, so it stays inside the container and off
+ * the pointer. Text wider than 320 px, or than the container, wraps.
+ */
 export function createTooltip(
   container: HTMLElement,
   theme: PlotomicsTheme,
@@ -34,8 +86,12 @@ export function createTooltip(
     boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
     opacity: "0",
     transition: "opacity 80ms ease",
-    maxWidth: "320px",
-    whiteSpace: "nowrap",
+    left: "0px",
+    top: "0px",
+    boxSizing: "border-box",
+    maxWidth: `${TIP_MAX_WIDTH}px`,
+    whiteSpace: "normal",
+    overflowWrap: "break-word",
   } satisfies Partial<CSSStyleDeclaration>);
   // The container must be a positioning context.
   if (getComputedStyle(container).position === "static") {
@@ -47,13 +103,39 @@ export function createTooltip(
 
   return {
     show(html, clientX, clientY) {
-      const rect = container.getBoundingClientRect();
       tip.innerHTML = html;
+      // Measured at the top left corner, where it has the whole width of
+      // the container, so its text wraps only past the widest it may be.
+      const roomW = container.clientWidth;
+      const roomH = container.clientHeight;
+      tip.style.left = "0px";
+      tip.style.top = "0px";
+      tip.style.width = "";
+      const widest = roomW > 0 ? Math.min(TIP_MAX_WIDTH, roomW) : TIP_MAX_WIDTH;
+      tip.style.maxWidth = `${widest}px`;
+      // The width it takes there is fixed, rounded up to a whole px, so its
+      // text wraps the same wherever it goes. offsetWidth rounds to the
+      // nearest px, and a tip placed against the right edge a fraction
+      // narrower than its text wrapped one more line, after it was placed.
+      const w = Math.ceil(boxSize(tip, "width"));
+      tip.style.width = `${w}px`;
+      const h = Math.ceil(boxSize(tip, "height"));
+      // The pointer from the padding box of the container, where the tip is
+      // placed, inside any border.
+      const rect = container.getBoundingClientRect();
+      const x = clientX - rect.left - container.clientLeft;
+      const y = clientY - rect.top - container.clientTop;
+      let at = tipPosition(x, y, w, h, roomW, roomH);
+      tip.style.left = `${at.left}px`;
+      tip.style.top = `${at.top}px`;
+      // Placed again if its height changed after all.
+      const placedH = Math.ceil(boxSize(tip, "height"));
+      if (placedH !== h) {
+        at = tipPosition(x, y, w, placedH, roomW, roomH);
+        tip.style.left = `${at.left}px`;
+        tip.style.top = `${at.top}px`;
+      }
       tip.style.opacity = "1";
-      const x = clientX - rect.left + 12;
-      const y = clientY - rect.top + 12;
-      tip.style.left = `${x}px`;
-      tip.style.top = `${y}px`;
     },
     hide() {
       tip.style.opacity = "0";
@@ -62,6 +144,17 @@ export function createTooltip(
       tip.remove();
     },
   };
+}
+
+/**
+ * The width or height of `el` in CSS px, with its fraction, from its
+ * computed style: unlike getBoundingClientRect, it is not scaled by a CSS
+ * transform on the page. With no number there, offsetWidth or offsetHeight.
+ */
+function boxSize(el: HTMLElement, side: "width" | "height"): number {
+  const v = Number.parseFloat(getComputedStyle(el)[side]);
+  if (Number.isFinite(v)) return v;
+  return side === "width" ? el.offsetWidth : el.offsetHeight;
 }
 
 /**

@@ -114,7 +114,11 @@ export const defaultLollipopOptions: LollipopOptions = {
 };
 
 export interface LollipopDomain {
-  name: string;
+  /**
+   * The domain's name. A missing name, null (NA in R, None in Python),
+   * draws no text.
+   */
+  name: string | null;
   start: number;
   end: number;
 }
@@ -864,7 +868,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       for (const d of domains()) {
         if (mx >= px(d.start) && mx <= px(d.end)) {
           tooltip.show(
-            `<b>${esc(d.name)}</b><br/>${d.start}-${d.end}`,
+            `<b>${esc(d.name ?? "NA")}</b><br/>${d.start}-${d.end}`,
             lastPointer.x,
             lastPointer.y,
           );
@@ -907,8 +911,9 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       sizes.label + 2,
     );
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = theme.background;
-    ctx.fillRect(0, 0, width, height);
+    if (setCanvasColour(ctx, "fillStyle", theme.background, el)) {
+      ctx.fillRect(0, 0, width, height);
+    }
 
     const L = plen();
     if (L <= 1) {
@@ -1322,7 +1327,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -1333,6 +1338,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [{ canvas, x: 0, y: 0, width, height }],
         overlay: svg,
       });
@@ -1350,9 +1356,12 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
 };
 
 // ---- small utilities ----
-/** Pfam names run long ("P53 DNA-binding domain"); keep the informative head. */
-function shortDomain(name: string): string {
-  return name.replace(/\s*(domain|motif|family)\s*$/i, "");
+/**
+ * Pfam names run long ("P53 DNA-binding domain"); keep the informative head.
+ * A missing name is empty.
+ */
+function shortDomain(name: string | null | undefined): string {
+  return (name ?? "").replace(/\s*(domain|motif|family)\s*$/i, "");
 }
 /**
  * A count as text: a whole number as it is, any other to seven significant

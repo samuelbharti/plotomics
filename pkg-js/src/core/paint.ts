@@ -93,3 +93,106 @@ export function setCanvasColour(
   }
   return true;
 }
+
+let pixelCtx: CanvasRenderingContext2D | null | undefined;
+
+/** A 1 x 1 canvas to paint a colour on and read it back. */
+function pixelContext(): CanvasRenderingContext2D | null {
+  if (pixelCtx === undefined) {
+    const canvas =
+      typeof document === "undefined" ? null : document.createElement("canvas");
+    if (canvas) {
+      canvas.width = 1;
+      canvas.height = 1;
+    }
+    pixelCtx = canvas?.getContext("2d", { willReadFrequently: true }) ?? null;
+  }
+  return pixelCtx;
+}
+
+/**
+ * The red, green, blue and alpha of `colour`, each 0 to 255, as a 2D canvas
+ * paints it, after var() and currentColor are read inside `el` as
+ * {@link setCanvasColour} reads them. Null for a colour that paints nothing,
+ * and outside a browser.
+ */
+export function colourBytes(
+  colour: string | null | undefined,
+  el?: Element,
+): [number, number, number, number] | null {
+  const ctx = pixelContext();
+  if (!ctx || !setCanvasColour(ctx, "fillStyle", colour, el)) return null;
+  ctx.clearRect(0, 0, 1, 1);
+  ctx.fillRect(0, 0, 1, 1);
+  const d = ctx.getImageData(0, 0, 1, 1).data;
+  const a = d[3] as number;
+  return a === 0 ? null : [d[0] as number, d[1] as number, d[2] as number, a];
+}
+
+/**
+ * Relative luminance of a colour given as bytes, from 0 for black to 1 for
+ * white (WCAG 2).
+ */
+export function luminance(rgb: readonly number[]): number {
+  const lin = (v: number) => {
+    const c = v / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return (
+    0.2126 * lin(rgb[0] ?? 0) +
+    0.7152 * lin(rgb[1] ?? 0) +
+    0.0722 * lin(rgb[2] ?? 0)
+  );
+}
+
+/**
+ * The theme background for regl-scatterplot: red, green, blue and alpha,
+ * each from 0 to 1, a form it reads for any colour, where it reads only hex
+ * in a string. var() and currentColor are read inside `el`.
+ * regl-scatterplot styles its lasso for a light or a dark plot from this
+ * colour. A background that paints nothing, such as "transparent", shows
+ * the page, so it gives white when the theme foreground is dark, as on a
+ * light page, and black when the foreground is light.
+ */
+export function scatterBackground(
+  theme: { background: string; foreground: string },
+  el?: Element,
+): [number, number, number, number] {
+  const rgba = colourBytes(theme.background, el);
+  if (rgba) {
+    return [rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255];
+  }
+  const fg = colourBytes(theme.foreground, el);
+  // White and black read equally well on a luminance of about 0.18.
+  return fg && luminance(fg) >= 0.18 ? [0, 0, 0, 1] : [1, 1, 1, 1];
+}
+
+/** Bytes from {@link colourBytes} as a hex colour, or rgba() with an alpha. */
+export function bytesToColour(rgba: readonly number[]): string {
+  const [r = 0, g = 0, b = 0, a = 255] = rgba;
+  if (a >= 255) {
+    const h = (v: number) => Math.round(v).toString(16).padStart(2, "0");
+    return `#${h(r)}${h(g)}${h(b)}`;
+  }
+  return `rgba(${r}, ${g}, ${b}, ${Number((a / 255).toFixed(3))})`;
+}
+
+/**
+ * `colour` as a hex colour, or as rgba() when it is translucent, with
+ * var() and currentColor read inside `el`. Every reader takes these two
+ * forms: a canvas, a WebGL library such as sigma, which reads no other,
+ * and an SVG file opened away from the page, where var() means nothing.
+ * Null for a colour that paints nothing. Outside a browser the colour
+ * comes back as given.
+ */
+export function plainColour(
+  colour: string | null | undefined,
+  el?: Element,
+): string | null {
+  if (!pixelContext()) {
+    const given = (colour ?? "").trim();
+    return given && given.toLowerCase() !== "none" ? given : null;
+  }
+  const rgba = colourBytes(colour, el);
+  return rgba ? bytesToColour(rgba) : null;
+}

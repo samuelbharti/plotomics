@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   domainTicks,
+  fitAxisTicks,
   fitDomainTicks,
   fitZeroTicks,
   formatTick,
@@ -240,8 +241,12 @@ describe("round ticks inside a range that need not start at 0", () => {
     expect(tall.ticks).toEqual([0, 1, 2, 3]);
     const short = fitDomainTicks(0, 3, 30, { maxCount: 4, minGapPx: 20 });
     expect(short.ticks).toEqual([0, 2]);
-    // Too short even for two ticks with 20 px between them: one is kept.
-    const tiny = fitDomainTicks(0, 3, 20, { maxCount: 4, minGapPx: 20 });
+    // Too short for the ticks of any step with 20 px between them, but
+    // the two ends keep 20 px: they stay as a pair.
+    const pair = fitDomainTicks(0, 3, 20, { maxCount: 4, minGapPx: 20 });
+    expect(pair.ticks).toEqual([0, 3]);
+    // Shorter still: one tick is kept.
+    const tiny = fitDomainTicks(0, 3, 19, { maxCount: 4, minGapPx: 20 });
     expect(tiny.ticks).toEqual([0]);
   });
 });
@@ -393,5 +398,138 @@ describe("colour bar ticks far from 0", () => {
     expect(domainTicks(0, Math.fround(0.7), 7).ticks.at(-1)).toBe(0.7);
     expect(snapRatio(10000004.999999998)).toBe(10000005);
     expect(snapRatio(1500011.23)).toBe(1500011.23);
+  });
+});
+
+describe("axis ticks fitted to their labels", () => {
+  /** Width of a label at about 6 px a character. */
+  const wide = (s: string) => 6 * s.length;
+
+  it("labels a narrow range once per tick, at every zoom", () => {
+    // A volcano y axis over 0 to 0.03, and an x axis zoomed to -0.015 to
+    // 0.015. Before the fix the labels were rounded to 2 decimals and
+    // repeated: "0.01, 0.01" and "0.03, 0.03".
+    expect(fitAxisTicks(0, 0.03, 400, () => 11).labels).toEqual([
+      "0.000",
+      "0.005",
+      "0.010",
+      "0.015",
+      "0.020",
+      "0.025",
+      "0.030",
+    ]);
+    const x = fitAxisTicks(-0.0165, 0.0165, 700, wide);
+    expect(x.labels).toEqual([
+      "-0.015",
+      "-0.010",
+      "-0.005",
+      "0.000",
+      "0.005",
+      "0.010",
+      "0.015",
+    ]);
+    expect(x.ticks).toEqual([-0.015, -0.01, -0.005, 0, 0.005, 0.01, 0.015]);
+  });
+
+  it("takes fewer ticks when the labels would touch", () => {
+    // Six intervals over -17 to 27 put labels 13 px wide 30 px from each
+    // other on a 150 px axis, closer than they need.
+    const t = fitAxisTicks(-17, 27, 150, wide, { maxCount: 6, gapPx: 8 });
+    expect(t.ticks).toEqual([-10, 0, 10, 20]);
+    expect(t.labels).toEqual(["-10", "0", "10", "20"]);
+    const room = (t.step / 44) * 150;
+    for (const s of t.labels) expect(room).toBeGreaterThanOrEqual(wide(s) + 8);
+  });
+
+  it("keeps every k-th tick when one interval is still too close", () => {
+    const t = fitAxisTicks(0, 10, 20, () => 11, { gapPx: 5 });
+    // Ticks at 0, 5 and 10 would sit 10 px from each other, for labels
+    // that need 16.
+    expect(t.ticks).toEqual([0, 10]);
+    expect(t.labels).toEqual(["0", "10"]);
+  });
+
+  it("prints a flat range as its one value", () => {
+    expect(fitAxisTicks(5, 5, 300, wide)).toEqual({
+      ticks: [5],
+      step: 0,
+      labels: ["5"],
+    });
+  });
+});
+
+describe("long tick labels in one exponent form", () => {
+  it("labels tiny and huge values in one power of ten", () => {
+    // Before the fix a colour bar over 1.2e-9 to 5.1e-9 read
+    // "0.000000002", too long for its gutter, and lost its labels.
+    expect(formatTicks([2e-9, 3e-9, 4e-9, 5e-9], 1e-9)).toEqual([
+      "2e-9",
+      "3e-9",
+      "4e-9",
+      "5e-9",
+    ]);
+    expect(formatTicks([2e-6, 4e-6], 2e-6)).toEqual(["2e-6", "4e-6"]);
+    expect(formatTicks([-3e-4, -2.5e-4, -2e-4, -1.5e-4], 5e-5)).toEqual([
+      "-3.0e-4",
+      "-2.5e-4",
+      "-2.0e-4",
+      "-1.5e-4",
+    ]);
+    const tiny = domainTicks(1.2e-15, 5.1e-15, 4);
+    expect(formatTicks(tiny.ticks, tiny.step)).toEqual([
+      "2e-15",
+      "3e-15",
+      "4e-15",
+      "5e-15",
+    ]);
+    expect(formatTicks([0, 5e11, 1e12], 5e11)).toEqual([
+      "0",
+      "0.5e+12",
+      "1.0e+12",
+    ]);
+  });
+
+  it("keeps fixed point when it is short, or when no exponent form is shorter", () => {
+    expect(formatTicks([0.001, 0.002, 0.003], 0.001)).toEqual([
+      "0.001",
+      "0.002",
+      "0.003",
+    ]);
+    // A narrow range far from 0 needs its digits in any form.
+    expect(formatTicks([1000.00002, 1000.00004], 2e-5)).toEqual([
+      "1000.00002",
+      "1000.00004",
+    ]);
+    expect(formatTicks([0.50002, 0.50004], 2e-5)).toEqual([
+      "0.50002",
+      "0.50004",
+    ]);
+    // Percentages stay as they are.
+    expect(formatTicks([0, 0.00002], 0.00002, { percent: true })).toEqual([
+      "0.000%",
+      "0.002%",
+    ]);
+  });
+});
+
+describe("a pair of ticks on a short colour bar", () => {
+  it("keeps two labels whenever two fit", () => {
+    // A clustermap colour bar 45 px tall at fontSize 16, over 850 to
+    // 1.2e6. Before the fix thinning kept one tick, "500k".
+    const bar = fitDomainTicks(850, 1.2e6, 45, {
+      maxCount: 4,
+      minGapPx: 23.5,
+      endGapPx: 16.7,
+    });
+    expect(bar.ticks).toEqual([5e5, 1e6]);
+    expect(formatTicks(bar.ticks, bar.step)).toEqual(["0.5M", "1.0M"]);
+    // Shorter still, the pair comes from a finer step, nearer the ends.
+    const shorter = fitDomainTicks(850, 1.2e6, 36, {
+      maxCount: 4,
+      minGapPx: 29.3,
+      endGapPx: 20.3,
+    });
+    expect(shorter.ticks).toEqual([2e5, 1.2e6]);
+    expect(formatTicks(shorter.ticks, shorter.step)).toEqual(["0.2M", "1.2M"]);
   });
 });

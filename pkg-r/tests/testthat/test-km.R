@@ -207,3 +207,250 @@ test_that("km() matches censor columns by their exact names", {
     "`censor` must be a data frame with `time` and `surv`"
   )
 })
+
+test_that("km() draws one curve per newdata row of a Cox model", {
+  skip_if_not_installed("survival")
+  lung <- survival::lung
+  model <- survival::coxph(survival::Surv(time, status) ~ age, data = lung)
+  fit <- survival::survfit(model, newdata = data.frame(age = c(50, 70)))
+  w <- km(fit)
+  cols <- w$x$data$columns
+  meta <- w$x$data$meta
+  # Before the fix the two columns of estimates were read as one curve.
+  expect_equal(as.character(meta$groups), c("1", "2"))
+  for (j in 1:2) {
+    rows <- cols$group == as.character(j)
+    expect_equal(cols$time[rows], c(0, fit$time))
+    expect_equal(cols$surv[rows], c(1, unname(fit$surv[, j])))
+    expect_equal(cols$lower[rows], c(1, unname(fit$lower[, j])))
+    expect_equal(cols$upper[rows], c(1, unname(fit$upper[, j])))
+  }
+  # Each curve has the at-risk counts of the data, so both rows are the same.
+  n_times <- length(meta$riskTimes)
+  counts <- matrix(as.integer(meta$riskCounts), nrow = 2, byrow = TRUE)
+  expect_equal(ncol(counts), n_times)
+  expect_equal(counts[1, ], counts[2, ])
+  expect_equal(counts[1, 1], nrow(lung))
+  # A censoring tick for each curve at each censored time.
+  expect_length(meta$censorTime, 2L * sum(fit$n.censor > 0))
+
+  # Row names of newdata name the curves.
+  nd <- data.frame(age = c(50, 70), row.names = c("age 50", "age 70"))
+  w <- km(survival::survfit(model, newdata = nd))
+  expect_equal(as.character(w$x$data$meta$groups), c("age 50", "age 70"))
+
+  # A stratified model gives a curve per stratum and newdata row.
+  strat <- survival::coxph(
+    survival::Surv(time, status) ~ age + survival::strata(sex), data = lung
+  )
+  w <- km(survival::survfit(strat, newdata = nd))
+  expect_equal(
+    as.character(w$x$data$meta$groups),
+    c("1, age 50", "2, age 50", "1, age 70", "2, age 70")
+  )
+})
+
+test_that("km() names a stratum of two variables by its levels alone", {
+  skip_if_not_installed("survival")
+  d <- data.frame(
+    t = c(5, 8, 12, 20, 3, 9, 14, 25),
+    e = c(1, 0, 1, 1, 1, 1, 0, 1),
+    sex = rep(c(1, 2), each = 4),
+    age = rep(c(60, 70), times = 4)
+  )
+  fit <- survival::survfit(survival::Surv(t, e) ~ sex + I(age > 65), data = d)
+  # survfit names them "sex=1, I(age > 65)=FALSE", padded with spaces.
+  expect_equal(
+    as.character(km(fit)$x$data$meta$groups),
+    c("1, FALSE", "1, TRUE", "2, FALSE", "2, TRUE")
+  )
+  # An operator with "=" in a variable name stays part of the name.
+  d$x <- rep(c(1, 1, 2, 2), times = 2)
+  fit <- survival::survfit(
+    survival::Surv(t, e) ~ I(age >= 65) + I(x == 1), data = d
+  )
+  expect_equal(
+    as.character(km(fit)$x$data$meta$groups),
+    c("FALSE, FALSE", "FALSE, TRUE", "TRUE, FALSE", "TRUE, TRUE")
+  )
+})
+
+test_that("km() cuts stratum names at the variable names of the fit", {
+  skip_if_not_installed("survival")
+  lung <- survival::lung
+  groups <- function(fit) as.character(km(fit)$x$data$meta$groups)
+  # Before the fix the first "=" that was not part of an operator ended a
+  # name, so this read "1,  c(0, (0,60]".
+  fit <- survival::survfit(
+    survival::Surv(time, status) ~ sex + cut(age, breaks = c(0, 60, 100)),
+    data = lung
+  )
+  expect_equal(
+    groups(fit), c("1, (0,60]", "1, (60,100]", "2, (0,60]", "2, (60,100]")
+  )
+  fit <- survival::survfit(
+    survival::Surv(time, status) ~ cut(age, breaks = c(0, 60, 100)),
+    data = lung
+  )
+  expect_equal(groups(fit), c("(0,60]", "(60,100]"))
+  # A strata() term names its levels after its own arguments:
+  # "strata(sex, ph.ecog > 1)=sex=1, ph.ecog > 1=FALSE".
+  fit <- survival::survfit(
+    survival::Surv(time, status) ~ survival::strata(sex, ph.ecog > 1),
+    data = lung
+  )
+  expect_equal(groups(fit), c("1, FALSE", "1, TRUE", "2, FALSE", "2, TRUE"))
+  # A Cox model names its strata after the arguments of strata() alone.
+  model <- survival::coxph(
+    survival::Surv(time, status) ~ age + survival::strata(sex, ph.ecog > 1),
+    data = lung
+  )
+  fit <- survival::survfit(model, newdata = data.frame(age = 50))
+  expect_equal(groups(fit), c("1, FALSE", "1, TRUE", "2, FALSE", "2, TRUE"))
+
+  # Factor levels may hold "=" and ", ".
+  d <- data.frame(
+    t = 1:6, e = 1,
+    g = factor(c("c, d=e", "c, d=e", "a=b", "a=b", "x", "x"),
+               levels = c("x", "c, d=e", "a=b")),
+    h = c("p", "q", "p", "q", "p", "q")
+  )
+  fit <- survival::survfit(survival::Surv(t, e) ~ g, data = d)
+  expect_equal(groups(fit), c("x", "c, d=e", "a=b"))
+  both <- c("x, p", "x, q", "c, d=e, p", "c, d=e, q", "a=b, p", "a=b, q")
+  fit <- survival::survfit(survival::Surv(t, e) ~ g + h, data = d)
+  expect_equal(groups(fit), both)
+  # A formula held in a variable is read too.
+  fo <- survival::Surv(t, e) ~ g + h
+  expect_equal(groups(survival::survfit(fo, data = d)), both)
+  # Without a formula to read, the names stay as survfit gives them.
+  fit <- survival::survfit(survival::Surv(t, e) ~ g, data = d)
+  fit$call <- NULL
+  expect_equal(groups(fit), c("g=x", "g=c, d=e", "g=a=b"))
+})
+
+test_that("km() keeps stratum names when the formula found is not the fit's", {
+  skip_if_not_installed("survival")
+  lung <- survival::lung
+  groups <- function(fit) as.character(km(fit)$x$data$meta$groups)
+  as_fitted <- c("sex=1, ph.ecog=0", "sex=1, ph.ecog=1", "sex=1, ph.ecog=2")
+  # The formula held in `fo` changes after the fit. Before the fix this
+  # gave "1, ph.ecog=0".
+  fo <- survival::Surv(time, status) ~ sex + ph.ecog
+  fit <- survival::survfit(fo, data = lung)
+  fo <- survival::Surv(time, status) ~ sex
+  expect_equal(utils::head(groups(fit), 3), as_fitted)
+  # A helper's own `fo`, with another `fo` where km() is called.
+  fit_in_helper <- function() {
+    fo <- survival::Surv(time, status) ~ sex + ph.ecog
+    survival::survfit(fo, data = lung)
+  }
+  expect_equal(utils::head(groups(fit_in_helper()), 3), as_fitted)
+})
+
+test_that("km() names a cluster() term as survfit does", {
+  skip_if_not_installed("survival")
+  lung <- survival::lung
+  fit <- survival::survfit(
+    survival::Surv(time, status) ~ sex + survival::cluster(inst), data = lung
+  )
+  groups <- as.character(km(fit)$x$data$meta$groups)
+  if (startsWith(names(fit$strata)[[1L]], "sex=1, cluster(inst)=")) {
+    # survival 3.8 names it; before the fix this gave "1, cluster(inst)=1".
+    expect_equal(utils::head(groups, 2), c("1, 1", "1, 2"))
+  } else {
+    expect_equal(utils::head(groups, 2), c("1", "2"))
+  }
+  # Names without the cluster() term, as older versions of survival write
+  # them, are cut without it.
+  vars <- list(
+    names = c("sex", "cluster(inst)"), inner = list(NULL, NULL),
+    cluster = c(FALSE, TRUE)
+  )
+  expect_equal(bv_strata_labels(c("sex=1", "sex=2"), vars), c("1", "2"))
+})
+
+test_that("km() keeps a stratum name that can be cut in two ways", {
+  skip_if_not_installed("survival")
+  d <- data.frame(
+    t = 1:6, e = 1,
+    tricky = c("x, sex=1", "x, sex=1", "y", "y", "z", "z"),
+    sex = c(1, 2, 1, 2, 1, 2)
+  )
+  fit <- survival::survfit(survival::Surv(t, e) ~ tricky + sex, data = d)
+  # "tricky=x, sex=1, sex=1" is the level "x" and "1, sex=1", or "x, sex=1"
+  # and "1". Before the fix it read "x, 1, sex=1".
+  expect_equal(
+    as.character(km(fit)$x$data$meta$groups),
+    c("tricky=x, sex=1, sex=1", "tricky=x, sex=1, sex=2", "tricky=y, sex=1",
+      "tricky=y, sex=2", "tricky=z, sex=1", "tricky=z, sex=2")
+  )
+})
+
+test_that("km() stops on a multi-state fit with a clear message", {
+  skip_if_not_installed("survival")
+  lung <- survival::lung
+  fit <- survival::survfit(
+    survival::Surv(time, factor(status)) ~ 1, data = lung
+  )
+  expect_error(km(fit), "multi-state fits are not supported", fixed = TRUE)
+})
+
+test_that("km() warns about an infinite time and a missing bound, as Python does", {
+  df <- data.frame(
+    time = c(0, 5, Inf, 12), surv = c(1, 0.9, 0.8, 0.7),
+    lower = c(1, NA, 0.7, 0.6), upper = c(1, 1, NaN, Inf)
+  )
+  # Before the fix time warned in other words than Python's, and a missing
+  # bound did not warn at all.
+  warned <- testthat::capture_warnings(km(df))
+  expect_equal(warned, c(
+    "`time` has 1 infinite value(s); those rows are not drawn.",
+    paste0(
+      "`lower` has 1 value(s) that are missing (NA or NaN) or infinite; ",
+      "the confidence band has a gap there."
+    ),
+    paste0(
+      "`upper` has 2 value(s) that are missing (NA or NaN) or infinite; ",
+      "the confidence band has a gap there."
+    )
+  ))
+  # survfit leaves a bound NA where it has no interval; that draws a gap
+  # without a warning.
+  skip_if_not_installed("survival")
+  fit <- survival::survfit(
+    survival::Surv(t, e) ~ 1, data = data.frame(t = c(1, 2, 3), e = 1)
+  )
+  expect_true(anyNA(fit$lower))
+  expect_silent(km(fit))
+})
+
+test_that("km() leaves out a row with a missing time or surv, as Python does", {
+  df <- data.frame(
+    time = c(0, 5, 9, 12, 0, 7, 15),
+    surv = c(1, 0.9, NaN, 0.7, 1, 0.8, 0.5),
+    lower = c(1, 0.8, 0.7, 0.6, 1, 0.7, 0.4),
+    group = c("t", "t", "t", "t", "c", "c", "c")
+  )
+  df$time[6] <- NA
+  # Before the fix this stopped with "missing value where TRUE/FALSE needed".
+  warned <- testthat::capture_warnings(w <- km(df))
+  expect_equal(warned, "Left out 2 row(s) with a missing `time` or `surv`.")
+  cols <- w$x$data$columns
+  expect_equal(cols$time, c(0, 5, 12, 0, 15))
+  expect_equal(cols$surv, c(1, 0.9, 0.7, 1, 0.5))
+  expect_equal(cols$lower, c(1, 0.8, 0.6, 1, 0.4))
+  expect_equal(cols$group, c("t", "t", "t", "c", "c"))
+  expect_equal(as.character(w$x$data$meta$groups), c("t", "c"))
+
+  # NA in surv is left out the same way.
+  warned <- testthat::capture_warnings(
+    km(data.frame(time = c(0, 5, 9), surv = c(1, NA, 0.5)))
+  )
+  expect_equal(warned, "Left out 1 row(s) with a missing `time` or `surv`.")
+  # Nothing left to draw is an error.
+  expect_error(
+    suppressWarnings(km(data.frame(time = c(0, NA), surv = c(NaN, 1)))),
+    "`data` has no rows/cells"
+  )
+})

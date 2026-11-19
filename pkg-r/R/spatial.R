@@ -51,15 +51,31 @@
 #'   and the plot: one number for every side, or numbers named `top`,
 #'   `right`, `bottom` and `left` in a list or vector, a side left out
 #'   keeping the default of 10.
+#'   Its `categorical` entry is an ordered palette: the colours go to the
+#'   categories in order, and names on the colours are not matched to them.
+#'   A colour given as a CSS custom property, such as
+#'   `background = "var(--bg)"`, takes the value the page gives it when the
+#'   plot draws. After the page changes the property, what the plot drew on
+#'   a canvas keeps the old colour until it draws again: resize the widget
+#'   or render it again.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.
 #' @examples
+#' # The image here is a drawn stand-in, built as a data URI so the example
+#' # needs no file. A real slide passes the path or URL of its image.
+#' svg <- paste0(
+#'   "<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'>",
+#'   "<rect width='300' height='300' fill='#F4ECF0'/>",
+#'   "<ellipse cx='150' cy='130' rx='115' ry='95' fill='#D9A9C4'/>",
+#'   "</svg>"
+#' )
+#' tissue <- paste0("data:image/svg+xml,", utils::URLencode(svg, reserved = TRUE))
 #' df <- data.frame(
 #'   x = c(100, 150, 200), y = c(120, 160, 90),
 #'   color = c("Cluster 1", "Cluster 2", "Cluster 1")
 #' )
-#' spatial(df, image = "tissue.png", img_width = 600, img_height = 600,
+#' spatial(df, image = tissue, img_width = 300, img_height = 300,
 #'         spot_diameter = 8)
 #' @export
 spatial <- function(data,

@@ -1,3 +1,7 @@
+import math
+import re
+import warnings
+
 import numpy as np
 import pytest
 
@@ -193,3 +197,40 @@ def test_embedding_reads_a_polars_categorical_as_text():
     assert "liver" not in w.options.get("categories", [])
     assert other.len() == 2
     assert w.data["columns"]["color"] == ["b", "a", None]
+
+
+def test_volcano_counts_only_the_y_values_it_does_not_draw_as_r_does():
+    d = {"x": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+         "y": [np.inf, np.inf, np.nan, None, -np.inf, 2.0]}
+    # Before the fix the two p = 0 genes were counted with the missing ones:
+    # "column 'y' contains 5 non-finite value(s) (NaN/Inf)".
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Volcano(d)
+    assert [str(w.message) for w in caught] == [
+        (
+            "`y` has 3 value(s) that are missing (NA or NaN) or -Inf; those "
+            "rows are not drawn."
+        )
+    ]
+    # p = 0 alone is no warning.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        Volcano({"x": [1.0, 2.0], "y": [np.inf, 2.0]})
+    # x keeps its own warning.
+    with pytest.warns(UserWarning, match=re.escape("'x' contains 1 non-finite")):
+        Volcano({"x": [np.inf, 2.0], "y": [1.0, 2.0]})
+
+
+def test_volcano_label_top_n_inf_labels_every_gene_as_lollipop_does():
+    d = {"x": [-3.0, -2.0, 2.0, 3.0], "y": [5.0, 4.0, 4.0, 5.0],
+         "label": ["a", "b", "c", "d"]}
+    # JSON has no inf: it is sent as one label per gene.
+    assert Volcano(d, label_top_n=math.inf).options["labelTopN"] == 4
+    assert Volcano(d, label_top_n=float("inf")).options["labelTopN"] == 4
+    assert Volcano(d, label_top_n=-math.inf).options["labelTopN"] == 0
+    assert Volcano(d, label_top_n=2).options["labelTopN"] == 2
+    # NaN goes as null, as R sends NA; before the fix it went as NaN, which
+    # is not JSON.
+    assert Volcano(d, label_top_n=float("nan")).options["labelTopN"] is None
+    assert Volcano(d, label_top_n=np.nan).options["labelTopN"] is None

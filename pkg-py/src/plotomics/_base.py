@@ -66,6 +66,22 @@ def _to_float32(values: Any, name: str) -> np.ndarray:
     return arr.astype(np.float32, copy=False)
 
 
+def _to_float64(values: Any, name: str) -> np.ndarray:
+    """As :func:`_to_float32`, but ``float64``.
+
+    For counts: float32 holds every whole number only up to 2**24, so
+    16,777,217 would arrive as 16,777,216. float64 holds them up to 2**53,
+    as a number R sends in JSON does.
+    """
+    arr = np.asarray(values)
+    if arr.dtype.kind in _NON_NUMERIC_KINDS:
+        try:
+            return np.asarray(values, dtype=np.float64)
+        except (ValueError, TypeError):
+            _ensure_numeric(arr, name)
+    return arr.astype(np.float64, copy=False)
+
+
 def _warn_nonfinite(arr: np.ndarray, name: str) -> None:
     """Emit exactly one warning if a float column carries NaN/Inf values."""
     if arr.dtype.kind != "f":
@@ -90,13 +106,16 @@ def _little_endian(arr: np.ndarray) -> np.ndarray:
     return arr if arr.dtype == little else arr.astype(little)
 
 
-def _to_transport(arr: np.ndarray, name: str) -> tuple[np.ndarray, str]:
+def _to_transport(
+    arr: np.ndarray, name: str, *, warn: bool = True
+) -> tuple[np.ndarray, str]:
     """Return a contiguous array + transport dtype for a single named column.
 
     Raises ``ValueError`` (naming the column) on a non-numeric dtype or on 64-bit
-    integer values that would overflow ``int32``; warns once on NaN/Inf. Keeps
-    the float32/float64 and small-int fast paths untouched. The array comes
-    back in little-endian byte order, whatever order it came in.
+    integer values that would overflow ``int32``; warns once on NaN/Inf unless
+    ``warn`` is false. Keeps the float32/float64 and small-int fast paths
+    untouched. The array comes back in little-endian byte order, whatever
+    order it came in.
     """
     arr = np.ascontiguousarray(arr)
     dtype = arr.dtype
@@ -110,7 +129,8 @@ def _to_transport(arr: np.ndarray, name: str) -> tuple[np.ndarray, str]:
 
     # Fast path: already a supported transport dtype.
     if tname in _DTYPE_MAP:
-        _warn_nonfinite(arr, name)
+        if warn:
+            _warn_nonfinite(arr, name)
         return _little_endian(arr), _DTYPE_MAP[tname]
 
     # 64-bit ints (and other unsupported integers) downcast to int32, but only
@@ -128,12 +148,16 @@ def _to_transport(arr: np.ndarray, name: str) -> tuple[np.ndarray, str]:
 
     # Any other numeric dtype (e.g. float16) is transported as float32.
     arr = arr.astype(np.float32, copy=False)
-    _warn_nonfinite(arr, name)
+    if warn:
+        _warn_nonfinite(arr, name)
     return _little_endian(arr), "float32"
 
 
 def pack_columns(
-    numeric: Mapping[str, Any], *, equal_length: bool = True
+    numeric: Mapping[str, Any],
+    *,
+    equal_length: bool = True,
+    quiet: Any = (),
 ) -> tuple[bytes, dict]:
     """Pack named numeric columns into one buffer + a ``BufferSchema`` dict.
 
@@ -146,10 +170,15 @@ def pack_columns(
         mismatch raises ``ValueError`` naming the columns and their lengths.
         Pass ``False`` when intentionally packing columns of different lengths
         (e.g. per-node and per-edge columns share one buffer in ``network``).
+    quiet:
+        Names of columns whose NaN/Inf values are not warned about here,
+        because the caller warns about them in its own words.
     """
     converted: list[tuple[str, np.ndarray, str]] = []
     for name, values in numeric.items():
-        arr, dtype = _to_transport(np.asarray(values), name)
+        arr, dtype = _to_transport(
+            np.asarray(values), name, warn=name not in quiet
+        )
         converted.append((name, arr, dtype))
 
     if equal_length and len(converted) > 1:
@@ -295,17 +324,27 @@ class PlotomicsWidget(anywidget.AnyWidget):
 
     # JSON side-channel: string columns + non-columnar metadata.
     data = traitlets.Dict({"columns": {}, "meta": {}}).tag(sync=True)
+    """Text columns and metadata, sent to the browser as JSON."""
     # Binary numeric columns + their schema.
     buffer = traitlets.Bytes(b"").tag(sync=True)
+    """Numeric columns, packed into one binary buffer."""
     schema = traitlets.Dict({"columns": []}).tag(sync=True)
+    """Name, type, length and byte offset of each column in the buffer."""
     # Component options (camelCase keys, matching the TS options interface).
     options = traitlets.Dict({}).tag(sync=True)
+    """Options of the plot, with the camelCase keys of the JavaScript."""
     _height = traitlets.Int(480).tag(sync=True)
     # JS -> Python: the latest selection from the component. Its shape depends on
     # the component: a list of point indices for a lasso selection (Embedding),
     # or a single clicked node id (a string) or None for a click selection
     # (Network). Observe it with ``widget.observe(fn, names="selected")``.
     selected = traitlets.Any(default_value=[]).tag(sync=True)
+    """The latest selection in the browser.
+
+    A list of point indices for a lasso selection in an Embedding, or the id
+    of the clicked node (a string), or None, in a Network. Observe it with
+    ``widget.observe(fn, names="selected")``.
+    """
     # Whether ``options["theme"]`` is a plotomics theme, whose padding is
     # checked. Gosling takes a Gosling theme there.
     _plotomics_theme = True

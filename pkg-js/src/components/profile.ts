@@ -45,6 +45,7 @@ import {
   compositePNG,
   zeroTicks,
   fitZeroTicks,
+  formatTick,
   formatTicks,
   snapRatio,
   stepDecimals,
@@ -465,7 +466,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
       ? ` (${((100 * value) / finiteTotal(v)).toFixed(1)}%)`
       : "";
     const body = Number.isFinite(value)
-      ? `${fmtInt(value)}${share}`
+      ? `${fmtValue(value)}${share}`
       : "no value";
     tooltip.show(
       `<b>${esc(lab)}</b> ${esc(g)}<br/>${body}`,
@@ -525,8 +526,9 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     }
     layout = frame(tickWidth);
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = theme.background;
-    ctx.fillRect(0, 0, width, height);
+    if (setCanvasColour(ctx, "fillStyle", theme.background, el)) {
+      ctx.fillRect(0, 0, width, height);
+    }
 
     // Gridlines first, so the bars are drawn over them. A grid colour that
     // paints nothing, such as "none", draws no line.
@@ -757,7 +759,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -768,6 +770,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [{ canvas, x: 0, y: 0, width, height }],
         overlay: svg,
       });
@@ -796,10 +799,27 @@ function readableOn(hex: string): string {
   // colour would be unreadable on one end or the other.
   return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#233038" : "#FFFFFF";
 }
-function fmtInt(v: number): string {
+/**
+ * A value for the tooltip, with the thousands separators of a whole one:
+ * any other value to six significant digits, and to two decimals or more,
+ * so 0.00084 never reads 0.00 and 1234567.5 never reads 1234568. Below a
+ * millionth it takes the exponent form.
+ */
+function fmtValue(v: number): string {
   // -0, from a tiny negative value that float32 rounds, reads 0.
   if (v === 0) return "0";
-  return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2);
+  if (Number.isInteger(v)) return v.toLocaleString();
+  const a = Math.abs(v);
+  if (!(a >= 1e-6)) return formatTick(v, 0);
+  // Digits of the whole part: 7 for 1234567.5, none for 0.25.
+  const whole = a >= 1 ? Math.floor(Math.log10(a)) + 1 : 0;
+  const n = Number(v.toPrecision(Math.min(21, Math.max(6, whole + 2))));
+  const text = String(n);
+  const dot = text.indexOf(".");
+  const decimals = dot < 0 ? 0 : text.length - dot - 1;
+  return n.toLocaleString(undefined, {
+    maximumFractionDigits: Math.min(20, decimals),
+  });
 }
 
 function esc(s: string): string {

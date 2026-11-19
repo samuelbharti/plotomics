@@ -38,6 +38,8 @@ import {
   createRenderLoop,
   afterQuiet,
 } from "../core/index.js";
+import { fitAxisTicks } from "../core/ticks.js";
+import { scatterBackground } from "../core/paint.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
@@ -77,14 +79,10 @@ const SVG_NS = "http://www.w3.org/2000/svg";
  * Margins around the plot area. They hold the tick labels and the axis
  * titles, so they grow with the text: 16, 18, 46 and 60 px at the default
  * sizes of 11 px ticks and 13 px titles. The left margin fits the y title
- * and tick labels of about five characters.
+ * and tick labels of about five characters; the plot widens it, and the
+ * right margin, for longer tick labels (see fitTickMargins).
  */
-function axisMargins(sizes: TextSizes): {
-  top: number;
-  right: number;
-  bottom: number;
-  left: number;
-} {
+function axisMargins(sizes: TextSizes): Margins {
   return {
     top: Math.round(sizes.label + 5),
     right: Math.round(sizes.label + 7),
@@ -92,6 +90,31 @@ function axisMargins(sizes: TextSizes): {
     left: Math.round(sizes.axisTitle + 4.3 * sizes.label),
   };
 }
+
+/** Space around the plot area, in px. */
+interface Margins {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/** Whether two sets of margins are the same on every side. */
+function sameSides(a: Margins, b: Margins): boolean {
+  return (
+    a.top === b.top &&
+    a.right === b.right &&
+    a.bottom === b.bottom &&
+    a.left === b.left
+  );
+}
+
+/**
+ * The largest shares of the plot box that the left and right margins take
+ * for long tick labels.
+ */
+const MAX_LEFT_SHARE = 0.4;
+const MAX_RIGHT_SHARE = 0.2;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/volcano.test.ts)
@@ -299,7 +322,13 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   let theme = resolveTheme(opts.theme);
   // Text sizes and the margins that hold the axis text, from the theme.
   let sizes = textSizes(theme);
-  let margin = axisMargins(sizes);
+  // The margins the text sizes give, and those in use, whose left and
+  // right sides widen for long tick labels.
+  let baseMargin = axisMargins(sizes);
+  let margin = baseMargin;
+  // True while the plot area takes margins just widened. The view it then
+  // reports may only widen them again, so a change never undoes itself.
+  let settling = false;
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   // Layout state: the size of the element, and of the plot box inside its
@@ -349,7 +378,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     yScale,
     pointSize: opts.pointSize,
     opacity: opts.opacity,
-    backgroundColor: theme.background,
+    backgroundColor: scatterBackground(theme, el),
     lassoInitiator: false,
   });
   const loop = createRenderLoop((fit) => render(fit));
@@ -398,6 +427,68 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     margin.left + ((v - xDomain[0]) / (xDomain[1] - xDomain[0])) * innerW();
   const pxY = (v: number) =>
     margin.top + (1 - (v - yDomain[0]) / (yDomain[1] - yDomain[0])) * innerH();
+
+  const labelWidth = (s: string) => textWidth(s, sizes.label, theme.fontFamily);
+  const widest = (labels: string[]) =>
+    labels.reduce((w, s) => Math.max(w, labelWidth(s)), 0);
+  /** The baseline of the y title, turned upright. */
+  const yTitleX = () => Math.round(3 + sizes.axisTitle);
+  /**
+   * The left margin that y tick labels `labels` need: the y title, whose
+   * letters reach 0.3 of its size right of its baseline, 4 px, the
+   * labels, and the 8 px from their end to the axis.
+   */
+  const leftFor = (labels: string[]) =>
+    Math.ceil(yTitleX() + 0.3 * sizes.axisTitle + 4 + widest(labels) + 8);
+
+  /**
+   * Round ticks with exact labels in one unit per axis, for the current
+   * view and plot area: as many as keep the labels clear of each other.
+   */
+  function axisTicks() {
+    return {
+      x: fitAxisTicks(xDomain[0], xDomain[1], innerW(), labelWidth, {
+        maxCount: 6,
+        gapPx: 8,
+      }),
+      y: fitAxisTicks(yDomain[0], yDomain[1], innerH(), () => sizes.label, {
+        maxCount: 6,
+        gapPx: 5,
+      }),
+    };
+  }
+
+  /**
+   * Fit the left margin to the widest y tick label in view, and the right
+   * margin to half the widest x tick label, which is centred on a tick
+   * that can sit at the right end of the plot area. Deep in a zoom, exact
+   * labels such as "0.85630" are longer than the margins the text sizes
+   * give, and would run under the y title or past the edge. A margin stays
+   * between the one the text sizes give and a share of the plot box; with
+   * `growOnly` it only widens. Returns whether a margin changed: the plot
+   * area then takes its new size and keeps its view, which it reports on
+   * the next frame.
+   */
+  function fitTickMargins(growOnly: boolean): boolean {
+    const { x, y } = axisTicks();
+    let left = Math.min(
+      Math.max(baseMargin.left, leftFor(y.labels)),
+      Math.max(baseMargin.left, Math.floor(MAX_LEFT_SHARE * width)),
+    );
+    let right = Math.min(
+      Math.max(baseMargin.right, Math.ceil(widest(x.labels) / 2 + 1)),
+      Math.max(baseMargin.right, Math.floor(MAX_RIGHT_SHARE * width)),
+    );
+    if (growOnly) {
+      left = Math.max(left, margin.left);
+      right = Math.max(right, margin.right);
+    }
+    if (left === margin.left && right === margin.right) return false;
+    margin = { ...margin, left, right };
+    layoutCanvas();
+    void resizeView(scatterplot, innerW(), innerH());
+    return true;
+  }
 
   function layoutCanvas() {
     const ratio = dpr();
@@ -488,7 +579,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       pointColor: [opts.colors.down, opts.colors.ns, opts.colors.up],
       pointSize: opts.pointSize,
       opacity: opts.opacity,
-      backgroundColor: theme.background,
+      backgroundColor: scatterBackground(theme, el),
     });
   }
 
@@ -498,39 +589,64 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       while (layer.firstChild) layer.removeChild(layer.firstChild);
     }
     if (!width || !height) return;
+    // Margins widened for long tick labels apply to the plot area at once.
+    // Its view follows on the next frame, and draws the overlay again.
+    settling = fitTickMargins(settling);
 
     const axisColor = theme.axis;
     const gridColor = theme.grid;
 
     // Baseline offset that centres a tick label on its tick.
     const mid = Math.round(sizes.label * 0.35);
+    const { x: xAxis, y: yAxis } = axisTicks();
     // Gridlines go in the SVG under the canvas, so no line crosses a point.
+    // A label that would still leave the plot box, past a margin at its
+    // largest share, is left out; its gridline stays.
     // x ticks
-    for (const t of niceTicks(xDomain)) {
+    xAxis.ticks.forEach((t, i) => {
       const x = pxX(t);
-      if (x < margin.left - 1 || x > width - margin.right + 1) continue;
+      // A view zoomed past the precision of its numbers has no width, and
+      // its one tick no place on the axis.
+      if (
+        !Number.isFinite(x) ||
+        x < margin.left - 1 ||
+        x > width - margin.right + 1
+      ) {
+        return;
+      }
       under.appendChild(
         line(x, margin.top, x, height - margin.bottom, gridColor, 1),
       );
+      const label = xAxis.labels[i] ?? "";
+      const half = labelWidth(label) / 2;
+      if (x - half < 0 || x + half > width) return;
       svg.appendChild(
         text(
           x,
           height - margin.bottom + 5 + sizes.label,
-          fmt(t),
+          label,
           axisColor,
           "middle",
         ),
       );
-    }
+    });
     // y ticks
-    for (const t of niceTicks(yDomain)) {
+    yAxis.ticks.forEach((t, i) => {
       const y = pxY(t);
-      if (y < margin.top - 1 || y > height - margin.bottom + 1) continue;
+      if (
+        !Number.isFinite(y) ||
+        y < margin.top - 1 ||
+        y > height - margin.bottom + 1
+      ) {
+        return;
+      }
       under.appendChild(
         line(margin.left, y, width - margin.right, y, gridColor, 1),
       );
-      svg.appendChild(text(margin.left - 8, y + mid, fmt(t), axisColor, "end"));
-    }
+      const label = yAxis.labels[i] ?? "";
+      if (margin.left - 8 - labelWidth(label) < 0) return;
+      svg.appendChild(text(margin.left - 8, y + mid, label, axisColor, "end"));
+    });
 
     // axis frame
     svg.appendChild(
@@ -565,21 +681,25 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         sizes.axisTitle,
       ),
     );
-    // The y title's baseline, one title size in from the left edge.
-    const titleX = Math.round(3 + sizes.axisTitle);
-    const yTitle = text(
-      titleX,
-      margin.top + innerH() / 2,
-      opts.yLabel,
-      theme.foreground,
-      "middle",
-      sizes.axisTitle,
-    );
-    yTitle.setAttribute(
-      "transform",
-      `rotate(-90 ${titleX} ${margin.top + innerH() / 2})`,
-    );
-    svg.appendChild(yTitle);
+    // The y title's baseline, one title size in from the left edge. When
+    // the left margin at its largest share is still too narrow for it and
+    // the tick labels, the title is left out, so no label runs under it.
+    const titleX = yTitleX();
+    if (leftFor(yAxis.labels) <= margin.left) {
+      const yTitle = text(
+        titleX,
+        margin.top + innerH() / 2,
+        opts.yLabel,
+        theme.foreground,
+        "middle",
+        sizes.axisTitle,
+      );
+      yTitle.setAttribute(
+        "transform",
+        `rotate(-90 ${titleX} ${margin.top + innerH() / 2})`,
+      );
+      svg.appendChild(yTitle);
+    }
 
     if (opts.showThresholdLines) renderThresholds();
     renderLabels();
@@ -648,8 +768,8 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       const x = pxX(pts.x[i] as number);
       const y = pxY(pts.yDraw[i] as number);
       // Points outside the current view keep no label.
-      if (x < bounds.left || x > bounds.right) continue;
-      if (y < bounds.top || y > bounds.bottom) continue;
+      if (!Number.isFinite(x) || x < bounds.left || x > bounds.right) continue;
+      if (!Number.isFinite(y) || y < bounds.top || y > bounds.bottom) continue;
       const label = str(cols.label, pts.rows[i] as number) ?? "";
       items.push({
         i,
@@ -753,18 +873,15 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       theme = resolveTheme(opts.theme);
       el.style.backgroundColor = theme.background;
       const prev = margin;
+      const prevBase = baseMargin;
       const [prevW, prevH] = [width, height];
       sizes = textSizes(theme);
-      margin = axisMargins(sizes);
+      baseMargin = axisMargins(sizes);
+      // New text sizes start the margins again from their own; the overlay
+      // widens them as its tick labels need.
+      if (!sameSides(baseMargin, prevBase)) margin = baseMargin;
       ({ width, height } = plot.fit(outerW, outerH, theme));
-      if (
-        margin.top !== prev.top ||
-        margin.right !== prev.right ||
-        margin.bottom !== prev.bottom ||
-        margin.left !== prev.left ||
-        width !== prevW ||
-        height !== prevH
-      ) {
+      if (!sameSides(margin, prev) || width !== prevW || height !== prevH) {
         // A new text size or padding changes the plot area, which refits
         // while the view is untouched, as a resize does.
         doResize(outerW, outerH);
@@ -795,7 +912,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         out.insertBefore(node.cloneNode(true), out.firstChild);
       }
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -807,6 +924,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [
           {
             canvas,
@@ -850,12 +968,6 @@ function str(col: Column | undefined, i: number): string | undefined {
   if (!col) return undefined;
   const v = (col as unknown[])[i];
   return v == null ? undefined : String(v);
-}
-function fmt(v: number): string {
-  if (v === 0) return "0";
-  const a = Math.abs(v);
-  if (a >= 1000 || a < 0.01) return v.toExponential(1);
-  return Number(v.toFixed(2)).toString();
 }
 function mergeOptions(
   base: VolcanoOptions,

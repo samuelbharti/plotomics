@@ -33,6 +33,13 @@
 #'   and the plot: one number for every side, or numbers named `top`,
 #'   `right`, `bottom` and `left` in a list or vector, a side left out
 #'   keeping the default of 10.
+#'   Its `categorical` entry is an ordered palette: the colours go to the top-
+#'   level branches in order, and names on the colours are not matched to them.
+#'   A colour given as a CSS custom property, such as
+#'   `background = "var(--bg)"`, takes the value the page gives it when the
+#'   plot draws. After the page changes the property, what the plot drew on
+#'   a canvas keeps the old colour until it draws again: resize the widget
+#'   or render it again.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.
@@ -94,22 +101,28 @@ treemap <- function(data,
 
   # Every node must reach the root by following parents; a self-parent or a
   # cycle disjoint from the root passes the checks above but crashes d3.stratify.
-  parent_of <- parent
-  names(parent_of) <- id
-  good <- character(0)
-  for (start in id) {
-    seen <- character(0)
+  # Each node is walked once: it is marked on the path while its chain is
+  # followed, and done once the chain reaches the root, so a later chain
+  # stops at it. That keeps the check linear in the number of rows.
+  up <- match(parent, id)
+  up[parent == ""] <- NA_integer_
+  state <- integer(length(id)) # 0 not seen, 1 on the path, 2 reaches the root
+  path <- integer(length(id))
+  for (start in seq_along(id)) {
+    len <- 0L
     cur <- start
-    while (nzchar(cur) && !(cur %in% good)) {
-      if (cur %in% seen) {
+    while (!is.na(cur) && state[cur] != 2L) {
+      if (state[cur] == 1L) {
         stop(sprintf(
-          "treemap has a cycle in the parent chain (at '%s')", cur
+          "treemap has a cycle in the parent chain (at '%s')", id[cur]
         ), call. = FALSE)
       }
-      seen <- c(seen, cur)
-      cur <- parent_of[[cur]]
+      state[cur] <- 1L
+      len <- len + 1L
+      path[len] <- cur
+      cur <- up[cur]
     }
-    good <- c(good, seen)
+    state[path[seq_len(len)]] <- 2L
   }
 
   columns <- list(
