@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import math
+import numbers
+from decimal import Decimal
 from typing import Any
 
 import numpy as np
@@ -51,7 +54,16 @@ class Violin(PlotomicsWidget):
     group_colors:
         One hex colour per group. ``None`` uses the categorical palette.
     violin_width:
-        Fraction of a cell's width the widest violin fills.
+        Fraction of a cell's width the widest violin fills, in (0, 1]. When
+        rows are short next to the column width (many features, or a short
+        or wide widget), ``violin_aspect`` can make it fill less.
+    violin_aspect:
+        The largest width of the widest violin, as a multiple of its row
+        height. A violin much wider than its row is tall reads as a flat
+        band. The cap never makes a violin narrower than four times the
+        label text size (44 px at the default font size), so with many
+        features the violins stay visible; nor wider than ``violin_width``
+        of its cell. ``None`` turns the cap off.
     scale_per_violin:
         Scale each violin to its own maximum rather than the row's. Per-row is
         the default so groups stay comparable within a feature.
@@ -80,6 +92,7 @@ class Violin(PlotomicsWidget):
         groups: list[str] | None = None,
         group_colors: list[str] | None = None,
         violin_width: float = 0.85,
+        violin_aspect: float | None = 0.8,
         scale_per_violin: bool = False,
         show_median: bool = True,
         show_feature_labels: bool = True,
@@ -98,6 +111,7 @@ class Violin(PlotomicsWidget):
             raise ValueError("`data` is missing column(s): " + ", ".join(missing))
         if not 0 < violin_width <= 1:
             raise ValueError("`violin_width` must be in (0, 1].")
+        violin_aspect = _violin_aspect(violin_aspect)
 
         g = _to_float32(grid, "grid")
         if g.size == 0:
@@ -170,6 +184,7 @@ class Violin(PlotomicsWidget):
 
         options: dict[str, Any] = {
             "violinWidth": violin_width,
+            "violinAspect": violin_aspect,
             "scalePerViolin": scale_per_violin,
             "showMedian": show_median,
             "showFeatureLabels": show_feature_labels,
@@ -186,3 +201,31 @@ class Violin(PlotomicsWidget):
             _height=height,
             **kwargs,
         )
+
+
+def _violin_aspect(value: Any) -> float | None:
+    """The violin_aspect option as the browser takes it.
+
+    Any real number above zero that is not a bool is taken: int, float,
+    Fraction, Decimal, a numpy scalar, or a numpy array of one value with no
+    dimensions. None and infinity turn the cap off and are sent as None,
+    since JSON has no infinity. NaN, zero, negative and complex numbers,
+    strings, bools and sequences are not taken.
+    """
+    if value is None:
+        return None
+    if isinstance(value, np.ndarray) and value.ndim == 0:
+        value = value.item()
+    out = math.nan
+    # numpy registers its integer and floating scalars as numbers.Real, and
+    # leaves out its complex ones.
+    if isinstance(value, (numbers.Real, Decimal)) and not isinstance(
+        value, (bool, np.bool_)
+    ):
+        try:
+            out = float(value)
+        except (TypeError, ValueError, OverflowError):
+            out = math.nan
+    if not out > 0:
+        raise ValueError("`violin_aspect` must be a single positive number.")
+    return out if math.isfinite(out) else None

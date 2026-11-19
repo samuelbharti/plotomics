@@ -1,3 +1,7 @@
+import warnings
+from decimal import Decimal
+from fractions import Fraction
+
 import numpy as np
 import pytest
 
@@ -154,3 +158,51 @@ def test_violin_sends_the_grid_without_float32_rounding():
     grid = np.linspace(0.0, 99.95, 8)
     w = Violin(data, grid=grid, density=density)
     assert w.data["meta"]["grid"][-1] == 99.95
+
+
+def test_violin_aspect_passthrough_and_off():
+    data, grid, density = make_args()
+    assert Violin(data, grid=grid, density=density).options["violinAspect"] == 0.8
+    w = Violin(data, grid=grid, density=density, violin_aspect=1.2)
+    assert w.options["violinAspect"] == 1.2
+    # The browser reads null as no cap. JSON has no infinity, so inf is sent
+    # as null too.
+    for off in (None, float("inf"), np.inf):
+        w = Violin(data, grid=grid, density=density, violin_aspect=off)
+        assert "violinAspect" in w.options
+        assert w.options["violinAspect"] is None
+
+
+def test_violin_aspect_is_checked():
+    data, grid, density = make_args()
+    for bad in (0, -1, float("nan"), True, "1", [1.0]):
+        with pytest.raises(
+            ValueError, match=r"`violin_aspect` must be a single positive number\."
+        ):
+            Violin(data, grid=grid, density=density, violin_aspect=bad)
+
+
+def test_violin_aspect_takes_any_real_number():
+    data, grid, density = make_args()
+    for value in (
+        np.array(1.2),
+        np.float32(1.5),
+        np.int64(2),
+        Fraction(6, 5),
+        Decimal("1.2"),
+    ):
+        w = Violin(data, grid=grid, density=density, violin_aspect=value)
+        assert w.options["violinAspect"] == pytest.approx(float(value))
+        assert type(w.options["violinAspect"]) is float
+    w = Violin(data, grid=grid, density=density, violin_aspect=np.array(np.inf))
+    assert w.options["violinAspect"] is None
+
+
+def test_violin_aspect_rejects_complex_numbers():
+    data, grid, density = make_args()
+    for bad in (1 + 0j, np.complex128(1), np.array(1 + 0j), np.array(True)):
+        # Rejected before any conversion, so numpy warns about nothing.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with pytest.raises(ValueError, match="must be a single positive number"):
+                Violin(data, grid=grid, density=density, violin_aspect=bad)

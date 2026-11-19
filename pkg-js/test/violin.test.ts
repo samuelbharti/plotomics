@@ -4,8 +4,11 @@ import {
   gridForRow,
   layoutViolin,
   maxDensity,
+  resolveViolinAspect,
+  violinMaxWidth,
   violinPolygon,
 } from "../src/components/violin.js";
+import { defaultTheme, textSizes } from "../src/core/index.js";
 
 describe("violin helpers", () => {
   it("reads a density row out of the flattened matrix", () => {
@@ -131,6 +134,60 @@ describe("violin helpers", () => {
       showValueAxis: true,
     });
     expect(on.plotW).toBe(off.plotW - (44 - 14));
+  });
+
+  it("caps the widest violin at violinAspect times the row height", () => {
+    const at = (cellW: number, rowH: number, width: number, aspect = 0.8) =>
+      violinMaxWidth({ cellW, rowH }, width, aspect);
+    // A wide cell: the row height sets the width.
+    expect(at(260, 130, 0.85)).toBeCloseTo(104, 10);
+    expect(at(260, 130, 0.85, 1.2)).toBeCloseTo(156, 10);
+    // A narrow cell: violinWidth of the cell.
+    expect(at(40, 130, 0.85)).toBeCloseTo(34, 10);
+    expect(at(40, 130, 0.5)).toBeCloseTo(20, 10);
+  });
+
+  it("never caps a violin under four times the label size", () => {
+    const at = (cellW: number, labelSize?: number) =>
+      violinMaxWidth({ cellW, rowH: 22 }, 0.85, 0.8, labelSize);
+    // 0.8 x 22 = 17.6 px is under the floor of 4 x 11 = 44 px.
+    expect(at(140, 11)).toBe(44);
+    // The floor does not grow with the column.
+    expect(at(900, 11)).toBe(44);
+    // It grows with the text.
+    expect(at(140, 16)).toBe(64);
+    expect(at(140)).toBe(4 * textSizes(defaultTheme).label);
+    // It never takes a violin past violinWidth of its cell.
+    expect(at(40, 11)).toBeCloseTo(34, 10);
+  });
+
+  it("reads violinAspect as a cap, no cap or the default 0.8", () => {
+    expect(resolveViolinAspect(1.2)).toBe(1.2);
+    expect(resolveViolinAspect(1e-9)).toBe(1e-9);
+    expect(resolveViolinAspect(null)).toBeNull();
+    expect(resolveViolinAspect(Number.POSITIVE_INFINITY)).toBeNull();
+    const others = [
+      undefined,
+      0,
+      -1,
+      Number.NEGATIVE_INFINITY,
+      Number.NaN,
+      "1.2",
+      {},
+      [1.2],
+      true,
+    ];
+    for (const v of others) {
+      expect(resolveViolinAspect(v), String(v)).toBe(0.8);
+    }
+  });
+
+  it("turns the cap off for a null or infinite violinAspect", () => {
+    const layout = { cellW: 260, rowH: 130 };
+    expect(violinMaxWidth(layout, 0.85, null)).toBeCloseTo(221, 10);
+    expect(violinMaxWidth(layout, 0.85, Number.POSITIVE_INFINITY)).toBe(
+      violinMaxWidth(layout, 0.85, null),
+    );
   });
 
   it("stays well-defined with no rows or columns", () => {

@@ -23,7 +23,15 @@
 #'   Factor `feature` / `group` columns supply them from their levels.
 #' @param group_colors One hex colour per group. `NULL` uses the categorical
 #'   palette.
-#' @param violin_width Fraction of a cell's width the widest violin fills.
+#' @param violin_width Fraction of a cell's width the widest violin fills, in
+#'   (0, 1]. When rows are short next to the column width (many features, or
+#'   a short or wide widget), `violin_aspect` can make it fill less.
+#' @param violin_aspect The largest width of the widest violin, as a multiple
+#'   of its row height. A violin much wider than its row is tall reads as a
+#'   flat band. The cap never makes a violin narrower than four times the
+#'   label text size (44 px at the default font size), so with many features
+#'   the violins stay visible; nor wider than `violin_width` of its cell.
+#'   `NULL` turns the cap off.
 #' @param scale_per_violin Scale each violin to its own maximum rather than the
 #'   row's. Per-row is the default so groups stay comparable within a feature.
 #' @param show_median,show_feature_labels Toggle the median tick and row labels.
@@ -54,7 +62,8 @@ violin <- function(data,
                    theme = NULL,
                    width = NULL,
                    height = NULL,
-                   element_id = NULL) {
+                   element_id = NULL,
+                   violin_aspect = 0.8) {
   if (!is.data.frame(data)) {
     stop("`data` must be a data frame.", call. = FALSE)
   }
@@ -64,8 +73,14 @@ violin <- function(data,
                  paste(missing_cols, collapse = ", ")), call. = FALSE)
   }
   bv_require_nonempty(nrow(data), "data")
-  if (violin_width <= 0 || violin_width > 1) {
+  if (!is.numeric(violin_width) || length(violin_width) != 1L ||
+      is.na(violin_width) || violin_width <= 0 || violin_width > 1) {
     stop("`violin_width` must be in (0, 1].", call. = FALSE)
+  }
+  if (!is.null(violin_aspect) &&
+      (!is.numeric(violin_aspect) || length(violin_aspect) != 1L ||
+       is.na(violin_aspect) || violin_aspect <= 0)) {
+    stop("`violin_aspect` must be a single positive number.", call. = FALSE)
   }
 
   grid <- bv_require_numeric(grid, "grid")
@@ -139,8 +154,12 @@ violin <- function(data,
     meta$median <- I(as.numeric(median))
   }
 
+  # Plain numbers: a named vector or a matrix would reach the browser as
+  # an object or an array. NULL, and Inf, reach it as null: no cap.
+  aspect <- if (is.null(violin_aspect)) NULL else as.numeric(violin_aspect)
   options <- list(
-    violinWidth = violin_width,
+    violinWidth = as.numeric(violin_width),
+    violinAspect = aspect,
     scalePerViolin = scale_per_violin,
     showMedian = show_median,
     showFeatureLabels = show_feature_labels,
