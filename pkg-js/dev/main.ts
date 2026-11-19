@@ -22,6 +22,7 @@ import { createUpset } from "../src/components/upset.js";
 import { createViolin } from "../src/components/violin.js";
 import type { PlotomicsData } from "../src/core/index.js";
 import {
+  goslingDemoSpec,
   igvDemoOptions,
   syntheticCohort,
   syntheticProtein,
@@ -30,31 +31,6 @@ import {
 
 type Demo = (el: HTMLElement) => { destroy(): void; resize?(w: number, h: number): void };
 
-// A minimal valid Gosling spec: one bar track over a public multivec tileset
-// hosted by the Gosling team (data streams/tiles from the server).
-const goslingSpec = {
-  title: "Cistrome peaks",
-  subtitle: "single multivec track streamed from the Gosling tile server",
-  tracks: [
-    {
-      data: {
-        url: "https://server.gosling-lang.org/api/v1/tileset_info/?d=cistrome-multivec",
-        type: "multivec",
-        row: "sample",
-        column: "position",
-        value: "peak",
-        categories: ["sample 1"],
-      },
-      mark: "bar",
-      x: { field: "start", type: "genomic", axis: "bottom" },
-      xe: { field: "end", type: "genomic" },
-      y: { field: "peak", type: "quantitative", axis: "right" },
-      color: { field: "peak", type: "quantitative", legend: true },
-      width: 700,
-      height: 200,
-    },
-  ],
-};
 /** Synthetic clustered interaction network: `communities` blobs of nodes with
  * dense intra-community and sparse inter-community edges. No coordinates, so
  * the component runs ForceAtlas2 to lay it out. */
@@ -499,7 +475,7 @@ const demos: Record<string, Demo> = {
   },
   gosling: (el) => {
     const inst = createGosling(el, {
-      options: { spec: goslingSpec },
+      options: { spec: goslingDemoSpec },
     });
     return inst;
   },

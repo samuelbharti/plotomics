@@ -1,8 +1,9 @@
 /**
- * Synthetic data for the dev harness demos whose data tests check: the
- * oncoplot cohort, the lollipop protein, the Kaplan-Meier arms and the IGV
- * genome. They sit in their own module, not in main.ts, which mounts the
- * page, so a test can import them without a page to mount into.
+ * Synthetic data and specs for the dev harness demos that tests check: the
+ * oncoplot cohort, the lollipop protein, the Kaplan-Meier arms, the Gosling
+ * spec and the IGV genome. They sit in their own module, not in main.ts,
+ * which mounts the page, so a test can import them without a page to mount
+ * into.
  */
 import type { IgvOptions } from "../src/components/igv-config.js";
 import type { PlotomicsData } from "../src/core/index.js";
@@ -83,43 +84,114 @@ export function syntheticCohort(
   };
 }
 
-/** The hotspot residues of the synthetic TP53 below. */
-export const proteinHotspots = [175, 245, 248, 273, 282];
+/**
+ * The hotspot residues of the synthetic TP53 below: the reference letter of
+ * each and the missense changes drawn there. The first change of each is
+ * drawn far more often than the others.
+ */
+export const proteinHotspots: Record<number, { ref: string; alts: string[] }> =
+  {
+    175: { ref: "R", alts: ["H", "C", "G"] },
+    245: { ref: "G", alts: ["S", "D", "C"] },
+    248: { ref: "R", alts: ["Q", "W", "L"] },
+    273: { ref: "R", alts: ["H", "C", "L"] },
+    282: { ref: "R", alts: ["W", "G"] },
+  };
 
-// A TP53-shaped protein: 393 residues, real domain bounds, a hotspot pile-up in
-// the DNA-binding domain and a long tail of one-off variants elsewhere.
-export function syntheticProtein(nVariants: number): PlotomicsData {
+const AMINO_ACIDS = "ACDEFGHIKLMNPQRSTVWY";
+
+/**
+ * A made-up protein sequence, the same on every call: letters from a fixed
+ * generator, with the hotspot residues set to their reference letters.
+ * Index 0 is unused, so `seq[p]` is residue `p`.
+ */
+function syntheticSequence(length: number): string[] {
+  const seq = [""];
+  let x = 53;
+  for (let p = 1; p <= length; p += 1) {
+    x = (x * 16807) % 2147483647;
+    seq.push(AMINO_ACIDS[x % AMINO_ACIDS.length] as string);
+  }
+  for (const [p, h] of Object.entries(proteinHotspots)) seq[Number(p)] = h.ref;
+  return seq;
+}
+
+// A TP53-shaped protein: 393 residues, real domain bounds, a few recurrent
+// changes at each hotspot in the DNA-binding domain and a long tail of
+// one-off variants elsewhere. Each change is one row, its count summed over
+// the draws that produced it, as in a cohort's mutation table.
+export function syntheticProtein(nTail: number): PlotomicsData {
   const LEN = 393;
   const classes = ["Missense", "Truncating", "Frameshift", "Splice"];
-  const position = new Float32Array(nVariants);
-  const count = new Float32Array(nVariants);
-  const cls: string[] = [];
-  const label: string[] = [];
-  const hotspots = proteinHotspots;
-  const aa = "ACDEFGHIKLMNPQRSTVWY";
-  for (let i = 0; i < nVariants; i += 1) {
-    // Every fifth variant sits on a hotspot, taking the hotspots in turn. Of
-    // the rest, two thirds land in the DNA-binding domain and one third
-    // anywhere along the protein.
-    let p: number;
-    if (i % 5 === 0) p = hotspots[(i / 5) % hotspots.length] as number;
-    else if (i % 3 !== 0) p = 100 + Math.floor(Math.random() * 189);
-    else p = 1 + Math.floor(Math.random() * LEN);
-    position[i] = p;
-    count[i] = hotspots.includes(p)
-      ? 8 + Math.floor(Math.random() * 20)
-      : 1 + Math.floor(Math.random() * 3);
-    cls.push(classes[Math.floor(Math.random() * classes.length)] as string);
-    const ref = aa[Math.floor(Math.random() * aa.length)];
-    const alt = aa[Math.floor(Math.random() * aa.length)];
-    label.push(`${ref}${p}${alt}`);
+  const seq = syntheticSequence(LEN);
+  const rows = new Map<string, { p: number; cls: string; count: number }>();
+  const add = (label: string, p: number, cls: string, count: number) => {
+    const row = rows.get(label);
+    if (row) row.count += count;
+    else rows.set(label, { p, cls, count });
+  };
+
+  for (const [key, { alts }] of Object.entries(proteinHotspots)) {
+    const p = Number(key);
+    alts.forEach((alt, k) => {
+      const count =
+        k === 0
+          ? 30 + Math.floor(Math.random() * 30)
+          : 2 + Math.floor(Math.random() * 8);
+      add(`${seq[p]}${p}${alt}`, p, "Missense", count);
+    });
   }
-  const order = Array.from({ length: nVariants }, (_, i) => i)
+
+  // Two thirds of the tail falls in the DNA-binding domain and the rest
+  // anywhere, but not on a hotspot, which keeps its few changes. Most
+  // variants are missense.
+  for (let i = 0; i < nTail; i += 1) {
+    let p: number;
+    do {
+      p =
+        Math.random() < 2 / 3
+          ? 100 + Math.floor(Math.random() * 189)
+          : 1 + Math.floor(Math.random() * LEN);
+    } while (p in proteinHotspots);
+    const r = Math.random();
+    const cls =
+      r < 0.6
+        ? "Missense"
+        : r < 0.8
+          ? "Truncating"
+          : r < 0.93
+            ? "Frameshift"
+            : "Splice";
+    const ref = seq[p] as string;
+    let label: string;
+    if (cls === "Missense") {
+      let alt = ref;
+      while (alt === ref) {
+        alt = AMINO_ACIDS[
+          Math.floor(Math.random() * AMINO_ACIDS.length)
+        ] as string;
+      }
+      label = `${ref}${p}${alt}`;
+    } else if (cls === "Truncating") label = `${ref}${p}*`;
+    else if (cls === "Frameshift") label = `${ref}${p}fs`;
+    else label = `X${p}_splice`;
+    add(label, p, cls, 1);
+  }
+
+  const list = [...rows.entries()].sort((a, b) => a[1].p - b[1].p);
+  const position = new Float32Array(list.map(([, row]) => row.p));
+  const count = new Float32Array(list.map(([, row]) => row.count));
+  const order = Array.from({ length: list.length }, (_, i) => i)
     .sort((a, b) => (count[b] as number) - (count[a] as number))
     .slice(0, 12)
     .sort((a, b) => a - b);
   return {
-    columns: { position, count, class: cls, label },
+    columns: {
+      position,
+      count,
+      class: list.map(([, row]) => row.cls),
+      label: list.map(([label]) => label),
+    },
     meta: {
       length: LEN,
       gene: "TP53",
@@ -233,6 +305,37 @@ export function syntheticSurvival(): PlotomicsData {
     },
   };
 }
+
+// A minimal valid Gosling spec: one bar track over a public multivec tileset
+// hosted by the Gosling team (data streams/tiles from the server).
+export const goslingDemoSpec = {
+  title: "Cistrome peaks",
+  subtitle: "single multivec track streamed from the Gosling tile server",
+  // Bind the width to the widget, so the track fills it.
+  responsiveSize: { width: true },
+  tracks: [
+    {
+      data: {
+        url: "https://server.gosling-lang.org/api/v1/tileset_info/?d=cistrome-multivec",
+        type: "multivec",
+        row: "sample",
+        column: "position",
+        value: "peak",
+        categories: ["sample 1"],
+      },
+      mark: "bar",
+      x: { field: "start", type: "genomic", axis: "bottom" },
+      xe: { field: "end", type: "genomic" },
+      // Gosling draws the colour legend in the top-right corner, so the y
+      // axis goes on the left, where its numbers do not print over the
+      // legend's.
+      y: { field: "peak", type: "quantitative", axis: "left" },
+      color: { field: "peak", type: "quantitative", legend: true },
+      width: 700,
+      height: 200,
+    },
+  ],
+};
 
 // Files in dev/fixtures, served by the dev server (and by the browser test
 // server) next to this module.

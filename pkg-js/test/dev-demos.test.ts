@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   followUpEnd,
+  goslingDemoSpec,
   igvDemoOptions,
   proteinHotspots,
   syntheticCohort,
@@ -52,21 +53,50 @@ describe("dev harness demo data", () => {
     },
   );
 
-  it.each(seeds)("puts lollipop rows on every hotspot (seed %i)", (seed) => {
+  it.each(seeds)("gives each lollipop residue one letter (seed %i)", (seed) => {
     seedRandom(seed);
-    const n = 600;
-    const position = Array.from(
-      syntheticProtein(n).columns.position as ArrayLike<number>,
-    );
-    // Every fifth variant is a hotspot row, so each of the five hotspots
-    // holds at least a fifth of those.
-    for (const h of proteinHotspots) {
-      const rows = position.filter((p) => p === h).length;
-      expect(rows, `rows at residue ${h}`).toBeGreaterThanOrEqual(
-        n / 5 / proteinHotspots.length,
-      );
-    }
+    const data = syntheticProtein(600);
+    const position = Array.from(data.columns.position as ArrayLike<number>);
+    const label = data.columns.label as string[];
+    // One row per change.
+    expect(new Set(label).size).toBe(label.length);
+    const refAt = new Map<number, string>();
+    label.forEach((name, i) => {
+      // Splice labels name no residue letter (X125_splice).
+      if (name.endsWith("_splice")) return;
+      const m = /^([A-Z])(\d+)/.exec(name);
+      expect(m, name).not.toBeNull();
+      const [, ref, p] = m as RegExpExecArray;
+      expect(Number(p), name).toBe(position[i]);
+      const seen = refAt.get(Number(p)) ?? (ref as string);
+      expect(ref, `reference letter of residue ${p}`).toBe(seen);
+      refAt.set(Number(p), seen);
+    });
   });
+
+  it.each(seeds)(
+    "draws a few lollipop changes per hotspot, one far ahead (seed %i)",
+    (seed) => {
+      seedRandom(seed);
+      const data = syntheticProtein(600);
+      const position = Array.from(data.columns.position as ArrayLike<number>);
+      const count = Array.from(data.columns.count as ArrayLike<number>);
+      const hotspots = Object.keys(proteinHotspots).map(Number);
+      const tail = count.filter(
+        (_, i) => !hotspots.includes(position[i] as number),
+      );
+      for (const h of hotspots) {
+        const counts = count
+          .filter((_, i) => position[i] === h)
+          .sort((a, b) => b - a);
+        expect(counts.length, `changes at ${h}`).toBeGreaterThanOrEqual(2);
+        expect(counts.length, `changes at ${h}`).toBeLessThanOrEqual(5);
+        const [top, next] = counts as [number, number];
+        expect(top, `top change at ${h}`).toBeGreaterThanOrEqual(2 * next);
+        expect(top, `top change at ${h}`).toBeGreaterThan(Math.max(...tail));
+      }
+    },
+  );
 
   it.each(seeds)(
     "censors the KM subjects left at the end (seed %i)",
@@ -105,6 +135,54 @@ describe("dev harness demo data", () => {
       });
     },
   );
+
+  it.each(seeds)(
+    "counts the KM risk table before the events at each time (seed %i)",
+    (seed) => {
+      seedRandom(seed);
+      const data = syntheticSurvival();
+      const meta = data.meta as Record<string, unknown>;
+      const groups = meta.groups as string[];
+      const riskTimes = meta.riskTimes as number[];
+      const riskCounts = meta.riskCounts as number[];
+      const time = data.columns.time as number[];
+      const surv = data.columns.surv as number[];
+      const group = data.columns.group as string[];
+      let checked = 0;
+      groups.forEach((g, k) => {
+        const rows = time.map((_, i) => i).filter((i) => group[i] === g);
+        riskTimes.forEach((t, j) => {
+          const at = rows.findIndex((i) => time[i] === t);
+          if (t === 0 || at <= 0) return;
+          // The curve drops by d / n(t) at an event time t, where n(t)
+          // counts everyone still followed at t. So with the right n(t),
+          // n(t) * (1 - S(t) / S(t-)) is the whole number of events d.
+          const n = riskCounts[k * riskTimes.length + j] as number;
+          const sNow = surv[rows[at] as number] as number;
+          const sPrev = surv[rows[at - 1] as number] as number;
+          const d = n * (1 - sNow / sPrev);
+          expect(d, `${g} events at ${t}`).toBeCloseTo(Math.round(d), 6);
+          expect(Math.round(d), `${g} events at ${t}`).toBeGreaterThan(0);
+          checked += 1;
+        });
+      });
+      expect(checked).toBeGreaterThan(0);
+    },
+  );
+
+  it("keeps the Gosling demo's y axis off its legend", () => {
+    // Gosling draws a colour legend in the top-right corner of a track, so
+    // a y axis on the right prints its numbers over the legend's.
+    for (const track of goslingDemoSpec.tracks) {
+      const t = track as {
+        y?: { axis?: string };
+        color?: { legend?: boolean };
+      };
+      if (t.color?.legend) expect(t.y?.axis).not.toBe("right");
+    }
+    // The view takes the width of the widget.
+    expect(goslingDemoSpec.responsiveSize).toEqual({ width: true });
+  });
 
   it("reads the IGV demo files from the harness, not the network", () => {
     const config = igvDemoOptions.config as Record<string, unknown>;
