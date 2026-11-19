@@ -13,22 +13,25 @@
 #'   from `max(i, j) + 1`).
 #' @param n Number of bins per axis. Required for the sparse (i/j/v) form;
 #'   ignored for a dense matrix (taken from `nrow(mat)`).
-#' @param bin_size Genomic bin size in base pairs; used to label axes in
-#'   bp/kb/Mb. `NULL` labels axes by bin index.
+#' @param bin_size Genomic bin size in base pairs, a positive number; used to
+#'   label axes in bp/kb/Mb. `NULL` (or `NA`) labels axes by bin index.
 #' @param chrom Optional chromosome name shown as the axis title.
 #' @param colormap Colormap for intensity: sequential `"viridis"` (the
 #'   default) or `"ltc"` (an earthy teal to sand to rust ramp), or diverging
 #'   `"rdbu"` or `"ltcdiv"` (its counterpart, neutral cream at the midpoint).
 #' @param transform Intensity transform, `"log"` (default) or `"linear"`.
-#' @param vmax Upper clip of the intensity scale; `NULL` auto-picks a high
-#'   percentile.
+#' @param vmax Upper clip of the intensity scale: a finite number greater
+#'   than `vmin`, and greater than 0 with the log transform. `NULL` (or `NA`)
+#'   auto-picks a high percentile.
 #' @param vmax_percentile Percentile in `(0, 1]` used to auto-pick `vmax` when
-#'   `vmax` is `NULL`. `NULL` uses the component default.
-#' @param vmin Lower clip of the intensity scale. With the log transform, or
-#'   when `vmin` is 0 or more, values at or below it are drawn as background.
-#'   With the linear transform and a negative `vmin` (for example
-#'   observed/expected log2 ratios), values below it take the lowest color.
-#' @param symmetric Mirror sparse `i`/`j`/`v` entries across the diagonal.
+#'   `vmax` is `NULL`. `NULL` (or `NA`) uses the component default.
+#' @param vmin Lower clip of the intensity scale, a finite number. `NULL` (or
+#'   `NA`) uses 0. With the log transform, or when `vmin` is 0 or more, values
+#'   at or below it are drawn as background. With the linear transform and a
+#'   negative `vmin` (for example observed/expected log2 ratios), values below
+#'   it take the lowest color.
+#' @param symmetric Mirror sparse `i`/`j`/`v` entries across the diagonal:
+#'   `TRUE` or `FALSE`.
 #' @param label Axis title (overrides `chrom` when set).
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
 #'   merged over the component defaults in the browser. `NULL` uses the default
@@ -66,6 +69,28 @@ hic <- function(mat,
                 element_id = NULL) {
   colormap <- match.arg(colormap)
   transform <- match.arg(transform)
+  bin_size <- hic_number(
+    bin_size, "bin_size", "a single positive number", function(v) v > 0
+  )
+  vmin <- hic_number(vmin, "vmin")
+  vmax <- hic_number(vmax, "vmax")
+  vmax_percentile <- hic_number(
+    vmax_percentile, "vmax_percentile", "in (0, 1]", function(v) v > 0 && v <= 1
+  )
+  # A vmax at or below the bottom of the scale leaves every cell background.
+  if (!is.null(vmax)) {
+    if (vmax <= (if (is.null(vmin)) 0 else vmin)) {
+      stop("`vmax` must be greater than `vmin`.", call. = FALSE)
+    }
+    if (transform == "log" && vmax <= 0) {
+      stop("`vmax` must be greater than 0 with the log transform.",
+        call. = FALSE
+      )
+    }
+  }
+  if (!is.logical(symmetric) || length(symmetric) != 1L || is.na(symmetric)) {
+    stop("`symmetric` must be a single true or false value.", call. = FALSE)
+  }
 
   columns <- list()
   if (is.matrix(mat) || (is.array(mat) && length(dim(mat)) == 2)) {
@@ -117,15 +142,15 @@ hic <- function(mat,
   }
 
   meta <- list(n = as.integer(n))
-  if (!is.null(bin_size)) meta$binSize <- as.numeric(bin_size)
+  if (!is.null(bin_size)) meta$binSize <- bin_size
   if (!is.null(chrom)) meta$chrom <- as.character(chrom)
 
   options <- list(
     colormap = colormap,
     transform = transform,
-    vmin = vmin,
-    symmetric = isTRUE(symmetric)
+    symmetric = symmetric
   )
+  if (!is.null(vmin)) options$vmin <- vmin
   # `vmax = NULL` means auto; only send it when the user fixed it.
   if (!is.null(vmax)) options$vmax <- vmax
   if (!is.null(vmax_percentile)) options$vmaxPercentile <- vmax_percentile
@@ -178,4 +203,22 @@ renderHic <- function(expr, env = parent.frame(), quoted = FALSE) {
     expr <- substitute(expr)
   }
   htmlwidgets::shinyRenderWidget(expr, hicOutput, env, quoted = TRUE)
+}
+
+#' One number for a hic() argument, or NULL when it is NULL or NA
+#'
+#' NA leaves the argument unset, as NULL does. NaN, an infinite value, text,
+#' a factor, more than one value, or a value `ok()` refuses stops with
+#' "`name` must be `what`.".
+#' @noRd
+hic_number <- function(x, name, what = "a single finite number", ok = NULL) {
+  if (is.null(x) ||
+    (is.atomic(x) && length(x) == 1L && is.na(x) && !is.nan(x))) {
+    return(NULL)
+  }
+  if (!is.numeric(x) || length(x) != 1L || !is.finite(x) ||
+    (!is.null(ok) && !ok(x))) {
+    stop(sprintf("`%s` must be %s.", name, what), call. = FALSE)
+  }
+  as.numeric(x)
 }

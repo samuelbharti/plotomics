@@ -42,6 +42,7 @@ import {
   type RGB,
 } from "../core/index.js";
 import { releaseRegl } from "../core/gl.js";
+import { uniqueId } from "../core/dom.js";
 import createREGL from "regl";
 import type { Regl, Texture2D, DrawCommand } from "regl";
 
@@ -95,8 +96,6 @@ const COLORBAR_W = 14;
 const COLORMAP_SIZE = 256;
 /** Smallest zoom window, in bins (or the whole matrix when it is smaller). */
 const MIN_VIEW_BINS = 4;
-
-let hicSeq = 0;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/hic.test.ts)
@@ -285,7 +284,8 @@ export function buildLODPyramid(
  * half resolution, so the effective texels covering the window scale with the
  * visible fraction `visibleBins / fullSize`. Sampling the coarsest level that
  * still meets the pixel budget minimizes GPU texture reads without visible
- * blur; the shader keeps `linear` minification for a smooth look between.
+ * blur; the shader blends the four texels around each pixel for a smooth look
+ * between, leaving out the texels without data.
  */
 export function pickLODLevel(
   levels: { size: number }[],
@@ -447,7 +447,9 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   // Set when WebGL is missing or a draw failed; the overlay still renders and
   // no method throws.
   let glBroken = false;
-  const uid = `plotomics-hic-${hicSeq++}`;
+  // One id per instance, distinct across widgets that load the module
+  // again each (as anywidget does), so a per-module counter is not enough.
+  const uid = uniqueId("plotomics-hic");
 
   /** Set up WebGL once; on any failure, mark it broken and draw no matrix. */
   function initGL() {
@@ -500,14 +502,42 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
         uniform sampler2D matrix;   // luminance byte: 0 = background, 1-255 = scale
         uniform sampler2D cmap;     // 256x1 colormap LUT
         uniform vec3 background;
+        uniform float levelSize;    // texels on a side of the matrix texture
+        uniform float blend;        // 1 to blend the four nearest texels, 0 for one
+        // The byte of the texel in column p.x and row p.y.
+        float texel(vec2 p) {
+          return texture2D(matrix, (p + 0.5) / levelSize).r * 255.0;
+        }
         void main() {
           if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
             gl_FragColor = vec4(background, 1.0);
             return;
           }
-          float b = texture2D(matrix, uv).r * 255.0;
-          if (b < 0.5) { gl_FragColor = vec4(background, 1.0); return; }
-          float t = clamp((b - 1.0) / 254.0, 0.0, 1.0);
+          // The four texels around uv, weighted as linear filtering would
+          // weight them. The filtering is done here, over the texels with
+          // data only: blending byte 0 (no data) into its neighbours would
+          // draw a missing bin as a smaller value, a colour of the scale.
+          vec2 p = uv * levelSize - 0.5;
+          vec2 i = floor(p);
+          vec2 f = p - i;
+          if (blend < 0.5) f = step(0.5, f);
+          vec4 b = vec4(
+            texel(i),
+            texel(i + vec2(1.0, 0.0)),
+            texel(i + vec2(0.0, 1.0)),
+            texel(i + vec2(1.0, 1.0))
+          );
+          vec4 w = vec4(
+            (1.0 - f.x) * (1.0 - f.y),
+            f.x * (1.0 - f.y),
+            (1.0 - f.x) * f.y,
+            f.x * f.y
+          );
+          vec4 has = step(0.5, b);
+          float weight = dot(w, has);
+          // Background where most of the pixel falls on texels without data.
+          if (weight < 0.5) { gl_FragColor = vec4(background, 1.0); return; }
+          float t = clamp((dot(w * has, b) / weight - 1.0) / 254.0, 0.0, 1.0);
           gl_FragColor = texture2D(cmap, vec2(t, 0.5));
         }`,
       attributes: {
@@ -520,6 +550,8 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       },
       uniforms: {
         matrix: regl.prop<{ matrix: Texture2D }, "matrix">("matrix"),
+        levelSize: regl.prop<{ levelSize: number }, "levelSize">("levelSize"),
+        blend: regl.prop<{ blend: number }, "blend">("blend"),
         cmap: () => cmapTex as Texture2D,
         uvLo: regl.prop<{ uvLo: [number, number] }, "uvLo">("uvLo"),
         uvHi: regl.prop<{ uvHi: [number, number] }, "uvHi">("uvHi"),
@@ -551,8 +583,9 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       height: level.size,
       format: "luminance",
       type: "uint8",
+      // The shader blends the texels itself, leaving out those without data.
       mag: "nearest",
-      min: "linear",
+      min: "nearest",
       wrap: "clamp",
     });
     return level.texture;
@@ -665,17 +698,40 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   const tickLabel = (t: number, stepBp: number) =>
     binSize > 1 ? formatCoord(t * binSize, stepBp) : String(Math.round(t));
   /**
-   * Width of the widest tick label of the view at the finest step the axis
-   * uses, which has the most decimals.
+   * The ticks the axes can take for the view, finest step first: the steps
+   * for 6 down to 2 ticks, each with its ticks (in bins), their labels and
+   * the width of the widest label.
+   */
+  function tickChoices() {
+    // Bin-index axes tick whole bins only; genomic axes may tick inside a bin.
+    const minStep = binSize > 1 ? 0 : 1;
+    const out: {
+      step: number;
+      ticks: number[];
+      labels: string[];
+      widest: number;
+    }[] = [];
+    for (let target = 6; target >= 2; target -= 1) {
+      const step = tickStep(viewLo, viewHi, target, minStep);
+      const ticks = axisTicks(viewLo, viewHi, target, minStep).filter(
+        (t) => t >= viewLo - 1e-6 && t <= viewHi + 1e-6,
+      );
+      const labels = ticks.map((t) => tickLabel(t, step * binSize));
+      let widest = 0;
+      for (const s of labels) widest = Math.max(widest, tw(s, sizes.label));
+      out.push({ step, ticks, labels, widest });
+    }
+    return out;
+  }
+  /**
+   * Width of the widest tick label the axes can draw for the view. A coarser
+   * step can need more decimals than a finer one (12.5Mb against 10Mb), so
+   * every step the axes can fall back to counts.
    */
   function widestTick(): number {
     if (n === 0) return 0;
-    const minStep = binSize > 1 ? 0 : 1;
-    const stepBp = tickStep(viewLo, viewHi, 6, minStep) * binSize;
     let w = 0;
-    for (const t of axisTicks(viewLo, viewHi, 6, minStep)) {
-      w = Math.max(w, tw(tickLabel(t, stepBp), sizes.label));
-    }
+    for (const c of tickChoices()) w = Math.max(w, c.widest);
     return w;
   }
   // The widest tick label since the data, the options or the size last
@@ -800,8 +856,12 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     ) {
       level += 1;
     }
-    const tex = levelTexture(levels[level] as Level);
+    const lv = levels[level] as Level;
+    const tex = levelTexture(lv);
     if (!tex) return;
+    // Blend texels when more than one falls on a pixel; when zoomed in past
+    // one texel a pixel, each pixel takes its own cell, so cells stay sharp.
+    const blend = (lv.size * visibleBins) / n > plotSize() * ratio ? 1 : 0;
 
     // UV window into the (normalized) full matrix. All levels share [0,1] UV.
     const uvLo: [number, number] = [viewLo / n, viewLo / n];
@@ -813,6 +873,8 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     const ps = plotSize() * ratio;
     draw({
       matrix: tex,
+      levelSize: lv.size,
+      blend,
       uvLo,
       uvHi,
       viewport: {
@@ -842,24 +904,16 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     svg.appendChild(rectStroke(left, top, size, size, ax, 1.5));
 
     if (n > 0) {
-      // Bin-index axes tick whole bins only; genomic axes may tick inside a bin.
-      const minStep = binSize > 1 ? 0 : 1;
       // Fewer ticks when the labels are wider than the gaps between them: a
       // coarser step first, then every k-th tick of the coarsest step.
       let ticks: number[] = [];
       let labels: string[] = [];
       let gap = 0;
       let need = 0;
-      for (let target = 6; target >= 2; target -= 1) {
-        const step = tickStep(viewLo, viewHi, target, minStep);
-        ticks = axisTicks(viewLo, viewHi, target, minStep).filter(
-          (t) => t >= viewLo - 1e-6 && t <= viewHi + 1e-6,
-        );
-        labels = ticks.map((t) => tickLabel(t, step * binSize));
-        let widest = 0;
-        for (const s of labels) widest = Math.max(widest, tw(s, labelSize));
-        gap = (step / (viewHi - viewLo)) * size;
-        need = widest + 8;
+      for (const c of tickChoices()) {
+        ({ ticks, labels } = c);
+        gap = (c.step / (viewHi - viewLo)) * size;
+        need = c.widest + 8;
         if (gap >= need) break;
       }
       const every = gap >= need ? 1 : Math.ceil(need / Math.max(gap, 1e-9));
@@ -908,10 +962,16 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     if (title && titleOn.left) {
       const tx = 2 + 1.1 * titleSize;
       const cy = top + size / 2;
+      // No longer than the map is high, so it stays clear of the bottom
+      // title under the map.
       const yTitle = text(
         tx,
         cy,
-        fit(title, 2 * Math.min(cy, height - cy) - 4, titleSize),
+        fit(
+          title,
+          Math.min(size, 2 * Math.min(cy, height - cy) - 4),
+          titleSize,
+        ),
         fg,
         "middle",
         titleSize,
@@ -972,10 +1032,15 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     const valueW = Math.max(tw(hiTick, label), tw(loTick, label));
     const tx = vx + valueW + 4 + 0.3 * titleSize;
     const cy = top + h / 2;
+    // No longer than the bar, so it stays clear of the bottom title.
     const cbTitle = text(
       tx,
       cy,
-      fit(colorbarTitle(), 2 * Math.min(cy, height - cy) - 4, titleSize),
+      fit(
+        colorbarTitle(),
+        Math.min(h, 2 * Math.min(cy, height - cy) - 4),
+        titleSize,
+      ),
       theme.foreground,
       "middle",
       titleSize,

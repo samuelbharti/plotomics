@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import pytest
 
@@ -135,3 +137,79 @@ def test_hic_accepts_rdbu_and_rejects_unknown_colormaps():
 @pytest.mark.parametrize("colormap", ["viridis", "rdbu", "ltc", "ltcdiv"])
 def test_hic_accepts_every_colormap_the_browser_draws(colormap):
     assert HiC(np.eye(4), colormap=colormap).options["colormap"] == colormap
+
+
+NUMBER = "must be a single finite number"
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"vmin": "a"}, f"`vmin` {NUMBER}"),
+        ({"vmin": float("nan")}, f"`vmin` {NUMBER}"),
+        ({"vmin": -math.inf}, f"`vmin` {NUMBER}"),
+        ({"vmax": [1, 2]}, f"`vmax` {NUMBER}"),
+        ({"vmax": float("nan")}, f"`vmax` {NUMBER}"),
+        ({"vmax": math.inf}, f"`vmax` {NUMBER}"),
+        ({"vmax": "3"}, f"`vmax` {NUMBER}"),
+        ({"vmax": True}, f"`vmax` {NUMBER}"),
+        ({"vmax": -5}, "`vmax` must be greater than `vmin`"),
+        (
+            {"vmin": 2, "vmax": 2, "transform": "linear"},
+            "`vmax` must be greater than `vmin`",
+        ),
+        ({"vmin": -3, "vmax": -1}, "`vmax` must be greater than 0 with the log"),
+        ({"vmax_percentile": 99}, r"`vmax_percentile` must be in \(0, 1\]"),
+        ({"vmax_percentile": -1}, r"`vmax_percentile` must be in \(0, 1\]"),
+        ({"vmax_percentile": 0}, r"`vmax_percentile` must be in \(0, 1\]"),
+        (
+            {"vmax_percentile": float("nan")},
+            r"`vmax_percentile` must be in \(0, 1\]",
+        ),
+        ({"vmax_percentile": "0.9"}, r"`vmax_percentile` must be in \(0, 1\]"),
+        ({"bin_size": -5}, "`bin_size` must be a single positive number"),
+        ({"bin_size": 0}, "`bin_size` must be a single positive number"),
+        ({"bin_size": float("nan")}, "`bin_size` must be a single positive number"),
+        ({"bin_size": "a"}, "`bin_size` must be a single positive number"),
+        ({"symmetric": "no"}, "`symmetric` must be a single true or false value"),
+        ({"symmetric": None}, "`symmetric` must be a single true or false value"),
+        ({"symmetric": 1}, "`symmetric` must be a single true or false value"),
+    ],
+)
+def test_hic_checks_its_numeric_arguments(kwargs, message):
+    m = np.random.rand(2, 2)
+    with pytest.raises(ValueError, match=message):
+        HiC(m, **kwargs)
+
+
+def test_hic_keeps_the_numeric_arguments_it_is_given():
+    m = np.random.rand(2, 2)
+    w = HiC(
+        m,
+        bin_size=np.int64(5000),
+        vmin=-2,
+        vmax=np.float32(3),
+        vmax_percentile=1,
+        transform="linear",
+        symmetric=np.bool_(False),
+    )
+    assert w.data["meta"]["binSize"] == 5000.0
+    assert w.options["vmin"] == -2.0
+    assert w.options["vmax"] == 3.0
+    assert w.options["vmaxPercentile"] == 1.0
+    assert w.options["symmetric"] is False
+    # Below 0 with the log transform, vmin acts as 0.
+    assert HiC(m, vmin=-3, vmax=1).options["vmax"] == 1.0
+
+
+def test_hic_reads_none_as_an_unset_numeric_argument():
+    w = HiC(
+        np.random.rand(2, 2),
+        bin_size=None,
+        vmin=None,
+        vmax=None,
+        vmax_percentile=None,
+    )
+    assert "binSize" not in w.data["meta"]
+    for key in ("vmin", "vmax", "vmaxPercentile"):
+        assert key not in w.options

@@ -70,10 +70,13 @@ export function makeAnywidget<O>(factory: PlotomicsFactory<O>) {
         if (dropsOptionKeys(lastOptions, sent)) {
           inst.destroy();
           inst = factory(host, { data: readData(), options: readOptions() });
-          // The new instance starts with nothing selected; say so in Python.
+          // The new instance starts with nothing selected; say so in Python:
+          // [] after a lasso selection, None after a clicked node.
           const selected = model.get("selected");
-          if (Array.isArray(selected) && selected.length > 0) {
-            model.set("selected", []);
+          if (
+            Array.isArray(selected) ? selected.length > 0 : selected != null
+          ) {
+            model.set("selected", Array.isArray(selected) ? [] : null);
             model.save_changes();
           }
         } else {
