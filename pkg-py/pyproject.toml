@@ -41,6 +41,8 @@ dev = [
     "pandas>=1.5",
     # The wrappers also read polars DataFrames; their tests importorskip too.
     "polars>=0.20",
+    # tests/test_docs.py renders the API reference and checks its links.
+    "pdoc>=14",
 ]
 
 [project.urls]

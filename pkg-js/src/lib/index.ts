@@ -59,6 +59,7 @@ export {
 export {
   createLollipop,
   defaultLollipopOptions,
+  DOMAIN_PALETTE,
   type LollipopOptions,
   type LollipopDomain,
   type LollipopPtm,

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createHeatmap } from "../../src/components/heatmap.js";
+import { createNetwork } from "../../src/components/network.js";
 import type { PlotomicsFactory } from "../../src/core/index.js";
 import { makeAnywidget } from "../../src/lib/anywidget.js";
 import { registerComponent } from "../../src/lib/umd.js";
@@ -381,5 +382,163 @@ describe("rebuilding", () => {
     traits.options = {};
     handlers["change:options"]?.();
     expect(traits.selected).toEqual([]);
+  });
+});
+
+/** A stand-in for Shiny that records every input value set. */
+function fakeShiny() {
+  const calls: [string, unknown][] = [];
+  const w = window as unknown as Record<string, unknown>;
+  w.HTMLWidgets = { shinyMode: true };
+  w.Shiny = {
+    setInputValue: (id: string, v: unknown) => calls.push([id, v]),
+  };
+  return {
+    calls,
+    restore() {
+      delete w.HTMLWidgets;
+      delete w.Shiny;
+    },
+  };
+}
+
+/** A component whose selection the test reports through `report`. */
+function reportingWidget(id: string) {
+  const state: { report?: (value: unknown) => void } = {};
+  const factory: PlotomicsFactory<{ onSelect?: (value: unknown) => void }> = (
+    _el,
+    init,
+  ) => {
+    state.report = init.options?.onSelect;
+    return {
+      setData() {},
+      setOptions(next) {
+        if (next.onSelect) state.report = next.onSelect;
+      },
+      resize() {},
+      destroy() {},
+    };
+  };
+  registerComponent("reporting", factory);
+  const el = container();
+  el.id = id;
+  const widget = (
+    window as unknown as { plotomics: { htmlwidget(n: string): Binding } }
+  ).plotomics
+    .htmlwidget("reporting")
+    .factory(el, 600, 400);
+  return { widget, state };
+}
+
+describe("Shiny selection", () => {
+  it("sends every kind of selection a component reports", () => {
+    const shiny = fakeShiny();
+    try {
+      const { widget, state } = reportingWidget("w");
+      widget.renderValue({ data, options: { a: 1 } });
+      // Embedding reports row indices, and [] when the lasso is cleared;
+      // network reports a node id, and null for a click on no node.
+      for (const value of [[0, 2], [], "TP53", null]) state.report?.(value);
+      expect(shiny.calls).toEqual([
+        ["w_selected", [0, 2]],
+        ["w_selected", []],
+        ["w_selected", "TP53"],
+        ["w_selected", null],
+      ]);
+    } finally {
+      shiny.restore();
+    }
+  });
+
+  it("clears a clicked node to NULL when the widget is built again", () => {
+    const shiny = fakeShiny();
+    try {
+      const { widget, state } = reportingWidget("w");
+      widget.renderValue({ data, options: { a: 1 } });
+      state.report?.("TP53");
+      widget.renderValue({ data, options: {} });
+      expect(shiny.calls).toEqual([
+        ["w_selected", "TP53"],
+        ["w_selected", null],
+      ]);
+
+      // Nothing is selected now, so a second rebuild sends nothing.
+      widget.renderValue({ data, options: { a: 1 } });
+      widget.renderValue({ data, options: {} });
+      expect(shiny.calls).toHaveLength(2);
+    } finally {
+      shiny.restore();
+    }
+  });
+
+  it("sets input$<id>_selected to NULL when a network click hits no node", async () => {
+    const shiny = fakeShiny();
+    try {
+      registerComponent("network", createNetwork);
+      const el = container();
+      el.id = "net";
+      const widget = (
+        window as unknown as { plotomics: { htmlwidget(n: string): Binding } }
+      ).plotomics
+        .htmlwidget("network")
+        .factory(el, 600, 400);
+      const genes = ["TP53", "MDM2", "CDKN1A", "ATM"];
+      widget.renderValue({
+        data: {
+          columns: { id: genes, x: [10, 0, -10, 0], y: [0, 10, 0, -10] },
+          meta: { edges: [["TP53", "MDM2"]] },
+        },
+        options: {},
+      });
+      await expect
+        .poll(() => el.querySelector("canvas.sigma-mouse"), {
+          timeout: 10_000,
+          interval: 50,
+        })
+        .toBeTruthy();
+      const mouse = el.querySelector("canvas.sigma-mouse") as HTMLElement;
+      // The centre of the ring holds no node.
+      const r = mouse.getBoundingClientRect();
+      mouse.dispatchEvent(
+        new MouseEvent("click", {
+          clientX: r.left + r.width / 2,
+          clientY: r.top + r.height / 2,
+          bubbles: true,
+        }),
+      );
+      expect(shiny.calls).toEqual([["net_selected", null]]);
+    } finally {
+      shiny.restore();
+    }
+  });
+});
+
+describe("Python selection", () => {
+  it("clears a clicked node to None after a rebuild", () => {
+    const { factory } = countingFactory();
+    const traits: Record<string, unknown> = {
+      data,
+      buffer: null,
+      schema: null,
+      options: { a: 1 },
+      selected: "TP53",
+      _height: 300,
+    };
+    const handlers: Record<string, () => void> = {};
+    const model = {
+      get: (k: string) => traits[k],
+      set: (k: string, v: unknown) => {
+        traits[k] = v;
+      },
+      save_changes() {},
+      on: (event: string, cb: () => void) => {
+        handlers[event] = cb;
+      },
+      off() {},
+    };
+    makeAnywidget(factory).render({ model, el: container() });
+    traits.options = {};
+    handlers["change:options"]?.();
+    expect(traits.selected).toBeNull();
   });
 });
