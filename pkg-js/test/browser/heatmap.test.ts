@@ -115,6 +115,95 @@ function plotHeight(): number {
   return h;
 }
 
+/** The colours down the middle column of the plot canvas, as "r,g,b". */
+function columnColours(el: HTMLElement): string[] {
+  const gl = el.querySelector("canvas") as HTMLCanvasElement;
+  const c = document.createElement("canvas");
+  c.width = gl.width;
+  c.height = gl.height;
+  const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+  ctx.drawImage(gl, 0, 0);
+  const d = ctx.getImageData(Math.floor(c.width / 2), 0, 1, c.height).data;
+  return Array.from(
+    { length: c.height },
+    (_, y) => `${d[y * 4]},${d[y * 4 + 1]},${d[y * 4 + 2]}`,
+  );
+}
+
+/** The level of the viridis lookup table that draws `colour` ("r,g,b"). */
+function levelOf(colour: string): number {
+  const lut = buildRampLUT("viridis");
+  for (let i = 0; i < 256; i += 1) {
+    if (colour === `${lut[i * 4]},${lut[i * 4 + 1]},${lut[i * 4 + 2]}`) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/** How often the colour changes from one pixel to the next. */
+function changes(colours: string[]): number {
+  let n = 0;
+  for (let i = 1; i < colours.length; i += 1) {
+    if (colours[i] !== colours[i - 1]) n += 1;
+  }
+  return n;
+}
+
+/** The row the tooltip names at device pixel row `y` of the plot canvas. */
+function rowAt(el: HTMLElement, y: number): number {
+  const gl = el.querySelector("canvas") as HTMLCanvasElement;
+  const r = gl.getBoundingClientRect();
+  const k = r.height / gl.height;
+  el.dispatchEvent(
+    new MouseEvent("mousemove", {
+      clientX: r.left + r.width / 2,
+      clientY: r.top + (y + 0.5) * k,
+      bubbles: true,
+    }),
+  );
+  const tip = Array.from(el.children).find((c) => c.tagName === "DIV") as
+    | HTMLElement
+    | undefined;
+  return Number(/row (\d+)/.exec(tip?.textContent ?? "")?.[1] ?? -1);
+}
+
+/** Zoom in on `row`, as the tooltip finds it, until `rows` or fewer show. */
+function zoomOnRow(el: HTMLElement, row: number, rows: number) {
+  const gl = el.querySelector("canvas") as HTMLCanvasElement;
+  for (let i = 0; i < 12; i += 1) {
+    const inView = rowAt(el, gl.height - 1) - rowAt(el, 0) + 1;
+    if (inView <= rows) return;
+    let y = 0;
+    let best = Number.POSITIVE_INFINITY;
+    for (let yy = 0; yy < gl.height && best > 0; yy += 1) {
+      const d = Math.abs(rowAt(el, yy) - row);
+      if (d < best) {
+        best = d;
+        y = yy;
+      }
+    }
+    const r = gl.getBoundingClientRect();
+    gl.dispatchEvent(
+      new WheelEvent("wheel", {
+        deltaY: Math.log(Math.max(rows / inView, 0.1)) * 1000,
+        clientX: r.left + r.width / 2,
+        clientY: r.top + ((y + 0.5) * r.height) / gl.height,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }
+}
+
+/** The GPU's texture limit in this browser. */
+function textureLimit(): number {
+  const gl = document
+    .createElement("canvas")
+    .getContext("webgl") as WebGLRenderingContext;
+  return gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
+}
+
 /** Zoom by `factor` (below 1 zooms in) about a point of the plot canvas. */
 function zoom(el: HTMLElement, factor: number, fy = 0.5) {
   const gl = el.querySelector("canvas") as HTMLCanvasElement;
@@ -312,6 +401,123 @@ describe("heatmap in a browser", () => {
       seen.push(colourRuns(el, 0.5, lit));
     }
     expect(seen).toEqual([1, 1, 1, 1, 1, 1, 1]);
+  });
+
+  it("keeps alternating rows distinct when rows are 1 to 2 times the pixels", () => {
+    const h = plotHeight();
+    const nrows = h + 1;
+    for (const period of [2, 4]) {
+      // Rows 0, 1, 0, 1, ... and 0, 1, 2, 3, 0, 1, ...
+      const values = new Float32Array(nrows * 4);
+      for (let r = 0; r < nrows; r += 1) {
+        values.fill(r % period, r * 4, (r + 1) * 4);
+      }
+      const el = container();
+      instances.push(
+        createHeatmap(el, {
+          data: { columns: { values }, meta: { nrows, ncols: 4 } },
+        }),
+      );
+      // Pooled to one texel a pixel, nearly every row keeps a pixel of its
+      // own; halving the rows would draw one flat colour.
+      const colours = columnColours(el);
+      expect(changes(colours), `period ${period}`).toBeGreaterThan(0.9 * h);
+      expect(new Set(colours).size, `period ${period}`).toBeGreaterThanOrEqual(
+        period,
+      );
+    }
+  });
+
+  it("draws a lone outlier row at the strength its pixel allows", () => {
+    // 5000 rows in about 420 px: 11 or 12 rows to a pixel, so the outlier
+    // pixel is at least a twelfth of the way up the ramp.
+    const nrows = 5000;
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: {
+          columns: { values: withRows(nrows, 4, [2500]) },
+          meta: { nrows, ncols: 4 },
+        },
+      }),
+    );
+    const top = Math.max(...columnColours(el).map((c) => levelOf(c)));
+    expect(top).toBeGreaterThanOrEqual(1 + Math.round(254 / 12));
+  });
+
+  it("draws a row past the texture limit where the tooltip names it", () => {
+    const maxTex = textureLimit();
+    // Rows pool two by two to fit the limit; this row is alone in an even
+    // split of the rows, whose texels would sit up to a row away from it.
+    const nrows = maxTex + 100;
+    let row = -1;
+    let off = -1;
+    for (let i = (maxTex >> 1) - 200; i < (maxTex >> 1) + 200; i += 1) {
+      const r0 = Math.floor((i * nrows) / maxTex);
+      const r1 = Math.floor(((i + 1) * nrows) / maxTex);
+      if (r1 - r0 === 1 && (i * nrows) / maxTex - r0 > off) {
+        off = (i * nrows) / maxTex - r0;
+        row = r0;
+      }
+    }
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: {
+          columns: { values: withRows(nrows, 2, [row]) },
+          meta: { nrows, ncols: 2 },
+        },
+      }),
+    );
+    zoomOnRow(el, row, 8);
+    const colours = columnColours(el);
+    // The texel holding the row covers it and its partner in the block of
+    // two, and nothing else. The edges of a texel in a texture this tall
+    // may land a few pixels off in the browser's renderer, so an eighth of
+    // a row is allowed there.
+    const block = [row - (row % 2), row - (row % 2) + 1];
+    let rowPixels = 0;
+    let rowUnlit = 0;
+    let litElsewhere = 0;
+    colours.forEach((c, y) => {
+      const at = rowAt(el, y);
+      const on = lit(c.split(",").map(Number));
+      if (at === row) {
+        rowPixels += 1;
+        if (!on) rowUnlit += 1;
+      }
+      if (on && !block.includes(at)) litElsewhere += 1;
+    });
+    expect(rowPixels).toBeGreaterThan(20);
+    expect(rowUnlit).toBeLessThanOrEqual(rowPixels / 8);
+    expect(litElsewhere).toBeLessThanOrEqual(rowPixels / 8);
+  });
+
+  it("never draws a row past the texture limit as its neighbour", () => {
+    const maxTex = textureLimit();
+    const nrows = maxTex + 100;
+    // Rows 0, 1, 0, 1, ...: each block of two holds a 0 and a 1.
+    const values = new Float32Array(nrows * 2);
+    for (let r = 0; r < nrows; r += 1) values.fill(r % 2, r * 2, (r + 1) * 2);
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: { columns: { values }, meta: { nrows, ncols: 2 } },
+      }),
+    );
+    zoomOnRow(el, Math.floor((nrows * 3) / 4), 8);
+    const colours = columnColours(el);
+    // The colour of the other value, at either end of the ramp.
+    const lut = buildRampLUT("viridis");
+    const end = (v: number) => {
+      const i = 1 + Math.round(v * 254);
+      return `${lut[i * 4]},${lut[i * 4 + 1]},${lut[i * 4 + 2]}`;
+    };
+    let wrong = 0;
+    colours.forEach((c, y) => {
+      if (c === end(1 - (rowAt(el, y) % 2))) wrong += 1;
+    });
+    expect(wrong).toBe(0);
   });
 
   it("draws noise as its average, not pushed to the ends of the ramp", () => {

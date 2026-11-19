@@ -16,11 +16,11 @@
  * A missing cell (NaN from Python, null from R) is drawn in a neutral grey and
  * left out of the colour range and the z-score. A matrix with more rows or
  * columns than the GPU's texture limit, or than the plot has pixels, is
- * mean-pooled for drawing (see `poolMean` in the core): each pixel shows the
- * mean of the finite cells under it, so a lone outlier row still shows,
- * fainter the more rows share its pixel, and a pixel is grey only when every
- * cell under it is missing. The tooltip still reads the cell under the
- * cursor.
+ * mean-pooled for drawing (see `poolBlocks` in the core and `axisPlan`
+ * below): each pixel shows the mean of the finite cells under it, so a lone
+ * outlier row still shows, fainter the more rows share its pixel, and a
+ * pixel is grey only when every cell under it is missing. The tooltip still
+ * reads the cell under the cursor.
  */
 import {
   type PlotomicsData,
@@ -39,7 +39,10 @@ import {
   ramp,
   isDivergingRamp,
   matrixRamp,
-  poolMean,
+  type Blocks,
+  alignedBlocks,
+  evenBlocks,
+  poolBlocks,
   serializeSVG,
   compositePNG,
 } from "../core/index.js";
@@ -90,6 +93,8 @@ const MIN_RIGHT_MARGIN = 84;
 const MAX_MARGIN_SHARE = 0.35;
 /** Fill for a missing cell, and its colour bar swatch. */
 const MISSING_COLOR = "#CCCCCC";
+/** Pooled textures kept for reuse as the view pans and zooms. */
+const MAX_POOLED = 6;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/heatmap.test.ts)
@@ -175,25 +180,71 @@ export function toFloat32(values: ArrayLike<number | null>): Float32Array {
 }
 
 /**
- * How many texels to pool `n` rows (or columns) into, for a view that shows
- * the fraction `view` of them across `px` device pixels: all `n` while each
- * gets a pixel or more, else `n` halved, rounded up, as many times as it
- * takes for every texel in view to get a pixel or more, so none falls
- * between the pixels. It is never above `max`, the GPU's texture limit.
- * Halvings of `n` come back as the view changes, so a pooled texture can be
- * kept and used again.
+ * How many texels to pool rows (or columns) into when the fraction `view`
+ * of them shows across `px` device pixels and the rows in view outnumber
+ * the pixels: the largest size on the ladder px, px * 1.1, px * 1.21, and
+ * so on (each rounded down), that gives every texel in view a pixel or
+ * more. No texel then falls between the pixels, a view keeps nine tenths
+ * of the detail its pixels can show or more, and the sizes come back as
+ * the view changes, so a pooled texture can be kept and used again.
  */
-export function pooledSize(
+export function pooledSize(view: number, px: number, ratio = 1.1): number {
+  let m = Math.max(1, Math.floor(px));
+  for (;;) {
+    const next = Math.max(m + 1, Math.floor(m * ratio));
+    if (next * view > px + 1e-9) return m;
+    m = next;
+  }
+}
+
+/**
+ * How the rows (or columns) of a matrix go into a texture: `count` texels,
+ * from even blocks (`size` 0) or from blocks of `size` rows that start at
+ * row 0 (`size` 1 is a texel a row), and the scale from data to texture
+ * coordinates, below 1 when the last block is short.
+ */
+export interface AxisPlan {
+  key: string;
+  count: number;
+  size: number;
+  scale: number;
+}
+
+/**
+ * The plan for `n` rows while each row in view has a pixel or more: a
+ * texel a row, or past the texture limit `max`, blocks of the fewest rows
+ * that fit, each drawn exactly over its rows.
+ */
+export function basePlan(n: number, max: number): AxisPlan {
+  if (n <= max) return { key: "r", count: n, size: 1, scale: 1 };
+  const size = Math.ceil(n / max);
+  const count = Math.ceil(n / size);
+  return { key: `a${size}`, count, size, scale: n / (size * count) };
+}
+
+/**
+ * The plan for `n` rows of which the fraction `view` shows across `px`
+ * device pixels, within the texture limit `max`: the base plan while each
+ * row in view has a pixel or more, else even blocks, one a pixel or a
+ * little fewer (see {@link pooledSize}). An even block is drawn less than a
+ * row, so less than a pixel, from its rows.
+ */
+export function axisPlan(
   n: number,
   view: number,
   px: number,
-  max = Number.POSITIVE_INFINITY,
-): number {
-  let m = Math.min(n, max);
-  for (let k = 1; m > 1 && m * view > px + 1e-9; k += 1) {
-    m = Math.min(max, Math.ceil(n / 2 ** k));
-  }
-  return m;
+  max: number,
+): AxisPlan {
+  if (n * view <= px + 1e-9) return basePlan(n, max);
+  const count = Math.min(pooledSize(view, px), max);
+  return { key: `e${count}`, count, size: 0, scale: 1 };
+}
+
+/** The block of each of `n` rows under `plan`. */
+function blocksFor(plan: AxisPlan, n: number): Blocks {
+  return plan.size === 0
+    ? evenBlocks(n, plan.count)
+    : alignedBlocks(n, plan.size);
 }
 
 /**
@@ -339,16 +390,19 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   let scaled: Float32Array = new Float32Array(0);
   // Set when the GPU refused the matrix, so the overlay can say so.
   let drawFailed = false;
-  // The GPU's texture limit, and the rows and columns of the base texture:
-  // the matrix, mean-pooled down to the limit. Null when the value column
-  // is short of the matrix, which then goes up as it is and is refused.
+  // The GPU's texture limit, the plans for the rows and columns of the
+  // base texture (the matrix, or past the limit aligned blocks of it), and
+  // its scale. The plans are null when the value column is short of the
+  // matrix, which then goes up as it is and is refused.
   let maxTex = Number.POSITIVE_INFINITY;
-  let baseSize: [number, number] | null = null;
+  let basePlans: [AxisPlan, AxisPlan] | null = null;
+  let baseScale: [number, number] = [1, 1];
   // Copies of the matrix pooled for views with more cells than pixels, by
-  // size, built as pan and zoom first need them.
+  // their plans, the one drawn last at the end; a few are kept.
   const pooled = new Map<string, Texture2D>();
-  // The texture the next draw reads.
+  // The texture the next draw reads, and its scale.
   let drawTex: Texture2D | null = null;
+  let drawScale: [number, number] = [1, 1];
   // Whether the matrix has a missing cell, found once per data or option
   // change, not on every pan or zoom.
   let anyMissing = false;
@@ -411,9 +465,10 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         precision highp float;
         uniform sampler2D valueTex;
         uniform sampler2D lut;
+        uniform vec2 texScale;
         varying vec2 uv;
         void main() {
-          float level = floor(texture2D(valueTex, uv).r * 255.0 + 0.5);
+          float level = floor(texture2D(valueTex, uv * texScale).r * 255.0 + 0.5);
           gl_FragColor = texture2D(lut, vec2((level + 0.5) / 256.0, 0.5));
         }
       `,
@@ -445,6 +500,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         lut: () => lutTex as Texture2D,
         viewOrigin: () => [viewX, viewY] as [number, number],
         viewSize: () => [viewW, viewH] as [number, number],
+        texScale: () => drawScale,
       },
       count: 4,
       primitive: "triangle strip",
@@ -584,7 +640,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   function uploadMatrix() {
     drawFailed = false;
     dropPooled();
-    baseSize = null;
+    basePlans = null;
     const n = scaled.length;
     if (n === 0 || shape.nrows === 0 || shape.ncols === 0) {
       valueTex?.destroy();
@@ -598,15 +654,20 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     });
     if (!regl || reglBroken) return;
     maxTex = Math.max(1, regl.limits.maxTextureSize);
-    // Past the GPU's texture limit, mean-pool rows and columns down to it.
-    // Pooling needs the whole matrix; a short value column goes up as it
-    // is, and the GPU refuses it.
+    // Past the GPU's texture limit, mean-pool rows and columns down to it
+    // in aligned blocks. Pooling needs the whole matrix; a short value
+    // column goes up as it is, and the GPU refuses it.
     const whole = n === shape.nrows * shape.ncols;
-    const [mr, mc] = whole
-      ? [Math.min(shape.nrows, maxTex), Math.min(shape.ncols, maxTex)]
-      : [shape.nrows, shape.ncols];
-    baseSize = whole ? [mr, mc] : null;
-    const texOpts = textureOptions(levelsAt(mr, mc), mr, mc);
+    const limit = whole ? maxTex : Number.POSITIVE_INFINITY;
+    const rows = basePlan(shape.nrows, limit);
+    const cols = basePlan(shape.ncols, limit);
+    basePlans = whole ? [rows, cols] : null;
+    baseScale = [cols.scale, rows.scale];
+    const texOpts = textureOptions(
+      levelsFor(rows, cols),
+      rows.count,
+      cols.count,
+    );
     try {
       if (valueTex) valueTex(texOpts);
       else valueTex = regl.texture(texOpts);
@@ -619,35 +680,52 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     }
   }
 
-  /** The matrix as texture levels, mean-pooled to `mr` x `mc` when smaller. */
-  function levelsAt(mr: number, mc: number): Uint8Array {
+  /** The matrix as texture levels, mean-pooled as the plans say. */
+  function levelsFor(rows: AxisPlan, cols: AxisPlan): Uint8Array {
     const values =
-      mr < shape.nrows || mc < shape.ncols
-        ? poolMean(scaled, shape.nrows, shape.ncols, mr, mc)
+      rows.count < shape.nrows || cols.count < shape.ncols
+        ? poolBlocks(
+            scaled,
+            shape.nrows,
+            shape.ncols,
+            blocksFor(rows, shape.nrows),
+            blocksFor(cols, shape.ncols),
+          )
         : scaled;
     return normalizeToU8(values, domain[0], domain[1]);
   }
 
   /**
-   * The texture for the current view: the base texture while each of its
-   * texels has a device pixel or more, else the matrix pooled to fewer
-   * texels (see {@link pooledSize}), so that no row or column falls between
-   * the pixels. Pooled copies are kept until the matrix or its colours
-   * change.
+   * The texture for the current view, and its scale: the base texture while
+   * each row and column in view has a device pixel or more, else the matrix
+   * pooled to about a texel a pixel (see {@link axisPlan}), so that no row
+   * or column falls between the pixels. The few pooled copies drawn last
+   * are kept until the matrix or its colours change, so a pan or a zoom
+   * back reuses them.
    */
-  function viewTexture(): Texture2D {
-    const base = valueTex as Texture2D;
-    if (!regl || !baseSize) return base;
-    const mr = pooledSize(shape.nrows, viewH, canvas.height, maxTex);
-    const mc = pooledSize(shape.ncols, viewW, canvas.width, maxTex);
-    if (mr === baseSize[0] && mc === baseSize[1]) return base;
-    const key = `${mr}x${mc}`;
-    let tex = pooled.get(key);
-    if (!tex) {
-      tex = regl.texture(textureOptions(levelsAt(mr, mc), mr, mc));
-      pooled.set(key, tex);
+  function viewTexture(): { tex: Texture2D; scale: [number, number] } {
+    const base = { tex: valueTex as Texture2D, scale: baseScale };
+    if (!regl || !basePlans) return base;
+    const rows = axisPlan(shape.nrows, viewH, canvas.height, maxTex);
+    const cols = axisPlan(shape.ncols, viewW, canvas.width, maxTex);
+    if (rows.key === basePlans[0].key && cols.key === basePlans[1].key) {
+      return base;
     }
-    return tex;
+    const key = `${rows.key}x${cols.key}`;
+    let tex = pooled.get(key);
+    if (tex) pooled.delete(key);
+    else {
+      tex = regl.texture(
+        textureOptions(levelsFor(rows, cols), rows.count, cols.count),
+      );
+    }
+    pooled.set(key, tex);
+    for (const [oldKey, old] of pooled) {
+      if (pooled.size <= MAX_POOLED) break;
+      old.destroy();
+      pooled.delete(oldKey);
+    }
+    return { tex, scale: [cols.scale, rows.scale] };
   }
 
   function dropPooled() {
@@ -687,7 +765,9 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     try {
       regl.poll();
       regl.clear({ color: [1, 1, 1, 1], depth: 1 });
-      drawTex = viewTexture();
+      const view = viewTexture();
+      drawTex = view.tex;
+      drawScale = view.scale;
       draw();
     } catch {
       drawFailed = true;

@@ -73,10 +73,12 @@ fragment shader (via \code{regl}), so matrices with a million or more cells pan
 and zoom smoothly. The colorbar legend and row/column tick labels are drawn
 as crisp vector overlays; when rows or columns are too tight for every
 label, every second, third or fourth one is drawn, and zooming in shows
-the rest. A matrix with more rows or columns than the plot has pixels,
-or than the GPU's texture limit, is pooled for drawing: each pixel shows
-the mean of the cells under it, so a lone outlier row still shows, fainter
-the more rows share its pixel.
+the rest. A matrix with more rows or columns than the plot has pixels
+is pooled for drawing: each pixel shows the mean of the cells under it,
+so a lone outlier row still shows, fainter the more rows share its pixel.
+A matrix with more rows or columns than the GPU's texture limit is
+averaged in blocks of two or more rows (or columns) to fit it, so zoomed
+in, the rows of a block share their mean.
 }
 \details{
 The function is exported as \code{bioheatmap()} (and aliased as \code{heatmap_plotomics()})

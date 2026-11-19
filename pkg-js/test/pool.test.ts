@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { poolMean } from "../src/core/pool.js";
+import {
+  alignedBlocks,
+  evenBlocks,
+  poolBlocks,
+  poolMean,
+} from "../src/core/pool.js";
 
 describe("poolMean", () => {
   it("pools each block to the mean of its cells", () => {
@@ -22,6 +27,17 @@ describe("poolMean", () => {
     expect([...poolMean(last, 33, 1, 2, 1)]).toEqual([0, 1]);
     // As many blocks as rows draws every row as it is.
     expect([...poolMean([3, 1, 2], 3, 1, 3, 1)]).toEqual([3, 1, 2]);
+  });
+
+  it("splits rows evenly, or in aligned blocks from row 0", () => {
+    expect([...evenBlocks(5, 2).index]).toEqual([0, 0, 1, 1, 1]);
+    const aligned = alignedBlocks(5, 2);
+    expect(aligned.count).toBe(3);
+    expect([...aligned.index]).toEqual([0, 0, 1, 1, 2]);
+    // Aligned blocks of two rows, the last row alone.
+    expect([
+      ...poolBlocks([0, 1, 2, 3, 9], 5, 1, aligned, alignedBlocks(1, 1)),
+    ]).toEqual([0.5, 2.5, 9]);
   });
 
   it("pools rows and columns in the drawn order", () => {

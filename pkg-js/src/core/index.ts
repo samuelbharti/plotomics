@@ -38,7 +38,13 @@ export {
   sampleRamp,
 } from "./color.js";
 
-export { poolMean } from "./pool.js";
+export {
+  type Blocks,
+  evenBlocks,
+  alignedBlocks,
+  poolBlocks,
+  poolMean,
+} from "./pool.js";
 
 export {
   type Dtype,

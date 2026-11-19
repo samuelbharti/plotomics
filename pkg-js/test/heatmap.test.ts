@@ -8,6 +8,8 @@ import {
   tickIndices,
   toFloat32,
   pooledSize,
+  axisPlan,
+  basePlan,
   labelEvery,
 } from "../src/components/heatmap.js";
 
@@ -159,21 +161,48 @@ describe("heatmap helpers", () => {
     expect(low).not.toEqual([0xcc, 0xcc, 0xcc]);
   });
 
-  it("pools to halvings of the rows until each texel has a pixel", () => {
-    // Rows that fit keep a texel each.
-    expect(pooledSize(400, 1, 424)).toBe(400);
-    expect(pooledSize(424, 1, 424)).toBe(424);
-    // 464 rows in 424 px: blocks of two rows.
-    expect(pooledSize(464, 1, 424)).toBe(232);
-    // 5000 rows: halved four times, to blocks of 15 or 16 rows.
-    expect(pooledSize(5000, 1, 424)).toBe(313);
-    // Zoomed in to an eighth of them, 625 rows in view: blocks of two.
-    expect(pooledSize(5000, 1 / 8, 424)).toBe(2500);
+  it("pools to about a texel a pixel, on a ladder of sizes", () => {
+    // At full view, a texel a pixel.
+    expect(pooledSize(1, 424)).toBe(424);
+    // Zoomed in to half the rows: the ladder runs 424, 466, 512, ..., 822,
+    // 904, and 904 texels in view would not each get a pixel.
+    expect(pooledSize(0.5, 424)).toBe(822);
+    for (const view of [1, 0.7, 0.3, 0.01, 1e-4]) {
+      const m = pooledSize(view, 424);
+      // Every texel in view gets a pixel, and nine tenths of the pixels
+      // or more get a texel of their own.
+      expect(m * view).toBeLessThanOrEqual(424 + 1e-9);
+      expect(m * view).toBeGreaterThan(0.9 * 424 - 1);
+    }
   });
 
-  it("pools to the GPU's texture limit at the most", () => {
-    expect(pooledSize(8292, 1e-4, 424, 8192)).toBe(8192);
-    expect(pooledSize(20000, 1, 424, 8192)).toBe(313);
+  it("plans a texel a row while the rows fit the pixels, else one a pixel", () => {
+    expect(axisPlan(424, 1, 424, 8192)).toEqual({
+      key: "r",
+      count: 424,
+      size: 1,
+      scale: 1,
+    });
+    // 425 or 5000 rows in 424 px: 424 even blocks, where halving the rows
+    // drew 213 or 313.
+    expect(axisPlan(425, 1, 424, 8192)).toMatchObject({ count: 424, size: 0 });
+    expect(axisPlan(5000, 1, 424, 8192)).toMatchObject({
+      count: 424,
+      size: 0,
+    });
+  });
+
+  it("plans aligned blocks past the texture limit", () => {
+    // 8292 rows over a limit of 8192: blocks of two rows from row 0.
+    const p = basePlan(8292, 8192);
+    expect(p).toEqual({ key: "a2", count: 4146, size: 2, scale: 1 });
+    // One row more: the last texel holds that row alone and is drawn over
+    // it, half a texel high.
+    const q = basePlan(8293, 8192);
+    expect(q.count).toBe(4147);
+    expect(q.scale).toBeCloseTo(8293 / 8294, 9);
+    // Zoomed in to a few rows, the view draws the aligned blocks.
+    expect(axisPlan(8292, 1e-3, 424, 8192)).toEqual(p);
   });
 
   it("labels every cell, every k-th cell, or none by the cell size", () => {
