@@ -383,6 +383,15 @@ def test_annotation_colours_follow_categories_and_colour_names():
     msg = "annotation 'Risk' has no colour for level(s): Medium, High"
     with pytest.raises(ValueError, match=re.escape(msg)):
         strip(risk, {"Low": "#00AA00"})
+    # Number-coded levels such as a stage: a Series with the default index
+    # still goes by position, though its row numbers look like level names.
+    stage = {"S1": 1, "S2": 2, "S3": 3}
+    a = strip(stage, pd.Series(["#111111", "#222222", "#333333"]))
+    assert a["levels"] == ["1", "2", "3"]
+    assert a["colors"] == ["#111111", "#222222", "#333333"]
+    a = strip({"S1": 1, "S2": 2, "S3": 1},
+              pd.Series(["#111111", "#222222", "#333333"]))
+    assert a["colors"][:2] == ["#111111", "#222222"]
 
 
 def test_oncoplot_stops_on_a_missing_class_as_r_does():

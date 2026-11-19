@@ -407,16 +407,19 @@ def _level_colors(colors: Any, levels: list[str], name: str) -> list[str]:
     The browser gives level i the colour i. A dict, or a pandas Series
     whose index names levels, is put in level order by name, so it colours
     the right levels whatever its order; each level needs a colour. A list,
-    or a Series whose index names no level (row numbers, as left by
-    filtering), is taken in the order given, by the rule the annotation
-    values follow.
+    a Series with the default row-number index, or a Series whose index
+    names no level (row numbers, as left by filtering), is taken in the
+    order given, by the rule the annotation values follow. The default
+    index stays by position even when the levels are numbers such as 1, 2
+    and 3.
     """
     keyed = None
     if isinstance(colors, Mapping):
         keyed = dict(colors.items())
     elif hasattr(colors, "to_dict") and hasattr(colors, "index"):
         index = [str(k) for k in colors.index]
-        if set(index) & set(levels):
+        default_index = type(colors.index).__name__ == "RangeIndex"
+        if not default_index and set(index) & set(levels):
             keyed = dict(zip(index, colors.tolist()))
     if keyed is not None:
         keyed = {str(k): str(v) for k, v in keyed.items()}
