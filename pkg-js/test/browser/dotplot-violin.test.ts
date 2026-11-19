@@ -771,3 +771,31 @@ describe("dotplot colour bar units", () => {
     for (const s of labels) expect(s).toMatch(/M$/);
   });
 });
+
+describe("dotplot colour bar far from 0", () => {
+  it("labels no value outside a narrow range far from 0", () => {
+    // Before the fix the bar of 150000123 to 150001123 read 150001200,
+    // over its own title.
+    const el = container();
+    instances.push(
+      createDotplot(el, {
+        data: {
+          columns: {
+            gene: ["A", "B", "A", "B"],
+            cluster: ["x", "x", "y", "y"],
+            pct: [100, 100, 100, 100],
+            value: [150000123, 150000400, 150000800, 150001123],
+          },
+        },
+      }),
+    );
+    const values = svgTexts(el)
+      .filter((s) => /^\d{6,}$/.test(s))
+      .map(Number);
+    expect(values.length).toBeGreaterThanOrEqual(2);
+    for (const v of values) {
+      expect(v).toBeGreaterThanOrEqual(150000123);
+      expect(v).toBeLessThanOrEqual(150001123);
+    }
+  });
+});

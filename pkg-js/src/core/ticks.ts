@@ -7,14 +7,24 @@
 import { tickStep } from "d3-array";
 
 /**
- * `x` as the whole number it is within one part in a million of, else `x`.
+ * How far from a whole number `x` may be for {@link snapRatio} to snap it:
+ * one part in a million of `x`, and never more than a thousandth, so a
+ * ratio far from 0, such as 150000123 over a step of 100, is never moved by
+ * a sizeable part of a step.
+ */
+function snapTolerance(x: number): number {
+  return Math.min(1e-6 * Math.max(1, Math.abs(x)), 1e-3);
+}
+
+/**
+ * `x` as the whole number it is within {@link snapTolerance} of, else `x`.
  * A ratio of a value to a step is snapped before it is rounded up or down,
  * so float32 noise, such as 0.3 sent from Python as 0.30000001192092896,
  * neither adds a step nor drops a tick.
  */
 export function snapRatio(x: number): number {
   const r = Math.round(x);
-  return Math.abs(x - r) <= 1e-6 * Math.max(1, Math.abs(x)) ? r : x;
+  return Math.abs(x - r) <= snapTolerance(x) ? r : x;
 }
 
 /** Decimals that print every multiple of `step` exactly. */
@@ -190,15 +200,20 @@ export function domainTicks(
     if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last)) break;
     if (last > first) {
       const d = stepDecimals(step);
+      // A tick may pass an end by no more than the snap allows, so a colour
+      // bar never labels a value outside its range.
+      const below = lo - snapTolerance(lo / step) * step;
+      const above = hi + snapTolerance(hi / step) * step;
       const ticks: number[] = [];
       // At most about 1000 ticks, by the check above.
       for (let j = 0; j <= last - first; j += 1) {
         // toFixed drops the float noise of the product, such as
         // 0.30000000000000004.
         const v = Number(((first + j) * step).toFixed(d));
+        if (v < below || v > above) continue;
         if (v !== ticks[ticks.length - 1]) ticks.push(v);
       }
-      return ticks.length > 1 ? { ticks, step } : flat;
+      if (ticks.length > 1) return { ticks, step };
     }
     step = finerStep(step);
   }

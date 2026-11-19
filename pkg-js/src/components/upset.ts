@@ -40,7 +40,10 @@ import {
   compositePNG,
   zeroTicks,
   fitZeroTicks,
+  formatTick,
   formatTicks,
+  tickUnit,
+  stepDecimals,
   defaultTheme,
   type TextSizes,
   textSizes,
@@ -325,23 +328,20 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       (m, n) => Math.max(m, textWidth(n, fontSizes.label)),
       0,
     );
-    const ssAll = setSizes();
-    let countWidth = 0;
-    if (ssAll) {
-      for (const label of setSizeLabels(ssAll)) {
-        countWidth = Math.max(countWidth, textWidth(label, fontSizes.label));
-      }
-    }
-    layout = layoutUpset(
-      width,
-      height,
-      names.length,
-      s.length,
-      opts,
-      nameWidth,
-      countWidth,
-      fontSizes,
-    );
+    const frame = (countWidth: number) =>
+      layoutUpset(
+        width,
+        height,
+        names.length,
+        s.length,
+        opts,
+        nameWidth,
+        countWidth,
+        fontSizes,
+      );
+    // The bar height does not depend on the width of the set sizes, so the
+    // axis comes first and the set sizes can print in its unit.
+    layout = frame(0);
 
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
@@ -354,6 +354,14 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
           integer: true,
           minGapPx: fontSizes.label + 5,
         });
+    const ssAll = setSizes();
+    let countWidth = 0;
+    if (ssAll) {
+      for (const label of setSizeLabels(ssAll, axis)) {
+        countWidth = Math.max(countWidth, textWidth(label, fontSizes.label));
+      }
+    }
+    layout = frame(countWidth);
 
     // Gridlines first, so the bars are drawn over them. A grid colour that
     // paints nothing, such as "none", draws no line.
@@ -549,7 +557,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
           fontSizes.axisTitle,
         ),
       );
-      const sizeLabels = setSizeLabels(ss);
+      const sizeLabels = setSizeLabels(ss, axis);
       for (let k = 0; k < names.length; k += 1) {
         svg.appendChild(
           text(
@@ -672,22 +680,45 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
 
 // ---- small utilities ----
 /**
- * The set size labels, printed as the intersection axis prints its ticks
- * (see formatTicks), so one figure never mixes "M" and "k": in the unit
- * the largest needs, on the largest power of ten that every size is a
- * multiple of, which keeps each exact. A missing size reads "NA".
+ * The largest power of ten, from 1e15 down to 1e-6, that every finite value
+ * is a whole multiple of: 1e4 for 2400000 and 1950000, 0.1 for 2.5. 0 when
+ * none is, which prints each value to six significant digits.
  */
-function setSizeLabels(sizes: ArrayLike<number>): string[] {
+function exactStep(values: number[]): number {
+  const finite = values.filter((v) => Number.isFinite(v) && v !== 0);
+  if (!finite.length) return 1;
+  const divides = (s: number) =>
+    finite.every((v) => {
+      const q = v / s;
+      const r = Math.round(q);
+      return r !== 0 && Math.abs(q - r) <= 1e-9 * Math.max(1, Math.abs(q));
+    });
+  for (let k = 15; k >= -6; k -= 1) {
+    if (divides(10 ** k)) return 10 ** k;
+  }
+  return 0;
+}
+
+/**
+ * The set size labels, printed as the intersection axis prints its ticks
+ * (see formatTicks), so one figure never shows a number two ways: in the
+ * unit of `axis` when that keeps every size exact with at most three
+ * decimals, else in the unit the largest size needs. Each label is exact,
+ * fractions included, on the largest power of ten that every size is a
+ * multiple of. A missing size reads "NA".
+ */
+function setSizeLabels(
+  sizes: ArrayLike<number>,
+  axis: { ticks: number[]; step: number },
+): string[] {
   const values = Array.from(sizes, (v) => (typeof v === "number" ? v : NaN));
-  let step = 1;
-  while (
-    step < 1e15 &&
-    values.some((v) => Number.isFinite(v) && v !== 0) &&
-    values.every(
-      (v) => !Number.isFinite(v) || Number.isInteger(v / (step * 10)),
-    )
-  ) {
-    step *= 10;
+  const step = exactStep(values);
+  let maxAbs = 0;
+  for (const v of axis.ticks) maxAbs = Math.max(maxAbs, Math.abs(v));
+  const unit = tickUnit(maxAbs, axis.step);
+  const scale = unit === "M" ? 1e6 : unit === "k" ? 1e3 : 1;
+  if (step > 0 && stepDecimals(step / scale) <= 3) {
+    return values.map((v) => formatTick(v, step, { unit }));
   }
   return formatTicks(values, step);
 }

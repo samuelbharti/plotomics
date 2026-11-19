@@ -287,3 +287,40 @@ describe("upset number units", () => {
     expect(all.filter((s) => /^[\d.]+M$/.test(s)).length).toBeGreaterThan(3);
   });
 });
+
+describe("upset set sizes in the axis unit", () => {
+  const plot = (setSizes: number[], size: number[]) => {
+    const el = container(600, 400);
+    instances.push(
+      createUpset(el, {
+        data: {
+          columns: { size },
+          meta: {
+            sets: ["A", "B", "C", "D"].slice(0, setSizes.length),
+            setSizes,
+            membership: size.flatMap((_, i) =>
+              setSizes.map((_, k) => ((i + k) % 2 === 0 ? 1 : 0)),
+            ),
+          },
+        },
+      }),
+    );
+    return texts(el).map((t) => t.textContent ?? "");
+  };
+
+  it("prints the set sizes as the axis prints its ticks", () => {
+    // Before the fix the set sizes read "5k" to "1k" beside an axis of
+    // 0, 500, 1000 and on.
+    const all = plot([5000, 3000, 2000, 1000], [2500, 1200, 800]);
+    expect(all).toContain("1000");
+    for (const s of ["5000", "3000", "2000"]) expect(all).toContain(s);
+    expect(all.some((s) => /^[\d.]+k$/.test(s))).toBe(false);
+  });
+
+  it("keeps a fractional set size exact", () => {
+    // Before the fix 2.5 printed "3".
+    const all = plot([2.5, 4], [3, 2]);
+    expect(all).toContain("2.5");
+    expect(all).toContain("4.0");
+  });
+});

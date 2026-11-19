@@ -68,7 +68,9 @@ any static counterpart all label the same ones. \code{0} labels none.}
 than setting a size: raise \code{max_head_radius} when one hotspot dwarfs the
 rest and you want the difference to read at a glance.}
 
-\item{y_label}{Axis title for the recurrence axis.}
+\item{y_label}{Axis title for the recurrence axis. It also names the count
+in the tooltip: "12 samples" with the default, and "frequency: 0.3" for
+\code{y_label = "frequency"}.}
 
 \item{backbone_color, stem_color}{Hex colours for the protein backbone
 rectangle and the mutation stems.}

@@ -850,3 +850,37 @@ describe("spatial panel before the image loads", () => {
     expect(pixel(none, 150, 150)).toEqual([255, 255, 255]);
   });
 });
+
+describe("embedding colour bar far from 0", () => {
+  it("labels no value outside a narrow range far from 0", async () => {
+    // Before the fix the bar of 150000123 to 150001123 read 150001200,
+    // above the bar and outside the legend box.
+    const el = container(500, 400);
+    const values = Array.from(
+      { length: 50 },
+      (_, i) => 150000123 + Math.round((i / 49) * 1000),
+    );
+    instances.push(
+      createEmbedding(el, {
+        data: {
+          columns: {
+            x: values.map((_, i) => i % 7),
+            y: values.map((_, i) => Math.floor(i / 7)),
+            color: values,
+          },
+        },
+      }),
+    );
+    const bar = () =>
+      (Array.from(el.querySelectorAll("svg text")) as SVGTextElement[])
+        .filter((t) => t.getAttribute("text-anchor") === "start")
+        .map((t) => t.textContent ?? "")
+        .filter((s) => /^\d{6,}$/.test(s))
+        .map(Number);
+    await expect.poll(() => bar().length, poll).toBeGreaterThanOrEqual(2);
+    for (const v of bar()) {
+      expect(v).toBeGreaterThanOrEqual(150000123);
+      expect(v).toBeLessThanOrEqual(150001123);
+    }
+  });
+});

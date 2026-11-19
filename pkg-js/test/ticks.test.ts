@@ -6,6 +6,7 @@ import {
   formatTick,
   formatTicks,
   isFlatRange,
+  snapRatio,
   rangeTicks,
   spaceTicks,
   stepDecimals,
@@ -308,5 +309,41 @@ describe("ticks for float32 values and one unit per axis", () => {
       "100%",
     ]);
     expect(formatTicks([1, Number.NaN], 1)).toEqual(["1", "NA"]);
+  });
+});
+
+describe("colour bar ticks far from 0", () => {
+  // Narrow ranges far from 0. Before the fix the snap tolerance grew with
+  // the value, so 150000123 to 150001123 got a tick at 150001200 or
+  // 150000000, and 1000000 to 1000000.5 one at 1000000.6.
+  const ranges = [
+    [150000123, 150001123],
+    [1000000, 1000000.5],
+    [123456.7, 123457.3],
+    [1000000.03, 1000000.47],
+    [99999.95, 100000.45],
+  ] as const;
+
+  it("keeps every tick inside the range", () => {
+    for (const [lo, hi] of ranges) {
+      const sets = [1, 2, 3, 4, 5].map((n) => domainTicks(lo, hi, n).ticks);
+      for (const len of [20, 60, 120, 200, 400]) {
+        sets.push(fitDomainTicks(lo, hi, len).ticks);
+      }
+      for (const ticks of sets) {
+        expect(ticks.length).toBeGreaterThan(0);
+        for (const v of ticks) {
+          expect(v, `${lo} to ${hi}`).toBeGreaterThanOrEqual(lo);
+          expect(v, `${lo} to ${hi}`).toBeLessThanOrEqual(hi);
+        }
+      }
+    }
+  });
+
+  it("still takes a float32 end for the tick it stands for", () => {
+    // 0.7 as a float32 is 0.699999988; its tick is 0.7.
+    expect(domainTicks(0, Math.fround(0.7), 7).ticks.at(-1)).toBe(0.7);
+    expect(snapRatio(10000004.999999998)).toBe(10000005);
+    expect(snapRatio(1500011.23)).toBe(1500011.23);
   });
 });
