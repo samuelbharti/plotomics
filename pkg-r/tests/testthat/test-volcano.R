@@ -67,5 +67,33 @@ test_that("volcano() keeps p = 0 rows and warns only about missing values", {
   json <- jsonlite::toJSON(w$preRenderHook(w)$x, auto_unbox = TRUE)
   expect_match(as.character(json), '"yInfinite":[1]', fixed = TRUE)
   expect_null(volcano(data.frame(x = 1:2, y = 1:2))$x$data$meta$yInfinite)
-  expect_warning(volcano(data.frame(x = 1:2, y = c(1, NA))), "non-finite")
+  expect_warning(
+    volcano(data.frame(x = 1:2, y = c(1, NA))),
+    "`y` has 1 value(s) that are missing (NA or NaN) or -Inf",
+    fixed = TRUE
+  )
+})
+
+test_that("volcano() counts only the y values it does not draw, as Python does", {
+  df <- data.frame(
+    x = c(1, 2, 3, 4, 5, 6),
+    y = c(Inf, Inf, NA, NaN, -Inf, 2)
+  )
+  # Before the fix the message said "(NaN/Inf)" for a count without the Inf.
+  warned <- testthat::capture_warnings(volcano(df))
+  expect_equal(warned, paste0(
+    "`y` has 3 value(s) that are missing (NA or NaN) or -Inf; those rows ",
+    "are not drawn."
+  ))
+})
+
+test_that("volcano(label_top_n = Inf) labels every gene, as lollipop() does", {
+  df <- data.frame(x = c(-3, -2, 2, 3), y = c(5, 4, 4, 5), label = letters[1:4])
+  # JSON has no Inf: before the fix it went as null and nothing was labelled.
+  w <- volcano(df, label_top_n = Inf)
+  expect_equal(w$x$options$labelTopN, 4L)
+  json <- as.character(htmlwidgets:::toJSON(w$preRenderHook(w)$x))
+  expect_match(json, '"labelTopN":4', fixed = TRUE)
+  expect_equal(volcano(df, label_top_n = -Inf)$x$options$labelTopN, 0L)
+  expect_equal(volcano(df, label_top_n = 2)$x$options$labelTopN, 2)
 })

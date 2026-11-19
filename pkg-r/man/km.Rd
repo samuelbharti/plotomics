@@ -29,7 +29,17 @@ km(
 \arguments{
 \item{data}{Either a \code{survival::survfit} object, or a data frame with numeric
 \code{time} and \code{surv} columns and optional \code{lower}, \code{upper} and \code{group}
-columns. Within a stratum, rows must be in ascending time order.}
+columns. Within a stratum, rows must be in ascending time order. A row
+with a missing \code{time} or \code{surv} (\code{NA} or \code{NaN}) is left out with a
+warning, so the step before it runs on to the next row. An infinite
+\code{time} is not drawn, and a missing or infinite \code{lower} or \code{upper} leaves
+a gap in the band; both warn, as in Python, except for the bounds of a
+\code{survfit}, which are \code{NA} where the fit has no interval. A \code{survfit}
+stratum is named by its levels alone, \code{"sex=1, ph.ecog=0"} becoming
+\code{"1, 0"}, when the variable names can be read from the formula of the
+fit; otherwise the name survfit gives is kept. A \code{survfit} of a Cox
+model with several \code{newdata} rows draws one curve per row, named by the
+row names of \code{newdata} (\code{"1"}, \code{"2"}, ... unless set).}
 
 \item{groups}{Character vector fixing the stratum order and colour
 assignment. Defaults to order of appearance.}
@@ -62,6 +72,8 @@ Its \code{padding} entry is the space in px between the edge of the widget
 and the plot: one number for every side, or numbers named \code{top},
 \code{right}, \code{bottom} and \code{left} in a list or vector, a side left out
 keeping the default of 10.
+Its \code{categorical} entry is an ordered palette: the colours go to the strata
+in order, and names on the colours are not matched to them.
 A colour given as a CSS custom property, such as
 \code{background = "var(--bg)"}, takes the value the page gives it when the
 plot draws. After the page changes the property, what the plot drew on

@@ -31,6 +31,9 @@
  * - `meta.riskTimes`    `number[]`  time grid for the at-risk table
  * - `meta.riskCounts`   `number[]`  groups x riskTimes, row-major
  * - `meta.pLabel`       `string`    e.g. "log-rank p = 0.02", drawn in the corner
+ *
+ * A row whose time or survival is missing (null or NaN) or infinite is left
+ * out, so the step before it runs on to the next row.
  */
 import {
   type PlotomicsData,
@@ -707,16 +710,26 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     if (given && given.length) return given;
     return categoricalColors(theme.categorical, groups().length);
   }
-  /** Each stratum's rows, in time order. */
+  /**
+   * Each stratum's rows, in time order. A row whose time or survival is
+   * missing (null, as R's JSON sends NA, or NaN) or infinite is left out:
+   * drawn, it would join its neighbours with a slope, or drop the curve to
+   * 0, where a step curve holds its value until the next row.
+   */
   function strata(): { group: string; rows: number[] }[] {
     const gc = groupCol();
     const t = times();
+    const s = survs();
+    const drawn = (i: number) => Number.isFinite(t[i]) && Number.isFinite(s[i]);
     if (!gc.length) {
-      const rows = Array.from({ length: t.length }, (_, i) => i);
+      const rows: number[] = [];
+      for (let i = 0; i < t.length; i += 1) if (drawn(i)) rows.push(i);
       rows.sort((a, b) => (t[a] as number) - (t[b] as number));
-      return [{ group: groups()[0] ?? "all", rows }];
+      return rows.length ? [{ group: groups()[0] ?? "all", rows }] : [];
     }
-    return groupRows(gc, groups(), t);
+    // A row that is not drawn is in no stratum, as a missing group is.
+    const kept = Array.from(gc, (g, i) => (drawn(i) ? g : null));
+    return groupRows(kept as string[], groups(), t);
   }
   /**
    * Where a stratum's curve ends: its last given point, or its last
@@ -739,8 +752,14 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   function maxTime(): number {
     const t = times();
     let m = 0;
-    for (let i = 0; i < t.length; i += 1)
-      if ((t[i] as number) > m) m = t[i] as number;
+    // Only the rows that are drawn size the axis: a row left out, for a
+    // missing survival or a missing group, does not stretch it.
+    for (const sl of strata()) {
+      for (const i of sl.rows) {
+        const v = t[i] as number;
+        if (v > m) m = v;
+      }
+    }
     const risk = data.meta?.riskTimes as number[] | undefined;
     if (risk) for (const r of risk) if (r > m) m = r;
     const ct = data.meta?.censorTime as number[] | undefined;
@@ -750,9 +769,11 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   function yMin(): number {
     if (opts.yFromZero) return 0;
     let m = 1;
+    // Only the rows that are drawn set the floor, as they set the time axis.
+    const drawn = strata().flatMap((sl) => sl.rows);
     const scan = (col: ArrayLike<number> | undefined) => {
       if (!col) return;
-      for (let i = 0; i < col.length; i += 1) {
+      for (const i of drawn) {
         const v = col[i] as number;
         if (Number.isFinite(v) && v < m) m = v;
       }
@@ -1007,27 +1028,56 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       };
     });
 
-    // Confidence bands first, so the curves read on top of them.
+    // Confidence bands first, so the curves read on top of them. A point
+    // with a missing bound (null, as R's JSON sends NA, or NaN) leaves a gap
+    // in the band from its time to the next point with both bounds; the
+    // bounds before it hold until its time, as a step does. Drawn through,
+    // a missing bound pulled the band down to 0 or across the gap.
     if (opts.showCI && lower && upper) {
       for (const sr of series) {
         const gi = gl.indexOf(sr.group);
         const col = gi >= 0 ? (cols[gi] as string) : theme.foreground;
-        const up = stepPoints(sr.t, sr.up as number[]);
-        const dn = stepPoints(sr.t, sr.lo as number[]);
-        if (!up.length || !dn.length) continue;
-        ctx.beginPath();
-        ctx.moveTo(sx(up[0] as number, tmax), sy(up[1] as number, lo));
-        for (let i = 2; i < up.length; i += 2) {
-          ctx.lineTo(sx(up[i] as number, tmax), sy(up[i + 1] as number, lo));
+        const lows = sr.lo as number[];
+        const ups = sr.up as number[];
+        type Stretch = { t: number[]; lo: number[]; up: number[] };
+        const stretches: Stretch[] = [];
+        let open: Stretch | null = null;
+        for (let i = 0; i < sr.t.length; i += 1) {
+          const l = lows[i] as number;
+          const u = ups[i] as number;
+          if (Number.isFinite(l) && Number.isFinite(u)) {
+            if (!open) {
+              open = { t: [], lo: [], up: [] };
+              stretches.push(open);
+            }
+            open.t.push(sr.t[i] as number);
+            open.lo.push(l);
+            open.up.push(u);
+          } else if (open) {
+            open.t.push(sr.t[i] as number);
+            open.lo.push(open.lo[open.lo.length - 1] as number);
+            open.up.push(open.up[open.up.length - 1] as number);
+            open = null;
+          }
         }
-        for (let i = dn.length - 2; i >= 0; i -= 2) {
-          ctx.lineTo(sx(dn[i] as number, tmax), sy(dn[i + 1] as number, lo));
+        for (const st of stretches) {
+          const up = stepPoints(st.t, st.up);
+          const dn = stepPoints(st.t, st.lo);
+          if (!up.length || !dn.length) continue;
+          ctx.beginPath();
+          ctx.moveTo(sx(up[0] as number, tmax), sy(up[1] as number, lo));
+          for (let i = 2; i < up.length; i += 2) {
+            ctx.lineTo(sx(up[i] as number, tmax), sy(up[i + 1] as number, lo));
+          }
+          for (let i = dn.length - 2; i >= 0; i -= 2) {
+            ctx.lineTo(sx(dn[i] as number, tmax), sy(dn[i + 1] as number, lo));
+          }
+          ctx.closePath();
+          ctx.globalAlpha = 0.14;
+          ctx.fillStyle = col;
+          ctx.fill();
+          ctx.globalAlpha = 1;
         }
-        ctx.closePath();
-        ctx.globalAlpha = 0.14;
-        ctx.fillStyle = col;
-        ctx.fill();
-        ctx.globalAlpha = 1;
       }
     }
 

@@ -203,6 +203,80 @@ test_that("a row with no gene or sample makes no Multi-hit", {
   nm <- data.frame(gene = c("A", NA, NA), sample = c("s1", "s2", "s2"),
                    class = c("m", "m", "n"), stringsAsFactors = FALSE)
   w <- oncoplot(nm)
-  expect_equal(w$x$data$meta$classes, c("m", "n"))
+  # Left out before anything is counted, so its class is not a class either.
+  expect_equal(w$x$data$meta$classes, "m")
   expect_equal(w$x$data$meta$genes, "A")
+  expect_equal(w$x$data$meta$samples, "s1")
+})
+
+test_that("a row with a missing gene or sample adds no column or row", {
+  alt <- data.frame(
+    gene = c("TP53", NA, "KRAS", "TP53"),
+    sample = c("S1", "S2", NA, "S3"),
+    class = c("Missense", "Missense", "Nonsense", "Missense")
+  )
+  w <- oncoplot(alt)
+  meta <- w$x$data$meta
+  # Before the fix S2 was a column and KRAS an empty row, and TP53, altered
+  # in both real samples, read 66.7%.
+  expect_equal(meta$genes, "TP53")
+  expect_equal(meta$samples, c("S1", "S3"))
+  expect_equal(meta$classes, "Missense")
+  expect_equal(w$x$data$columns$freq, 100)
+  expect_equal(oncoplot_memo_sort(alt), list(genes = "TP53", samples = c("S1", "S3")))
+  # The same table in Python: test_oncoplot.py gives these orders too.
+  na <- data.frame(
+    gene = c("A", NA, "B", "C", "C", "A"),
+    sample = c("s1", "s2", "s2", NA, "s3", "s4"),
+    class = c("m", "n", "m", "m", "n", "m")
+  )
+  w <- oncoplot(na)
+  expect_equal(w$x$data$meta$genes, c("A", "B", "C"))
+  expect_equal(w$x$data$meta$samples, c("s1", "s4", "s2", "s3"))
+  expect_equal(w$x$data$columns$codes, c(1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 2))
+  # Every row missing a gene or sample leaves nothing to draw.
+  expect_error(
+    oncoplot(data.frame(gene = NA, sample = "S1", class = "m")),
+    "`alterations` has no rows/cells"
+  )
+})
+
+test_that("annotation colours follow the factor levels and the colour names", {
+  alt <- data.frame(
+    gene = c("TP53", "TP53", "KRAS"), sample = c("S1", "S2", "S3"),
+    class = "Missense"
+  )
+  risk <- factor(c("Low", "High", "Medium"), levels = c("Low", "Medium", "High"))
+  names(risk) <- c("S1", "S2", "S3")
+  cols <- c(High = "#FF0000", Low = "#00AA00", Medium = "#FFA500")
+  strip <- function(values, colors = NULL) {
+    w <- oncoplot(alt, samples = c("S1", "S2", "S3"), annotations = list(
+      list(name = "Risk", values = values, colors = colors)
+    ))
+    w$x$data$meta$annotations[[1]]
+  }
+  # Before the fix the levels were High, Low, Medium and the colours were
+  # taken in the order given, so High drew green.
+  a <- strip(risk, cols)
+  expect_equal(as.character(a$levels), c("Low", "Medium", "High"))
+  expect_equal(as.integer(a$codes), c(0L, 2L, 1L))
+  expect_equal(as.character(a$colors), c("#00AA00", "#FFA500", "#FF0000"))
+  # Text values take code point order; named colours still find their level.
+  a <- strip(c(S1 = "Low", S2 = "High", S3 = "Medium"), cols)
+  expect_equal(as.character(a$levels), c("High", "Low", "Medium"))
+  expect_equal(as.character(a$colors), c("#FF0000", "#00AA00", "#FFA500"))
+  # A list of named colours works as a named vector does.
+  a <- strip(risk, as.list(cols))
+  expect_equal(as.character(a$colors), c("#00AA00", "#FFA500", "#FF0000"))
+  # An unused level keeps its place in the legend.
+  a <- strip(factor(risk, levels = c("Low", "Medium", "High", "Unknown")))
+  expect_equal(as.character(a$levels), c("Low", "Medium", "High", "Unknown"))
+  # Unnamed colours go to the levels in order.
+  a <- strip(risk, c("#111111", "#222222", "#333333"))
+  expect_equal(as.character(a$colors), c("#111111", "#222222", "#333333"))
+  expect_error(
+    strip(risk, c(Low = "#00AA00")),
+    "annotation 'Risk' has no colour for level(s): Medium, High",
+    fixed = TRUE
+  )
 })

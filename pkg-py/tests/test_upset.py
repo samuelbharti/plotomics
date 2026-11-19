@@ -24,14 +24,23 @@ def test_upset_flattens_membership_row_major():
         assert meta["membership"][i * 2:(i + 1) * 2] == membership[i].tolist()
 
 
-def test_upset_packs_sizes_as_float32():
+def test_upset_packs_sizes_as_float64():
     data, membership = make_args()
     w = Upset(data, sets=["A", "B"], membership=membership)
 
     specs = {c["name"]: c for c in w.schema["columns"]}
-    assert specs["size"]["dtype"] == "float32"
+    assert specs["size"]["dtype"] == "float64"
     assert specs["size"]["length"] == 3
-    assert np.frombuffer(w.buffer, dtype=np.float32).tolist() == [40.0, 25.0, 12.0]
+    assert np.frombuffer(w.buffer, dtype=np.float64).tolist() == [40.0, 25.0, 12.0]
+
+
+def test_upset_sends_a_count_past_2_to_the_24_exactly():
+    # float32 rounds 16,777,217 to 16,777,216; R sends the exact number.
+    data = {"size": [16_777_217, 3]}
+    w = Upset(data, sets=["A", "B"], membership=[[1, 0], [0, 1]])
+    spec = w.schema["columns"][0]
+    sizes = np.frombuffer(w.buffer, dtype=spec["dtype"], count=spec["length"])
+    assert sizes.tolist() == [16_777_217, 3]
 
 
 def test_upset_accepts_boolean_membership():

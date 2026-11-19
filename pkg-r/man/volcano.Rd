@@ -26,7 +26,8 @@ volcano(
 (\code{-log10} p-value). An optional \code{label} column supplies gene names for
 tooltips and top-hit labels. A \code{y} of \code{Inf} (p = 0) is drawn just above
 the highest finite value and counts as significant. Rows with \code{NA} or
-\code{NaN} in \code{x} or \code{y} are not drawn.}
+\code{NaN} in \code{x} or \code{y}, or a \code{y} of \code{-Inf}, are not drawn, with a warning
+that counts them; Python gives the same warning.}
 
 \item{fc_threshold}{Absolute log2 fold-change cutoff for calling a hit.}
 
@@ -44,7 +45,9 @@ component's built-in palette.}
 
 \item{show_threshold_lines}{Draw the fold-change / p-value threshold guides.}
 
-\item{label_top_n}{Number of top up- and down-regulated genes to label.}
+\item{label_top_n}{Number of top up- and down-regulated genes to label.
+\code{Inf} labels every up- and down-regulated gene, as in \code{\link[=lollipop]{lollipop()}}; \code{0}
+labels none.}
 
 \item{theme}{Optional named list of theme overrides (colors, fonts, ...)
 merged over the component defaults in the browser. \code{NULL} uses the default

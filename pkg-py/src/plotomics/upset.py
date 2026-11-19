@@ -12,7 +12,7 @@ from ._base import (
     PlotomicsWidget,
     _column,
     _reject_lazy,
-    _to_float32,
+    _to_float64,
     pack_columns,
 )
 
@@ -99,7 +99,8 @@ class Upset(PlotomicsWidget):
         col = _column(data, "size")
         if col is None:
             raise ValueError("`data` must provide a `size` column.")
-        size = _to_float32(col, "size")
+        # float64, so a count past 2**24 arrives exact, as it does from R.
+        size = _to_float64(col, "size")
         if size.size == 0:
             raise ValueError("`data` must contain at least one row.")
 

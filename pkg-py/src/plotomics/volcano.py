@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import math
+import warnings
 from typing import Any
+
+import numpy as np
 
 from ._base import (
     STATIC,
@@ -24,8 +28,9 @@ class Volcano(PlotomicsWidget):
         ``x`` (log2 fold change) and ``y`` (``-log10`` p-value); an optional
         ``label`` column supplies gene names for tooltips and top-hit labels.
         A ``y`` of ``inf`` (p = 0) is drawn just above the highest finite value
-        and counts as significant. Rows with NaN in ``x`` or ``y`` are not
-        drawn.
+        and counts as significant. Rows with NaN in ``x`` or ``y``, or a ``y``
+        of ``-inf``, are not drawn, with a warning that counts them; R gives
+        the same warning.
     fc_threshold:
         Absolute log2 fold-change cutoff for calling a hit.
     p_threshold:
@@ -35,7 +40,10 @@ class Volcano(PlotomicsWidget):
     x_label, y_label:
         Axis titles.
     label_top_n:
-        Number of top up- and down-regulated genes to label.
+        Number of top up- and down-regulated genes to label. ``math.inf``
+        labels every up- and down-regulated gene, as in ``Lollipop`` and as
+        ``Inf`` does in R; ``0`` labels none, and so does NaN, as ``NA`` does
+        in R.
     colors:
         Optional mapping overriding the up / down / not-significant point colors
         (keys ``"up"``, ``"down"``, ``"ns"``). ``None`` keeps the defaults.
@@ -96,7 +104,24 @@ class Volcano(PlotomicsWidget):
         if x_arr.size == 0:
             raise ValueError("`data` must contain at least one row.")
 
-        buffer, schema = pack_columns({"x": x_arr, "y": y_arr})
+        # p = 0 gives a y of inf, which is drawn at the top. The warning
+        # counts only the rows the browser leaves out, in the words R uses.
+        y_gone = int(np.count_nonzero(np.isnan(y_arr) | (y_arr == -np.inf)))
+        if y_gone:
+            warnings.warn(
+                f"`y` has {y_gone} value(s) that are missing (NA or NaN) or "
+                "-Inf; those rows are not drawn.",
+                stacklevel=2,
+            )
+        buffer, schema = pack_columns({"x": x_arr, "y": y_arr}, quiet=("y",))
+        # JSON has no inf or NaN. Inf labels are asked for as one per gene,
+        # and NaN goes as null, as R sends NA, which labels none.
+        top_n: Any = label_top_n
+        if isinstance(label_top_n, (float, np.floating)):
+            if math.isnan(label_top_n):
+                top_n = None
+            elif math.isinf(label_top_n):
+                top_n = int(x_arr.size) if label_top_n > 0 else 0
 
         json_columns: dict[str, list] = {}
         label = _column(data, "label")
@@ -111,7 +136,7 @@ class Volcano(PlotomicsWidget):
             "opacity": opacity,
             "xLabel": x_label,
             "yLabel": y_label,
-            "labelTopN": label_top_n,
+            "labelTopN": top_n,
             "showThresholdLines": show_threshold_lines,
         }
         if colors is not None:

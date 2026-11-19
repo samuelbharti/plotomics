@@ -107,3 +107,27 @@ test_that("treemap() accepts every colormap the browser draws", {
   }
   expect_error(treemap(df, colormap = "plasma"), "should be one of")
 })
+
+test_that("treemap() checks the parent chains of 20,000 rows in under a second", {
+  # One root, 100 groups and 20,300 leaves. The check was quadratic in the
+  # number of rows and took 3.7 s here.
+  n_leaf <- 20300L
+  df <- data.frame(
+    id = c("root", paste0("g", 1:100), paste0("leaf", seq_len(n_leaf))),
+    parent = c(NA, rep("root", 100), paste0("g", rep_len(1:100, n_leaf))),
+    value = 1
+  )
+  elapsed <- system.time(w <- treemap(df))[["elapsed"]]
+  expect_s3_class(w, "htmlwidget")
+  expect_lt(elapsed, 1)
+
+  # A long chain is walked once too, and a cycle off it is still found.
+  chain <- data.frame(
+    id = paste0("n", 1:20000),
+    parent = c(NA, paste0("n", 1:19999))
+  )
+  expect_lt(system.time(treemap(chain))[["elapsed"]], 1)
+  chain$parent[20000] <- "n20000"
+  expect_error(treemap(chain), "cycle in the parent chain (at 'n20000')",
+               fixed = TRUE)
+})
