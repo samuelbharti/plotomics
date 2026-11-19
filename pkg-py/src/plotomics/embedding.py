@@ -48,8 +48,9 @@ class Embedding(PlotomicsWidget):
         ``"auto"`` detects categorical vs continuous from the ``color`` column
         type; force with ``"categorical"`` / ``"continuous"``.
     colormap:
-        Sequential color ramp for continuous coloring (``"viridis"`` or
-        ``"rdbu"``).
+        Color ramp for continuous coloring: ``"viridis"``, ``"rdbu"``,
+        ``"ltc"`` (an earthy teal to sand to rust sequential ramp) or
+        ``"ltcdiv"`` (its diverging counterpart, neutral cream at the midpoint).
     x_label, y_label:
         Axis titles (shown when ``show_axes=True``).
     aspect:
@@ -97,7 +98,7 @@ class Embedding(PlotomicsWidget):
         point_scale_mode: str = "asinh",
         opacity: float = 0.8,
         color_mode: str = "auto",
-        colormap: str = "viridis",
+        colormap: Literal["viridis", "rdbu", "ltc", "ltcdiv"] = "viridis",
         x_label: str = "UMAP 1",
         y_label: str = "UMAP 2",
         aspect: str = "fill",
@@ -118,7 +119,7 @@ class Embedding(PlotomicsWidget):
             point_scale_mode, "point_scale_mode", ("asinh", "linear", "constant")
         )
         _check_choice(color_mode, "color_mode", ("auto", "categorical", "continuous"))
-        _check_choice(colormap, "colormap", ("viridis", "rdbu"))
+        _check_choice(colormap, "colormap", ("viridis", "rdbu", "ltc", "ltcdiv"))
         _check_choice(aspect, "aspect", ("fill", "equal"))
 
         x_arr = _to_float32(x, "x")

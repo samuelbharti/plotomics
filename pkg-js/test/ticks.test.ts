@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  domainTicks,
+  fitDomainTicks,
   fitZeroTicks,
   formatTick,
   rangeTicks,
@@ -94,5 +96,70 @@ describe("ticks for tiny values, whole counts and short axes", () => {
     const x = (t: number) => t / 5;
     const kept = spaceTicks([1, 400, 800, 1200, 1600, 1680], x, () => 40);
     expect(kept).toEqual([1, 400, 800, 1200, 1680]);
+  });
+});
+
+describe("round ticks inside a range that need not start at 0", () => {
+  const labels = (t: { ticks: number[]; step: number }) =>
+    t.ticks.map((v) => formatTick(v, t.step));
+
+  it("labels round values inside the range, not its raw ends", () => {
+    // The colour bars of issue #101: raw ends such as 4.6 and -1.75, or
+    // 10.01 and 2.7e-3, and a range of [0, 0.004] that read "0.00" twice.
+    expect(domainTicks(-1.75, 4.6, 4)).toEqual({ ticks: [0, 2, 4], step: 2 });
+    expect(labels(domainTicks(0.0027, 10.01, 4))).toEqual([
+      "2",
+      "4",
+      "6",
+      "8",
+      "10",
+    ]);
+    expect(labels(domainTicks(0, 0.004, 4))).toEqual([
+      "0.000",
+      "0.001",
+      "0.002",
+      "0.003",
+      "0.004",
+    ]);
+    expect(labels(domainTicks(1, 3, 4))).toEqual([
+      "1.0",
+      "1.5",
+      "2.0",
+      "2.5",
+      "3.0",
+    ]);
+  });
+
+  it("keeps the values clean of float noise", () => {
+    expect(domainTicks(0.1, 0.7, 6).ticks).toEqual([
+      0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7,
+    ]);
+  });
+
+  it("takes a finer step until two ticks fall inside", () => {
+    // No multiple of 0.1 lies in [0.31, 0.39], and one multiple of 0.05.
+    expect(domainTicks(0.31, 0.39, 1)).toEqual({
+      ticks: [0.32, 0.34, 0.36, 0.38],
+      step: 0.02,
+    });
+    expect(domainTicks(-0.004, -0.001, 1).ticks.length).toBeGreaterThanOrEqual(
+      2,
+    );
+  });
+
+  it("handles a reversed, flat or missing range", () => {
+    expect(domainTicks(5, 1, 4)).toEqual(domainTicks(1, 5, 4));
+    expect(labels(domainTicks(2.5, 2.5))).toEqual(["2.5"]);
+    expect(domainTicks(Number.NaN, 1).ticks).toEqual([]);
+  });
+
+  it("fits the ticks to the length of the bar", () => {
+    const tall = fitDomainTicks(0, 3, 120, { maxCount: 4, minGapPx: 20 });
+    expect(tall.ticks).toEqual([0, 1, 2, 3]);
+    const short = fitDomainTicks(0, 3, 30, { maxCount: 4, minGapPx: 20 });
+    expect(short.ticks).toEqual([0, 2]);
+    // Too short even for two ticks with 20 px between them: one is kept.
+    const tiny = fitDomainTicks(0, 3, 20, { maxCount: 4, minGapPx: 20 });
+    expect(tiny.ticks).toEqual([0]);
   });
 });

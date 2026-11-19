@@ -209,3 +209,59 @@ describe("heatmap in a browser", () => {
     expect(idA).not.toBe(idB);
   });
 });
+
+describe("heatmap colour bar", () => {
+  // A 2 x 2 matrix over -1.75 to 4.6, as in the dev demo of issue #101.
+  const data = {
+    columns: { values: [4.6, -1.75, 0.5, 2] },
+    meta: { nrows: 2, ncols: 2 },
+  };
+  /** The colour bar's tick labels: the start-anchored texts. */
+  const ticks = (el: HTMLElement) =>
+    svgTexts(el).filter((t) => t.getAttribute("text-anchor") === "start");
+
+  it("labels round values inside the colour range, each at its value", () => {
+    // Before the fix the bar read the raw ends and middle: 4.6, 1.43, -1.75.
+    const el = container();
+    instances.push(createHeatmap(el, { data }));
+    expect(ticks(el).map((t) => t.textContent)).toEqual(["0", "2", "4"]);
+    const y = (s: string) =>
+      Number(
+        ticks(el)
+          .find((t) => t.textContent === s)
+          ?.getAttribute("y"),
+      );
+    expect(y("2")).toBeCloseTo((y("0") + y("4")) / 2, 6);
+    expect(y("4")).toBeLessThan(y("0"));
+  });
+
+  it("titles the bar with legendTitle, and by the default otherwise", () => {
+    const el = container();
+    const plot = createHeatmap(el, { data });
+    instances.push(plot);
+    const titles = () =>
+      svgTexts(el)
+        .filter((t) => t.getAttribute("text-anchor") === "middle")
+        .map((t) => t.textContent);
+    expect(titles()).toEqual(["value"]);
+    plot.setOptions({ zScore: true });
+    expect(titles()).toEqual(["z-score"]);
+    // Before the fix there was no option for it.
+    plot.setOptions({ legendTitle: "log2 expression" });
+    expect(titles()).toEqual(["log2 expression"]);
+    // A title wider than the bar stays off the matrix and inside the widget.
+    const title = svgTexts(el).find(
+      (t) => t.textContent === "log2 expression",
+    ) as SVGTextElement;
+    const matrix = (
+      el.querySelector("canvas") as HTMLCanvasElement
+    ).getBoundingClientRect().right;
+    expect(title.getBoundingClientRect().left).toBeGreaterThanOrEqual(matrix);
+    expect(title.getBoundingClientRect().right).toBeLessThanOrEqual(
+      el.getBoundingClientRect().right,
+    );
+    // R drops a NULL title and Python sends None: both give the default.
+    plot.setOptions({ legendTitle: null });
+    expect(titles()).toEqual(["z-score"]);
+  });
+});

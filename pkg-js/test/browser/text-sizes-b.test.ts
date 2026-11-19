@@ -563,7 +563,8 @@ const HARD: Hard[] = [
     height: 480,
     make: (el) =>
       createHeatmap(el, { data: wideMatrix(), options: themed(16) }),
-    shows: ["88.28", "-17.59", "-123.45"],
+    // Round values inside -123.45 to 88.28 (issue #101).
+    shows: ["-100", "-50", "0", "50"],
   },
   {
     what: "violin with wide value axis labels, fontSize 16",

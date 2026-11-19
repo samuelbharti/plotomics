@@ -79,6 +79,8 @@ export {
   stepDecimals,
   zeroTicks,
   fitZeroTicks,
+  domainTicks,
+  fitDomainTicks,
   spaceTicks,
   formatTick,
   rangeTicks,

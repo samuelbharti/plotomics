@@ -129,3 +129,11 @@ def test_heatmap_takes_a_frame_like_object_with_a_plain_to_numpy():
 
     w = Heatmap(FrameLike())
     assert w.data["meta"]["rowLabels"] == ["r1", "r2"]
+
+
+def test_heatmap_carries_the_colour_bar_title():
+    m = np.zeros((2, 2), dtype=np.float32)
+    w = Heatmap(m, legend_title="log2 expression")
+    assert w.options["legendTitle"] == "log2 expression"
+    # None asks the browser for its default: "value", or "z-score".
+    assert Heatmap(m).options["legendTitle"] is None
