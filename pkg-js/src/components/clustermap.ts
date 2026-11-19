@@ -1083,7 +1083,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
         out.insertBefore(img, out.firstChild);
       }
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -1098,6 +1098,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers:
           nrows > 0 && ncols > 0
             ? [

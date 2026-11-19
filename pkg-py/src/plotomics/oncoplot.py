@@ -11,6 +11,7 @@ import numpy as np
 from ._base import (
     STATIC,
     PlotomicsWidget,
+    _category_levels,
     _column,
     _na_text,
     _not_in,
@@ -43,8 +44,14 @@ def memo_sort(
     both an interactive widget and a static rendering, so two implementations
     cannot tie-break differently.
     """
+    # A row with no gene or no sample counts for neither, as in Oncoplot.
+    pairs = {
+        (g, s)
+        for g, s in zip(alt_gene, alt_sample)
+        if g is not None and s is not None
+    }
     if sort_genes:
-        counts = Counter(g for g, _ in set(zip(alt_gene, alt_sample)))
+        counts = Counter(g for g, _ in pairs)
         genes = sorted(genes, key=lambda g: (-counts.get(g, 0), g))
     else:
         genes = list(genes)
@@ -79,8 +86,9 @@ class Oncoplot(PlotomicsWidget):
         A pandas ``DataFrame`` or mapping of arrays of *altered pairs only*,
         with columns ``gene``, ``sample`` and ``class``. Unaltered pairs are
         simply absent; the full grid is reconstructed from ``genes`` and
-        ``samples``. A row with a missing gene or sample is left out, as in
-        R.
+        ``samples``. A row with a missing gene or sample is left out before
+        anything is counted, as in R, so it adds no sample column, gene row
+        or class.
     genes, samples:
         Explicit row / column order. Defaults to the memo-sorted order of the
         genes and samples present in the data. Given ``genes`` keep their order
@@ -106,7 +114,13 @@ class Oncoplot(PlotomicsWidget):
         optional ``colors``. ``values`` keyed by sample (a dict, or a pandas
         Series whose index names samples) are matched to the columns by name.
         A plain list, or a Series indexed by row number, is read in the order
-        of ``samples``, so it needs ``samples``.
+        of ``samples``, so it needs ``samples``. The levels of a strip, in
+        legend order, are the categories of a pandas Categorical, unused ones
+        included, and otherwise the distinct values in code point order, as
+        in R. ``colors`` as a dict, or a pandas Series whose index names
+        levels, gives each level the colour under its name, whatever the
+        order, and every level needs one. A list of ``colors``, or a Series
+        whose index names no level, goes to the levels in that order.
     show_burden, show_frequency, show_annotations, show_legend:
         Toggle the surrounding panels.
     empty_color:
@@ -126,6 +140,14 @@ class Oncoplot(PlotomicsWidget):
         and the plot: one number for every side, or a dict with any of the
         keys ``top``, ``right``, ``bottom`` and ``left``, a side left out
         keeping the default of 10.
+        Its ``categorical`` entry is an ordered palette, a list of colours
+        that go to the alteration classes in order; colours are not matched by
+        name.
+        A colour given as a CSS custom property, such as
+        ``"background": "var(--bg)"``, takes the value the page gives it when
+        the plot draws. After the page changes the property, what the plot
+        drew on a canvas keeps the old colour until it draws again: resize
+        the widget or display it again.
     height:
         Initial widget height in CSS pixels.
 
@@ -181,6 +203,19 @@ class Oncoplot(PlotomicsWidget):
         alt_class = _text_or_none(c_col)
         if not alt_gene:
             raise ValueError("`data` must contain at least one row.")
+        # A row with no gene or no sample names no cell. It is left out before
+        # anything is counted, as in R, so it adds no column, row, class or
+        # Multi-hit.
+        rows = [
+            (g, s_, c)
+            for g, s_, c in zip(alt_gene, alt_sample, alt_class)
+            if g is not None and s_ is not None
+        ]
+        if not rows:
+            raise ValueError("`data` must contain at least one row.")
+        alt_gene = [g for g, _, _ in rows]
+        alt_sample = [s_ for _, s_, _ in rows]
+        alt_class = [c for _, _, c in rows]
 
         if classes is None:
             # Most frequent first, equal counts by name in code point order,
@@ -200,12 +235,9 @@ class Oncoplot(PlotomicsWidget):
 
         # A gene and sample with two or more different classes is one cell,
         # drawn as "Multi-hit"; otherwise the last row would win silently.
-        # A row with no gene or no sample names no cell, so R and Python
-        # leave it out: it draws nothing and makes no Multi-hit.
         by_pair: dict[tuple[str, str], set[str]] = {}
         for g, s_, c in zip(alt_gene, alt_sample, alt_class):
-            if g is not None and s_ is not None:
-                by_pair.setdefault((g, s_), set()).add(c)
+            by_pair.setdefault((g, s_), set()).add(c)
         multi = {k for k, v in by_pair.items() if len(v) > 1}
         if multi:
             if MULTI_HIT not in classes:
@@ -217,8 +249,8 @@ class Oncoplot(PlotomicsWidget):
                 for g, s_, c in zip(alt_gene, alt_sample, alt_class)
             ]
 
-        present_genes = sorted({g for g in alt_gene if g is not None})
-        present_samples = sorted({s for s in alt_sample if s is not None})
+        present_genes = sorted(set(alt_gene))
+        present_samples = sorted(set(alt_sample))
         genes_in = list(genes) if genes is not None else present_genes
         samples_in = list(samples) if samples is not None else present_samples
         if genes is None or samples is None:
@@ -351,8 +383,11 @@ def _annotation(
     vals = _text_or_none(raw)
     if len(vals) != len(samples):
         raise ValueError(f"annotation '{name}' must have one value per sample.")
-    # Code point order, as R's oncoplot() sorts the levels.
-    levels = sorted({v for v in vals if v is not None})
+    # A pandas Categorical states the level order, as an R factor does.
+    # Other values take code point order, as R's oncoplot() sorts them.
+    levels = _category_levels(values)
+    if levels is None:
+        levels = sorted({v for v in vals if v is not None})
     idx = {lv: i for i, lv in enumerate(levels)}
     out: dict[str, Any] = {
         "name": str(name),
@@ -362,8 +397,40 @@ def _annotation(
     }
     colors = a.get("colors")
     if colors is not None:
-        out["colors"] = [str(c) for c in colors]
+        out["colors"] = _level_colors(colors, levels, str(name))
     return out
+
+
+def _level_colors(colors: Any, levels: list[str], name: str) -> list[str]:
+    """Annotation colours in the order of the levels.
+
+    The browser gives level i the colour i. A dict, or a pandas Series
+    whose index names levels, is put in level order by name, so it colours
+    the right levels whatever its order; each level needs a colour. A list,
+    a Series with the default row-number index, or a Series whose index
+    names no level (row numbers, as left by filtering), is taken in the
+    order given, by the rule the annotation values follow. The default
+    index stays by position even when the levels are numbers such as 1, 2
+    and 3.
+    """
+    keyed = None
+    if isinstance(colors, Mapping):
+        keyed = dict(colors.items())
+    elif hasattr(colors, "to_dict") and hasattr(colors, "index"):
+        index = [str(k) for k in colors.index]
+        default_index = type(colors.index).__name__ == "RangeIndex"
+        if not default_index and set(index) & set(levels):
+            keyed = dict(zip(index, colors.tolist()))
+    if keyed is not None:
+        keyed = {str(k): str(v) for k, v in keyed.items()}
+        missing = [lv for lv in levels if lv not in keyed]
+        if missing:
+            raise ValueError(
+                f"annotation '{name}' has no colour for level(s): "
+                + ", ".join(missing[:5])
+            )
+        return [keyed[lv] for lv in levels]
+    return [str(c) for c in colors]
 
 
 # The class for a gene and sample altered in two or more different ways.

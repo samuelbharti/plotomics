@@ -13,7 +13,17 @@
 #'
 #' @param data Either a `survival::survfit` object, or a data frame with numeric
 #'   `time` and `surv` columns and optional `lower`, `upper` and `group`
-#'   columns. Within a stratum, rows must be in ascending time order.
+#'   columns. Within a stratum, rows must be in ascending time order. A row
+#'   with a missing `time` or `surv` (`NA` or `NaN`) is left out with a
+#'   warning, so the step before it runs on to the next row. An infinite
+#'   `time` is not drawn, and a missing or infinite `lower` or `upper` leaves
+#'   a gap in the band; both warn, as in Python, except for the bounds of a
+#'   `survfit`, which are `NA` where the fit has no interval. A `survfit`
+#'   stratum is named by its levels alone, `"sex=1, ph.ecog=0"` becoming
+#'   `"1, 0"`, when the variable names can be read from the formula of the
+#'   fit; otherwise the name survfit gives is kept. A `survfit` of a Cox
+#'   model with several `newdata` rows draws one curve per row, named by the
+#'   row names of `newdata` (`"1"`, `"2"`, ... unless set).
 #' @param groups Character vector fixing the stratum order and colour
 #'   assignment. Defaults to order of appearance.
 #' @param group_colors One hex colour per stratum. `NULL` uses the component's
@@ -36,6 +46,13 @@
 #'   and the plot: one number for every side, or numbers named `top`,
 #'   `right`, `bottom` and `left` in a list or vector, a side left out
 #'   keeping the default of 10.
+#'   Its `categorical` entry is an ordered palette: the colours go to the strata
+#'   in order, and names on the colours are not matched to them.
+#'   A colour given as a CSS custom property, such as
+#'   `background = "var(--bg)"`, takes the value the page gives it when the
+#'   plot draws. After the page changes the property, what the plot drew on
+#'   a canvas keeps the old colour until it draws again: resize the widget
+#'   or render it again.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @param censor Optional data frame of censoring ticks, with numeric `time`
@@ -72,8 +89,9 @@ km <- function(data,
                height = NULL,
                element_id = NULL,
                censor = NULL) {
-  if (inherits(data, "survfit")) {
-    tidied <- bv_tidy_survfit(data, risk_times)
+  from_fit <- inherits(data, "survfit")
+  if (from_fit) {
+    tidied <- bv_tidy_survfit(data, risk_times, env = parent.frame())
     if (is.null(censor)) censor <- tidied$censor
     if (is.null(risk_times)) risk_times <- tidied$risk_times
     if (is.null(risk_counts)) risk_counts <- tidied$risk_counts
@@ -88,15 +106,49 @@ km <- function(data,
   bv_require_nonempty(nrow(data), "data")
 
   time <- bv_require_numeric(data$time, "time")
-  bv_check_finite(time, "time")
   surv <- bv_require_numeric(data$surv, "surv")
-  bv_check_finite(surv, "surv")
+  # A row with no time or no estimate has no place on the curve. Drawn, it
+  # would join its neighbours with a slope; left out, the step before it runs
+  # on to the next row. Python leaves it out with the same warning.
+  gone <- is.na(time) | is.na(surv)
+  if (any(gone)) {
+    warning(sprintf(
+      "Left out %d row(s) with a missing `time` or `surv`.", sum(gone)
+    ), call. = FALSE)
+    data <- as.data.frame(data)[!gone, , drop = FALSE]
+    time <- time[!gone]
+    surv <- surv[!gone]
+    bv_require_nonempty(nrow(data), "data")
+  }
+  # An infinite time has no place on the axis, and the browser leaves the
+  # row out. An infinite surv fails the check below. Python words both the
+  # same way.
+  n_inf <- sum(is.infinite(time))
+  if (n_inf > 0L) {
+    warning(sprintf(
+      "`time` has %d infinite value(s); those rows are not drawn.", n_inf
+    ), call. = FALSE)
+  }
   if (any(surv < 0 | surv > 1)) {
     stop("`surv` must be a probability in [0, 1].", call. = FALSE)
   }
   columns <- list(time = time, surv = surv)
-  if (!is.null(data$lower)) columns$lower <- bv_require_numeric(data$lower, "lower")
-  if (!is.null(data$upper)) columns$upper <- bv_require_numeric(data$upper, "upper")
+  # A missing or infinite bound leaves a gap in the band, with the warning
+  # Python gives. survfit leaves a bound NA where it has no interval, as
+  # where the estimate reaches 0, so a fit draws its gaps without one.
+  band <- function(v, name) {
+    v <- bv_require_numeric(v, name)
+    n_gap <- sum(!is.finite(v))
+    if (n_gap > 0L && !from_fit) {
+      warning(sprintf(paste0(
+        "`%s` has %d value(s) that are missing (NA or NaN) or infinite; ",
+        "the confidence band has a gap there."
+      ), name, n_gap), call. = FALSE)
+    }
+    v
+  }
+  if (!is.null(data$lower)) columns$lower <- band(data$lower, "lower")
+  if (!is.null(data$upper)) columns$upper <- band(data$upper, "upper")
 
   grp <- if (!is.null(data$group)) as.character(data$group) else NULL
   if (!is.null(grp)) columns$group <- grp
@@ -196,28 +248,60 @@ km <- function(data,
 #'
 #' @param fit A `survfit` object.
 #' @param risk_times Optional time grid; `NULL` picks an even grid.
+#' @param env Where a formula or model named in the call of the fit is
+#'   looked up, to read the stratum variable names.
 #' @return A list with `curves`, `censor`, `risk_times` and `risk_counts`.
 #' @noRd
-bv_tidy_survfit <- function(fit, risk_times = NULL) {
+bv_tidy_survfit <- function(fit, risk_times = NULL, env = parent.frame()) {
+  if (is.null(fit$surv)) {
+    stop(paste0(
+      "`data` is a survfit object without survival estimates (`surv`); ",
+      "multi-state fits are not supported."
+    ), call. = FALSE)
+  }
   n <- length(fit$time)
   # A fit with no `strata` is a single unstratified curve.
-  group <- if (is.null(fit$strata)) {
+  stratum <- if (is.null(fit$strata)) {
     rep("all", n)
   } else {
-    # Strata names arrive as "subtype=LumA"; the variable name is noise here.
-    labs <- sub("^[^=]*=", "", names(fit$strata))
-    rep(labs, times = as.integer(fit$strata))
+    labels <- bv_strata_labels(names(fit$strata), bv_strata_vars(fit, env))
+    rep(labels, times = as.integer(fit$strata))
+  }
+  # A Cox model predicted for several `newdata` rows holds one column of
+  # estimates per row, all at the same times. Each column is a curve of its
+  # own, named by its row of `newdata`.
+  surv <- as.matrix(fit$surv)
+  k <- ncol(surv)
+  curve <- colnames(surv)
+  if (is.null(curve)) curve <- as.character(seq_len(k))
+  group <- if (k == 1L) {
+    stratum
+  } else if (is.null(fit$strata)) {
+    rep(curve, each = n)
+  } else {
+    paste(rep(stratum, times = k), rep(curve, each = n), sep = ", ")
   }
   levs <- unique(group)
+  # Every curve's values one after the other: a matrix column by column, and
+  # a vector all curves share (the times, the counts) once for each curve.
+  per_curve <- function(v) {
+    if (is.null(v)) return(NULL)
+    v <- as.matrix(v)
+    if (ncol(v) == k) as.numeric(v) else rep(as.numeric(v[, 1L]), times = k)
+  }
+  time <- rep(as.numeric(fit$time), times = k)
+  surv <- as.numeric(surv)
+  n_risk <- per_curve(fit$n.risk)
+  n_censor <- per_curve(fit$n.censor)
 
   curves <- data.frame(
-    time = as.numeric(fit$time),
-    surv = as.numeric(fit$surv),
+    time = time,
+    surv = surv,
     group = factor(group, levels = levs),
     stringsAsFactors = FALSE
   )
-  if (!is.null(fit$lower)) curves$lower <- as.numeric(fit$lower)
-  if (!is.null(fit$upper)) curves$upper <- as.numeric(fit$upper)
+  if (!is.null(fit$lower)) curves$lower <- per_curve(fit$lower)
+  if (!is.null(fit$upper)) curves$upper <- per_curve(fit$upper)
 
   # Every curve starts at 1 before the first event; survfit does not store that
   # row, and without it the step begins partway down.
@@ -232,11 +316,11 @@ bv_tidy_survfit <- function(fit, risk_times = NULL) {
   curves <- rbind(starts, curves)
   curves <- curves[order(curves$group, curves$time), , drop = FALSE]
 
-  censor <- if (!is.null(fit$n.censor)) {
-    keep <- fit$n.censor > 0
+  censor <- if (!is.null(n_censor)) {
+    keep <- n_censor > 0
     data.frame(
-      time = as.numeric(fit$time[keep]),
-      surv = as.numeric(fit$surv[keep]),
+      time = time[keep],
+      surv = surv[keep],
       group = group[keep],
       stringsAsFactors = FALSE
     )
@@ -254,8 +338,8 @@ bv_tidy_survfit <- function(fit, risk_times = NULL) {
   # risk at grid time t is the one attached to the first step at or after t.
   counts <- vapply(levs, function(g) {
     idx <- which(group == g)
-    tt <- fit$time[idx]
-    nr <- fit$n.risk[idx]
+    tt <- time[idx]
+    nr <- n_risk[idx]
     vapply(risk_times, function(t) {
       j <- which(tt >= t)
       if (length(j) == 0L) 0L else as.integer(nr[j[1]])
@@ -268,6 +352,270 @@ bv_tidy_survfit <- function(fit, risk_times = NULL) {
 
   list(curves = curves, censor = censor,
        risk_times = risk_times, risk_counts = risk_counts)
+}
+
+#' Stratum names without their variable names
+#'
+#' survfit names a stratum after each variable and its level, as
+#' `"sex=1, I(age > 65)=FALSE"`, joined by ", " and padded with spaces to a
+#' common width. Each name is cut at the exact prefixes `"sex="` and
+#' `", I(age > 65)="` built from the variable names, so a variable name or a
+#' level may hold "=" or ", ", as `cut(age, breaks = c(0, 60, 100))` and its
+#' level `"(0,60]"` do. The level of a `strata()` term is cut the same way
+#' by the arguments of that term. A `cluster()` term is one of the
+#' variables when the names have it, as survival 3.8 writes them, and is
+#' left out when they do not. Every name is kept as it is when the names
+#' cannot be read from the fit, when a stratum name does not have them,
+#' when a name can be cut in more than one way, or when the names have a
+#' variable the formula does not, as when the formula held in a variable
+#' was changed after the fit.
+#'
+#' @param x Stratum names, `names(fit$strata)`.
+#' @param vars The variable names from `bv_strata_vars()`, or `NULL`.
+#' @return The levels of each name, joined by ", ".
+#' @noRd
+bv_strata_labels <- function(x, vars) {
+  whole <- sub("\\s+$", "", x)
+  if (is.null(vars) || length(vars$names) == 0L) {
+    return(whole)
+  }
+  tries <- list(rep(TRUE, length(vars$names)))
+  if (any(vars$cluster)) tries <- c(tries, list(!vars$cluster))
+  for (use in tries) {
+    if (!any(use)) next
+    inner <- vars$inner[use]
+    # The level of a strata() term holds its own "name=" parts; its
+    # arguments account for them below.
+    parts <- bv_split_all(x, vars$names[use], check = lengths(inner) == 0L)
+    if (is.null(parts)) next
+    for (j in seq_along(inner)) {
+      if (length(inner[[j]]) == 0L) next
+      # A strata() term of factors or text names its levels without the
+      # arguments; then no level starts with them and it is kept.
+      cut <- bv_split_all(vapply(parts, `[[`, character(1), j), inner[[j]])
+      if (is.null(cut)) next
+      for (i in seq_along(parts)) {
+        parts[[i]][[j]] <- paste(cut[[i]], collapse = ", ")
+      }
+    }
+    return(vapply(parts, paste, character(1), collapse = ", "))
+  }
+  whole
+}
+
+#' The levels of every stratum name, when the variables account for them
+#'
+#' A variable the names have and `vars` lack sits inside a level of every
+#' name as the same `", name="`, as `"1, ph.ecog=0"` does when `vars` is
+#' only `"sex"`. Then the names are not cut.
+#'
+#' @param x Stratum names.
+#' @param vars The variable names in order.
+#' @param check Whether to look for such a variable in each level.
+#' @return A list with the levels of each name, or `NULL`.
+#' @noRd
+bv_split_all <- function(x, vars, check = rep(TRUE, length(vars))) {
+  parts <- lapply(x, bv_split_strata, vars = vars)
+  if (any(vapply(parts, is.null, logical(1)))) {
+    return(NULL)
+  }
+  for (j in which(check)) {
+    bits <- lapply(parts, function(p) bv_named_bits(p[[j]]))
+    shared <- Reduce(intersect, bits)
+    if (length(shared) > 0L) {
+      return(NULL)
+    }
+  }
+  parts
+}
+
+#' Every piece of a level that starts with ", " and ends with "="
+#' @noRd
+bv_named_bits <- function(s) {
+  starts <- gregexpr(", ", s, fixed = TRUE)[[1L]]
+  ends <- gregexpr("=", s, fixed = TRUE)[[1L]]
+  if (starts[[1L]] < 0L || ends[[1L]] < 0L) {
+    return(character())
+  }
+  out <- character()
+  for (a in starts) {
+    for (b in ends[ends > a + 1L]) out <- c(out, substring(s, a, b))
+  }
+  unique(out)
+}
+
+#' The levels in one stratum name, given its variable names
+#'
+#' @param x One stratum name, such as `"sex=1, ph.ecog > 1=FALSE"`.
+#' @param vars The variable names in order, such as `c("sex", "ph.ecog > 1")`.
+#' @return One level per variable, or `NULL` when `x` does not have the
+#'   variable names in that order, or has them in more than one way, as
+#'   `"tricky=x, sex=1, sex=1"` does for `c("tricky", "sex")`.
+#' @noRd
+bv_split_strata <- function(x, vars) {
+  first <- paste0(vars[[1L]], "=")
+  if (!startsWith(x, first)) {
+    return(NULL)
+  }
+  ways <- bv_split_rest(substring(x, nchar(first) + 1L), vars[-1L])
+  if (length(ways) != 1L) {
+    return(NULL)
+  }
+  # strata() pads each part after the first with spaces to a common width.
+  sub("\\s+$", "", ways[[1L]])
+}
+
+#' The ways to cut the rest of a stratum name into levels
+#'
+#' @param rest The name after its first `"variable="`.
+#' @param vars The variables after the first.
+#' @return A list of the ways found, each one level per variable; it stops
+#'   at two, which is enough to tell that the cut is not unique.
+#' @noRd
+bv_split_rest <- function(rest, vars) {
+  if (length(vars) == 0L) {
+    return(list(rest))
+  }
+  sep <- paste0(", ", vars[[1L]], "=")
+  at <- gregexpr(sep, rest, fixed = TRUE)[[1L]]
+  if (at[[1L]] < 0L) {
+    return(list())
+  }
+  ways <- list()
+  for (a in at) {
+    tails <- bv_split_rest(substring(rest, a + nchar(sep)), vars[-1L])
+    for (tl in tails) {
+      ways <- c(ways, list(c(substring(rest, 1L, a - 1L), tl)))
+    }
+    if (length(ways) > 1L) break
+  }
+  ways
+}
+
+#' The stratum variable names of a survfit, as survfit writes them
+#'
+#' A survfit from a formula names its strata by the term labels of the
+#' formula, without backticks. survival 3.8 names a `cluster()` term too,
+#' and older versions leave it out, so those terms are marked. A survfit
+#' from a Cox model names them by the arguments of the `strata()` terms of the
+#' model. The formula, or the model, is read from the call of the fit; a
+#' name in that call is looked up in `env`. Nothing is evaluated but that
+#' lookup.
+#'
+#' @param fit A `survfit` object.
+#' @param env Where a name in the call of the fit is looked up.
+#' @return A list with `names`, the variable names in order, `inner`, the
+#'   arguments of each `strata()` term (`NULL` for other terms), and
+#'   `cluster`, whether each is a `cluster()` term; `NULL` when the names
+#'   cannot be read.
+#' @noRd
+bv_strata_vars <- function(fit, env) {
+  found <- tryCatch(
+    bv_fit_formula(fit$call$formula, env),
+    error = function(e) NULL
+  )
+  if (is.null(found)) {
+    return(NULL)
+  }
+  # survfit and coxph read `survival::strata()` as `strata()`, and so on.
+  labels <- tryCatch(
+    attr(stats::terms(stats::as.formula(
+      bv_drop_survival_prefix(found$formula)
+    )), "term.labels"),
+    error = function(e) NULL
+  )
+  if (length(labels) == 0L) {
+    return(NULL)
+  }
+  tick <- startsWith(labels, "`") & endsWith(labels, "`")
+  labels[tick] <- substring(labels[tick], 2L, nchar(labels[tick]) - 1L)
+  inner <- lapply(labels, bv_strata_args)
+  if (found$cox) {
+    args <- unlist(inner)
+    if (length(args) == 0L) {
+      return(NULL)
+    }
+    n <- length(args)
+    return(list(names = args, inner = vector("list", n),
+                cluster = rep(FALSE, n)))
+  }
+  list(names = labels, inner = inner,
+       cluster = startsWith(labels, "cluster("))
+}
+
+#' The formula behind a survfit call
+#'
+#' @param f The `formula` argument of the call: a formula, a call to `~` or
+#'   to `coxph()`, or a name of a formula or a Cox model.
+#' @param env Where a name is looked up.
+#' @param cox Whether the formula is that of a Cox model.
+#' @return A list with `formula` and `cox`, or `NULL`.
+#' @noRd
+bv_fit_formula <- function(f, env, cox = FALSE) {
+  if (is.symbol(f)) f <- get0(as.character(f), envir = env)
+  if (inherits(f, "coxph")) {
+    return(list(formula = stats::formula(f), cox = TRUE))
+  }
+  if (inherits(f, "formula")) {
+    return(list(formula = f, cox = cox))
+  }
+  if (!is.call(f)) {
+    return(NULL)
+  }
+  head <- paste(deparse(f[[1L]]), collapse = "")
+  if (head == "~") {
+    return(list(formula = stats::as.formula(f), cox = cox))
+  }
+  if (head %in% c("coxph", "survival::coxph")) {
+    g <- if (!is.null(f$formula)) f$formula else if (length(f) > 1L) f[[2L]]
+    return(bv_fit_formula(g, env, cox = TRUE))
+  }
+  NULL
+}
+
+#' A formula with `survival::strata()` written `strata()`
+#'
+#' As survival does before it builds the model frame, for the functions it
+#' gives a meaning in a formula.
+#'
+#' @param expr A formula or a part of one.
+#' @return `expr` without the `survival::` prefix on those calls.
+#' @noRd
+bv_drop_survival_prefix <- function(expr) {
+  special <- c("strata", "cluster", "pspline", "tt", "frailty", "ridge",
+               "frailty.gaussian", "frailty.gamma", "frailty.t")
+  if (is.call(expr)) {
+    head <- paste(deparse(expr[[1L]]), collapse = "")
+    if (head %in% paste0("survival::", special)) {
+      expr[[1L]] <- as.name(sub("^survival::", "", head))
+    }
+    for (i in seq_along(expr)[-1L]) {
+      if (!is.null(expr[[i]])) expr[[i]] <- bv_drop_survival_prefix(expr[[i]])
+    }
+  }
+  expr
+}
+
+#' The arguments of a strata() term, as strata() names them
+#'
+#' @param label A term label, such as `"strata(sex, ph.ecog > 1)"`.
+#' @return The argument names, such as `c("sex", "ph.ecog > 1")`, or `NULL`
+#'   when the term is not a call to `strata()`.
+#' @noRd
+bv_strata_args <- function(label) {
+  cl <- tryCatch(str2lang(label), error = function(e) NULL)
+  if (!is.call(cl)) {
+    return(NULL)
+  }
+  head <- paste(deparse(cl[[1L]]), collapse = "")
+  if (!head %in% c("strata", "survival::strata")) {
+    return(NULL)
+  }
+  words <- as.character(cl[-1L])
+  nms <- names(cl)[-1L]
+  if (is.null(nms)) nms <- rep("", length(words))
+  keep <- !nms %in% c("na.group", "shortlabel", "sep")
+  ifelse(nms[keep] == "", words[keep], nms[keep])
 }
 
 #' Shiny bindings for km

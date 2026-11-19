@@ -1,5 +1,13 @@
 /** Visual theme shared across components for a consistent, publication-ready look. */
 export interface PlotomicsTheme {
+  /**
+   * The colour behind the plot, the padding included, on screen and in the
+   * PNG and SVG exports. A CSS custom property such as "var(--bg)", as any
+   * theme colour, takes the value it has on the plot's element when the
+   * plot draws. After the page changes the property, what the plot drew on
+   * a canvas keeps the old colour until it draws again, as on `resize()` or
+   * `setOptions()`.
+   */
   background: string;
   foreground: string;
   muted: string;
@@ -11,6 +19,9 @@ export interface PlotomicsTheme {
    * Categorical palette. The default is Okabe-Ito (colour-blind safe, 8
    * colours); past 8 categories the components switch to {@link PALETTE_20}.
    * A palette set here is used as given, its colours repeating past its end.
+   * It is an ordered list: the first colour goes to the first group, category
+   * or class in the plot's order, the second to the second, and so on. Colours
+   * are never matched to groups by name.
    */
   categorical: string[];
   /**

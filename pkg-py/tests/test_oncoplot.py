@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 import pytest
 
@@ -293,15 +295,103 @@ def test_oncoplot_leaves_out_a_row_with_no_gene_or_sample_as_r_does():
     }
     w = Oncoplot(na)
     meta = w.data["meta"]
-    # R: genes A C B, samples s1 s4 s3 s2; no gene or sample named "nan".
-    assert meta["genes"] == ["A", "C", "B"]
-    assert meta["samples"] == ["s1", "s4", "s3", "s2"]
+    # R: genes A B C, samples s1 s4 s2 s3; no gene or sample named "nan".
+    # The row (C, nan) is left out before C is counted, so C is altered in
+    # one sample, as B is, and follows it by name.
+    assert meta["genes"] == ["A", "B", "C"]
+    assert meta["samples"] == ["s1", "s4", "s2", "s3"]
     codes = np.frombuffer(w.buffer, dtype=np.float32, count=12)
-    assert codes.tolist() == [1, 1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1]
-    # Two classes for a sample with no gene make no Multi-hit.
+    assert codes.tolist() == [1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 2]
+    # Two classes for a sample with no gene make no Multi-hit, and no class.
     nm = {"gene": ["A", None, None], "sample": ["s1", "s2", "s2"],
           "class": ["m", "m", "n"]}
-    assert Oncoplot(nm).data["meta"]["classes"] == ["m", "n"]
+    assert Oncoplot(nm).data["meta"]["classes"] == ["m"]
+
+
+def test_oncoplot_row_with_no_gene_or_sample_adds_no_column_or_row():
+    d = {
+        "gene": ["TP53", None, "KRAS", "TP53"],
+        "sample": ["S1", "S2", None, "S3"],
+        "class": ["Missense", "Missense", "Nonsense", "Missense"],
+    }
+    w = Oncoplot(d)
+    meta = w.data["meta"]
+    # Before the fix S2 was a column and KRAS an empty row, and TP53, altered
+    # in both real samples, read 66.7%.
+    assert meta["genes"] == ["TP53"]
+    assert meta["samples"] == ["S1", "S3"]
+    assert meta["classes"] == ["Missense"]
+    freq = next(c for c in w.schema["columns"] if c["name"] == "freq")
+    got = np.frombuffer(w.buffer, dtype=np.float32, count=1,
+                        offset=freq["byteOffset"])
+    assert got.tolist() == [100.0]
+    # memo_sort leaves such a pair out of its counts too: B is altered in
+    # one sample, as A is, so the tie goes by name.
+    genes, _ = memo_sort(["A", "B"], ["s1", "s2"], ["A", "B", "B"],
+                         ["s1", None, "s2"])
+    assert genes == ["A", "B"]
+    with pytest.raises(ValueError, match="at least one row"):
+        Oncoplot({"gene": [None], "sample": ["S1"], "class": ["m"]})
+
+
+def test_annotation_colours_follow_categories_and_colour_names():
+    pd = pytest.importorskip("pandas")
+    alt = {"gene": ["TP53", "TP53", "KRAS"], "sample": ["S1", "S2", "S3"],
+           "class": ["Missense"] * 3}
+    risk = pd.Series(
+        pd.Categorical(["Low", "High", "Medium"],
+                       categories=["Low", "Medium", "High"]),
+        index=["S1", "S2", "S3"],
+    )
+    cols = {"High": "#FF0000", "Low": "#00AA00", "Medium": "#FFA500"}
+
+    def strip(values, colors=None):
+        w = Oncoplot(alt, samples=["S1", "S2", "S3"], annotations=[
+            {"name": "Risk", "values": values, "colors": colors}
+        ])
+        return w.data["meta"]["annotations"][0]
+
+    # Before the fix the levels were High, Low, Medium and a dict sent its
+    # keys as the colours.
+    a = strip(risk, cols)
+    assert a["levels"] == ["Low", "Medium", "High"]
+    assert a["codes"] == [0, 2, 1]
+    assert a["colors"] == ["#00AA00", "#FFA500", "#FF0000"]
+    # Text values take code point order; a dict still finds each level.
+    a = strip({"S1": "Low", "S2": "High", "S3": "Medium"}, cols)
+    assert a["levels"] == ["High", "Low", "Medium"]
+    assert a["colors"] == ["#FF0000", "#00AA00", "#FFA500"]
+    # An unused category keeps its place in the legend, as in R.
+    a = strip(risk.cat.add_categories("Unknown"))
+    assert a["levels"] == ["Low", "Medium", "High", "Unknown"]
+    # A list of colours goes to the levels in order.
+    a = strip(risk, ["#111111", "#222222", "#333333"])
+    assert a["colors"] == ["#111111", "#222222", "#333333"]
+    # A Series indexed by level is read by name, as a dict is; before the
+    # fix it went by position, so High drew green. One indexed by row
+    # number goes by position, as a list does.
+    a = strip(risk, pd.Series(cols))
+    assert a["colors"] == ["#00AA00", "#FFA500", "#FF0000"]
+    a = strip(risk, pd.Series(["#111111", "#222222", "#333333"]))
+    assert a["colors"] == ["#111111", "#222222", "#333333"]
+    # A filtered Series keeps row numbers that name no level, 0, 2 and 3
+    # here; it goes by position too. Before the fix it raised "no colour
+    # for level(s)".
+    pal = pd.Series(["#111111", "#999999", "#222222", "#333333"])
+    a = strip(risk, pal[pal != "#999999"])
+    assert a["colors"] == ["#111111", "#222222", "#333333"]
+    msg = "annotation 'Risk' has no colour for level(s): Medium, High"
+    with pytest.raises(ValueError, match=re.escape(msg)):
+        strip(risk, {"Low": "#00AA00"})
+    # Number-coded levels such as a stage: a Series with the default index
+    # still goes by position, though its row numbers look like level names.
+    stage = {"S1": 1, "S2": 2, "S3": 3}
+    a = strip(stage, pd.Series(["#111111", "#222222", "#333333"]))
+    assert a["levels"] == ["1", "2", "3"]
+    assert a["colors"] == ["#111111", "#222222", "#333333"]
+    a = strip({"S1": 1, "S2": 2, "S3": 1},
+              pd.Series(["#111111", "#222222", "#333333"]))
+    assert a["colors"][:2] == ["#111111", "#222222"]
 
 
 def test_oncoplot_stops_on_a_missing_class_as_r_does():

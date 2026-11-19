@@ -209,3 +209,87 @@ def test_lollipop_labels_none_for_label_top_n_minus_inf():
     # R gives an empty list, as for 0.
     w = Lollipop(make_data(), length=393, label_top_n=-math.inf)
     assert w.data["meta"]["labelIndex"] == []
+
+
+def test_lollipop_sends_a_missing_domain_name_as_null():
+    # R sends NA as null, and the browser draws no name for it. Python used
+    # to send str(None), the text "None", which the browser drew as a name.
+    for missing in (None, float("nan")):
+        w = Lollipop(
+            make_data(), length=393,
+            domains=[
+                {"name": missing, "start": 10, "end": 90},
+                {"name": "Kinase", "start": 100, "end": 200},
+            ],
+        )
+        assert w.data["meta"]["domains"] == [
+            {"name": None, "start": 10.0, "end": 90.0},
+            {"name": "Kinase", "start": 100.0, "end": 200.0},
+        ]
+
+
+def test_lollipop_takes_domains_and_ptms_as_a_pandas_frame():
+    pd = pytest.importorskip("pandas")
+    # R takes data frames here; a DataFrame used to fail on its truth value.
+    domains = pd.DataFrame({
+        "name": ["P53 DNA-binding", None],
+        "start": [100, 300],
+        "end": [288, 350],
+    })
+    ptms = pd.DataFrame({"position": [15, 382], "type": ["Phospho", "Acetyl"]})
+    w = Lollipop(make_data(), length=393, domains=domains, ptms=ptms)
+    meta = w.data["meta"]
+    assert meta["domains"] == [
+        {"name": "P53 DNA-binding", "start": 100.0, "end": 288.0},
+        {"name": None, "start": 300.0, "end": 350.0},
+    ]
+    assert meta["ptms"] == [
+        {"position": 15.0, "type": "Phospho"},
+        {"position": 382.0, "type": "Acetyl"},
+    ]
+    # An empty frame draws no domains, as an empty list does.
+    empty = pd.DataFrame({"name": [], "start": [], "end": []})
+    assert "domains" not in Lollipop(make_data(), length=393, domains=empty).data["meta"]
+
+
+def test_lollipop_takes_domains_as_a_polars_frame():
+    pl = pytest.importorskip("polars")
+    domains = pl.DataFrame({
+        "name": ["P53 DNA-binding", None],
+        "start": [100, 300],
+        "end": [288, 350],
+    })
+    w = Lollipop(make_data(), length=393, domains=domains)
+    assert w.data["meta"]["domains"] == [
+        {"name": "P53 DNA-binding", "start": 100.0, "end": 288.0},
+        {"name": None, "start": 300.0, "end": 350.0},
+    ]
+
+
+def test_lollipop_names_the_columns_domains_and_ptms_need():
+    pd = pytest.importorskip("pandas")
+    # The messages R gives.
+    need = "`domains` must contain columns `name`, `start` and `end`"
+    with pytest.raises(ValueError, match=need):
+        Lollipop(make_data(), length=393,
+                 domains=pd.DataFrame({"name": ["a"], "start": [1]}))
+    with pytest.raises(ValueError, match=need):
+        Lollipop(make_data(), length=393, domains=[{"name": "a", "start": 1}])
+    with pytest.raises(ValueError, match="`ptms` must contain columns `position` and `type`"):
+        Lollipop(make_data(), length=393, ptms=pd.DataFrame({"position": [5]}))
+
+
+def test_lollipop_says_how_to_pass_a_single_domain():
+    # A single dict used to fail with "'int' object is not iterable".
+    need = "list of dicts or a data frame"
+    with pytest.raises(ValueError, match=need):
+        Lollipop(make_data(), length=393,
+                 domains={"name": "Kinase", "start": 10, "end": 90})
+    with pytest.raises(ValueError, match=need):
+        Lollipop(make_data(), length=393, ptms={"position": 15, "type": "P"})
+    # A dict of columns is a table, and is read as one.
+    w = Lollipop(make_data(), length=393,
+                 domains={"name": ["Kinase"], "start": [10], "end": [90]})
+    assert w.data["meta"]["domains"] == [
+        {"name": "Kinase", "start": 10.0, "end": 90.0}
+    ]

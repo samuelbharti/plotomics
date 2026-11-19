@@ -12,7 +12,7 @@ from ._base import (
     PlotomicsWidget,
     _column,
     _reject_lazy,
-    _to_float32,
+    _to_float64,
     pack_columns,
 )
 
@@ -60,6 +60,11 @@ class Upset(PlotomicsWidget):
         and the plot: one number for every side, or a dict with any of the
         keys ``top``, ``right``, ``bottom`` and ``left``, a side left out
         keeping the default of 10.
+        A colour given as a CSS custom property, such as
+        ``"background": "var(--bg)"``, takes the value the page gives it when
+        the plot draws. After the page changes the property, what the plot
+        drew on a canvas keeps the old colour until it draws again: resize
+        the widget or display it again.
     height:
         Initial widget height in CSS pixels.
 
@@ -94,7 +99,8 @@ class Upset(PlotomicsWidget):
         col = _column(data, "size")
         if col is None:
             raise ValueError("`data` must provide a `size` column.")
-        size = _to_float32(col, "size")
+        # float64, so a count past 2**24 arrives exact, as it does from R.
+        size = _to_float64(col, "size")
         if size.size == 0:
             raise ValueError("`data` must contain at least one row.")
 

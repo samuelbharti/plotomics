@@ -50,6 +50,11 @@
 #'   and the plot: one number for every side, or numbers named `top`,
 #'   `right`, `bottom` and `left` in a list or vector, a side left out
 #'   keeping the default of 10.
+#'   A colour given as a CSS custom property, such as
+#'   `background = "var(--bg)"`, takes the value the page gives it when the
+#'   plot draws. After the page changes the property, what the plot drew on
+#'   a canvas keeps the old colour until it draws again: resize the widget
+#'   or render it again.
 #' @param row_linkage,col_linkage Optional precomputed leaf order or dendrogram
 #'   to skip clustering that axis. Either an integer vector giving the 0-based
 #'   leaf order, or a list with `order` (0-based) and `merges` (each a list with
