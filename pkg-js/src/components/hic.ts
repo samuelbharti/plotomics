@@ -46,6 +46,7 @@ import { releaseRegl } from "../core/gl.js";
 import { uniqueId } from "../core/dom.js";
 import createREGL from "regl";
 import type { Regl, Texture2D, DrawCommand } from "regl";
+import { resolveColour } from "../core/paint.js";
 
 /** Any colour ramp of the core: "viridis", "rdbu", "ltc" or "ltcdiv". */
 export type HicColormap = RampName;
@@ -446,6 +447,8 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   let regl: Regl | null = null;
   let draw: DrawCommand | null = null;
   let cmapTex: Texture2D | null = null;
+  /** The theme background as unit RGB, read at each draw. */
+  let background: [number, number, number] = [1, 1, 1];
   let maxTextureSize = Infinity;
   // Set when WebGL is missing or a draw failed; the overlay still renders and
   // no method throws.
@@ -563,7 +566,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
         cmap: () => cmapTex as Texture2D,
         uvLo: regl.prop<{ uvLo: [number, number] }, "uvLo">("uvLo"),
         uvHi: regl.prop<{ uvHi: [number, number] }, "uvHi">("uvHi"),
-        background: () => cssColorToUnitRGB(theme.background),
+        background: () => background,
       },
       count: 4,
       primitive: "triangle strip",
@@ -847,8 +850,10 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
 
   function drawMatrixUnsafe() {
     if (!regl || !draw) return;
+    // A canvas cannot read var(), so it is read inside the element first.
+    background = cssColorToUnitRGB(resolveColour(theme.background, el));
     regl.clear({
-      color: [...cssColorToUnitRGB(theme.background), 1],
+      color: [...background, 1],
       depth: 1,
     });
     if (!levels.length || n === 0) return;
@@ -1277,7 +1282,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       img.setAttribute("href", cropCanvas(canvas, plotLeft(), plotTop(), size));
       out.insertBefore(img, out.firstChild);
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -1292,6 +1297,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [
           {
             canvas,

@@ -945,8 +945,9 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       legend ? labelWidth(`+${gl.length - 1} more`) : 0,
     );
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = theme.background;
-    ctx.fillRect(0, 0, width, height);
+    if (setCanvasColour(ctx, "fillStyle", theme.background, el)) {
+      ctx.fillRect(0, 0, width, height);
+    }
     const lo = yMin();
 
     // y gridlines first, so the bands and the curves are drawn over them. A
@@ -1358,7 +1359,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -1369,6 +1370,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [{ canvas, x: 0, y: 0, width, height }],
         overlay: svg,
       });

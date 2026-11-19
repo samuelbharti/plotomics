@@ -1,5 +1,13 @@
 /** Visual theme shared across components for a consistent, publication-ready look. */
 export interface PlotomicsTheme {
+  /**
+   * The colour behind the plot, the padding included, on screen and in the
+   * PNG and SVG exports. A CSS custom property such as "var(--bg)", as any
+   * theme colour, takes the value it has on the plot's element when the
+   * plot draws. After the page changes the property, what the plot drew on
+   * a canvas keeps the old colour until it draws again, as on `resize()` or
+   * `setOptions()`.
+   */
   background: string;
   foreground: string;
   muted: string;

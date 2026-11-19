@@ -63,7 +63,12 @@ place of the raw count. Every finite value must then be 0 or more.}
 Its \code{padding} entry is the space in px between the edge of the widget
 and the plot: one number for every side, or numbers named \code{top},
 \code{right}, \code{bottom} and \code{left} in a list or vector, a side left out
-keeping the default of 10.}
+keeping the default of 10.
+A colour given as a CSS custom property, such as
+\code{background = "var(--bg)"}, takes the value the page gives it when the
+plot draws. After the page changes the property, what the plot drew on
+a canvas keeps the old colour until it draws again: resize the widget
+or render it again.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 

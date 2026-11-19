@@ -48,6 +48,13 @@ import {
   releaseContainer,
   categoricalColors,
 } from "../core/index.js";
+import {
+  bytesToColour,
+  colourBytes,
+  luminance,
+  plainColour,
+  setCanvasColour,
+} from "../core/paint.js";
 import Graph from "graphology";
 import Sigma from "sigma";
 import {
@@ -147,6 +154,49 @@ const LAYER_ORDER = [
   "hoverNodes",
 ];
 
+/**
+ * The colours sigma draws a hover with, as hex or rgba(), the only forms
+ * sigma reads: any other colour, such as "none", "grey90" or var(), it
+ * draws black.
+ *
+ * - `label`: the label text, in the theme foreground.
+ * - `box`: the box behind a hovered label. It is the theme background when
+ *   the label reads on it (a contrast of 4.5 or more), else white behind a
+ *   dark label and near black behind a light one.
+ * - `dim`: the nodes a hover fades. It is the grid colour, or, for a grid
+ *   colour that paints nothing, the background with 15% of the label
+ *   colour mixed in, or the label colour at 20% over no background.
+ */
+export function hoverColours(
+  theme: Pick<PlotomicsTheme, "foreground" | "background" | "grid">,
+  el?: Element,
+): { label: string; box: string; dim: string } {
+  const fg = colourBytes(theme.foreground, el) ?? [0, 0, 0, 255];
+  const bg = colourBytes(theme.background, el);
+  const opaque = bg && bg[3] === 255 ? bg : null;
+  const lf = luminance(fg);
+  const lb = opaque ? luminance(opaque) : 0;
+  const contrast = (Math.max(lf, lb) + 0.05) / (Math.min(lf, lb) + 0.05);
+  // White and black read equally well on a luminance of about 0.18.
+  const box =
+    opaque && contrast >= 4.5
+      ? bytesToColour(opaque)
+      : lf < 0.18
+        ? "#ffffff"
+        : "#111827";
+  let dim = plainColour(theme.grid, el);
+  if (!dim) {
+    dim = opaque
+      ? bytesToColour(
+          [0, 1, 2].map((i) =>
+            Math.round(0.85 * (opaque[i] as number) + 0.15 * (fg[i] as number)),
+          ),
+        )
+      : `rgba(${fg[0]}, ${fg[1]}, ${fg[2]}, 0.2)`;
+  }
+  return { label: bytesToColour(fg), box, dim };
+}
+
 /** A legend row: a group and its colour, or the "+N more" line (no colour). */
 interface LegendRow {
   label: string;
@@ -185,13 +235,18 @@ const drawNodeLabel: NodeLabelDrawingFunction = (context, data, settings) => {
 };
 
 /**
- * The hovered node: sigma's white box with a shadow around the node and its
- * label, on the same side as the label, then the label itself.
+ * The hovered node: sigma's box with a shadow around the node and its
+ * label, in `fill`, on the same side as the label, then the label itself.
  */
-const drawNodeHover: NodeLabelDrawingFunction = (context, data, settings) => {
+function drawNodeHover(
+  context: LabelArgs[0],
+  data: LabelArgs[1],
+  settings: LabelArgs[2],
+  fill: string,
+): void {
   const size = settings.labelSize;
   const pad = 2;
-  context.fillStyle = "#FFF";
+  context.fillStyle = fill;
   context.shadowOffsetX = 0;
   context.shadowOffsetY = 0;
   context.shadowBlur = 8;
@@ -225,7 +280,7 @@ const drawNodeHover: NodeLabelDrawingFunction = (context, data, settings) => {
   context.shadowOffsetY = 0;
   context.shadowBlur = 0;
   drawNodeLabel(context, data, settings);
-};
+}
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -336,6 +391,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   function makeRenderer() {
     renderer?.kill();
     const labelSize = textSizes(theme).label;
+    const colours = hoverColours(theme, el);
     renderer = new Sigma(graph, host, {
       stagePadding: stagePadding(),
       // The padding can take the whole element, which leaves sigma's
@@ -344,7 +400,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       allowInvalidContainer: true,
       defaultNodeColor: opts.defaultNodeColor,
       defaultEdgeColor: opts.defaultEdgeColor,
-      labelColor: { color: theme.foreground },
+      labelColor: { color: colours.label },
       labelFont: theme.fontFamily,
       labelSize,
       // Sigma shows a set number of labels per grid cell, 100 px wide by
@@ -352,7 +408,8 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       // crowded.
       labelGridCellSize: Math.round((100 * labelSize) / 11),
       defaultDrawNodeLabel: drawNodeLabel,
-      defaultDrawNodeHover: drawNodeHover,
+      defaultDrawNodeHover: (context, data, settings) =>
+        drawNodeHover(context, data, settings, colours.box),
       labelRenderedSizeThreshold: opts.labelThreshold,
       renderLabels: true,
       // Directed graphs draw arrowheads via sigma's arrow edge program.
@@ -368,7 +425,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
         if (node === hovered || neighborSet.has(node)) {
           return { ...attrs, zIndex: 1 };
         }
-        return { ...attrs, color: theme.grid, label: "", zIndex: 0 };
+        return { ...attrs, color: colours.dim, label: "", zIndex: 0 };
       },
       edgeReducer: (edge, attrs) => {
         if (!hovered) return attrs;
@@ -594,7 +651,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       // The theme padding goes around the plot, with the background under
       // all of it.
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -608,6 +665,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: layers.map((canvas) => ({
           canvas,
           x: 0,
@@ -664,8 +722,9 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     out.height = layers[0]!.height;
     const ctx = out.getContext("2d");
     if (!ctx) return null;
-    ctx.fillStyle = theme.background;
-    ctx.fillRect(0, 0, out.width, out.height);
+    if (setCanvasColour(ctx, "fillStyle", theme.background, el)) {
+      ctx.fillRect(0, 0, out.width, out.height);
+    }
     for (const c of layers) ctx.drawImage(c, 0, 0);
     return out;
   }

@@ -38,6 +38,7 @@ import {
   createRenderLoop,
   afterQuiet,
 } from "../core/index.js";
+import { scatterBackground } from "../core/paint.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
@@ -349,7 +350,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     yScale,
     pointSize: opts.pointSize,
     opacity: opts.opacity,
-    backgroundColor: theme.background,
+    backgroundColor: scatterBackground(theme, el),
     lassoInitiator: false,
   });
   const loop = createRenderLoop((fit) => render(fit));
@@ -488,7 +489,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       pointColor: [opts.colors.down, opts.colors.ns, opts.colors.up],
       pointSize: opts.pointSize,
       opacity: opts.opacity,
-      backgroundColor: theme.background,
+      backgroundColor: scatterBackground(theme, el),
     });
   }
 
@@ -795,7 +796,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         out.insertBefore(node.cloneNode(true), out.firstChild);
       }
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -807,6 +808,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [
           {
             canvas,

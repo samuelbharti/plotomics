@@ -54,6 +54,7 @@ import {
   afterQuiet,
   categoricalColors,
 } from "../core/index.js";
+import { scatterBackground } from "../core/paint.js";
 import { uniqueId } from "../core/dom.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
@@ -534,7 +535,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     pointSize: opts.pointSize,
     pointScaleMode: opts.pointScaleMode,
     opacity: opts.opacity,
-    backgroundColor: theme.background,
+    backgroundColor: scatterBackground(theme, el),
     mouseMode: opts.mouseMode,
     // Extra lasso affordances even in panZoom mode: click the handle that
     // appears, or press-and-hold then drag (touch-friendly).
@@ -1224,7 +1225,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         opts.padding !== prev.padding ||
         (areaChanged && isStartView(scatterplot));
       scatterplot.set({
-        backgroundColor: theme.background,
+        backgroundColor: scatterBackground(theme, el),
         mouseMode: opts.mouseMode,
         // pointSize and opacity were previously only honoured at construction,
         // so setOptions({pointSize}) silently did nothing and a size control
@@ -1263,7 +1264,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         out.insertBefore(node.cloneNode(true), out.firstChild);
       }
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -1276,6 +1277,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [
           { canvas, x: m.left, y: m.top, width: innerW(), height: innerH() },
         ],
