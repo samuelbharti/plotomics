@@ -150,3 +150,23 @@ def test_lollipop_sends_a_missing_label_as_null():
     d["label"] = ["R175H", float("nan"), None, "R282W"]
     w = Lollipop(d, length=393)
     assert w.data["columns"]["label"] == ["R175H", None, None, "R282W"]
+
+
+def test_lollipop_stops_on_a_missing_class_as_r_does():
+    # R: class(es) not present in `classes`: NA
+    d = make_data()
+    d["class"] = ["Missense", None, "Missense", "Truncating"]
+    with pytest.raises(ValueError, match="not present in `classes`: NA"):
+        Lollipop(d, length=393)
+
+
+def test_lollipop_sends_an_empty_label_index_for_label_top_n_0():
+    # Without a list the browser labels the top 12 itself.
+    w = Lollipop(make_data(), length=393, label_top_n=0)
+    assert w.data["meta"]["labelIndex"] == []
+
+
+def test_lollipop_orders_equal_class_counts_by_code_point_as_r():
+    # The same classes in R give ["B", "a", "b"], whatever the locale.
+    d = {"position": [1, 2, 3], "count": [1, 1, 1], "class": ["b", "B", "a"]}
+    assert Lollipop(d, length=10).data["meta"]["classes"] == ["B", "a", "b"]

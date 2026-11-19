@@ -95,3 +95,48 @@ def test_upset_validates_its_input():
         Upset(data, sets=["A", "B", "C"], membership=membership)
     with pytest.raises(ValueError, match="one entry per set"):
         Upset(data, sets=["A", "B"], membership=membership, set_sizes=[1])
+
+
+def test_upset_intersections_matches_r():
+    import pandas as pd
+
+    from plotomics import upset_intersections
+
+    # R: upset_intersections(m) on the same table, NA counted as not in A.
+    m = pd.DataFrame({
+        "A": pd.array([True, True, False, True, None, False, True, False],
+                      dtype="boolean"),
+        "B": [True, False, True, False, True, False, True, True],
+        "C": [0, 0, 1, 0, 0, 0, 1, 2],
+    })
+    r = upset_intersections(m)
+    assert r["size"].tolist() == [2, 2, 1, 1, 1]
+    assert r["membership"].astype(int).tolist() == [
+        [0, 1, 1], [1, 0, 0], [0, 1, 0], [1, 1, 0], [1, 1, 1],
+    ]
+    assert r["sets"] == ["A", "B", "C"]
+    assert r["set_sizes"].tolist() == [4, 5, 3]
+    assert r["total"] == 8
+    top = upset_intersections(m, max_n=2)
+    assert top["size"].tolist() == [2, 2]
+    assert top["membership"].astype(int).tolist() == [[0, 1, 1], [1, 0, 0]]
+    # The result plugs into Upset.
+    w = Upset({"size": r["size"]}, sets=r["sets"], membership=r["membership"],
+              set_sizes=r["set_sizes"], total=r["total"])
+    assert w.data["meta"]["membership"][:3] == [0, 1, 1]
+
+
+def test_upset_intersections_with_no_element_in_any_set():
+    from plotomics import upset_intersections
+
+    r = upset_intersections({"A": [False, False], "B": [0, 0]})
+    assert r["size"].tolist() == []
+    assert r["membership"].shape == (0, 2)
+    assert r["total"] == 2
+
+
+def test_upset_intersections_needs_set_names():
+    from plotomics import upset_intersections
+
+    with pytest.raises(ValueError, match="column names naming the sets"):
+        upset_intersections(np.array([[1, 0], [0, 1]]))

@@ -45,7 +45,13 @@ type TypedArray =
   | Int8Array
   | Uint8Array;
 
-const CTORS: Record<Dtype, { ctor: new (b: ArrayBuffer, o: number, l: number) => TypedArray; bytes: number }> = {
+const CTORS: Record<
+  Dtype,
+  {
+    ctor: new (b: ArrayBuffer, o: number, l: number) => TypedArray;
+    bytes: number;
+  }
+> = {
   float32: { ctor: Float32Array, bytes: 4 },
   float64: { ctor: Float64Array, bytes: 8 },
   int32: { ctor: Int32Array, bytes: 4 },
@@ -56,12 +62,22 @@ const CTORS: Record<Dtype, { ctor: new (b: ArrayBuffer, o: number, l: number) =>
   uint8: { ctor: Uint8Array, bytes: 1 },
 };
 
-function toArrayBuffer(
-  buffer: ArrayBuffer | DataView | Uint8Array,
-): { buf: ArrayBuffer; base: number } {
-  if (buffer instanceof ArrayBuffer) return { buf: buffer, base: 0 };
+function toArrayBuffer(buffer: ArrayBuffer | DataView | Uint8Array): {
+  buf: ArrayBuffer;
+  base: number;
+  size: number;
+} {
+  if (buffer instanceof ArrayBuffer) {
+    return { buf: buffer, base: 0, size: buffer.byteLength };
+  }
   // DataView (anywidget) or Uint8Array view onto a possibly larger buffer.
-  return { buf: buffer.buffer as ArrayBuffer, base: buffer.byteOffset };
+  // Only the bytes of the view belong to the columns: the rest of the
+  // parent buffer can hold other data.
+  return {
+    buf: buffer.buffer as ArrayBuffer,
+    base: buffer.byteOffset,
+    size: buffer.byteLength,
+  };
 }
 
 /**
@@ -73,15 +89,15 @@ export function decodeColumns(
   buffer: ArrayBuffer | DataView | Uint8Array,
   schema: BufferSchema,
 ): Record<string, TypedArray> {
-  const { buf, base } = toArrayBuffer(buffer);
+  const { buf, base, size } = toArrayBuffer(buffer);
   const out: Record<string, TypedArray> = {};
   for (const spec of schema.columns) {
     const { ctor, bytes } = CTORS[spec.dtype];
     const start = base + spec.byteOffset;
     const needed = spec.length * bytes;
-    if (start + needed > buf.byteLength) {
+    if (spec.byteOffset < 0 || spec.byteOffset + needed > size) {
       throw new RangeError(
-        `Column "${spec.name}" (${spec.dtype}[${spec.length}]) at byte ${spec.byteOffset} exceeds buffer of ${buf.byteLength} bytes`,
+        `Column "${spec.name}" (${spec.dtype}[${spec.length}]) at byte ${spec.byteOffset} exceeds buffer of ${size} bytes`,
       );
     }
     if (start % bytes !== 0) {

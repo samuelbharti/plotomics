@@ -129,3 +129,15 @@ def test_heatmap_takes_a_frame_like_object_with_a_plain_to_numpy():
 
     w = Heatmap(FrameLike())
     assert w.data["meta"]["rowLabels"] == ["r1", "r2"]
+
+
+def test_heatmap_sends_a_missing_row_or_column_name_as_null():
+    import pandas as pd
+
+    df = pd.DataFrame([[1.0, 2.0], [3.0, 4.0]], index=["r1", None],
+                      columns=[float("nan"), "c2"])
+    w = Heatmap(df)
+    assert w.data["meta"]["rowLabels"] == ["r1", None]
+    assert w.data["meta"]["colLabels"] == [None, "c2"]
+    w = Heatmap(np.ones((2, 2)), row_labels=["a", None])
+    assert w.data["meta"]["rowLabels"] == ["a", None]

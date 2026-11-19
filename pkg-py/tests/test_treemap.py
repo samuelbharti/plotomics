@@ -132,3 +132,12 @@ def test_treemap_keeps_text_ids_written_as_floats():
     df = pd.DataFrame({"id": ["1.0", "2.0", "3.0"], "parent": [np.nan, 1.0, 1.0]})
     w = Treemap(df)
     assert w.data["columns"]["parent"] == ["", "1.0", "1.0"]
+
+
+def test_treemap_sends_a_missing_label_as_null():
+    d = _sample()
+    d["label"] = ["All", "Pathway 1", None, "Gene 1", float("nan"), "Gene 3"]
+    w = Treemap(d)
+    assert w.data["meta"]["labels"] == [
+        "All", "Pathway 1", None, "Gene 1", None, "Gene 3",
+    ]

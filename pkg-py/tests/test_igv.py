@@ -33,3 +33,11 @@ def test_igv_defaults_to_hg38():
     w = IGV()
     assert w.options["genome"] == "hg38"
     assert w._height == 480
+
+
+def test_igv_sends_genome_none_as_null():
+    # None is no genome, as genome: null in JavaScript; leaving the key out
+    # would let the browser's "hg38" default take its place.
+    w = IGV(genome=None, locus="chr1")
+    assert "genome" in w.options
+    assert w.options["genome"] is None

@@ -19,7 +19,9 @@ export interface IgvOptions {
    * When present the browser is built from it and `genome` is not used;
    * `locus` and `tracks` apply on top of it. */
   config: Record<string, unknown> | null;
-  /** Genome identifier (e.g. "hg38") used when `config` is not given. */
+  /** Genome identifier (e.g. "hg38") used when `config` is not given.
+   * `null` sends no genome, so igv.js starts with no reference loaded; the
+   * Python wrapper sends `genome=None` as this null. */
   genome: string | null;
   /** Initial locus, e.g. "chr8:127,736,588-127,739,371" or a gene symbol. */
   locus: string | null;

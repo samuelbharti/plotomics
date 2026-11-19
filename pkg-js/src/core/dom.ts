@@ -113,16 +113,69 @@ export function fitText(
   return width(out) <= maxWidth ? out : "";
 }
 
-/** Measure a container, falling back to sensible defaults for headless/0-size. */
+/**
+ * Measure a container, falling back to sensible defaults for headless/0-size.
+ *
+ * A container in the page with no height of its own, such as a plain div
+ * with no CSS height, measures 0 px high. It is given the fallback height,
+ * so the plot drawn at that height takes up room in the page and does not
+ * cover the content below it. A container with a CSS height is left as it
+ * is, and so is one that is not in the page yet.
+ */
 export function measure(
   el: HTMLElement,
   fallback: { width: number; height: number } = { width: 640, height: 480 },
 ): { width: number; height: number } {
   const rect = el.getBoundingClientRect();
+  if (rect.height <= 0 && hasNoHeight(el)) {
+    el.style.height = `${fallback.height}px`;
+  }
   return {
     width: rect.width > 0 ? rect.width : fallback.width,
     height: rect.height > 0 ? rect.height : fallback.height,
   };
+}
+
+/**
+ * Whether an element in the page takes its height from its content only.
+ * Its computed height is "auto" while it is hidden and "0px" once laid out
+ * with nothing in it. A height set in CSS, such as "300px" or "100%" in a
+ * hidden tab, is kept.
+ */
+function hasNoHeight(el: HTMLElement): boolean {
+  if (!el.isConnected || el.style.height) return false;
+  const h = getComputedStyle(el).height;
+  return h === "auto" || h === "0px";
+}
+
+/**
+ * Follow the size of `el`. Each time it changes, `target.resize` gets the
+ * new width and height in CSS px. A size of 0, as in a hidden tab, is
+ * skipped. Returns a function that stops following.
+ *
+ * The R and Python wrappers do this for every plot. In plain JavaScript,
+ * call it once the plot is made, and call the function it returns before
+ * `destroy()`:
+ *
+ * ```js
+ * const plot = createVolcano(el, { data });
+ * const stop = autoResize(el, plot);
+ * // later
+ * stop();
+ * plot.destroy();
+ * ```
+ */
+export function autoResize(
+  el: Element,
+  target: { resize(width: number, height: number): void },
+): () => void {
+  if (typeof ResizeObserver === "undefined") return () => {};
+  const ro = new ResizeObserver((entries) => {
+    const r = entries[entries.length - 1]?.contentRect;
+    if (r && r.width > 0 && r.height > 0) target.resize(r.width, r.height);
+  });
+  ro.observe(el);
+  return () => ro.disconnect();
 }
 
 /** Device pixel ratio, clamped to keep GPU memory sane on retina displays. */

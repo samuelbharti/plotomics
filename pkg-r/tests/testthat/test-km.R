@@ -157,3 +157,35 @@ test_that("km() leaves a missing group out of the strata", {
   expect_error(km(df, group_colors = c("#f00", "#00f")), "one entry per stratum")
   expect_silent(km(df, group_colors = "#f00"))
 })
+
+test_that("km() takes censoring ticks as a data frame, as Python's Km does", {
+  df <- data.frame(
+    time = c(0, 5, 0, 7), surv = c(1, 0.8, 1, 0.6),
+    group = c("a", "a", "b", "b")
+  )
+  w <- km(df, censor = data.frame(time = c(3, 9), surv = c(0.8, 0.6),
+                                  group = c("a", "b")))
+  meta <- w$x$data$meta
+  expect_equal(as.numeric(meta$censorTime), c(3, 9))
+  expect_equal(as.numeric(meta$censorSurv), c(0.8, 0.6))
+  expect_equal(as.character(meta$censorGroup), c("a", "b"))
+
+  # Without a group column the ticks belong to the only curve.
+  one <- km(df[1:2, c("time", "surv")],
+            censor = data.frame(time = 3, surv = 0.8))
+  expect_null(one$x$data$meta$censorGroup)
+  json <- as.character(htmlwidgets:::toJSON(one$preRenderHook(one)$x))
+  expect_match(json, '"censorTime":[3]', fixed = TRUE)
+
+  expect_error(km(df, censor = data.frame(time = 3)),
+               "`censor` must be a data frame with `time` and `surv`")
+})
+
+test_that("km() uses the given censor ticks over those of a survfit", {
+  skip_if_not_installed("survival")
+  d <- data.frame(t = c(5, 8, 12, 20), e = c(1, 0, 1, 0))
+  fit <- survival::survfit(survival::Surv(t, e) ~ 1, data = d)
+  expect_equal(as.numeric(km(fit)$x$data$meta$censorTime), c(8, 20))
+  w <- km(fit, censor = data.frame(time = 15, surv = 0.5))
+  expect_equal(as.numeric(w$x$data$meta$censorTime), 15)
+})

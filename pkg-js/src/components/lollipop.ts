@@ -19,10 +19,12 @@
  * equal counts never hide each other and the top of a stem is the residue's
  * total.
  *
- * Which stems get a text label is taken from `meta.labelIndex` rather than
- * decided here. Label choice is a judgement call, and letting the renderer make
- * it independently is how two views of one dataset end up labelling different
- * hotspots.
+ * Which stems get a text label is taken from `meta.labelIndex` when it is
+ * given. Label choice is a judgement call, and letting the renderer make it
+ * independently is how two views of one dataset end up labelling different
+ * hotspots, so the R and Python wrappers always send it. Without it, the
+ * `labelTopN` most recurrent variants are labelled, chosen the way the
+ * wrappers choose them (see {@link topLabelIndex}).
  *
  * ## Data contract
  * - `columns.position`  `number[]`  amino-acid position, 1-based (required)
@@ -35,7 +37,8 @@
  * - `meta.ptms`         `{ position, type }[]`   modification sites
  * - `meta.classes` / `meta.classColors`  legend levels and colours
  * - `meta.domainColors` `string[]`  one colour per domain
- * - `meta.labelIndex`   `number[]`  indices of variants to label
+ * - `meta.labelIndex`   `number[]`  indices of variants to label; an empty
+ *   array labels none
  */
 import {
   type PlotomicsData,
@@ -70,6 +73,12 @@ export interface LollipopOptions {
   showDomains: boolean;
   /** Draw the variant-class legend. */
   showLegend: boolean;
+  /**
+   * How many of the most recurrent variants get a label when
+   * `meta.labelIndex` is not given. The default, 12, is the default of
+   * `label_top_n` in R and Python.
+   */
+  labelTopN: number;
   /** Colour of the bare backbone between domains. */
   backboneColor: string;
   stemColor: string;
@@ -83,6 +92,7 @@ export const defaultLollipopOptions: LollipopOptions = {
   showPtms: true,
   showDomains: true,
   showLegend: true,
+  labelTopN: 12,
   backboneColor: "#E6DCC8",
   stemColor: "#93a1b8",
   yLabel: "samples",
@@ -242,6 +252,24 @@ export function headRadius(
   if (maxCount <= 0) return min;
   const t = Math.sqrt(Math.max(0, count) / maxCount);
   return min + t * (max - min);
+}
+
+/**
+ * The rows of the `n` most recurrent variants, in row order: the labels R
+ * and Python pick with `label_top_n`. Equal counts keep their row order and a
+ * missing count comes last, as R's `order(-count)` and numpy's stable
+ * `argsort(-count)` have them.
+ */
+export function topLabelIndex(counts: ArrayLike<number>, n: number): number[] {
+  const k = Math.max(0, Math.floor(Number.isFinite(n) ? n : 0));
+  if (k === 0) return [];
+  const rank = (i: number) => {
+    const v = counts[i];
+    return typeof v === "number" && Number.isFinite(v) ? v : -Infinity;
+  };
+  const rows = Array.from({ length: counts.length }, (_, i) => i);
+  rows.sort((a, b) => rank(b) - rank(a) || a - b);
+  return rows.slice(0, k).sort((a, b) => a - b);
 }
 
 /**
@@ -462,7 +490,11 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   const classes = () => (data.meta?.classes as string[]) ?? [];
   const domains = () => (data.meta?.domains as LollipopDomain[]) ?? [];
   const ptms = () => (data.meta?.ptms as LollipopPtm[]) ?? [];
-  const labelIndex = () => (data.meta?.labelIndex as number[]) ?? [];
+  const labelIndex = (): number[] => {
+    const given = data.meta?.labelIndex;
+    if (Array.isArray(given)) return given as number[];
+    return topLabelIndex(counts(), opts.labelTopN);
+  };
   function classColors(): string[] {
     const given = data.meta?.classColors as string[] | undefined;
     if (given && given.length) return given;

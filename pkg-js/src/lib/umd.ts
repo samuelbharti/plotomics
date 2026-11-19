@@ -1,4 +1,8 @@
-import type { PlotomicsData, PlotomicsFactory, PlotomicsInstance } from "../core/index.js";
+import type {
+  PlotomicsData,
+  PlotomicsFactory,
+  PlotomicsInstance,
+} from "../core/index.js";
 import { dropsOptionKeys } from "./rerender.js";
 
 /**
@@ -40,7 +44,10 @@ function ensureGlobal(): PlotomicsGlobal {
           type: "output",
           factory(el: HTMLElement, _width: number, height: number) {
             el.style.position = "relative";
-            if (height) el.style.height = `${height}px`;
+            // A CSS height on the element, such as "100vh", "calc(...)" or a
+            // percentage, is kept, so the plot still follows the window.
+            // Only an element with no height of its own is fixed in px.
+            if (height && !el.style.height) el.style.height = `${height}px`;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let inst: PlotomicsInstance<any> | null = null;
             let lastOptions: Record<string, unknown> = {};
@@ -49,7 +56,10 @@ function ensureGlobal(): PlotomicsGlobal {
             return {
               renderValue(x: RenderPayload) {
                 const factory = g.components[name];
-                if (!factory) throw new Error(`plotomics: component "${name}" not registered`);
+                if (!factory)
+                  throw new Error(
+                    `plotomics: component "${name}" not registered`,
+                  );
                 const sent = x.options ?? {};
                 const options = withShinySelection(el, sent, (n) => {
                   hasSelection = n > 0;
@@ -113,7 +123,9 @@ function withShinySelection(
 
 type ShinyWindow = {
   HTMLWidgets?: { shinyMode?: boolean };
-  Shiny?: { setInputValue?: (id: string, value: unknown, opts?: unknown) => void };
+  Shiny?: {
+    setInputValue?: (id: string, value: unknown, opts?: unknown) => void;
+  };
 };
 
 function shinyMode(el: HTMLElement): boolean {

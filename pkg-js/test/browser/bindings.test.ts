@@ -101,6 +101,142 @@ describe("htmlwidgets binding", () => {
   });
 });
 
+describe("htmlwidgets sizing", () => {
+  it("keeps a CSS height such as 100vh, calc() or a percentage", () => {
+    const { factory } = countingFactory();
+    registerComponent("counting", factory);
+    const binding = (
+      window as unknown as { plotomics: { htmlwidget(n: string): Binding } }
+    ).plotomics.htmlwidget("counting");
+    for (const css of ["100vh", "calc(100vh - 40px)", "50%"]) {
+      const el = document.createElement("div");
+      // htmlwidgets writes the height given in R on the element itself.
+      el.style.cssText = `width:600px;height:${css};`;
+      document.body.appendChild(el);
+      // As the browser writes it: calc() comes back reordered.
+      const given = el.style.height;
+      binding.factory(el, 600, el.offsetHeight).renderValue({ data });
+      expect(el.style.height).toBe(given);
+      expect(el.style.height).not.toMatch(/^\d+px$/);
+    }
+  });
+
+  it("fixes the height in px when the element has none of its own", () => {
+    const { factory } = countingFactory();
+    registerComponent("counting", factory);
+    const binding = (
+      window as unknown as { plotomics: { htmlwidget(n: string): Binding } }
+    ).plotomics.htmlwidget("counting");
+    const el = document.createElement("div");
+    document.body.appendChild(el);
+    binding.factory(el, 600, 400);
+    expect(el.style.height).toBe("400px");
+  });
+});
+
+/** A stand-in anywidget model whose traits a test sets by hand. */
+function fakeModel(traits: Record<string, unknown>) {
+  const handlers: Record<string, () => void> = {};
+  const model = {
+    get: (k: string) => traits[k],
+    set: (k: string, v: unknown) => {
+      traits[k] = v;
+    },
+    save_changes() {},
+    on: (event: string, cb: () => void) => {
+      handlers[event] = cb;
+    },
+    off() {},
+  };
+  /** Set traits, then fire their change events in that order. */
+  const change = (next: Record<string, unknown>) => {
+    Object.assign(traits, next);
+    for (const k of Object.keys(next)) handlers[`change:${k}`]?.();
+  };
+  return { model, change };
+}
+
+/** A float32 column `x` packed the way Python's pack_columns packs it. */
+function packed(values: number[]) {
+  const arr = new Float32Array(values);
+  return {
+    buffer: new DataView(arr.buffer),
+    schema: {
+      columns: [
+        { name: "x", dtype: "float32", length: values.length, byteOffset: 0 },
+      ],
+    },
+  };
+}
+
+/** Records the data each setData call is given. */
+function recordingFactory() {
+  const seen: number[][] = [];
+  const factory: PlotomicsFactory<Record<string, unknown>> = () => ({
+    setData(d) {
+      seen.push(Array.from(d.columns.x as ArrayLike<number>));
+    },
+    setOptions() {},
+    resize() {},
+    destroy() {},
+  });
+  return { factory, seen };
+}
+
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
+
+describe("anywidget data traits", () => {
+  it("decodes a buffer again when its schema arrives after it", async () => {
+    const { factory, seen } = recordingFactory();
+    const first = packed([1, 2, 3]);
+    const { model, change } = fakeModel({
+      data: { columns: {}, meta: {} },
+      ...first,
+      options: {},
+      _height: 300,
+    });
+    makeAnywidget(factory).render({ model, el: container() });
+
+    // `w.buffer = ...` then `w.schema = ...` in Python, without hold_sync:
+    // two messages, the buffer first.
+    const next = packed([4, 5, 6, 7]);
+    change({ buffer: next.buffer });
+    await tick();
+    change({ schema: next.schema });
+    await tick();
+    expect(seen.at(-1)).toEqual([4, 5, 6, 7]);
+  });
+
+  it("draws once when buffer, schema and data change in one message", async () => {
+    const { factory, seen } = recordingFactory();
+    const { model, change } = fakeModel({
+      data: { columns: {}, meta: {} },
+      ...packed([1, 2, 3]),
+      options: {},
+      _height: 300,
+    });
+    makeAnywidget(factory).render({ model, el: container() });
+    change({ ...packed([8, 9]), data: { columns: {}, meta: { a: 1 } } });
+    await tick();
+    expect(seen).toEqual([[8, 9]]);
+  });
+
+  it("does not draw after the view is closed", async () => {
+    const { factory, seen } = recordingFactory();
+    const { model, change } = fakeModel({
+      data: { columns: {}, meta: {} },
+      ...packed([1]),
+      options: {},
+      _height: 300,
+    });
+    const cleanup = makeAnywidget(factory).render({ model, el: container() });
+    change(packed([2]));
+    cleanup();
+    await tick();
+    expect(seen).toEqual([]);
+  });
+});
+
 describe("anywidget binding", () => {
   it("builds the component again when a key leaves the options dict", () => {
     const { factory, log } = countingFactory();
