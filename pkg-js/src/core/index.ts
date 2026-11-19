@@ -81,6 +81,7 @@ export {
   fitZeroTicks,
   domainTicks,
   fitDomainTicks,
+  isFlatRange,
   spaceTicks,
   formatTick,
   rangeTicks,

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createHeatmap } from "../../src/components/heatmap.js";
-import type { PlotomicsInstance } from "../../src/core/index.js";
+import { type PlotomicsInstance, ramp } from "../../src/core/index.js";
 
 function container(width = 600, height = 480) {
   const el = document.createElement("div");
@@ -235,16 +235,48 @@ describe("heatmap colour bar", () => {
     expect(y("4")).toBeLessThan(y("0"));
   });
 
-  it("draws a colour range too narrow for a round step, with one label", {
+  it("widens a colour range too narrow for a round step, as for vmin = vmax", {
     timeout: 10_000,
   }, () => {
-    // Before the fix the tick loop for 0.3 to 0.1 + 0.2 never ended, and
-    // the tab hung.
+    // The tick loop for 0.3 to 0.1 + 0.2 once never ended. After that fix
+    // the bar had one label, "0.3", at its top.
+    const near = container();
+    const same = container();
+    instances.push(
+      createHeatmap(near, { data, options: { vmin: 0.3, vmax: 0.1 + 0.2 } }),
+      createHeatmap(same, { data, options: { vmin: 0.3, vmax: 0.3 } }),
+    );
+    const placed = (el: HTMLElement) =>
+      ticks(el).map((t) => [t.textContent, t.getAttribute("y")]);
+    expect(placed(near).length).toBeGreaterThan(1);
+    expect(placed(near)).toEqual(placed(same));
+  });
+
+  it("colours cells at clamps that differ only in their last digits with the middle of the ramp", () => {
+    // Before the fix the clamps 0.3 and 0.1 + 0.2 kept the colour domain
+    // that narrow, and a cell of 0.3 took an end of the ramp. The values
+    // reach the GPU as float32, so values alone cannot be this close.
     const el = container();
     instances.push(
-      createHeatmap(el, { data, options: { vmin: 0.3, vmax: 0.1 + 0.2 } }),
+      createHeatmap(el, {
+        data: {
+          columns: { values: [0.3, 0.3, 0.3, 0.3] },
+          meta: { nrows: 2, ncols: 2 },
+        },
+        options: { vmin: 0.3, vmax: 0.1 + 0.2 },
+      }),
     );
-    expect(ticks(el).map((t) => t.textContent)).toEqual(["0.3"]);
+    const middle = [1, 3, 5].map((i) =>
+      Number.parseInt(ramp("viridis")(0.5).slice(i, i + 2), 16),
+    );
+    for (const [fx, fy] of [
+      [0.25, 0.25],
+      [0.75, 0.25],
+    ]) {
+      const p = glPixel(el, fx as number, fy as number);
+      const far = Math.max(...p.map((v, i) => Math.abs(v - (middle[i] ?? 0))));
+      expect(far).toBeLessThan(3);
+    }
   });
 
   // Values 0 to 6, with clamps that reverse the colour domain.

@@ -215,25 +215,78 @@ describe("dotplot colour bar", () => {
     expect(tip).toContain("mean expression 1.00");
   });
 
-  it("draws values too close for a round step, with one label", {
+  /** Colour of a dot of group x, 4 px above its centre, off the gridline. */
+  const dotColour = (el: HTMLElement, gene: string) => {
+    const labels = Array.from(
+      (el.querySelector("svg") as SVGSVGElement).querySelectorAll("text"),
+    );
+    const at = (s: string) =>
+      labels.find((t) => t.textContent === s) as SVGTextElement;
+    return pixel(
+      el,
+      Number(at("x").getAttribute("x")),
+      Number(at(gene).getAttribute("y")) - 0.35 * 11 - 4,
+    );
+  };
+  const two = (value: number[]) => ({
+    columns: {
+      gene: ["A", "B"],
+      cluster: ["x", "x"],
+      pct: [100, 100],
+      value,
+    },
+  });
+
+  it("draws values too close for a round step as it draws equal values", {
     timeout: 10_000,
   }, () => {
-    // Before the fix the tick loop for 0.3 to 0.1 + 0.2 never ended, and
-    // the tab hung.
+    // The tick loop for 0.3 to 0.1 + 0.2 once never ended. After that fix
+    // the bar had one label at an end, and the two dots took the two ends
+    // of the ramp.
+    for (const [a, b] of [
+      [0.3, 0.1 + 0.2],
+      // As R sends 8 and 8 + 2e-15.
+      [8, 8.000000000000002],
+    ] as const) {
+      const near = container();
+      const same = container();
+      instances.push(
+        createDotplot(near, { data: two([a, b]) }),
+        createDotplot(same, { data: two([a, a]) }),
+      );
+      const placed = (el: HTMLElement) =>
+        barLabels(el).map((t) => [t.textContent, t.getAttribute("y")]);
+      expect(placed(near).length).toBeGreaterThan(1);
+      expect(placed(near)).toEqual(placed(same));
+      expect(far(dotColour(near, "A"), dotColour(near, "B"))).toBeLessThan(4);
+    }
+  });
+
+  it("puts the one label of a flat domain in the middle of the bar", () => {
+    // Before the fix a valueDomain of 0.3 to 0.1 + 0.2 put "0.3" at the top
+    // of the bar and the two dots at the two ends of the ramp.
     const el = container();
     instances.push(
       createDotplot(el, {
-        data: {
-          columns: {
-            gene: ["A", "B"],
-            cluster: ["x", "x"],
-            pct: [50, 80],
-            value: [0.3, 0.1 + 0.2],
-          },
-        },
+        data: two([0.3, 0.1 + 0.2]),
+        options: { valueDomain: [0.3, 0.1 + 0.2] },
       }),
     );
-    expect(barLabels(el).map((t) => t.textContent)).toEqual(["0.3"]);
+    const only = barLabels(el);
+    expect(only.map((t) => t.textContent)).toEqual(["0.3"]);
+    // The bar is 40 rects 10 px wide, each 0.6 px taller than its share.
+    const rects = Array.from(el.querySelectorAll('svg rect[width="10"]'));
+    const top = Number(rects[0]?.getAttribute("y"));
+    const end = rects[rects.length - 1] as Element;
+    const bottom =
+      Number(end.getAttribute("y")) + Number(end.getAttribute("height")) - 0.6;
+    const centre = Number(only[0]?.getAttribute("y")) - 0.35 * 11;
+    expect(centre).toBeCloseTo((top + bottom) / 2, 0);
+    const rgb = (hex: string) =>
+      [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+    const middle = rgb(ramp("viridis")(0.5));
+    expect(far(dotColour(el, "A"), middle)).toBeLessThan(4);
+    expect(far(dotColour(el, "B"), middle)).toBeLessThan(4);
   });
 
   it("follows a reversed domain with the labels and the dots", () => {

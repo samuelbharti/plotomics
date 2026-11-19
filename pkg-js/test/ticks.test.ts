@@ -4,6 +4,7 @@ import {
   fitDomainTicks,
   fitZeroTicks,
   formatTick,
+  isFlatRange,
   rangeTicks,
   spaceTicks,
   stepDecimals,
@@ -203,5 +204,26 @@ describe("ranges too narrow or too small for round steps", () => {
     expect(labels(domainTicks(123.456, 123.456))).toEqual(["123.456"]);
     expect(labels(domainTicks(1 / 3, 1 / 3))).toEqual(["0.333333"]);
     expect(labels(domainTicks(0, 0))).toEqual(["0"]);
+  });
+
+  it("prints every whole digit of a large flat value", () => {
+    // Before the fix 1234567 read "1234570" and 2 ** 53 "9007200000000000".
+    const flat = (v: number) => labels(domainTicks(v, v));
+    expect(flat(1234567)).toEqual(["1234567"]);
+    expect(flat(-1234567)).toEqual(["-1234567"]);
+    expect(flat(123456789)).toEqual(["123456789"]);
+    expect(flat(1e15 + 1)).toEqual(["1000000000000001"]);
+    expect(flat(2 ** 53)).toEqual(["9007199254740992"]);
+    expect(flat(999999)).toEqual(["999999"]);
+    // A fraction keeps up to six significant digits in all.
+    expect(flat(1234.56789)).toEqual(["1234.57"]);
+  });
+
+  it("calls a range flat by its width against its values", () => {
+    expect(isFlatRange(2, 2)).toBe(true);
+    expect(isFlatRange(0.3, 0.1 + 0.2)).toBe(true);
+    expect(isFlatRange(8.000000000000002, 8)).toBe(true);
+    expect(isFlatRange(1, 1 + 1e-11)).toBe(false);
+    expect(isFlatRange(0, 1e-300)).toBe(false);
   });
 });

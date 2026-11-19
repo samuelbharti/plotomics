@@ -43,6 +43,13 @@ describe("dotplot helpers", () => {
     expect(valueExtent([1, Number.NaN, 4])).toEqual([1, 4]);
   });
 
+  it("widens values that differ only in their last digits as flat ones", () => {
+    // Before the fix these kept their width of a few units of the last
+    // digit, and the two dots took the two ends of the ramp.
+    expect(valueExtent([0.3, 0.1 + 0.2])).toEqual([0.3, 1.3]);
+    expect(valueExtent([8, 8.000000000000002])).toEqual([8, 9]);
+  });
+
   it("collects distinct values in first-appearance order", () => {
     expect(uniqueInOrder(["b", "a", "b", "c"])).toEqual(["b", "a", "c"]);
     expect(uniqueInOrder([])).toEqual([]);

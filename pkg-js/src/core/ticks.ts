@@ -48,8 +48,9 @@ export function zeroTicks(
  * as a percentage. Large values print as thousands ("k") or millions ("M")
  * when the step is a whole number of them, so the label stays exact. A step
  * of 0 marks the one tick of a flat range, which has no step: it prints the
- * value itself to six significant digits, in exponent form below 1e-6, so a
- * small value never reads as 0.
+ * value itself, every digit of its whole part and up to six significant
+ * digits in all, in exponent form below 1e-6, so a small value never reads
+ * as 0 and a large one is never rounded.
  */
 export function formatTick(
   value: number,
@@ -58,7 +59,12 @@ export function formatTick(
 ): string {
   if (!(step > 0)) {
     const v = opts.percent ? value * 100 : value;
-    const text = Number.isFinite(v) ? String(Number(v.toPrecision(6))) : "NA";
+    if (!Number.isFinite(v)) return "NA";
+    // Digits of the whole part: 7 for 1234567, 1 for 0.25.
+    const whole =
+      Math.abs(v) < 1e21 ? Math.trunc(Math.abs(v)).toFixed(0).length : 21;
+    const digits = Math.min(21, Math.max(6, whole));
+    const text = String(Number(v.toPrecision(digits)));
     return opts.percent ? `${text}%` : text;
   }
   if (opts.percent) {
@@ -71,6 +77,16 @@ export function formatTick(
     return `${(value / 1e3).toFixed(stepDecimals(step / 1e3))}k`;
   }
   return value.toFixed(stepDecimals(step));
+}
+
+/**
+ * Whether `[lo, hi]` is flat: no width, or narrower than 1e-12 of its
+ * values. A round step that small sits within a few thousand units of the
+ * last digit of the values, and its labels would repeat, so such a range
+ * gets one tick, as a range with no width does.
+ */
+export function isFlatRange(lo: number, hi: number): boolean {
+  return Math.abs(hi - lo) <= 1e-12 * Math.max(Math.abs(lo), Math.abs(hi));
 }
 
 /** The next finer 1, 2 or 5 step: 5 to 2, 2 to 1 and 1 to 0.5. */
@@ -103,9 +119,7 @@ export function domainTicks(
   if (lo > hi) [lo, hi] = [hi, lo];
   // Halves first, so the middle of the widest range does not overflow.
   const flat = { ticks: [lo / 2 + hi / 2], step: 0 };
-  // Below a width of 1e-12 of the values, a round step sits within a few
-  // thousand units of the last digit, and its labels would repeat.
-  if (hi - lo <= 1e-12 * Math.max(Math.abs(lo), Math.abs(hi))) return flat;
+  if (isFlatRange(lo, hi)) return flat;
   let step = tickStep(lo, hi, Math.max(1, count));
   // Two finer steps always reach two ticks; the rest is margin.
   for (let k = 0; k < 4; k += 1) {

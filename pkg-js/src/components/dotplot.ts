@@ -48,6 +48,7 @@ import {
   compositePNG,
   fitDomainTicks,
   formatTick,
+  isFlatRange,
 } from "../core/index.js";
 
 export interface DotplotOptions {
@@ -200,8 +201,9 @@ export function dotRadius(pct: number, maxRadius: number): number {
 
 /**
  * Min/max of the finite values of a column, falling back to `[0, 1]` for
- * empty or flat input. A missing value (null from R, NaN from Python) is
- * skipped.
+ * empty input. Flat input, including values that differ only in their last
+ * digits (0.3 and 0.1 + 0.2), widens to `[min, min + 1]`. A missing value
+ * (null from R, NaN from Python) is skipped.
  */
 export function valueExtent(col: ArrayLike<number>): [number, number] {
   let min = Infinity;
@@ -213,7 +215,7 @@ export function valueExtent(col: ArrayLike<number>): [number, number] {
     if (v > max) max = v;
   }
   if (!isFinite(min) || !isFinite(max)) return [0, 1];
-  if (min === max) return [min, min + 1];
+  if (isFlatRange(min, max)) return [min, min + 1];
   return [min, max];
 }
 
@@ -338,13 +340,22 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
    * The colour bar's ticks: round values inside the domain, as many as a bar
    * `barH` px tall holds a line and a half of text from each other.
    */
-  function barTicks(barH: number): { ticks: number[]; labels: string[] } {
+  function barTicks(barH: number): {
+    ticks: number[];
+    labels: string[];
+    flat: boolean;
+  } {
     const [lo, hi] = domain();
     const { ticks, step } = fitDomainTicks(lo, hi, barH, {
       maxCount: 4,
       minGapPx: 1.6 * sizes.label,
     });
-    return { ticks, labels: ticks.map((v) => formatTick(v, step)) };
+    return {
+      ticks,
+      labels: ticks.map((v) => formatTick(v, step)),
+      // A flat domain has one tick and no step.
+      flat: !(step > 0),
+    };
   }
   /** Width of the widest line of the two legends. */
   function legendWidth(barLabels: string[]): number {
@@ -504,8 +515,9 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
         ctx.stroke();
         continue;
       }
-      // A reversed domain (hi below lo) runs the ramp the other way.
-      const t = hi !== lo ? (v - lo) / (hi - lo) : 0.5;
+      // A reversed domain (hi below lo) runs the ramp the other way, and a
+      // flat one gives the middle of the ramp.
+      const t = isFlatRange(lo, hi) ? 0.5 : (v - lo) / (hi - lo);
       ctx.fillStyle = paint(Math.max(0, Math.min(1, t)));
       ctx.fill();
     }
@@ -597,7 +609,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     // bar, by a short tick.
     const bar = barTicks(barH);
     bar.ticks.forEach((v, i) => {
-      const y = barTop + (hi !== lo ? (hi - v) / (hi - lo) : 0.5) * barH;
+      const y = barTop + (bar.flat ? 0.5 : (hi - v) / (hi - lo)) * barH;
       svg.appendChild(line(lx + 10, y, lx + 13, y, theme.muted));
       svg.appendChild(
         text(

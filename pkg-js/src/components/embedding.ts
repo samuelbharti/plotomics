@@ -995,6 +995,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       minGapPx: 1.6 * fs,
     });
     const labels = ticks.map((v) => formatTick(v, step));
+    // A flat domain has one tick and no step.
+    const flat = !(step > 0);
     // The box is as wide as the bar and its longest label.
     const labelW = [...labels, missingColor ? MISSING_LABEL : ""].reduce(
       (mx, s) => Math.max(mx, textWidth(s, fs, theme.fontFamily)),
@@ -1009,6 +1011,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       cbH,
       ticks,
       labels,
+      flat,
       boxW: 6 + cbW + 5 + Math.ceil(labelW) + 6,
     };
   }
@@ -1044,7 +1047,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     // Each label is centred on its value along the bar, by a short tick.
     const [lo, hi] = domain;
     L.ticks.forEach((v, i) => {
-      const y = y0 + (hi !== lo ? (hi - v) / (hi - lo) : 0.5) * cbH;
+      const y = y0 + (L.flat ? 0.5 : (hi - v) / (hi - lo)) * cbH;
       svg.appendChild(line(x0 + cbW, y, x0 + cbW + 3, y, theme.axis, 1));
       svg.appendChild(
         text(

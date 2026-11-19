@@ -37,6 +37,7 @@ import {
   compositePNG,
   fitDomainTicks,
   formatTick,
+  isFlatRange,
 } from "../core/index.js";
 import { releaseRegl } from "../core/gl.js";
 import { uniqueId } from "../core/dom.js";
@@ -251,10 +252,13 @@ export function colorDomain(
     if (lo == null) lo = dmin;
     if (hi == null) hi = dmax;
   }
-  if (lo === hi) {
-    // Degenerate domain: widen so the shader division is well-defined.
-    lo -= 0.5;
-    hi += 0.5;
+  if (isFlatRange(lo, hi)) {
+    // Degenerate domain, or one whose ends differ only in their last digits
+    // (0.3 and 0.1 + 0.2): widen around its middle, so the shader division is
+    // well-defined and the cells take the middle of the ramp.
+    const mid = lo / 2 + hi / 2;
+    lo = mid - 0.5;
+    hi = mid + 0.5;
   }
   return [lo, hi];
 }
@@ -492,14 +496,23 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
    * The colour bar's ticks: round values inside the colour domain, as many
    * as the bar holds a line and a half of text from each other.
    */
-  function colorbarTicks(): { ticks: number[]; labels: string[] } {
+  function colorbarTicks(): {
+    ticks: number[];
+    labels: string[];
+    flat: boolean;
+  } {
     const { ticks, step } = fitDomainTicks(
       domain[0],
       domain[1],
       colorbarBox().cbH,
       { maxCount: 4, minGapPx: 1.6 * sizes.label },
     );
-    return { ticks, labels: ticks.map((v) => formatTick(v, step)) };
+    return {
+      ticks,
+      labels: ticks.map((v) => formatTick(v, step)),
+      // A flat domain has one tick and no step.
+      flat: !(step > 0),
+    };
   }
   /**
    * Size the left and bottom margins from the longest labels, and the right
@@ -810,8 +823,8 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     const bar = colorbarTicks();
     bar.ticks.forEach((v, i) => {
       // The top of the bar is hi, also when a reversed domain puts it
-      // below lo.
-      const y = cbY + (hi !== lo ? (hi - v) / (hi - lo) : 0.5) * cbH;
+      // below lo. The one tick of a flat domain sits in the middle.
+      const y = cbY + (bar.flat ? 0.5 : (hi - v) / (hi - lo)) * cbH;
       svg.appendChild(
         rect(cbX + COLORBAR_W, y - 0.5, 3, 1, theme.axis, "none", 0),
       );
