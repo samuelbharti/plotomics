@@ -58,6 +58,18 @@
 * `km()` takes `censor`, a data frame of censoring ticks, as its last argument.
 * `oncoplot()` and `lollipop()` break ties by name in code point order, whatever
   the locale, so the colours match Python's.
+* `km()` draws its legend above the panel, thins time labels and risk counts to
+  fit, keeps the risk table ahead of the legend, and labels strata without the
+  variable names. A Cox fit with several `newdata` rows draws one curve per row,
+  and rows with a missing `time` or `surv` are left out with a warning.
+* `oncoplot()` annotation levels follow factor order, and named colours are
+  matched by level. Rows with a missing gene or sample are left out.
+* `volcano(label_top_n = Inf)` labels every up- and down-regulated gene.
+* `hic()` checks `vmin`, `vmax`, `vmax_percentile`, `bin_size` and `symmetric`.
+* `lollipop()` takes any data frame for `domains` and `ptms`, a Bioconductor
+  `DataFrame` included.
+* Colour bars and axes label round, exact values; very small ranges use one
+  exponent form. Tooltips stay inside the widget.
 
 ## Bug fixes
 
@@ -94,6 +106,14 @@
 * Every Shiny example in the help runs as written.
 * Hover lines up with the plot inside an element with a CSS border, and a widget
   keeps a height set in CSS.
+* In Shiny, clicking the empty canvas of a `network()` clears
+  `input$<id>_selected`.
+* Missing names read "NA" in the `violin()`, `dotplot()`, `upset()`,
+  `lollipop()` and `oncoplot()` tooltips.
+* A theme background given as a CSS variable paints the plot and its exports;
+  `hic()` draws missing bins as background.
+* A named palette in `theme$categorical` reaches the plot, and `treemap()`
+  checks large trees quickly.
 
 # plotomics 0.1.0
 

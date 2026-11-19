@@ -17,9 +17,11 @@ be behind the tag.
 ### Added
 
 - The R package is on CRAN, published 2026-09-04 as 0.1.0: the R package of
-  0.2.0, with `bioprofile()` and without `igv()` and `gosling()`. The other
-  entries in this section are new since then.
-- `citation("plotomics")` returns the Zenodo DOI (R only).
+  0.2.0, with `bioprofile()` and without `igv()` and `gosling()`, plus the next
+  three entries, which CRAN 0.1.0 already holds. The other entries in this
+  section are new since then.
+- `citation("plotomics")` returns the Zenodo DOI (R only), now with the package
+  version.
 - Every Shiny binding help page in the R package has an example, and so does
   `oncoplot_memo_sort()`.
 - A "Getting started" vignette for the R package, `vignette("plotomics")`.
@@ -48,6 +50,8 @@ be behind the tag.
   element. The types that public signatures use (`Linkage`, `Metric`,
   `EmbeddingColorMode`, `NetworkLayout`, `AnyFactory`, `AnyModel`, `TypedArray`,
   `DomainScale`) are exported by name. (#90, #110, #203, #210)
+- JavaScript: `ltc` and `ltcdiv` are exported from `plotomics/core`, next to
+  `viridis` and `rdbu`, and `DOMAIN_PALETTE` from `plotomics`. (#217)
 
 ### Changed
 
@@ -130,6 +134,35 @@ be behind the tag.
 - A plain JavaScript plot in an element with no height of its own gets a height
   of 480 px from a CSS rule that any page height overrides; it drew 480 px into
   a 0 px box. Plots fill the padding box of their element. (#110, #203)
+- KM: the legend sits in a band above the panel and never covers the curves; the
+  risk table keeps priority over it. Time labels and risk counts thin to fit the
+  width, keeping round steps on an even grid and every time that fits on an
+  uneven one, in time order. With `y_from_zero = FALSE` the y labels sit on
+  round percentages. Nothing is drawn outside a short plot. (#215)
+- Tooltips flip to the other side of the pointer near the right and bottom
+  edges, stay inside the widget where they fit, wrap long text, and never cover
+  the pointer. (#214)
+- The clustermap, spatial and treemap colour bars and the volcano and embedding
+  axes label round, exact values in one unit; very small or very narrow ranges
+  use one exponent form for the whole bar or axis. The volcano and embedding
+  margins widen to fit long labels deep in a zoom. (#218)
+- R `km()` labels strata without the variable names ("1, FALSE" where survfit
+  writes "sex=1, I(age > 65)=FALSE"), and keeps survfit's names when they cannot
+  be cut safely. A Cox model fit with several `newdata` rows draws one curve per
+  row. Rows with a missing `time` or `surv` are left out with the same warning
+  in R and Python, and a missing confidence bound leaves a gap in the band.
+  (#216)
+- Oncoplot annotation levels follow an R factor or a pandas Categorical, and
+  named colours (a named vector in R, a dict or Series in Python) are matched by
+  level name. Rows with a missing gene or sample are left out before anything is
+  counted. (#216)
+- `volcano(label_top_n = Inf)` labels every up- and down-regulated gene, in R
+  and Python. The y warning counts missing values only, so p = 0 is not
+  reported. (#216)
+- R and Python check the Hi-C `vmin`, `vmax`, `vmax_percentile`, `bin_size` and
+  `symmetric` arguments, with the same errors. (#213)
+- R and Python take a data frame (pandas, polars, a tibble or a Bioconductor
+  DataFrame) for lollipop `domains` and `ptms`. (#214)
 
 ### Removed
 
@@ -196,6 +229,25 @@ be behind the tag.
   read the pointer off by the border width. (#211)
 - Every R Shiny example in the help runs as written. (#109, #200)
 - Python `IGV(genome=None)` loads no genome; it loaded hg38. (#122, #203)
+- In R Shiny, clicking the empty canvas of a network clears
+  `input$<id>_selected`; the binding threw on the empty selection. (#213)
+- In Python, a second Hi-C, embedding or spatial widget in a notebook no longer
+  shows the first one's colour bar. (#103, #213)
+- Hi-C draws missing bins as background in the overview and at every zoom, and
+  its axis labels keep their units at narrow widths. (#213)
+- The spatial PNG export with an image from another site without CORS headers
+  holds the spots and the legend. (#213)
+- Missing names read "NA" in the violin, dot plot, UpSet, lollipop and oncoplot
+  tooltips; the violin and lollipop threw. (#214)
+- A theme background given as a CSS variable paints the plot and its exports in
+  that colour; canvases were black or white. Network hover stays readable with a
+  grid colour of "none" and in the dark theme. (#214)
+- A dot plot with hundreds of genes and groups draws its dots. (#214)
+- Python UpSet sends exact intersection sizes, a named R palette in
+  `theme$categorical` reaches the plot, and the R `treemap()` structure check
+  runs in linear time. (#216)
+- The type declarations check with `skipLibCheck: false`, and the README code
+  runs as written in R, Python and JavaScript. (#217)
 
 ## [0.2.0] - 2026-08-14
 
