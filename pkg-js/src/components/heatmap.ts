@@ -31,6 +31,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseContainer,
   dpr,
   ramp,
   serializeSVG,
@@ -98,6 +99,14 @@ export interface MatrixShape {
   colLabels?: string[];
 }
 
+/**
+ * Labels as text. A missing label (null, as R and Python send an NA or
+ * NaN name) is empty text, not the word "null".
+ */
+export function labelTexts(values: unknown[]): string[] {
+  return values.map((v) => (v == null ? "" : String(v)));
+}
+
 /** Read {nrows, ncols, rowLabels, colLabels} from a meta object, defaulting
  * shape to a single row spanning the value column when absent. */
 export function readShape(
@@ -107,10 +116,10 @@ export function readShape(
   const nrows = Math.max(0, Math.trunc(Number(meta?.nrows ?? 0)) || 0);
   const ncols = Math.max(0, Math.trunc(Number(meta?.ncols ?? 0)) || 0);
   const rowLabels = Array.isArray(meta?.rowLabels)
-    ? (meta.rowLabels as unknown[]).map(String)
+    ? labelTexts(meta.rowLabels as unknown[])
     : undefined;
   const colLabels = Array.isArray(meta?.colLabels)
-    ? (meta.colLabels as unknown[]).map(String)
+    ? labelTexts(meta.colLabels as unknown[])
     : undefined;
   if (nrows > 0 && ncols > 0) return { nrows, ncols, rowLabels, colLabels };
   // Fall back to a 1 x N strip so a bare value column still renders.
@@ -1001,8 +1010,9 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     const row = Math.min(shape.nrows - 1, Math.floor(at.v * shape.nrows));
     const idx = row * shape.ncols + col;
     const value = scaled[idx] as number;
-    const rowLabel = shape.rowLabels?.[row] ?? `row ${row}`;
-    const colLabel = shape.colLabels?.[col] ?? `col ${col}`;
+    // A missing label names the cell by its row or column number.
+    const rowLabel = shape.rowLabels?.[row] || `row ${row}`;
+    const colLabel = shape.colLabels?.[col] || `col ${col}`;
     tooltip.show(
       `<b>${escapeHTML(rowLabel)}</b> × <b>${escapeHTML(colLabel)}</b><br/>${
         opts.zScore ? "z" : "value"
@@ -1103,6 +1113,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       });
     },
     destroy() {
+      releaseContainer(el);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("mousedown", onDown);
       window.removeEventListener("mouseup", onUp);

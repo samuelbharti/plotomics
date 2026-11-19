@@ -43,8 +43,9 @@ class Km(PlotomicsWidget):
     group_colors:
         One hex colour per stratum. ``None`` uses the categorical palette.
     censor:
-        Optional mapping with ``time``, ``surv`` and ``group`` arrays marking
-        censoring ticks.
+        Optional mapping with ``time`` and ``surv`` arrays, and an optional
+        ``group`` array, marking censoring ticks. R's ``km(censor =)`` takes
+        the same columns.
     risk_times:
         Times for the at-risk table, also used as the x-axis ticks.
     risk_counts:
@@ -157,13 +158,17 @@ class Km(PlotomicsWidget):
         if censor is not None:
             ct = _column(censor, "time")
             cs = _column(censor, "surv")
-            if ct is not None and cs is not None:
-                meta["censorTime"] = [float(v) for v in ct]
-                meta["censorSurv"] = [float(v) for v in cs]
-                cg = _column(censor, "group")
-                if cg is not None:
-                    # A tick with no group is left out, like its curve.
-                    meta["censorGroup"] = _text_or_none(cg)
+            if ct is None or cs is None:
+                # R stops too; leaving the ticks out would hide the mistake.
+                raise ValueError(
+                    "`censor` must provide `time` and `surv` columns."
+                )
+            meta["censorTime"] = [float(v) for v in ct]
+            meta["censorSurv"] = [float(v) for v in cs]
+            cg = _column(censor, "group")
+            if cg is not None:
+                # A tick with no group is left out, like its curve.
+                meta["censorGroup"] = _text_or_none(cg)
 
         if risk_times is not None:
             times = [float(v) for v in risk_times]

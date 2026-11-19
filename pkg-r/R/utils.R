@@ -105,3 +105,34 @@ bv_keep_arrays <- function(widget, array_meta = character(),
 bv_as_array <- function(v) {
   if (is.null(v) || !is.atomic(v) || inherits(v, "AsIs")) v else I(v)
 }
+
+#' Distinct text values in code point order
+#'
+#' `sort()` orders text by the collation of the locale R runs in, so the
+#' same data can sort differently on two machines, and differently from
+#' Python's `sorted()`. The radix method sorts in the C locale, which for
+#' UTF-8 text is code point order: the order Python uses.
+#'
+#' @param x A character vector.
+#' @return The distinct values of `x`, NA left out, in code point order.
+#' @keywords internal
+#' @noRd
+bv_sort_text <- function(x) {
+  sort(unique(x), method = "radix")
+}
+
+#' Distinct text values, most frequent first
+#'
+#' Equal counts keep code point order, as Python's
+#' `sorted(counts, key=lambda c: (-counts[c], c))` has them.
+#'
+#' @param x A character vector.
+#' @return The distinct values of `x`, NA left out.
+#' @keywords internal
+#' @noRd
+bv_by_frequency <- function(x) {
+  x <- x[!is.na(x)]
+  levs <- bv_sort_text(x)
+  n <- tabulate(match(x, levs), nbins = length(levs))
+  levs[order(-n, method = "radix")]
+}

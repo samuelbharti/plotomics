@@ -77,12 +77,25 @@ def _warn_nonfinite(arr: np.ndarray, name: str) -> None:
         )
 
 
+def _little_endian(arr: np.ndarray) -> np.ndarray:
+    """``arr`` with its bytes in little-endian order, the order JS reads.
+
+    A typed array in the browser reads the bytes in the order of the machine,
+    which is little-endian on every platform a notebook runs on. A big-endian
+    array, as h5py or FITS files give, keeps its own order in ``tobytes()``,
+    so it is converted first. An array already in that order is not copied.
+    """
+    little = arr.dtype.newbyteorder("<")
+    return arr if arr.dtype == little else arr.astype(little)
+
+
 def _to_transport(arr: np.ndarray, name: str) -> tuple[np.ndarray, str]:
     """Return a contiguous array + transport dtype for a single named column.
 
     Raises ``ValueError`` (naming the column) on a non-numeric dtype or on 64-bit
     integer values that would overflow ``int32``; warns once on NaN/Inf. Keeps
-    the float32/float64 and small-int fast paths untouched.
+    the float32/float64 and small-int fast paths untouched. The array comes
+    back in little-endian byte order, whatever order it came in.
     """
     arr = np.ascontiguousarray(arr)
     dtype = arr.dtype
@@ -97,7 +110,7 @@ def _to_transport(arr: np.ndarray, name: str) -> tuple[np.ndarray, str]:
     # Fast path: already a supported transport dtype.
     if tname in _DTYPE_MAP:
         _warn_nonfinite(arr, name)
-        return arr, _DTYPE_MAP[tname]
+        return _little_endian(arr), _DTYPE_MAP[tname]
 
     # 64-bit ints (and other unsupported integers) downcast to int32, but only
     # when every value fits -- silent truncation would corrupt the data.
@@ -110,12 +123,12 @@ def _to_transport(arr: np.ndarray, name: str) -> tuple[np.ndarray, str]:
                 f"column '{name}' has integer values outside the int32 range "
                 f"[{info.min}, {info.max}]; got [{lo}, {hi}]"
             )
-        return arr.astype(np.int32, copy=False), "int32"
+        return _little_endian(arr.astype(np.int32, copy=False)), "int32"
 
     # Any other numeric dtype (e.g. float16) is transported as float32.
     arr = arr.astype(np.float32, copy=False)
     _warn_nonfinite(arr, name)
-    return arr, "float32"
+    return _little_endian(arr), "float32"
 
 
 def pack_columns(
@@ -178,6 +191,7 @@ def _column(data: Any, name: str) -> Any | None:
             "plain numpy array; wrap your data with named columns "
             "(e.g. a pandas.DataFrame or a dict of arrays)."
         )
+    _reject_lazy(data)
     # Ask for the name only when the frame or mapping has it: polars raises
     # its own ColumnNotFoundError for a missing column, which is none of the
     # errors a pandas frame or a dict raises. A pyarrow Table keeps the names
@@ -197,6 +211,22 @@ def _column(data: Any, name: str) -> Any | None:
         return data[name]
     except (KeyError, TypeError, IndexError, LookupError):
         return None
+
+
+def _reject_lazy(data: Any) -> None:
+    """Stop with a clear message for a polars LazyFrame.
+
+    A LazyFrame holds a query, not its rows, so it has no column to read:
+    indexing it fails, and reading its column names runs part of the query.
+    Collecting it here would run the whole query once for every column, so
+    the caller is asked to collect it once.
+    """
+    kind = type(data)
+    if kind.__name__ == "LazyFrame" and kind.__module__.startswith("polars"):
+        raise ValueError(
+            "got a polars LazyFrame, which holds a query, not its rows; "
+            "call `.collect()` on it and pass the DataFrame."
+        )
 
 
 class PlotomicsWidget(anywidget.AnyWidget):
@@ -250,6 +280,21 @@ def _text_or_none(values: Any) -> list[str | None]:
         )
         out.append(None if missing else str(v))
     return out
+
+
+def _na_text(values: Any) -> str:
+    """Values joined for an error message, a missing one written NA as in R."""
+    return ", ".join("NA" if v is None else str(v) for v in values)
+
+
+def _not_in(values: Any, allowed: Any) -> list[str | None]:
+    """The distinct values not in ``allowed``, in order of first appearance.
+
+    As R's ``setdiff(unique(values), allowed)``: a missing value (None) is
+    listed too when ``allowed`` has no None.
+    """
+    allowed = set(allowed)
+    return [v for v in dict.fromkeys(values) if v not in allowed]
 
 
 def _category_levels(values: Any) -> list[str] | None:
@@ -307,6 +352,7 @@ def _as_matrix(matrix: Any) -> tuple[np.ndarray, list | None, list | None]:
     ``Float64`` columns with a missing value work. Anything else, a nested
     list included, goes through ``np.asarray``.
     """
+    _reject_lazy(matrix)
     # A list has an ``index`` method too, so a frame needs ``columns`` as well.
     is_frame = hasattr(matrix, "index") and hasattr(matrix, "columns")
     if is_frame:
@@ -332,11 +378,15 @@ def _as_matrix(matrix: Any) -> tuple[np.ndarray, list | None, list | None]:
         raise ValueError("`matrix` must be numeric.") from None
 
 
-def _check_labels(labels: Any, n: int, name: str) -> list[str] | None:
-    """Labels as text, checked to have one entry per row or column."""
+def _check_labels(labels: Any, n: int, name: str) -> list[str | None] | None:
+    """Labels as text, checked to have one entry per row or column.
+
+    A missing label (None, NaN, pandas NA) is None, which crosses as null, as
+    R sends an NA row or column name; the browser draws no text for it.
+    """
     if labels is None:
         return None
-    out = [str(v) for v in labels]
+    out = _text_or_none(labels)
     if len(out) != n:
         raise ValueError(f"`{name}` has {len(out)} entries; expected {n}.")
     return out

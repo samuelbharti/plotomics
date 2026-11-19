@@ -8,7 +8,16 @@ from typing import Any
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _column,
+    _na_text,
+    _not_in,
+    _text_or_none,
+    _to_float32,
+    pack_columns,
+)
 
 
 def memo_sort(
@@ -26,6 +35,9 @@ def memo_sort(
     "memo sort" cBioPortal popularised; it is what makes mutual exclusivity
     between drivers read as a staircase. With ``sort_genes=False`` the given
     gene order is kept and the samples are sorted by it.
+
+    Remaining ties go by name in code point order, which is the order R's
+    ``oncoplot_memo_sort()`` uses, so both give the same rows and columns.
 
     Exposed separately so a caller can compute the order once and reuse it for
     both an interactive widget and a static rendering, so two implementations
@@ -67,7 +79,8 @@ class Oncoplot(PlotomicsWidget):
         A pandas ``DataFrame`` or mapping of arrays of *altered pairs only*,
         with columns ``gene``, ``sample`` and ``class``. Unaltered pairs are
         simply absent; the full grid is reconstructed from ``genes`` and
-        ``samples``.
+        ``samples``. A row with a missing gene or sample is left out, as in
+        R.
     genes, samples:
         Explicit row / column order. Defaults to the memo-sorted order of the
         genes and samples present in ``data``. Given ``genes`` keep their order
@@ -76,10 +89,12 @@ class Oncoplot(PlotomicsWidget):
         samples of the cohort too.
     classes:
         Alteration classes, fixing both legend order and colour assignment.
-        Defaults to the classes present, most frequent first. A gene and
-        sample with two or more different classes is drawn as
-        ``"Multi-hit"``, in dark grey, which is added to the classes when it
-        occurs.
+        Defaults to the classes present, most frequent first, equal counts by
+        name, as in R. A missing class stops with an error, as in R, unless
+        ``classes`` holds None too: then it is a class of its own, sent as
+        null. A gene and sample with two or more different classes is drawn
+        as ``"Multi-hit"``, in dark grey, which is added to the classes when
+        it occurs.
     class_colors:
         One hex colour per entry of ``classes``. ``None`` uses the component's
         categorical palette.
@@ -156,28 +171,37 @@ class Oncoplot(PlotomicsWidget):
             raise ValueError(
                 "`data` must provide `gene`, `sample` and `class` columns."
             )
-        alt_gene = [str(v) for v in g_col]
-        alt_sample = [str(v) for v in s_col]
-        alt_class = [str(v) for v in c_col]
+        # A missing gene, sample or class is None, never the text "nan".
+        alt_gene = _text_or_none(g_col)
+        alt_sample = _text_or_none(s_col)
+        alt_class = _text_or_none(c_col)
         if not alt_gene:
             raise ValueError("`data` must contain at least one row.")
 
         if classes is None:
-            classes = [c for c, _ in Counter(alt_class).most_common()]
-        classes = [str(c) for c in classes]
-        unknown = sorted(set(alt_class) - set(classes))
+            # Most frequent first, equal counts by name in code point order,
+            # as R orders them. A missing class is not counted; it stops
+            # below, as in R, unless the given classes hold None.
+            counted = Counter(c for c in alt_class if c is not None)
+            classes = sorted(counted, key=lambda c: (-counted[c], c))
+        # A missing class given in `classes` stays None, as R keeps NA.
+        classes = _text_or_none(classes)
+        unknown = _not_in(alt_class, classes)
         if unknown:
             raise ValueError(
-                "class(es) not present in `classes`: " + ", ".join(unknown)
+                "class(es) not present in `classes`: " + _na_text(unknown)
             )
         if class_colors is not None and len(class_colors) != len(classes):
             raise ValueError("`class_colors` must have one entry per class.")
 
         # A gene and sample with two or more different classes is one cell,
         # drawn as "Multi-hit"; otherwise the last row would win silently.
+        # A row with no gene or no sample names no cell, so R and Python
+        # leave it out: it draws nothing and makes no Multi-hit.
         by_pair: dict[tuple[str, str], set[str]] = {}
         for g, s_, c in zip(alt_gene, alt_sample, alt_class):
-            by_pair.setdefault((g, s_), set()).add(c)
+            if g is not None and s_ is not None:
+                by_pair.setdefault((g, s_), set()).add(c)
         multi = {k for k, v in by_pair.items() if len(v) > 1}
         if multi:
             if MULTI_HIT not in classes:
@@ -189,8 +213,10 @@ class Oncoplot(PlotomicsWidget):
                 for g, s_, c in zip(alt_gene, alt_sample, alt_class)
             ]
 
-        genes_in = list(genes) if genes is not None else sorted(set(alt_gene))
-        samples_in = list(samples) if samples is not None else sorted(set(alt_sample))
+        present_genes = sorted({g for g in alt_gene if g is not None})
+        present_samples = sorted({s for s in alt_sample if s is not None})
+        genes_in = list(genes) if genes is not None else present_genes
+        samples_in = list(samples) if samples is not None else present_samples
         if genes is None or samples is None:
             # Given genes keep their order, and the samples follow it.
             sorted_genes, sorted_samples = memo_sort(
@@ -318,10 +344,11 @@ def _annotation(
         )
     else:
         raw = list(values)
-    vals = [None if v is None else str(v) for v in raw]
+    vals = _text_or_none(raw)
     if len(vals) != len(samples):
         raise ValueError(f"annotation '{name}' must have one value per sample.")
-    levels = sorted({v for v in vals if v is not None and v not in ("nan", "<NA>")})
+    # Code point order, as R's oncoplot() sorts the levels.
+    levels = sorted({v for v in vals if v is not None})
     idx = {lv: i for i, lv in enumerate(levels)}
     out: dict[str, Any] = {
         "name": str(name),

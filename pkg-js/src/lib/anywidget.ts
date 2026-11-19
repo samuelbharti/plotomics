@@ -1,4 +1,8 @@
-import { type PlotomicsFactory, downloadBlob } from "../core/index.js";
+import {
+  type PlotomicsFactory,
+  autoResize,
+  downloadBlob,
+} from "../core/index.js";
 import { decodeModelData } from "./decode-model.js";
 import { dropsOptionKeys } from "./rerender.js";
 
@@ -36,13 +40,29 @@ export function makeAnywidget<O>(factory: PlotomicsFactory<O>) {
         model.save_changes();
       };
       const readOptions = () =>
-        ({ ...((model.get("options") as Partial<O>) ?? {}), onSelect }) as Partial<O>;
+        ({
+          ...((model.get("options") as Partial<O>) ?? {}),
+          onSelect,
+        }) as Partial<O>;
 
       let inst = factory(host, { data: readData(), options: readOptions() });
       let lastOptions: unknown = model.get("options");
 
-      const onData = () => inst.setData(readData());
-      const onBuffer = () => inst.setData(readData());
+      // `buffer` and `schema` describe one dataset together, and `data`
+      // carries its text columns. Python can send them in one message or
+      // one at a time, so a change to any of the three draws the data
+      // again: once per message, after all of its changes have landed, and
+      // again when a schema arrives after its buffer.
+      let pending = false;
+      let closed = false;
+      const onData = () => {
+        if (pending) return;
+        pending = true;
+        queueMicrotask(() => {
+          pending = false;
+          if (!closed) inst.setData(readData());
+        });
+      };
       const onOptions = () => {
         const sent = model.get("options");
         // A key removed from the Python `options` dict would keep its old
@@ -62,7 +82,8 @@ export function makeAnywidget<O>(factory: PlotomicsFactory<O>) {
         lastOptions = sent;
       };
       model.on("change:data", onData);
-      model.on("change:buffer", onBuffer);
+      model.on("change:buffer", onData);
+      model.on("change:schema", onData);
       model.on("change:options", onOptions);
 
       // Python -> JS: `widget.export("svg"|"png")` posts a custom message; we
@@ -84,27 +105,42 @@ export function makeAnywidget<O>(factory: PlotomicsFactory<O>) {
         });
         if (m.format === "svg") {
           const svg = inst.exportSVG?.();
-          if (svg) downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "plotomics.svg");
-          else console.warn("plotomics: this component does not support SVG export");
+          if (svg)
+            downloadBlob(
+              new Blob([svg], { type: "image/svg+xml" }),
+              "plotomics.svg",
+            );
+          else
+            console.warn(
+              "plotomics: this component does not support SVG export",
+            );
         } else {
           const png = inst.exportPNG?.(2);
-          if (png) png.then((blob) => blob && downloadBlob(blob, "plotomics.png")).catch(() => {});
-          else console.warn("plotomics: this component does not support PNG export");
+          if (png)
+            png
+              .then((blob) => blob && downloadBlob(blob, "plotomics.png"))
+              .catch(() => {});
+          else
+            console.warn(
+              "plotomics: this component does not support PNG export",
+            );
         }
       };
       model.on("msg:custom", onMsg);
 
-      const ro = new ResizeObserver((entries) => {
-        const r = entries[0]?.contentRect;
-        if (r && r.width > 0) inst.resize(r.width, r.height || height);
+      // `inst` changes when the component is built again, so resize
+      // whichever instance is current.
+      const stopResize = autoResize(host, {
+        resize: (w, h) => inst.resize(w, h),
       });
-      ro.observe(host);
 
       // anywidget calls the returned function on teardown / re-render.
       return () => {
-        ro.disconnect();
+        closed = true;
+        stopResize();
         model.off("change:data", onData);
-        model.off("change:buffer", onBuffer);
+        model.off("change:buffer", onData);
+        model.off("change:schema", onData);
         model.off("change:options", onOptions);
         model.off("msg:custom", onMsg);
         inst.destroy();
