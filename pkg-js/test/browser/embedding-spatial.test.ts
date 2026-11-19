@@ -817,3 +817,36 @@ describe("spatial legend as the widget grows taller", () => {
     });
   }
 });
+
+describe("spatial panel before the image loads", () => {
+  const data = {
+    columns: { x: [5], y: [5], color: ["A"] },
+    meta: { imgWidth: 100, imgHeight: 100, spotDiameter: 4 },
+  };
+
+  it("fills the panel in a var() grid colour, and draws none for none", () => {
+    // Before the fix the canvas could not read var(), so the panel kept the
+    // background fill.
+    const el = container(300, 300);
+    el.style.setProperty("--spatial-panel", "#ff00ff");
+    instances.push(
+      createSpatial(el, {
+        data,
+        options: {
+          showLegend: false,
+          theme: { grid: "var(--spatial-panel)" },
+        },
+      }),
+    );
+    expect(pixel(el, 150, 150)).toEqual([255, 0, 255]);
+
+    const none = container(300, 300);
+    instances.push(
+      createSpatial(none, {
+        data,
+        options: { showLegend: false, theme: { grid: "none" } },
+      }),
+    );
+    expect(pixel(none, 150, 150)).toEqual([255, 255, 255]);
+  });
+});

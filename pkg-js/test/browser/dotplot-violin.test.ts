@@ -748,3 +748,26 @@ describe("violin shape", () => {
     }
   });
 });
+
+describe("dotplot colour bar units", () => {
+  it("prints every colour bar label in one unit", () => {
+    // Before the fix the bar read "980k" under "1.00M".
+    const el = container();
+    instances.push(
+      createDotplot(el, {
+        data: {
+          columns: {
+            gene: ["A", "B", "A", "B"],
+            cluster: ["x", "x", "y", "y"],
+            pct: [100, 100, 100, 100],
+            value: [980000, 990000, 1010000, 1020000],
+          },
+        },
+      }),
+    );
+    const labels = svgTexts(el).filter((s) => /^[\d.]+[kM]?$/.test(s));
+    expect(labels.length).toBeGreaterThanOrEqual(2);
+    expect(labels.some((s) => s.endsWith("k"))).toBe(false);
+    for (const s of labels) expect(s).toMatch(/M$/);
+  });
+});

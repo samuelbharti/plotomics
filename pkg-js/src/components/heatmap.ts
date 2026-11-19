@@ -47,7 +47,7 @@ import {
   serializeSVG,
   compositePNG,
   fitDomainTicks,
-  formatTick,
+  formatTicks,
   isFlatRange,
 } from "../core/index.js";
 import { releaseRegl } from "../core/gl.js";
@@ -601,7 +601,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     );
     return {
       ticks,
-      labels: ticks.map((v) => formatTick(v, step)),
+      labels: formatTicks(ticks, step),
       // A flat domain has one tick and no step.
       flat: !(step > 0),
     };

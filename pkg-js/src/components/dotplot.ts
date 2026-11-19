@@ -48,7 +48,7 @@ import {
   serializeSVG,
   compositePNG,
   fitDomainTicks,
-  formatTick,
+  formatTicks,
   isFlatRange,
 } from "../core/index.js";
 import { setCanvasColour } from "../core/paint.js";
@@ -354,7 +354,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     });
     return {
       ticks,
-      labels: ticks.map((v) => formatTick(v, step)),
+      labels: formatTicks(ticks, step),
       // A flat domain has one tick and no step.
       flat: !(step > 0),
     };

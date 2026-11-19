@@ -262,3 +262,28 @@ describe("lollipop residue axis", () => {
     }
   });
 });
+
+describe("upset number units", () => {
+  it("prints the set sizes in the unit of the intersection axis", () => {
+    // Before the fix the axis read "1.0M, 1.5M" and the set sizes
+    // "2400k, 1950k".
+    const el = container(600, 400);
+    instances.push(
+      createUpset(el, {
+        data: {
+          columns: { size: [1600000, 900000, 400000] },
+          meta: {
+            sets: ["A", "B"],
+            setSizes: [2400000, 1950000],
+            membership: [1, 0, 0, 1, 1, 1],
+          },
+        },
+      }),
+    );
+    const all = texts(el).map((t) => t.textContent ?? "");
+    expect(all).toContain("2.40M");
+    expect(all).toContain("1.95M");
+    expect(all.some((s) => /^[\d.]+k$/.test(s))).toBe(false);
+    expect(all.filter((s) => /^[\d.]+M$/.test(s)).length).toBeGreaterThan(3);
+  });
+});

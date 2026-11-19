@@ -40,7 +40,7 @@ import {
   compositePNG,
   zeroTicks,
   fitZeroTicks,
-  formatTick,
+  formatTicks,
   defaultTheme,
   type TextSizes,
   textSizes,
@@ -328,11 +328,8 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     const ssAll = setSizes();
     let countWidth = 0;
     if (ssAll) {
-      for (let k = 0; k < ssAll.length; k += 1) {
-        countWidth = Math.max(
-          countWidth,
-          textWidth(fmtInt(ssAll[k] as number), fontSizes.label),
-        );
+      for (const label of setSizeLabels(ssAll)) {
+        countWidth = Math.max(countWidth, textWidth(label, fontSizes.label));
       }
     }
     layout = layoutUpset(
@@ -486,20 +483,21 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       names.length === 0 ||
       layout.rowH / 2 + midline(rowText) - 0.8 * rowText >=
         midline(label) + 0.2 * label + 1;
-    for (const v of axis.ticks) {
+    const tickLabels = formatTicks(axis.ticks, axis.step);
+    axis.ticks.forEach((v, i) => {
       const y = tickY(v, axis.top);
-      if (v === 0 && !zeroClear) continue;
+      if (v === 0 && !zeroClear) return;
       svg.appendChild(
         text(
           layout.left - 6,
           y + midline(fontSizes.label),
-          formatTick(v, axis.step),
+          tickLabels[i] ?? "",
           theme.muted,
           "end",
           fontSizes.label,
         ),
       );
-    }
+    });
     // The y title runs up beside the bars. It stays above the "set size"
     // title, which sits in the same corner: centred on the bars when it
     // fits there, moved up when it does not, and shortened when the panel is
@@ -551,12 +549,13 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
           fontSizes.axisTitle,
         ),
       );
+      const sizeLabels = setSizeLabels(ss);
       for (let k = 0; k < names.length; k += 1) {
         svg.appendChild(
           text(
             layout.setPanelW + 3,
             layout.barBaseline + (k + 0.5) * layout.rowH + rowMid,
-            fmtInt(ss[k] as number),
+            sizeLabels[k] ?? "",
             theme.muted,
             "start",
             layout.rowText,
@@ -672,9 +671,25 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
 };
 
 // ---- small utilities ----
-function fmtInt(v: number): string {
-  if (v >= 1000) return `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}k`;
-  return String(Math.round(v));
+/**
+ * The set size labels, printed as the intersection axis prints its ticks
+ * (see formatTicks), so one figure never mixes "M" and "k": in the unit
+ * the largest needs, on the largest power of ten that every size is a
+ * multiple of, which keeps each exact. A missing size reads "NA".
+ */
+function setSizeLabels(sizes: ArrayLike<number>): string[] {
+  const values = Array.from(sizes, (v) => (typeof v === "number" ? v : NaN));
+  let step = 1;
+  while (
+    step < 1e15 &&
+    values.some((v) => Number.isFinite(v) && v !== 0) &&
+    values.every(
+      (v) => !Number.isFinite(v) || Number.isInteger(v / (step * 10)),
+    )
+  ) {
+    step *= 10;
+  }
+  return formatTicks(values, step);
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>

@@ -4,6 +4,7 @@ import {
   fitDomainTicks,
   fitZeroTicks,
   formatTick,
+  formatTicks,
   isFlatRange,
   rangeTicks,
   spaceTicks,
@@ -256,5 +257,56 @@ describe("ranges too narrow or too small for round steps", () => {
     expect(isFlatRange(8.000000000000002, 8)).toBe(true);
     expect(isFlatRange(1, 1 + 1e-11)).toBe(false);
     expect(isFlatRange(0, 1e-300)).toBe(false);
+  });
+});
+
+describe("ticks for float32 values and one unit per axis", () => {
+  it("adds no step for the noise of a float32 value", () => {
+    // Python sends 0.3 as 0.30000001192092896. Before the fix that gave an
+    // axis to 0.35, 0.1 one to 0.12, and a 0.3 + 0.1 stack one to 0.5.
+    expect(zeroTicks(Math.fround(0.3), 5).top).toBe(0.3);
+    expect(zeroTicks(Math.fround(0.1), 5).top).toBe(0.1);
+    expect(zeroTicks(Math.fround(0.3) + Math.fround(0.1), 5).top).toBe(0.4);
+    expect(fitZeroTicks(Math.fround(0.3), 300).top).toBe(0.3);
+    // 0.7 as a float32 is a little below 0.7, which dropped its tick.
+    expect(domainTicks(0, Math.fround(0.7), 7).ticks.at(-1)).toBe(0.7);
+    // A value truly past a tick still takes the next step.
+    expect(zeroTicks(0.3001, 5).top).toBeGreaterThan(0.3);
+  });
+
+  it("prints every tick of an axis in the unit the largest needs", () => {
+    // Before the fix an axis read "800k, 1.0M" or "980k, 1.00M, 1.02M".
+    expect(formatTicks([0, 2e5, 4e5, 6e5, 8e5, 1e6], 2e5)).toEqual([
+      "0",
+      "0.2M",
+      "0.4M",
+      "0.6M",
+      "0.8M",
+      "1.0M",
+    ]);
+    expect(formatTicks([980000, 1000000, 1020000], 20000)).toEqual([
+      "0.98M",
+      "1.00M",
+      "1.02M",
+    ]);
+    expect(formatTicks([0, 5000, 10000, 15000, 20000], 5000)).toEqual([
+      "0",
+      "5k",
+      "10k",
+      "15k",
+      "20k",
+    ]);
+    expect(formatTicks([0, 500, 1000, 1500], 500)).toEqual([
+      "0",
+      "500",
+      "1000",
+      "1500",
+    ]);
+    expect(formatTicks([0, 0.5, 1], 0.5, { percent: true })).toEqual([
+      "0%",
+      "50%",
+      "100%",
+    ]);
+    expect(formatTicks([1, Number.NaN], 1)).toEqual(["1", "NA"]);
   });
 });

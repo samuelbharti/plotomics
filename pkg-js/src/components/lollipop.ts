@@ -60,7 +60,7 @@ import {
   spaceTicks,
   zeroTicks,
   fitZeroTicks,
-  formatTick,
+  formatTicks,
   defaultTheme,
   type TextSizes,
   textSizes,
@@ -718,11 +718,8 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     let tickWidth = 0;
     for (let n = 1; n <= COUNT_TICKS; n += 1) {
       const t = zeroTicks(maxStack(), n, { integer: wholeCounts });
-      for (const v of t.ticks) {
-        tickWidth = Math.max(
-          tickWidth,
-          textWidth(formatTick(v, t.step), sizes.label),
-        );
+      for (const label of formatTicks(t.ticks, t.step)) {
+        tickWidth = Math.max(tickWidth, textWidth(label, sizes.label));
       }
     }
     return layoutLollipop(
@@ -817,12 +814,21 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       const cls = vclasses()[best] ?? "";
       const n = cnt[best] as number;
       const total = residueTotal(p);
+      // The unit is the y axis label, "samples" unless the caller set one,
+      // such as "frequency".
+      const unit = (opts.yLabel ?? "").trim() || "samples";
+      const amount = (v: number) =>
+        unit === "samples"
+          ? `${fmtCount(v)} sample${v === 1 ? "" : "s"}`
+          : `${esc(unit)}: ${fmtCount(v)}`;
       const more =
         total > n
-          ? `<br/>residue ${p}: ${total} sample${total === 1 ? "" : "s"} in total`
+          ? unit === "samples"
+            ? `<br/>residue ${p}: ${amount(total)} in total`
+            : `<br/>residue ${p} in total, ${amount(total)}`
           : "";
       tooltip.show(
-        `<b>${esc(lab)}</b><br/>${esc(cls)}<br/>${n} sample${n === 1 ? "" : "s"}${more}`,
+        `<b>${esc(lab)}</b><br/>${esc(cls)}<br/>${amount(n)}${more}`,
         lastPointer.x,
         lastPointer.y,
       );
@@ -980,19 +986,21 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     const tx = lollipopText(sizes);
     const mid = midline(sizes.label);
 
-    // y axis: a label at each round count, where its gridline runs.
-    for (const v of yAxis.ticks) {
+    // y axis: a label at each round count, where its gridline runs, all
+    // in the unit the largest needs.
+    const yLabels = formatTicks(yAxis.ticks, yAxis.step);
+    yAxis.ticks.forEach((v, i) => {
       svg.appendChild(
         text(
           layout.left - 8,
           py(v) + mid,
-          formatTick(v, yAxis.step),
+          yLabels[i] ?? "",
           theme.muted,
           "end",
           sizes.label,
         ),
       );
-    }
+    });
     // The y title is centred on the stems and may reach down to the axis.
     const yTitleCy = layout.top + layout.stemH / 2;
     svg.appendChild(
@@ -1317,6 +1325,14 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
 /** Pfam names run long ("P53 DNA-binding domain"); keep the informative head. */
 function shortDomain(name: string): string {
   return name.replace(/\s*(domain|motif|family)\s*$/i, "");
+}
+/**
+ * A count as text: a whole number as it is, any other to seven significant
+ * digits, which drops the noise of a float32 count from Python, so 0.3
+ * reads "0.3", not "0.30000001192092896".
+ */
+function fmtCount(v: number): string {
+  return Number.isInteger(v) ? String(v) : String(Number(v.toPrecision(7)));
 }
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
