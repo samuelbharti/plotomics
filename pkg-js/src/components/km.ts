@@ -62,11 +62,18 @@ export interface KmOptions {
   /** Mark censoring times with a tick on the curve. */
   showCensors: boolean;
   /**
-   * Draw the number-at-risk table beneath the axis. A plot too short for
-   * a row per stratum under the panel leaves the table out.
+   * Draw the number-at-risk table beneath the axis. The table comes
+   * before the legend: in a short plot the legend gives up its rows
+   * first. A plot too short for a row per stratum under the panel leaves
+   * the table out.
    */
   showRiskTable: boolean;
-  /** Draw the stratum legend, in a band above the panel. */
+  /**
+   * Draw the stratum legend, in a band above the panel. It takes the
+   * height the risk table and the curves leave it: the strata past the
+   * rows that fit are counted in a "+N more" note, and a plot with no
+   * room for one row draws no legend.
+   */
   showLegend: boolean;
   /** Start the y axis at zero (the honest default) rather than at the lowest
    * point of the lowest curve. Zooming y exaggerates separation, so this is
@@ -102,6 +109,8 @@ const CENSOR_TICK = 4;
 const MIN_PANEL = 40;
 /** Largest share of the height that the legend above the panel takes. */
 const LEGEND_SHARE = 0.2;
+/** Least share of its height with no legend that the panel keeps. */
+const LEGEND_KEEP = 2 / 3;
 /** Side of a legend swatch, and the space from it to its name, in px. */
 const SWATCH = 8;
 const SWATCH_GAP = 4;
@@ -208,14 +217,19 @@ export interface KmLayout {
 }
 
 /**
- * Frame the curve panel, with the legend in a band above it and the
- * number-at-risk table, one row per stratum, under the axis. Nothing goes
- * past the element: the table rows tighten to fit, then the table drops its
- * heading, and when even that does not fit under a panel MIN_PANEL px high
- * the table is left out. The legend takes at most a share of the height,
- * and the strata past the rows it holds go into a "+N more" note. The left
- * gutter grows with the longest stratum name in the table, up to a share of
- * the width; longer names are shortened when drawn.
+ * Frame the curve panel, with the number-at-risk table, one row per
+ * stratum, under the axis and the legend in a band above the panel.
+ * Nothing goes past the element. The table comes first: its rows tighten
+ * to fit, then it drops its heading, and when even that does not fit under
+ * a panel MIN_PANEL px high the table is left out. Without a table the x
+ * title goes first, then the time labels, and only then does the panel
+ * shrink. The legend comes last and takes its height from the panel alone:
+ * at most LEGEND_SHARE of the element, while the panel keeps MIN_PANEL px
+ * and LEGEND_KEEP of the height it has with no legend. The strata past the
+ * rows that fit go into a "+N more" note, and with no room for one row
+ * there is no legend. The left gutter grows with the longest stratum name
+ * in the table, up to a share of the width; longer names are shortened
+ * when drawn.
  */
 export function layoutKm(
   width: number,
@@ -260,53 +274,19 @@ export function layoutKm(
   // Room above the panel for the top half of the "100%" tick label.
   const topGap = Math.max(14, Math.ceil((ASCENT - 0.35) * sizes.label) + 2);
 
-  // The legend band over the panel: the first baseline sits a font box
-  // below the top, and the band ends 4 px above the "100%" label.
-  const band = (rows: number) =>
-    rows > 0
-      ? Math.ceil(ASCENT * sizes.label) +
-        (rows - 1) * t.legendStep +
-        Math.ceil(DESCENT * sizes.label) +
-        4
-      : 0;
-  // As many rows as a share of the height holds, while the panel keeps its
-  // least height and the axis its labels.
-  let maxRows = 0;
-  if (legendWidths.length > 0) {
-    maxRows = Math.max(
-      0,
-      Math.floor((LEGEND_SHARE * height - band(1)) / t.legendStep) + 1,
-    );
-    while (
-      maxRows > 0 &&
-      topGap + band(maxRows) + MIN_PANEL + t.axisOnly > height
-    ) {
-      maxRows -= 1;
-    }
-  }
-  const legendAt = (left: number) =>
-    flowLegend(legendWidths, width - left - right, maxRows, moreWidth);
-  let legend = legendAt(tableLeft);
-  let top = topGap + band(legend.rows);
-
-  // The table takes a row per stratum, at the least row height, under a
-  // panel of the least height: with its heading, else without it, else the
-  // table is left out.
-  const room = height - top - MIN_PANEL;
+  // The table and the axis labels come first, laid out with no legend. The
+  // table takes a row per stratum, at the least row height, under a panel
+  // of the least height: with its heading, else without it, else the table
+  // is left out. Without a table, the room under that panel holds the time
+  // labels and the x title, else the labels alone, else neither.
+  const room = height - topGap - MIN_PANEL;
   const tableHeading = wantTable && room >= t.gap + nGroups * t.minRowH;
   const table =
     tableHeading || (wantTable && room >= t.gapBare + nGroups * t.minRowH);
   const left = table ? tableLeft : minLeft;
-  if (left !== tableLeft) {
-    legend = legendAt(left);
-    top = topGap + band(legend.rows);
-  }
   const gap = tableHeading ? t.gap : t.gapBare;
-  // Without a table, the room under a panel of the least height holds the
-  // time labels and the x title, else the labels alone, else neither.
-  const free = height - top - MIN_PANEL;
-  const xTitle = table || free >= t.axisOnly;
-  const xTicks = xTitle || free >= t.ticksOnly;
+  const xTitle = table || room >= t.axisOnly;
+  const xTicks = xTitle || room >= t.ticksOnly;
   const riskH = table
     ? gap + nGroups * t.rowH
     : xTitle
@@ -321,11 +301,41 @@ export function layoutKm(
   const tightest = table ? gap + nGroups * t.minRowH : riskH;
   const axisY = table
     ? Math.max(
-        top + MIN_PANEL,
+        topGap + MIN_PANEL,
         height - riskH,
         Math.min(height * 0.5, height - tightest),
       )
     : height - riskH;
+
+  // The legend band over the panel: the first baseline sits a font box
+  // below the top, and the band ends 4 px above the "100%" label.
+  const band = (rows: number) =>
+    rows > 0
+      ? Math.ceil(ASCENT * sizes.label) +
+        (rows - 1) * t.legendStep +
+        Math.ceil(DESCENT * sizes.label) +
+        4
+      : 0;
+  // The band takes its height from the panel alone, so the table and the
+  // axis stay as they are: the panel keeps its least height and a share of
+  // the height it has with no legend, and the band takes at most a share of
+  // the element.
+  const alone = axisY - topGap;
+  const most = Math.min(
+    alone - Math.max(MIN_PANEL, LEGEND_KEEP * alone),
+    LEGEND_SHARE * height,
+  );
+  let maxRows = 0;
+  while (maxRows < legendWidths.length && band(maxRows + 1) <= most) {
+    maxRows += 1;
+  }
+  const legend = flowLegend(
+    legendWidths,
+    width - left - right,
+    maxRows,
+    moreWidth,
+  );
+  const top = topGap + band(legend.rows);
   const avail = height - axisY - gap;
   const riskRowH = table
     ? Math.min(t.rowH, Math.max(t.minRowH, avail / nGroups))
@@ -432,6 +442,14 @@ export function groupSlices(
  */
 export function formatTime(v: number): string {
   return Number.isInteger(v) ? String(v) : String(Number(v.toFixed(2)));
+}
+
+/**
+ * The label of a time tick, with `decimals` decimals: those every tick
+ * of the axis needs (see tickDecimals).
+ */
+function timeLabel(t: number, decimals: number): string {
+  return t.toFixed(decimals);
 }
 
 /**
@@ -569,34 +587,68 @@ export function flowLegend(
 }
 
 /**
- * The stride from one labelled time tick to the next: the least k for
- * which every k-th column from the first, centred at `xs` and `widths` px
- * wide, keeps `gapPx` from the next one kept. A column is a time label and
- * the risk-table counts under it. The strides tried are 1, 2, 4 and 5 times
- * a power of ten, so a round grid stays round: 0, 50, 100, ... thins to
- * 0, 100, 200, ... and never to 0, 150, 300, .... A stride past the last
- * column keeps the first one alone.
+ * The columns that keep their labels, by index. A column is a time label
+ * and the risk-table counts under it, centred at `xs`, in rising order, and
+ * `widths` px wide; a column keeps its label when it keeps `gapPx` from the
+ * next one kept.
+ *
+ * Evenly spaced columns keep every k-th from the first, with k the least of
+ * 1, 2, 4 and 5 times a power of ten that keeps them clear, so a round grid
+ * stays round: 0, 50, 100, ... thins to 0, 200, 400, ... and never to 0,
+ * 150, 300, .... Other columns are kept one by one: the first, and each
+ * next one that clears the last one kept. When that pass drops the last
+ * column, kept columns before it, other than the first, give way to it
+ * where that makes room.
  */
-export function tickStride(
+export function thinColumns(
   xs: readonly number[],
   widths: readonly number[],
   gapPx = COLUMN_GAP,
-): number {
+): number[] {
   const n = xs.length;
-  const clear = (k: number) => {
-    for (let i = 0; i + k < n; i += k) {
-      const need = ((widths[i] ?? 0) + (widths[i + k] ?? 0)) / 2 + gapPx;
-      if ((xs[i + k] as number) - (xs[i] as number) < need) return false;
+  if (n === 0) return [];
+  const clear = (a: number, b: number) =>
+    (xs[b] as number) - (xs[a] as number) >=
+    ((widths[a] ?? 0) + (widths[b] ?? 0)) / 2 + gapPx;
+
+  const step = n > 1 ? (xs[1] as number) - (xs[0] as number) : 0;
+  let even = true;
+  for (let i = 1; i + 1 < n && even; i += 1) {
+    const d = (xs[i + 1] as number) - (xs[i] as number);
+    even = Math.abs(d - step) <= 1e-6 * Math.max(1, Math.abs(step));
+  }
+  if (even) {
+    for (let power = 1; power < n; power *= 10) {
+      for (const f of [1, 2, 4, 5]) {
+        const k = f * power;
+        if (k >= n) continue;
+        let ok = true;
+        for (let i = 0; i + k < n && ok; i += k) ok = clear(i, i + k);
+        if (ok) {
+          return Array.from(
+            { length: Math.floor((n - 1) / k) + 1 },
+            (_, i) => i * k,
+          );
+        }
+      }
     }
-    return true;
-  };
-  for (let power = 1; power < n; power *= 10) {
-    for (const f of [1, 2, 4, 5]) {
-      const k = f * power;
-      if (k < n && clear(k)) return k;
+    return [0];
+  }
+
+  const kept = [0];
+  for (let i = 1; i < n; i += 1) {
+    if (clear(kept[kept.length - 1] as number, i)) kept.push(i);
+  }
+  const last = n - 1;
+  if (kept[kept.length - 1] !== last) {
+    let k = kept.length;
+    while (k > 1 && !clear(kept[k - 1] as number, last)) k -= 1;
+    if (clear(kept[k - 1] as number, last)) {
+      kept.length = k;
+      kept.push(last);
     }
   }
-  return Math.max(1, n);
+  return kept;
 }
 
 // ---------------------------------------------------------------------------
@@ -725,11 +777,16 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   function fit(s: string, maxW: number, size = sizes.label): string {
     return fitText(s, maxW, size, theme.fontFamily);
   }
-  /** The time ticks inside the axis, and the decimals their labels need. */
+  /**
+   * The time ticks inside the axis, in rising order and each once, and the
+   * decimals their labels need. Risk times may come in any order and with
+   * repeats.
+   */
   function timeAxis(tmax: number): { ticks: number[]; decimals: number } {
-    const all =
-      (data.meta?.riskTimes as number[] | undefined) ?? timeTicks(tmax);
-    const ticks = all.filter((t) => t <= tmax);
+    const given = data.meta?.riskTimes as ArrayLike<number> | undefined;
+    const all = given ? Array.from(given) : timeTicks(tmax);
+    const inside = all.filter((t) => Number.isFinite(t) && t <= tmax);
+    const ticks = [...new Set(inside)].sort((a, b) => a - b);
     // Every tick gets the decimals the most precise one needs, so 12.5 reads
     // "12.5" and not "13".
     return { ticks, decimals: tickDecimals(ticks) };
@@ -740,10 +797,9 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
    */
   function endWidth(tmax: number): number {
     const { ticks, decimals } = timeAxis(tmax);
-    let last = Number.NEGATIVE_INFINITY;
-    for (const t of ticks) if (t > last) last = t;
-    if (!Number.isFinite(last)) return 0;
-    let w = labelWidth(last.toFixed(decimals));
+    const last = ticks[ticks.length - 1];
+    if (last === undefined) return 0;
+    let w = labelWidth(timeLabel(last, decimals));
     const counts = data.meta?.riskCounts as number[] | undefined;
     const riskTimes = data.meta?.riskTimes as number[] | undefined;
     if (opts.showRiskTable && counts && riskTimes) {
@@ -760,9 +816,9 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     return w;
   }
   /**
-   * The time ticks that keep their labels: every k-th from the first, for
-   * the least stride k that keeps each label, and the counts of `table`
-   * under it, COLUMN_GAP px from the next one kept (see tickStride).
+   * The time ticks that keep their labels (see thinColumns). Each column is
+   * a label and the counts of `table` under it, from the first risk time
+   * equal to the tick.
    */
   function keptTimes(
     ticks: number[],
@@ -772,7 +828,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   ): number[] {
     const n = groups().length;
     const widths = ticks.map((t) => {
-      let w = labelWidth(t.toFixed(decimals));
+      let w = labelWidth(timeLabel(t, decimals));
       const j = table ? table.riskTimes.indexOf(t) : -1;
       for (let g = 0; table && j >= 0 && g < n; g += 1) {
         const c = table.counts[g * table.riskTimes.length + j];
@@ -781,11 +837,8 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       }
       return w;
     });
-    const k = tickStride(
-      ticks.map((t) => sx(t, tmax)),
-      widths,
-    );
-    return ticks.filter((_, i) => i % k === 0);
+    const xs = ticks.map((t) => sx(t, tmax));
+    return thinColumns(xs, widths).map((i) => ticks[i] as number);
   }
   function hasRiskCounts(): boolean {
     return Boolean(data.meta?.riskCounts && data.meta?.riskTimes);
@@ -1091,7 +1144,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
         text(
           x,
           layout.axisY + tx.tick,
-          t.toFixed(decimals),
+          timeLabel(t, decimals),
           theme.muted,
           "middle",
           sizes.label,
@@ -1131,7 +1184,6 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
           ),
         );
       }
-      const shown = new Set(kept);
       const nTimes = table.riskTimes.length;
       for (let g = 0; g < gl.length; g += 1) {
         const y = layout.riskTop + g * layout.riskRowH;
@@ -1147,9 +1199,10 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
             sizes.label,
           ),
         );
-        for (let j = 0; j < nTimes; j += 1) {
-          const t = table.riskTimes[j] as number;
-          if (t > tmax || !shown.has(t)) continue;
+        // A risk time given twice shows the counts of its first column.
+        for (const t of kept) {
+          const j = table.riskTimes.indexOf(t);
+          if (j < 0) continue;
           const n = table.counts[g * nTimes + j];
           if (n === undefined) continue;
           svg.appendChild(

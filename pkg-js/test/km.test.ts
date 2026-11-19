@@ -9,7 +9,7 @@ import {
   survivalLabel,
   survivalTicks,
   tickDecimals,
-  tickStride,
+  thinColumns,
   timeTicks,
 } from "../src/components/km.js";
 import { textSizes } from "../src/core/theme.js";
@@ -309,10 +309,10 @@ describe("km layout at short heights", () => {
     expect(full.table && full.tableHeading).toBe(true);
   });
 
-  it("puts the legend in a band above the panel, a fifth of the height at most", () => {
+  it("gives the legend the height the table and the curves leave it", () => {
     const widths = Array.from({ length: 8 }, () => 200);
-    for (const h of [200, 300, 500]) {
-      const l = layoutKm(
+    const lay = (h: number, legend: number[]) =>
+      layoutKm(
         780,
         h,
         8,
@@ -322,21 +322,45 @@ describe("km layout at short heights", () => {
         undefined,
         0,
         0,
-        widths,
+        legend,
         50,
       );
-      expect(l.legend.length).toBeGreaterThan(0);
-      for (const e of l.legend) {
-        expect(e.x).toBeGreaterThanOrEqual(l.left);
-        expect(e.x + e.width).toBeLessThanOrEqual(780 - l.right);
+    for (const h of [160, 200, 280, 300, 500]) {
+      const off = lay(h, []);
+      const on = lay(h, widths);
+      // The table, and the axis over it, stay as they are with no legend.
+      expect([on.table, on.tableHeading, on.axisY, on.riskRowH]).toEqual([
+        off.table,
+        off.tableHeading,
+        off.axisY,
+        off.riskRowH,
+      ]);
+      // The panel keeps 40 px and two thirds of its height.
+      expect(on.plotH).toBeGreaterThanOrEqual(
+        Math.max(40, (2 / 3) * off.plotH) - 1e-9,
+      );
+      for (const e of on.legend) {
+        expect(e.x).toBeGreaterThanOrEqual(on.left);
+        expect(e.x + e.width).toBeLessThanOrEqual(780 - on.right);
         // The font box of each entry ends above the top half of the
         // "100%" label, centred on the top of the panel.
-        expect(e.y + 0.26 * 11).toBeLessThanOrEqual(l.top - (1.08 - 0.35) * 11);
+        expect(e.y + 0.26 * 11).toBeLessThanOrEqual(
+          on.top - (1.08 - 0.35) * 11,
+        );
         expect(e.y + 0.26 * 11).toBeLessThanOrEqual(0.2 * h);
       }
-      const shown = l.legend.filter((e) => e.index >= 0).length;
-      expect(shown + l.legendMore).toBe(8);
+      if (on.legend.length > 0) {
+        const shown = on.legend.filter((e) => e.index >= 0).length;
+        expect(shown + on.legendMore).toBe(8);
+      }
     }
+    // Two rows and a "+N more" note at 280 px; at 200 px the table keeps
+    // its rows and there is no room left for a legend.
+    expect(lay(280, widths).legend.length).toBeGreaterThan(0);
+    expect(lay(280, widths).legendMore).toBeGreaterThan(0);
+    const short = lay(200, widths);
+    expect(short.table).toBe(true);
+    expect(short.legend).toEqual([]);
     // No legend widths, no band: the panel starts where it did.
     const plain = layoutKm(780, 500, 2, { showRiskTable: true });
     expect(plain.legend).toEqual([]);
@@ -388,34 +412,51 @@ describe("km time labels on a narrow axis", () => {
   // Times 0 to 1000 by 50 on a 304 px axis: 15.2 px from one to the next.
   const xs = Array.from({ length: 21 }, (_, i) => i * 15.2);
 
-  it("labels every k-th time, with k the least that keeps them clear", () => {
+  it("keeps a column when it clears the last one kept", () => {
     // Before the fix every one of the 19 px labels was drawn.
     expect(
-      tickStride(
+      thinColumns(
         xs,
         xs.map(() => 19),
       ),
-    ).toBe(2);
-    expect(tickStride([0, 100], [10, 10])).toBe(1);
+    ).toEqual(Array.from({ length: 11 }, (_, i) => 2 * i));
+    // Days 0, 7, 30, 90, 180, 365 and 730 at 0.8 px a day: only 7 is too
+    // close to a neighbour. One stride for the whole axis kept 0, 30, 180
+    // and 730.
+    const days = [0, 7, 30, 90, 180, 365, 730];
+    expect(
+      thinColumns(
+        days.map((d) => d * 0.8),
+        days.map(() => 15),
+      ),
+    ).toEqual([0, 2, 3, 4, 5, 6]);
+    expect(thinColumns([0, 100], [10, 10])).toEqual([0, 1]);
     // Two labels that cannot both fit: the first alone.
-    expect(tickStride([0, 5], [10, 10])).toBe(2);
-    expect(tickStride([], [])).toBe(1);
+    expect(thinColumns([0, 5], [10, 10])).toEqual([0]);
+    expect(thinColumns([], [])).toEqual([]);
   });
 
-  it("keeps a round grid round", () => {
+  it("keeps an even grid round", () => {
     // Three steps would clear 36 px labels, but 0, 150, 300 is not a round
     // grid: four steps give 0, 200, 400.
     expect(
-      tickStride(
+      thinColumns(
         xs,
         xs.map(() => 36),
       ),
-    ).toBe(4);
+    ).toEqual([0, 4, 8, 12, 16, 20]);
     expect(
-      tickStride(
+      thinColumns(
         xs,
         xs.map(() => 66),
       ),
-    ).toBe(5);
+    ).toEqual([0, 5, 10, 15, 20]);
+  });
+
+  it("keeps the last column where one before it can give way", () => {
+    // 60 and 75 are too close, and 60 gives way to the last time.
+    expect(thinColumns([0, 30, 60, 75], [20, 20, 20, 20])).toEqual([0, 1, 3]);
+    // The first column never gives way.
+    expect(thinColumns([0, 10], [20, 20])).toEqual([0]);
   });
 });
