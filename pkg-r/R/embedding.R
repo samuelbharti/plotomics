@@ -159,13 +159,13 @@ embedding <- function(data,
 #'   `renderEmbedding()` returns a Shiny render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-#'   ui <- fluidPage(embeddingOutput("emb"))
+#'   ui <- shiny::fluidPage(embeddingOutput("emb"))
 #'   server <- function(input, output) {
 #'     output$emb <- renderEmbedding({
 #'       embedding(data.frame(x = rnorm(200), y = rnorm(200)))
 #'     })
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name embedding-shiny
 #' @export

@@ -132,14 +132,16 @@ profile_plotomics <- bioprofile
 #'   `renderBioprofile()` returns a Shiny render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-#'   ui <- fluidPage(bioprofileOutput("bp"))
+#'   ui <- shiny::fluidPage(bioprofileOutput("bp"))
 #'   server <- function(input, output) {
 #'     output$bp <- renderBioprofile({
-#'       bioprofile(context = c("C>A", "C>G", "C>T"),
-#'                  value = c(0.3, 0.5, 0.2))
+#'       bioprofile(data.frame(
+#'         value = c(0.3, 0.5, 0.2),
+#'         group = c("C>A", "C>G", "C>T")
+#'       ))
 #'     })
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name bioprofile-shiny
 #' @export

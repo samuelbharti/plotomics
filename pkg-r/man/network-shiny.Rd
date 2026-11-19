@@ -37,7 +37,7 @@ populates \code{input$graph_selected}. It is \code{NULL} until the first click.
 }
 \examples{
 if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-  ui <- fluidPage(networkOutput("net"))
+  ui <- shiny::fluidPage(networkOutput("net"))
   server <- function(input, output) {
     output$net <- renderNetwork({
       network(
@@ -46,6 +46,6 @@ if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
       )
     })
   }
-  shinyApp(ui, server)
+  shiny::shinyApp(ui, server)
 }
 }

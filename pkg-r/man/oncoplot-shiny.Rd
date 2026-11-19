@@ -32,7 +32,7 @@ and interactive R Markdown / Quarto documents.
 }
 \examples{
 if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-  ui <- fluidPage(oncoplotOutput("onco"))
+  ui <- shiny::fluidPage(oncoplotOutput("onco"))
   server <- function(input, output) {
     output$onco <- renderOncoplot({
       oncoplot(data.frame(
@@ -41,6 +41,6 @@ if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
       ))
     })
   }
-  shinyApp(ui, server)
+  shiny::shinyApp(ui, server)
 }
 }

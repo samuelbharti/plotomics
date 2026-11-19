@@ -263,13 +263,17 @@ bv_tidy_survfit <- function(fit, risk_times = NULL) {
 #'   a Shiny render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-#'   ui <- fluidPage(kmOutput("surv"))
+#'   ui <- shiny::fluidPage(kmOutput("surv"))
 #'   server <- function(input, output) {
 #'     output$surv <- renderKm({
-#'       km(time = c(1, 2, 3, 4, 5), event = c(1, 0, 1, 0, 1))
+#'       km(data.frame(
+#'         time = c(0, 5, 12, 0, 7, 15),
+#'         surv = c(1, 0.9, 0.7, 1, 0.8, 0.5),
+#'         group = rep(c("treated", "control"), each = 3)
+#'       ))
 #'     })
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name km-shiny
 #' @export

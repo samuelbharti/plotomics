@@ -109,13 +109,13 @@ heatmap_plotomics <- bioheatmap
 #'   `renderBioheatmap()` returns a Shiny render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-#'   ui <- fluidPage(bioheatmapOutput("hm"))
+#'   ui <- shiny::fluidPage(bioheatmapOutput("hm"))
 #'   server <- function(input, output) {
 #'     output$hm <- renderBioheatmap({
 #'       bioheatmap(matrix(rnorm(200), 20, 10))
 #'     })
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name bioheatmap-shiny
 #' @export

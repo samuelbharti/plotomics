@@ -32,12 +32,12 @@ applications and interactive R Markdown / Quarto documents.
 }
 \examples{
 if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-  ui <- fluidPage(clustermapOutput("cm"))
+  ui <- shiny::fluidPage(clustermapOutput("cm"))
   server <- function(input, output) {
     output$cm <- renderClustermap({
       clustermap(matrix(rnorm(200), 20, 10))
     })
   }
-  shinyApp(ui, server)
+  shiny::shinyApp(ui, server)
 }
 }

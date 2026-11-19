@@ -162,11 +162,19 @@ upset_intersections <- function(m, max_n = NULL) {
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
 #'   sets <- list(A = c("x", "y", "z"), B = c("y", "z", "w"))
-#'   ui <- fluidPage(upsetOutput("us"))
+#'   # Elements x sets, with the set names as column names.
+#'   elements <- unique(unlist(sets))
+#'   m <- sapply(sets, function(s) elements %in% s)
+#'   ix <- upset_intersections(m)
+#'   ui <- shiny::fluidPage(upsetOutput("us"))
 #'   server <- function(input, output) {
-#'     output$us <- renderUpset(upset(upset_intersections(sets)))
+#'     output$us <- renderUpset({
+#'       upset(data.frame(size = ix$size), sets = ix$sets,
+#'             membership = ix$membership, set_sizes = ix$set_sizes,
+#'             total = ix$total)
+#'     })
 #'   }
-#'   shinyApp(ui, server)
+#'   shiny::shinyApp(ui, server)
 #' }
 #' @name upset-shiny
 #' @export
