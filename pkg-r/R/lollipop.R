@@ -25,10 +25,12 @@
 #'   assignment. Defaults to the classes present, most frequent first, equal
 #'   counts by name in code point order, as in Python.
 #' @param class_colors,domain_colors Character vectors of hex colours. `NULL`
-#'   gives the classes the component's categorical palette, and the domains a
-#'   muted palette of their own that the default class colours do not use:
-#'   `#B89E84`, `#8FB39A`, `#C78E9C`, `#86A5C1`, `#C7A46C`, `#A49AC9`,
-#'   `#86B3AE` and `#BDB27F`, repeated past the eighth domain.
+#'   gives the classes the categorical palette of the theme. The domains never
+#'   take that palette: `NULL` gives them a muted palette of their own that
+#'   the default class colours do not use, `#9F95C3`, `#B2C28C`, `#84B2C0`,
+#'   `#AD9967`, `#B6BAD4`, `#CE9B79`, `#7EA3D4` and `#7DAB88`, repeated past
+#'   the eighth domain. Each domain name is dark or light, whichever reads on
+#'   its fill.
 #' @param label_top_n Label the `n` most recurrent variants. Which stems get a
 #'   label is resolved here and sent to the browser, so a redraw, an export and
 #'   any static counterpart all label the same ones. `0` labels none.
@@ -40,7 +42,9 @@
 #' @param y_label Axis title for the recurrence axis.
 #' @param backbone_color,stem_color Hex colours for the protein backbone
 #'   rectangle and the mutation stems.
-#' @param theme Optional named list of theme overrides.
+#' @param theme Optional named list of theme overrides. Its `categorical`
+#'   palette colours the variant classes only, not the domains; see
+#'   `domain_colors`.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.

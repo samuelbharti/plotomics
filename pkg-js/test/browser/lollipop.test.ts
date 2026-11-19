@@ -475,7 +475,7 @@ describe("lollipop in a browser", () => {
       },
       meta: { length: 393, classes: ["Missense"] },
     };
-    // The R default (800 x 560), the Python default height (440), and a
+    // A tall widget, the default height of R and Python (440 px), and a
     // short widget.
     for (const [w, h] of [
       [800, 560],
@@ -725,6 +725,192 @@ describe("lollipop in a browser", () => {
     expect(hoverAt(el, x(300 + cut / 2), y)).toContain(
       "Transactivation domain 2",
     );
+  });
+
+  it("draws no gridline for a grid colour that paints nothing, and reads var()", () => {
+    // Before the fix the canvas kept its last stroke colour for a grid
+    // colour it could not read: black on the first draw, the stem colour
+    // after setOptions.
+    const data = {
+      columns: { position: [100, 300], count: [10, 20] },
+      meta: { length: 393 },
+    };
+    /** The pixels across the gridline through 10, where no stem stands. */
+    const acrossGrid = (el: HTMLElement) => {
+      const ten = yTicks(el).find(
+        (t) => t.textContent === "10",
+      ) as SVGTextElement;
+      const y = Number(ten.getAttribute("y")) - 0.35 * 11;
+      const x = 52 + ((200 - 1) / (393 - 1)) * (800 - 52 - 16);
+      return [-2, -1, 0, 1, 2].map((dy) => pixel(el, x, y + dy));
+    };
+    const white = [255, 255, 255];
+    for (const grid of ["none", "grey90", "transparent", ""]) {
+      const el = container(800, 440);
+      instances.push(
+        createLollipop(el, { data, options: { theme: { grid } } }),
+      );
+      for (const p of acrossGrid(el)) expect(p).toEqual(white);
+    }
+    const el = container(800, 440);
+    const plot = createLollipop(el, { data });
+    instances.push(plot);
+    expect(acrossGrid(el).some((p) => far(p, white) > 12)).toBe(true);
+    plot.setOptions({ theme: { grid: "none" } });
+    for (const p of acrossGrid(el)) expect(p).toEqual(white);
+    // A var() grid colour takes the custom property of the plot element.
+    const styled = container(800, 440);
+    styled.style.setProperty("--lollipop-grid", "#ff00ff");
+    instances.push(
+      createLollipop(styled, {
+        data,
+        options: { theme: { grid: "var(--lollipop-grid)" } },
+      }),
+    );
+    expect(acrossGrid(styled).some((p) => far(p, [255, 0, 255]) < 12)).toBe(
+      true,
+    );
+  });
+
+  it("uses the given domain colours, with names that read on each", () => {
+    // Before the fix a fill that was not a 3- or 6-digit hex colour, such
+    // as "gold", kept the light name: 1.3 to 1 on gold.
+    const fills = [
+      "#1B2A41",
+      "#F5E6A8",
+      "gold",
+      "yellow",
+      "#FFD700CC",
+      "rgb(20 30 60)",
+    ];
+    const names = fills.map((_, i) => `N${i + 1}`);
+    const el = container(900, 440);
+    instances.push(
+      createLollipop(el, {
+        data: {
+          columns: { position: [790], count: [1] },
+          meta: {
+            length: 800,
+            domains: names.map((name, i) => ({
+              name,
+              start: 1 + i * 120,
+              end: 100 + i * 120,
+            })),
+            domainColors: fills,
+          },
+        },
+      }),
+    );
+    const label = (name: string) =>
+      svgTexts(el).find((t) => t.textContent === name) as SVGTextElement;
+    // The canvas under a name holds its domain's fill.
+    const under = (name: string) =>
+      pixel(
+        el,
+        Number(label(name).getAttribute("x")),
+        Number(label(name).getAttribute("y")) - 4,
+      );
+    // Each opaque colour is drawn as given, not from the domain palette.
+    for (const [name, rgb] of [
+      ["N1", [0x1b, 0x2a, 0x41]],
+      ["N2", [0xf5, 0xe6, 0xa8]],
+      ["N3", [255, 215, 0]],
+      ["N4", [255, 255, 0]],
+      ["N6", [20, 30, 60]],
+    ] as const) {
+      expect(under(name)).toEqual(rgb);
+    }
+    // A dark fill takes the light name, a light one the dark name.
+    for (const name of ["N1", "N6"]) {
+      expect(label(name).getAttribute("fill")).toBe("#FBF7EF");
+    }
+    for (const name of ["N2", "N3", "N4", "N5"]) {
+      expect(label(name).getAttribute("fill")).toBe("#233038");
+    }
+    for (const name of names) {
+      const ink = hexRGB(label(name).getAttribute("fill") ?? "");
+      expect(contrast(ink, under(name))).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("keeps two count labels clear of each other when the stems have little room", () => {
+    // Before the fix a top count of 3 on a short stem area read 0, 2 and 4,
+    // with each label over the next.
+    for (const [h, fontSize, top] of [
+      [180, 16, 3],
+      [220, 22, 23],
+    ] as const) {
+      const el = container(800, h);
+      instances.push(
+        createLollipop(el, {
+          data: {
+            columns: {
+              position: [100, 200],
+              count: [top, 1],
+              class: ["Missense", "Missense"],
+            },
+            meta: { length: 393, classes: ["Missense"] },
+          },
+          options: { theme: { fontSize } },
+        }),
+      );
+      const ys = yTicks(el).map((t) => Number(t.getAttribute("y")));
+      expect(ys.length).toBeGreaterThanOrEqual(2);
+      // The digits of neighbouring labels do not touch.
+      const size = textSizes({ fontSize }).label;
+      for (let i = 1; i < ys.length; i += 1) {
+        expect(
+          (ys[i - 1] as number) - (ys[i] as number),
+        ).toBeGreaterThanOrEqual(size);
+      }
+    }
+  });
+
+  it("scales counts below 1 to the stem height, with decimal ticks", () => {
+    // Before the fix whole-number steps put a top of 0.3 on an axis from 0
+    // to 1, with the tallest stem at 30 percent of the height.
+    const el = container(800, 440);
+    instances.push(
+      createLollipop(el, {
+        data: {
+          columns: { position: [100, 200, 300], count: [0.3, 0.12, 0.05] },
+          meta: { length: 393 },
+        },
+        options: { yLabel: "frequency" },
+      }),
+    );
+    const values = yTicks(el).map((t) => Number(t.textContent));
+    expect(values.length).toBeGreaterThanOrEqual(3);
+    expect(values[0]).toBe(0);
+    const top = values[values.length - 1] as number;
+    expect(top).toBeGreaterThanOrEqual(0.3);
+    expect(top).toBeLessThan(0.5);
+  });
+
+  it("keeps the number of a numbered domain when it cuts the name", () => {
+    // Before the fix both transactivation domains read "Transac" and an
+    // ellipsis at 800 px.
+    const el = container(800, 440);
+    instances.push(
+      createLollipop(el, {
+        data: {
+          columns: { position: [300], count: [1] },
+          meta: {
+            length: 393,
+            domains: [
+              { name: "Transactivation domain 1", start: 6, end: 30 },
+              { name: "Transactivation domain 2", start: 35, end: 59 },
+            ],
+          },
+        },
+      }),
+    );
+    const cut = svgTexts(el)
+      .map((t) => t.textContent ?? "")
+      .filter((s) => s.startsWith("Tra"));
+    expect(cut).toHaveLength(2);
+    expect(cut[0]).toMatch(/^Tra\S*\u2026 1$/);
+    expect(cut[1]).toMatch(/^Tra\S*\u2026 2$/);
   });
 
   it("shows no domain tooltip when domains are hidden", () => {
