@@ -31,11 +31,15 @@ km(
 \code{time} and \code{surv} columns and optional \code{lower}, \code{upper} and \code{group}
 columns. Within a stratum, rows must be in ascending time order. A row
 with a missing \code{time} or \code{surv} (\code{NA} or \code{NaN}) is left out with a
-warning, so the step before it runs on to the next row. A \code{survfit}
-stratum is named by its levels alone: \code{"sex=1, ph.ecog=0"} becomes
-\code{"1, 0"}. A \code{survfit} of a Cox model with several \code{newdata} rows draws
-one curve per row, named by the row names of \code{newdata} (\code{"1"}, \code{"2"},
-... unless set).}
+warning, so the step before it runs on to the next row. An infinite
+\code{time} is not drawn, and a missing or infinite \code{lower} or \code{upper} leaves
+a gap in the band; both warn, as in Python, except for the bounds of a
+\code{survfit}, which are \code{NA} where the fit has no interval. A \code{survfit}
+stratum is named by its levels alone, \code{"sex=1, ph.ecog=0"} becoming
+\code{"1, 0"}, when the variable names can be read from the formula of the
+fit; otherwise the name survfit gives is kept. A \code{survfit} of a Cox
+model with several \code{newdata} rows draws one curve per row, named by the
+row names of \code{newdata} (\code{"1"}, \code{"2"}, ... unless set).}
 
 \item{groups}{Character vector fixing the stratum order and colour
 assignment. Defaults to order of appearance.}

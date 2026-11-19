@@ -434,6 +434,52 @@ describe("km rows with a missing time or survival", () => {
     });
   }
 
+  it("sizes the time axis from the rows that are drawn", () => {
+    // A row with no survival at time 100 is left out, and so is its time.
+    const el = container();
+    const km = createKm(el, {
+      data: {
+        columns: {
+          time: [0, 4, 8, 100],
+          surv: [1, 0.8, 0.6, null] as unknown as number[],
+        },
+      },
+      options: { showCI: false },
+    });
+    instances.push(km);
+    const ticks = Array.from(
+      el.querySelectorAll('svg text[text-anchor="middle"]'),
+    )
+      .map((t) => Number(t.textContent))
+      .filter((v) => Number.isFinite(v));
+    // Before the fix the time axis ran to 100.
+    expect(ticks.length).toBeGreaterThan(1);
+    expect(Math.max(...ticks)).toBeLessThanOrEqual(10);
+  });
+
+  it("sets the survival floor from the rows that are drawn", () => {
+    // A row with no time, low on the curve, does not lower the y axis.
+    const low = container();
+    const km2 = createKm(low, {
+      data: {
+        columns: {
+          time: [0, 4, null, 8] as unknown as number[],
+          surv: [1, 0.8, 0.05, 0.6],
+        },
+      },
+      options: { showCI: false, yFromZero: false },
+    });
+    instances.push(km2);
+    const percents = Array.from(
+      low.querySelectorAll('svg text[text-anchor="end"]'),
+    )
+      .map((t) => t.textContent ?? "")
+      .filter((s) => s.endsWith("%"))
+      .map((s) => Number(s.slice(0, -1)));
+    // Before the fix the axis ran from 0% to fit the 5% of the left-out row.
+    expect(Math.min(...percents)).toBeGreaterThanOrEqual(50);
+  });
+
   it("leaves out a row with no time, and hovers at the step before it", () => {
     const el = container();
     const km = createKm(el, {

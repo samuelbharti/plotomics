@@ -265,13 +265,106 @@ test_that("km() names a stratum of two variables by its levels alone", {
     c("1, FALSE", "1, TRUE", "2, FALSE", "2, TRUE")
   )
   # An operator with "=" in a variable name stays part of the name.
-  expect_equal(
-    bv_strata_labels(c(
-      "I(age >= 65)=TRUE, ph.ecog=1", "I(x == 1)=FALSE", "I(x != 2)=TRUE",
-      "g=a, b", "subtype=LumA"
-    )),
-    c("TRUE, 1", "FALSE", "TRUE", "a, b", "LumA")
+  d$x <- rep(c(1, 1, 2, 2), times = 2)
+  fit <- survival::survfit(
+    survival::Surv(t, e) ~ I(age >= 65) + I(x == 1), data = d
   )
+  expect_equal(
+    as.character(km(fit)$x$data$meta$groups),
+    c("FALSE, FALSE", "FALSE, TRUE", "TRUE, FALSE", "TRUE, TRUE")
+  )
+})
+
+test_that("km() cuts stratum names at the variable names of the fit", {
+  skip_if_not_installed("survival")
+  lung <- survival::lung
+  groups <- function(fit) as.character(km(fit)$x$data$meta$groups)
+  # Before the fix the first "=" that was not part of an operator ended a
+  # name, so this read "1,  c(0, (0,60]".
+  fit <- survival::survfit(
+    survival::Surv(time, status) ~ sex + cut(age, breaks = c(0, 60, 100)),
+    data = lung
+  )
+  expect_equal(
+    groups(fit), c("1, (0,60]", "1, (60,100]", "2, (0,60]", "2, (60,100]")
+  )
+  fit <- survival::survfit(
+    survival::Surv(time, status) ~ cut(age, breaks = c(0, 60, 100)),
+    data = lung
+  )
+  expect_equal(groups(fit), c("(0,60]", "(60,100]"))
+  # A strata() term names its levels after its own arguments:
+  # "strata(sex, ph.ecog > 1)=sex=1, ph.ecog > 1=FALSE".
+  fit <- survival::survfit(
+    survival::Surv(time, status) ~ survival::strata(sex, ph.ecog > 1),
+    data = lung
+  )
+  expect_equal(groups(fit), c("1, FALSE", "1, TRUE", "2, FALSE", "2, TRUE"))
+  # A Cox model names its strata after the arguments of strata() alone.
+  model <- survival::coxph(
+    survival::Surv(time, status) ~ age + survival::strata(sex, ph.ecog > 1),
+    data = lung
+  )
+  fit <- survival::survfit(model, newdata = data.frame(age = 50))
+  expect_equal(groups(fit), c("1, FALSE", "1, TRUE", "2, FALSE", "2, TRUE"))
+
+  # Factor levels may hold "=" and ", ".
+  d <- data.frame(
+    t = 1:6, e = 1,
+    g = factor(c("c, d=e", "c, d=e", "a=b", "a=b", "x", "x"),
+               levels = c("x", "c, d=e", "a=b")),
+    h = c("p", "q", "p", "q", "p", "q")
+  )
+  fit <- survival::survfit(survival::Surv(t, e) ~ g, data = d)
+  expect_equal(groups(fit), c("x", "c, d=e", "a=b"))
+  both <- c("x, p", "x, q", "c, d=e, p", "c, d=e, q", "a=b, p", "a=b, q")
+  fit <- survival::survfit(survival::Surv(t, e) ~ g + h, data = d)
+  expect_equal(groups(fit), both)
+  # A formula held in a variable is read too.
+  fo <- survival::Surv(t, e) ~ g + h
+  expect_equal(groups(survival::survfit(fo, data = d)), both)
+  # Without a formula to read, the names stay as survfit gives them.
+  fit <- survival::survfit(survival::Surv(t, e) ~ g, data = d)
+  fit$call <- NULL
+  expect_equal(groups(fit), c("g=x", "g=c, d=e", "g=a=b"))
+})
+
+test_that("km() stops on a multi-state fit with a clear message", {
+  skip_if_not_installed("survival")
+  lung <- survival::lung
+  fit <- survival::survfit(
+    survival::Surv(time, factor(status)) ~ 1, data = lung
+  )
+  expect_error(km(fit), "multi-state fits are not supported", fixed = TRUE)
+})
+
+test_that("km() warns about an infinite time and a missing bound, as Python does", {
+  df <- data.frame(
+    time = c(0, 5, Inf, 12), surv = c(1, 0.9, 0.8, 0.7),
+    lower = c(1, NA, 0.7, 0.6), upper = c(1, 1, NaN, Inf)
+  )
+  # Before the fix time warned in other words than Python's, and a missing
+  # bound did not warn at all.
+  warned <- testthat::capture_warnings(km(df))
+  expect_equal(warned, c(
+    "`time` has 1 infinite value(s); those rows are not drawn.",
+    paste0(
+      "`lower` has 1 value(s) that are missing (NA or NaN) or infinite; ",
+      "the confidence band has a gap there."
+    ),
+    paste0(
+      "`upper` has 2 value(s) that are missing (NA or NaN) or infinite; ",
+      "the confidence band has a gap there."
+    )
+  ))
+  # survfit leaves a bound NA where it has no interval; that draws a gap
+  # without a warning.
+  skip_if_not_installed("survival")
+  fit <- survival::survfit(
+    survival::Surv(t, e) ~ 1, data = data.frame(t = c(1, 2, 3), e = 1)
+  )
+  expect_true(anyNA(fit$lower))
+  expect_silent(km(fit))
 })
 
 test_that("km() leaves out a row with a missing time or surv, as Python does", {

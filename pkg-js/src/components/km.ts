@@ -459,10 +459,13 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   function maxTime(): number {
     const t = times();
     let m = 0;
-    // An infinite time draws nothing, so it does not stretch the axis.
-    for (let i = 0; i < t.length; i += 1) {
-      const v = t[i] as number;
-      if (Number.isFinite(v) && v > m) m = v;
+    // Only the rows that are drawn size the axis: a row left out, for a
+    // missing survival or a missing group, does not stretch it.
+    for (const sl of strata()) {
+      for (const i of sl.rows) {
+        const v = t[i] as number;
+        if (v > m) m = v;
+      }
     }
     const risk = data.meta?.riskTimes as number[] | undefined;
     if (risk) for (const r of risk) if (r > m) m = r;
@@ -473,9 +476,11 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   function yMin(): number {
     if (opts.yFromZero) return 0;
     let m = 1;
+    // Only the rows that are drawn set the floor, as they set the time axis.
+    const drawn = strata().flatMap((sl) => sl.rows);
     const scan = (col: ArrayLike<number> | undefined) => {
       if (!col) return;
-      for (let i = 0; i < col.length; i += 1) {
+      for (const i of drawn) {
         const v = col[i] as number;
         if (Number.isFinite(v) && v < m) m = v;
       }

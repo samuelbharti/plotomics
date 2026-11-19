@@ -367,6 +367,13 @@ def test_annotation_colours_follow_categories_and_colour_names():
     # A list of colours goes to the levels in order.
     a = strip(risk, ["#111111", "#222222", "#333333"])
     assert a["colors"] == ["#111111", "#222222", "#333333"]
+    # A Series indexed by level is read by name, as a dict is; before the
+    # fix it went by position, so High drew green. One indexed by row
+    # number goes by position, as a list does.
+    a = strip(risk, pd.Series(cols))
+    assert a["colors"] == ["#00AA00", "#FFA500", "#FF0000"]
+    a = strip(risk, pd.Series(["#111111", "#222222", "#333333"]))
+    assert a["colors"] == ["#111111", "#222222", "#333333"]
     msg = "annotation 'Risk' has no colour for level(s): Medium, High"
     with pytest.raises(ValueError, match=re.escape(msg)):
         strip(risk, {"Low": "#00AA00"})

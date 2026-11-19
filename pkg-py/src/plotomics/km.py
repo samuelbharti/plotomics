@@ -40,7 +40,8 @@ class Km(PlotomicsWidget):
         columns. Within a stratum, rows must be in ascending time order. A
         row with a missing ``time`` or ``surv`` (None or NaN) is left out
         with a warning, as in R, so the step before it runs on to the next
-        row.
+        row. An infinite ``time`` is not drawn, and a missing or infinite
+        ``lower`` or ``upper`` leaves a gap in the band; both warn, as in R.
     groups:
         Fixes the stratum order and colour assignment. Defaults to order of
         appearance, or to a pandas Categorical's categories.
@@ -131,31 +132,61 @@ class Km(PlotomicsWidget):
         # A missing group crosses as null (no curve), never as a group "nan".
         grp = _text_or_none(grp_col) if grp_col is not None else None
 
+        # Every column has one value per row. This is checked before any row
+        # is left out, so a short column is never paired with the wrong rows.
+        sizes = {k: int(v.size) for k, v in numeric.items()}
+        if grp is not None:
+            sizes["group"] = len(grp)
+        if len(set(sizes.values())) > 1:
+            detail = ", ".join(f"{k}={n}" for k, n in sizes.items())
+            raise ValueError(
+                f"columns must all have the same length; got {detail}"
+            )
+
         # A row with no time or no estimate has no place on the curve. Drawn,
         # it would join its neighbours with a slope; left out, the step
         # before it runs on to the next row. R leaves it out with the same
-        # warning. Columns of another length are left to pack_columns, which
-        # names them.
-        if time.size == surv.size:
-            keep = ~(np.isnan(time) | np.isnan(surv))
-            if not keep.all():
-                warnings.warn(
-                    f"Left out {int(keep.size - keep.sum())} row(s) with a "
-                    "missing `time` or `surv`.",
-                    stacklevel=2,
-                )
-                if not keep.any():
-                    raise ValueError("`data` must contain at least one row.")
-                numeric = {
-                    k: v[keep] if v.size == keep.size else v
-                    for k, v in numeric.items()
-                }
-                if grp is not None and len(grp) == keep.size:
-                    grp = [g for g, k in zip(grp, keep) if k]
+        # warning.
+        keep = ~(np.isnan(time) | np.isnan(surv))
+        if not keep.all():
+            warnings.warn(
+                f"Left out {int(keep.size - keep.sum())} row(s) with a "
+                "missing `time` or `surv`.",
+                stacklevel=2,
+            )
+            if not keep.any():
+                raise ValueError("`data` must contain at least one row.")
+            numeric = {k: v[keep] for k, v in numeric.items()}
+            if grp is not None:
+                grp = [g for g, k in zip(grp, keep) if k]
+        # An infinite time has no place on the axis, and the browser leaves
+        # the row out. An infinite surv fails the check below. R words both
+        # the same way.
+        n_inf = int(np.count_nonzero(np.isinf(numeric["time"])))
+        if n_inf:
+            warnings.warn(
+                f"`time` has {n_inf} infinite value(s); those rows are not "
+                "drawn.",
+                stacklevel=2,
+            )
         surv = numeric["surv"]
         if np.any(surv < 0) or np.any(surv > 1):
             raise ValueError("`surv` must be a probability in [0, 1].")
-        buffer, schema = pack_columns(numeric)
+        # A missing or infinite bound leaves a gap in the band, with the
+        # warning R gives.
+        for name in ("lower", "upper"):
+            if name not in numeric:
+                continue
+            n_gap = int(np.count_nonzero(~np.isfinite(numeric[name])))
+            if n_gap:
+                warnings.warn(
+                    f"`{name}` has {n_gap} value(s) that are missing (NA or "
+                    "NaN) or infinite; the confidence band has a gap there.",
+                    stacklevel=2,
+                )
+        buffer, schema = pack_columns(
+            numeric, quiet=("time", "surv", "lower", "upper")
+        )
 
         json_columns: dict[str, list] = {}
         if grp is not None:

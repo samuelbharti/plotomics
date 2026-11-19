@@ -218,6 +218,43 @@ def test_km_leaves_out_a_row_with_a_missing_time_or_surv_as_r_does():
     assert column("lower") == pytest.approx([1, 0.8, 0.6, 1, 0.4])
     assert w.data["columns"]["group"] == ["t", "t", "t", "c", "c"]
     assert w.data["meta"]["groups"] == ["t", "c"]
-    with pytest.raises(ValueError, match="at least one row"),             warnings.catch_warnings():
+    with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        Km({"time": [0.0, None], "surv": [float("nan"), 1.0]})
+        with pytest.raises(ValueError, match="at least one row"):
+            Km({"time": [0.0, None], "surv": [float("nan"), 1.0]})
+
+
+def test_km_checks_every_column_length_before_leaving_rows_out():
+    nan = float("nan")
+    # Before the fix the short lower column was paired with the rows kept,
+    # 0.9 at t = 9, where it should have raised.
+    with pytest.raises(ValueError, match="same length; got time=3, surv=3, "
+                                         "lower=2"):
+        Km({"time": [0, 5, 9], "surv": [1.0, nan, 0.5], "lower": [1.0, 0.9]})
+    with pytest.raises(ValueError, match="same length; got time=3, surv=3, "
+                                         "group=2"):
+        Km({"time": [0, 5, 9], "surv": [1.0, 0.9, 0.5], "group": ["a", "a"]})
+
+
+def test_km_warns_about_an_infinite_time_and_a_missing_bound_as_r_does():
+    d = {
+        "time": [0.0, 5.0, float("inf"), 12.0],
+        "surv": [1.0, 0.9, 0.8, 0.7],
+        "lower": [1.0, None, 0.7, 0.6],
+        "upper": [1.0, 1.0, float("nan"), float("inf")],
+    }
+    # Before the fix each column warned in words of its own, unlike R.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Km(d)
+    assert [str(c.message) for c in caught] == [
+        "`time` has 1 infinite value(s); those rows are not drawn.",
+        (
+            "`lower` has 1 value(s) that are missing (NA or NaN) or "
+            "infinite; the confidence band has a gap there."
+        ),
+        (
+            "`upper` has 2 value(s) that are missing (NA or NaN) or "
+            "infinite; the confidence band has a gap there."
+        ),
+    ]

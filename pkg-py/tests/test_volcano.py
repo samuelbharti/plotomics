@@ -230,3 +230,7 @@ def test_volcano_label_top_n_inf_labels_every_gene_as_lollipop_does():
     assert Volcano(d, label_top_n=float("inf")).options["labelTopN"] == 4
     assert Volcano(d, label_top_n=-math.inf).options["labelTopN"] == 0
     assert Volcano(d, label_top_n=2).options["labelTopN"] == 2
+    # NaN goes as null, as R sends NA; before the fix it went as NaN, which
+    # is not JSON.
+    assert Volcano(d, label_top_n=float("nan")).options["labelTopN"] is None
+    assert Volcano(d, label_top_n=np.nan).options["labelTopN"] is None
