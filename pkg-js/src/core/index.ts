@@ -39,6 +39,8 @@ export {
   categoricalColors,
   categoricalScale,
   sampleRamp,
+  ltc,
+  ltcdiv,
 } from "./color.js";
 
 export {
