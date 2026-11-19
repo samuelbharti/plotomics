@@ -33,6 +33,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseContainer,
   dpr,
   serializeSVG,
   compositePNG,
@@ -643,6 +644,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       });
     },
     destroy() {
+      releaseContainer(el);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();

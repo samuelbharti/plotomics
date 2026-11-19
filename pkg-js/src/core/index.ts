@@ -68,6 +68,8 @@ export {
   clearElement,
   createTooltip,
   measure,
+  autoResize,
+  releaseContainer,
   textWidth,
   fitText,
   dpr,

@@ -12,6 +12,8 @@
 export { makeAnywidget } from "./anywidget.js";
 export { registerComponent } from "./umd.js";
 export { decodeModelData } from "./decode-model.js";
+// Lets a plot made in plain JavaScript follow the size of its element.
+export { autoResize } from "../core/dom.js";
 
 export {
   createClustermap,

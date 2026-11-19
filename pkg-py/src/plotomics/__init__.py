@@ -23,8 +23,8 @@ from .oncoplot import Oncoplot
 from .profile import Profile
 from .spatial import Spatial
 from .treemap import Treemap
-from .upset import Upset
-from .violin import Violin
+from .upset import Upset, upset_intersections
+from .violin import Violin, violin_density
 from .volcano import Volcano
 from .embedding import Embedding
 
@@ -46,6 +46,8 @@ __all__ = [
     "Treemap",
     "Upset",
     "Violin",
+    "upset_intersections",
+    "violin_density",
     "Volcano",
     "Embedding",
 ]

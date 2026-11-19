@@ -7,7 +7,14 @@ from typing import Any
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _column,
+    _text_or_none,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Treemap(PlotomicsWidget):
@@ -141,7 +148,9 @@ class Treemap(PlotomicsWidget):
         meta: dict[str, Any] = {}
         label = _column(data, "label")
         if label is not None:
-            meta["labels"] = [str(v) for v in label]
+            # A missing label crosses as null, as R sends an NA, and the
+            # browser shows the id in its place.
+            meta["labels"] = _text_or_none(label)
 
         options: dict[str, Any] = {
             "tile": tile,

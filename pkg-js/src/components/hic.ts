@@ -32,6 +32,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseContainer,
   dpr,
   serializeSVG,
   compositePNG,
@@ -1223,6 +1224,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       });
     },
     destroy() {
+      releaseContainer(el);
       canvas.removeEventListener("mousedown", onDown);
       window.removeEventListener("mouseup", onUp);
       el.removeEventListener("mousemove", onMove);

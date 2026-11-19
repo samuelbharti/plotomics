@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import numbers
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any
 
@@ -14,6 +15,9 @@ from ._base import (
     PlotomicsWidget,
     _category_levels,
     _column,
+    _na_text,
+    _not_in,
+    _text_or_none,
     _to_float32,
     pack_columns,
 )
@@ -46,6 +50,8 @@ class Violin(PlotomicsWidget):
         expressed feature compress the rest into flat lines.
     density:
         Array shaped (violins, len(grid)) of density values.
+        :func:`violin_density` computes them from raw values the way R
+        does.
     median:
         Optional per-violin median, drawn as a tick.
     features, groups:
@@ -127,9 +133,10 @@ class Violin(PlotomicsWidget):
             raise ValueError("`density` must have one column per `grid` entry.")
 
         buffer, schema = pack_columns({"grid": g})
+        # A missing feature or group crosses as null, as R sends an NA.
         json_columns: dict[str, list] = {
-            "feature": [str(v) for v in feature],
-            "group": [str(v) for v in group],
+            "feature": _text_or_none(feature),
+            "group": _text_or_none(group),
         }
 
         if features is None:
@@ -150,11 +157,11 @@ class Violin(PlotomicsWidget):
         ):
             if order is None:
                 continue
-            order = [str(v) for v in order]
-            unknown = sorted(set(col) - set(order))
+            order = _text_or_none(order)
+            unknown = _not_in(col, order)
             if unknown:
                 raise ValueError(
-                    f"value(s) not present in `{key}`: " + ", ".join(unknown[:5])
+                    f"value(s) not present in `{key}`: " + _na_text(unknown[:5])
                 )
             meta[key] = order
         if group_colors is not None:
@@ -180,7 +187,11 @@ class Violin(PlotomicsWidget):
             med = np.asarray(median).reshape(-1)
             if med.size != n_violins:
                 raise ValueError("`median` must have one entry per violin.")
-            meta["median"] = [float(v) for v in med]
+            # A violin with no values has no median: null, as R sends NA.
+            meta["median"] = [
+                float(v) if v is not None and np.isfinite(float(v)) else None
+                for v in med
+            ]
 
         options: dict[str, Any] = {
             "violinWidth": violin_width,
@@ -201,6 +212,135 @@ class Violin(PlotomicsWidget):
             _height=height,
             **kwargs,
         )
+
+
+def violin_density(
+    values: Mapping[str, Any], n: int = 64, adjust: float = 1.0
+) -> dict[str, Any]:
+    """Kernel densities for :class:`Violin`, on one grid shared by all violins.
+
+    The same computation as R's ``violin_density()``, so the same values give
+    the same violins in R and Python: a Gaussian kernel with R's default
+    bandwidth (``bw.nrd0``) times ``adjust``, evaluated the way R's
+    ``density()`` evaluates it. Uses numpy only.
+
+    Parameters
+    ----------
+    values:
+        A mapping from a name to an array of numbers, one entry per violin, in
+        the order to draw them. A name ``"feature|group"`` gives the feature
+        and the group; a name with no ``|`` is a feature with the group ``""``.
+        Values that are not finite are left out.
+    n:
+        Number of grid points.
+    adjust:
+        Bandwidth multiplier, as in R's ``density()``.
+
+    Returns
+    -------
+    dict
+        ``data`` (``feature`` and ``group`` lists), ``grid`` (``n`` points
+        from the smallest to the largest value), ``density`` (violins x
+        ``n``; a violin with fewer than two distinct values is all zeros)
+        and ``median`` (NaN for a violin with no values), ready for
+        :class:`Violin`.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> rng = np.random.default_rng(1)
+    >>> d = violin_density({"CD3D|T": rng.normal(2, 1, 200),
+    ...                     "CD3D|B": rng.normal(0, 1, 200)})
+    >>> d["density"].shape
+    (2, 64)
+    >>> Violin(d["data"], grid=d["grid"], density=d["density"],
+    ...        median=d["median"])  # doctest: +SKIP
+    """
+    if not isinstance(values, Mapping) or len(values) == 0:
+        raise ValueError("`values` must be a named list of numeric vectors.")
+    n = int(n)
+    if n < 2:
+        raise ValueError("`n` must be at least 2.")
+    names = [str(k) for k in values.keys()]
+    vecs = []
+    for v in values.values():
+        arr = np.asarray(v, dtype=np.float64).reshape(-1)
+        vecs.append(arr[np.isfinite(arr)])
+    every = np.concatenate(vecs)
+    if every.size == 0:
+        raise ValueError("`values` contains no finite numbers.")
+    lo = float(every.min())
+    hi = float(every.max())
+    if lo == hi:
+        hi = lo + 1.0
+    grid = np.linspace(lo, hi, n)
+
+    density = np.zeros((len(vecs), n))
+    median = np.full(len(vecs), np.nan)
+    for i, v in enumerate(vecs):
+        if v.size:
+            median[i] = float(np.median(v))
+        if v.size >= 2 and np.unique(v).size >= 2:
+            density[i] = _r_density(v, lo, hi, n, adjust)
+
+    parts = [name.split("|") for name in names]
+    return {
+        "data": {
+            "feature": [p[0] for p in parts],
+            "group": [p[1] if len(p) > 1 else "" for p in parts],
+        },
+        "grid": grid,
+        "density": density,
+        "median": median,
+    }
+
+
+def _r_density(
+    x: np.ndarray, start: float, end: float, n_out: int, adjust: float
+) -> np.ndarray:
+    """R's ``density(x, from = start, to = end, n = n_out, adjust = adjust)$y``.
+
+    Gaussian kernel, ``bw.nrd0`` bandwidth, and R's method: the values are
+    binned linearly onto at least 512 points, convolved with the kernel by
+    FFT, and read off at the ``n_out`` grid points by linear interpolation.
+    """
+    nx = x.size
+    # bw.nrd0: 0.9 * min(sd, IQR / 1.34) * n^(-1/5), quantiles of type 7.
+    sd = float(np.std(x, ddof=1))
+    q75, q25 = np.percentile(x, [75, 25])
+    spread = min(sd, float(q75 - q25) / 1.34)
+    if not spread:
+        spread = sd or abs(float(x[0])) or 1.0
+    bw = adjust * 0.9 * spread * nx ** (-0.2)
+
+    n = max(n_out, 512)
+    if n > 512:
+        n = 2 ** int(np.ceil(np.log2(n)))
+    lo = start - 4 * bw
+    up = end + 4 * bw
+
+    # Linear binning (R's C_BinDist), each value weighing 1 / nx.
+    y = np.zeros(2 * n)
+    delta = (up - lo) / (n - 1)
+    pos = (x - lo) / delta
+    ix = np.floor(pos).astype(np.int64)
+    fx = pos - ix
+    w = 1.0 / nx
+    inside = (ix >= 0) & (ix <= n - 2)
+    np.add.at(y, ix[inside], w * (1 - fx[inside]))
+    np.add.at(y, ix[inside] + 1, w * fx[inside])
+    left = ix == -1
+    np.add.at(y, np.zeros(int(left.sum()), dtype=np.int64), w * fx[left])
+    right = ix == n - 1
+    np.add.at(y, ix[right], w * (1 - fx[right]))
+
+    kords = np.linspace(0.0, (2 * n - 1) / (n - 1) * (up - lo), 2 * n)
+    kords[n + 1 :] = -kords[n - 1 : 0 : -1]
+    kords = np.exp(-0.5 * (kords / bw) ** 2) / (bw * np.sqrt(2 * np.pi))
+    conv = np.fft.ifft(np.fft.fft(y) * np.conj(np.fft.fft(kords)))
+    dens = np.maximum(0.0, conv.real[:n])
+    xords = np.linspace(lo, up, n)
+    return np.interp(np.linspace(start, end, n_out), xords, dens)
 
 
 def _violin_aspect(value: Any) -> float | None:

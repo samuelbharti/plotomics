@@ -31,6 +31,15 @@ describe("heatmap helpers", () => {
     expect(s.colLabels).toEqual(["c0", "c1", "c2"]);
   });
 
+  it("reads a missing label (null from R or Python) as empty text", () => {
+    const s = readShape(
+      { nrows: 2, ncols: 2, rowLabels: ["r0", null], colLabels: [null, "c1"] },
+      4,
+    );
+    expect(s.rowLabels).toEqual(["r0", ""]);
+    expect(s.colLabels).toEqual(["", "c1"]);
+  });
+
   it("falls back to a 1 x N strip when shape is missing", () => {
     const s = readShape(undefined, 5);
     expect(s.nrows).toBe(1);

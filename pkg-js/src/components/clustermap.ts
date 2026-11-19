@@ -45,6 +45,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseContainer,
   dpr,
   serializeSVG,
   compositePNG,
@@ -303,8 +304,9 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     return {
       nrows: nr || 0,
       ncols: nc || 0,
-      rowLabels: rl.map((v) => String(v)),
-      colLabels: cl.map((v) => String(v)),
+      // A missing label (null) is empty text, not the word "null".
+      rowLabels: rl.map((v) => (v == null ? "" : String(v))),
+      colLabels: cl.map((v) => (v == null ? "" : String(v))),
       rowLinkage: meta.rowLinkage,
       colLinkage: meta.colLinkage,
     };
@@ -877,8 +879,9 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     const srcRow = rowOrder[ry] as number;
     const srcCol = colOrder[cx] as number;
     const v = cellAt(display, ncols, srcRow, srcCol);
-    const rl = rowLabels[srcRow] ?? `row ${srcRow}`;
-    const cl = colLabels[srcCol] ?? `col ${srcCol}`;
+    // A missing label names the cell by its row or column number.
+    const rl = rowLabels[srcRow] || `row ${srcRow}`;
+    const cl = colLabels[srcCol] || `col ${srcCol}`;
     tooltip.show(
       `<b>${escapeHtml(rl)}</b> × <b>${escapeHtml(cl)}</b><br/>${fmt(v)}`,
       e.clientX,
@@ -1036,6 +1039,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       });
     },
     destroy() {
+      releaseContainer(el);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();
