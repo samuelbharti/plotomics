@@ -15,9 +15,10 @@
  * canvas, never as per-cell DOM. We paint one ImageData pixel per cell into a
  * small offscreen canvas and let the GPU upscale it (nearest-neighbour) to the
  * display canvas, which stays smooth for very large matrices. When the cells
- * outnumber the pixels, they are pooled to one block per pixel first, each
- * block keeping its cell farthest from the block's mean, so a lone outlier
- * row is not lost between the pixels. The
+ * outnumber the pixels, they are mean-pooled to one block per pixel first
+ * (see `poolMean` in the core), so a lone outlier row still shows, fainter
+ * the more rows share its pixel, and a pixel is grey only when every cell
+ * under it is missing. The
  * low-cardinality overlay — dendrograms, labels, colorbar, title — is crisp
  * vector SVG so figures export cleanly.
  *
@@ -40,6 +41,7 @@ import {
   RAMPS,
   isDivergingRamp,
   matrixRamp,
+  poolMean,
   createTooltip,
   type Tooltip,
   measure,
@@ -58,7 +60,6 @@ import {
   dendrogramPositions,
   identityOrder,
   normalizePrecomputed,
-  poolBlocks,
   symmetricExtent,
   toColVectors,
   toRowVectors,
@@ -448,8 +449,8 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
 
   /**
    * The cells as an image to scale to `w` x `h` px: the one pixel per cell
-   * canvas while every row and column has a pixel, else the cells pooled
-   * to one block per pixel (see {@link poolBlocks}).
+   * canvas while every row and column has a pixel, else the cells
+   * mean-pooled to one block per pixel, in the drawn order.
    */
   function cellImage(w: number, h: number): HTMLCanvasElement {
     if (nrows <= h && ncols <= w) return cellCanvas;
@@ -458,7 +459,15 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     }
     const outR = Math.min(nrows, Math.max(1, h));
     const outC = Math.min(ncols, Math.max(1, w));
-    const pooled = poolBlocks(display, ncols, rowOrder, colOrder, outR, outC);
+    const pooled = poolMean(
+      display,
+      nrows,
+      ncols,
+      outR,
+      outC,
+      rowOrder,
+      colOrder,
+    );
     const out = document.createElement("canvas");
     out.width = outC;
     out.height = outR;

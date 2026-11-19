@@ -16,9 +16,11 @@
  * A missing cell (NaN from Python, null from R) is drawn in a neutral grey and
  * left out of the colour range and the z-score. A matrix with more rows or
  * columns than the GPU's texture limit, or than the plot has pixels, is
- * pooled for drawing, each block keeping the cell farthest from the block's
- * mean, so a lone outlier row still shows; the tooltip still reads the cell
- * under the cursor.
+ * mean-pooled for drawing (see `poolMean` in the core): each pixel shows the
+ * mean of the finite cells under it, so a lone outlier row still shows,
+ * fainter the more rows share its pixel, and a pixel is grey only when every
+ * cell under it is missing. The tooltip still reads the cell under the
+ * cursor.
  */
 import {
   type PlotomicsData,
@@ -37,6 +39,7 @@ import {
   ramp,
   isDivergingRamp,
   matrixRamp,
+  poolMean,
   serializeSVG,
   compositePNG,
 } from "../core/index.js";
@@ -172,63 +175,25 @@ export function toFloat32(values: ArrayLike<number | null>): Float32Array {
 }
 
 /**
- * Pool a row-major matrix of texture levels (see {@link normalizeToU8}) by
- * `fr` rows and `fc` columns, for a texture within the GPU's limit or a view
- * with more cells than pixels. Each block keeps the level farthest from the
- * mean of its block, so a lone outlier row or column still shows when its
- * block is drawn as one pixel: a block mean would fade it by the block size,
- * and a block maximum would hide a low one. Level 0 (a missing cell) is left
- * out, and a block with no other level stays missing.
+ * How many texels to pool `n` rows (or columns) into, for a view that shows
+ * the fraction `view` of them across `px` device pixels: all `n` while each
+ * gets a pixel or more, else `n` halved, rounded up, as many times as it
+ * takes for every texel in view to get a pixel or more, so none falls
+ * between the pixels. It is never above `max`, the GPU's texture limit.
+ * Halvings of `n` come back as the view changes, so a pooled texture can be
+ * kept and used again.
  */
-export function poolLevels(
-  levels: ArrayLike<number>,
-  nrows: number,
-  ncols: number,
-  fr: number,
-  fc: number,
-): { values: Uint8Array; nrows: number; ncols: number } {
-  const pr = Math.ceil(nrows / fr);
-  const pc = Math.ceil(ncols / fc);
-  // Levels are whole numbers up to 255, so the sums are exact.
-  const sum = new Uint32Array(pr * pc);
-  const cnt = new Uint32Array(pr * pc);
-  for (let r = 0; r < nrows; r += 1) {
-    const prow = Math.floor(r / fr) * pc;
-    for (let c = 0; c < ncols; c += 1) {
-      const v = levels[r * ncols + c] as number;
-      if (v === 0) continue;
-      const k = prow + Math.floor(c / fc);
-      sum[k] = (sum[k] as number) + v;
-      cnt[k] = (cnt[k] as number) + 1;
-    }
+export function pooledSize(
+  n: number,
+  view: number,
+  px: number,
+  max = Number.POSITIVE_INFINITY,
+): number {
+  let m = Math.min(n, max);
+  for (let k = 1; m > 1 && m * view > px + 1e-9; k += 1) {
+    m = Math.min(max, Math.ceil(n / 2 ** k));
   }
-  const out = new Uint8Array(pr * pc);
-  for (let r = 0; r < nrows; r += 1) {
-    const prow = Math.floor(r / fr) * pc;
-    for (let c = 0; c < ncols; c += 1) {
-      const v = levels[r * ncols + c] as number;
-      if (v === 0) continue;
-      const k = prow + Math.floor(c / fc);
-      const mean = (sum[k] as number) / (cnt[k] as number);
-      const kept = out[k] as number;
-      if (kept === 0 || Math.abs(v - mean) > Math.abs(kept - mean)) {
-        out[k] = v;
-      }
-    }
-  }
-  return { values: out, nrows: pr, ncols: pc };
-}
-
-/**
- * The pooling step for `cells` rows (or columns) shown across `px` device
- * pixels: 1 while each cell has a pixel or more, else the smallest power of
- * two that leaves one pooled cell a pixel or fewer. Every pooled cell then
- * covers a pixel centre, so none falls between the pixels that sample them.
- */
-export function poolStep(cells: number, px: number): number {
-  const perPx = cells / Math.max(1, px);
-  if (!(perPx > 1)) return 1;
-  return 2 ** Math.ceil(Math.log2(perPx) - 1e-9);
+  return m;
 }
 
 /**
@@ -372,21 +337,18 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   // Values after any z-scoring, kept for tooltips (when zScore is on we show the
   // z-scored value, which is what is colored).
   let scaled: Float32Array = new Float32Array(0);
-  // Texture coordinates per data coordinate: below 1 when the matrix was
-  // pooled into a texture whose blocks run past the last row or column.
-  let texScale: [number, number] = [1, 1];
   // Set when the GPU refused the matrix, so the overlay can say so.
   let drawFailed = false;
-  // The matrix as texture levels at full size, kept to pool coarser copies
-  // from, and the pooling the GPU's texture limit set for the base texture.
-  let levelBytes: Uint8Array | null = null;
-  let baseStep: [number, number] = [1, 1];
+  // The GPU's texture limit, and the rows and columns of the base texture:
+  // the matrix, mean-pooled down to the limit. Null when the value column
+  // is short of the matrix, which then goes up as it is and is refused.
+  let maxTex = Number.POSITIVE_INFINITY;
+  let baseSize: [number, number] | null = null;
   // Copies of the matrix pooled for views with more cells than pixels, by
-  // pooling step, built as pan and zoom first need them.
-  const pooled = new Map<string, PooledTexture>();
-  // The texture the next draw reads, and its scale.
+  // size, built as pan and zoom first need them.
+  const pooled = new Map<string, Texture2D>();
+  // The texture the next draw reads.
   let drawTex: Texture2D | null = null;
-  let drawScale: [number, number] = [1, 1];
   // Whether the matrix has a missing cell, found once per data or option
   // change, not on every pan or zoom.
   let anyMissing = false;
@@ -449,10 +411,9 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         precision highp float;
         uniform sampler2D valueTex;
         uniform sampler2D lut;
-        uniform vec2 texScale;
         varying vec2 uv;
         void main() {
-          float level = floor(texture2D(valueTex, uv * texScale).r * 255.0 + 0.5);
+          float level = floor(texture2D(valueTex, uv).r * 255.0 + 0.5);
           gl_FragColor = texture2D(lut, vec2((level + 0.5) / 256.0, 0.5));
         }
       `,
@@ -484,7 +445,6 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         lut: () => lutTex as Texture2D,
         viewOrigin: () => [viewX, viewY] as [number, number],
         viewSize: () => [viewW, viewH] as [number, number],
-        texScale: () => drawScale,
       },
       count: 4,
       primitive: "triangle strip",
@@ -624,7 +584,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   function uploadMatrix() {
     drawFailed = false;
     dropPooled();
-    levelBytes = null;
+    baseSize = null;
     const n = scaled.length;
     if (n === 0 || shape.nrows === 0 || shape.ncols === 0) {
       valueTex?.destroy();
@@ -637,25 +597,16 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       diverging: isDivergingRamp(rampName()),
     });
     if (!regl || reglBroken) return;
-    const bytes = normalizeToU8(scaled, domain[0], domain[1]);
+    maxTex = Math.max(1, regl.limits.maxTextureSize);
+    // Past the GPU's texture limit, mean-pool rows and columns down to it.
     // Pooling needs the whole matrix; a short value column goes up as it
     // is, and the GPU refuses it.
-    const whole = bytes.length === shape.nrows * shape.ncols;
-    levelBytes = whole ? bytes : null;
-    // Past the GPU's texture limit, pool rows and columns down to it.
-    const maxTex = Math.max(1, regl.limits.maxTextureSize);
-    const fr = Math.ceil(shape.nrows / maxTex);
-    const fc = Math.ceil(shape.ncols / maxTex);
-    baseStep = [fr, fc];
-    const base =
-      whole && (fr > 1 || fc > 1)
-        ? poolLevels(bytes, shape.nrows, shape.ncols, fr, fc)
-        : { values: bytes, nrows: shape.nrows, ncols: shape.ncols };
-    texScale = [
-      shape.ncols / (base.ncols * fc),
-      shape.nrows / (base.nrows * fr),
-    ];
-    const texOpts = textureOptions(base);
+    const whole = n === shape.nrows * shape.ncols;
+    const [mr, mc] = whole
+      ? [Math.min(shape.nrows, maxTex), Math.min(shape.ncols, maxTex)]
+      : [shape.nrows, shape.ncols];
+    baseSize = whole ? [mr, mc] : null;
+    const texOpts = textureOptions(levelsAt(mr, mc), mr, mc);
     try {
       if (valueTex) valueTex(texOpts);
       else valueTex = regl.texture(texOpts);
@@ -668,37 +619,39 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     }
   }
 
+  /** The matrix as texture levels, mean-pooled to `mr` x `mc` when smaller. */
+  function levelsAt(mr: number, mc: number): Uint8Array {
+    const values =
+      mr < shape.nrows || mc < shape.ncols
+        ? poolMean(scaled, shape.nrows, shape.ncols, mr, mc)
+        : scaled;
+    return normalizeToU8(values, domain[0], domain[1]);
+  }
+
   /**
-   * The texture for the current view, and its scale: the base texture while
-   * each of its cells has a device pixel or more, else a copy pooled by a
-   * power of two on each axis, so that no row or column falls between the
-   * pixels. Pooled copies are kept until the matrix or its colours change.
+   * The texture for the current view: the base texture while each of its
+   * texels has a device pixel or more, else the matrix pooled to fewer
+   * texels (see {@link pooledSize}), so that no row or column falls between
+   * the pixels. Pooled copies are kept until the matrix or its colours
+   * change.
    */
-  function viewTexture(): PooledTexture {
-    const base = { tex: valueTex as Texture2D, scale: texScale };
-    const bytes = levelBytes;
-    if (!regl || !bytes) return base;
-    const [fr0, fc0] = baseStep;
-    const sr = poolStep((shape.nrows * viewH) / fr0, canvas.height);
-    const sc = poolStep((shape.ncols * viewW) / fc0, canvas.width);
-    if (sr === 1 && sc === 1) return base;
-    const key = `${sr}x${sc}`;
-    let hit = pooled.get(key);
-    if (!hit) {
-      const fr = fr0 * sr;
-      const fc = fc0 * sc;
-      const p = poolLevels(bytes, shape.nrows, shape.ncols, fr, fc);
-      hit = {
-        tex: regl.texture(textureOptions(p)),
-        scale: [shape.ncols / (p.ncols * fc), shape.nrows / (p.nrows * fr)],
-      };
-      pooled.set(key, hit);
+  function viewTexture(): Texture2D {
+    const base = valueTex as Texture2D;
+    if (!regl || !baseSize) return base;
+    const mr = pooledSize(shape.nrows, viewH, canvas.height, maxTex);
+    const mc = pooledSize(shape.ncols, viewW, canvas.width, maxTex);
+    if (mr === baseSize[0] && mc === baseSize[1]) return base;
+    const key = `${mr}x${mc}`;
+    let tex = pooled.get(key);
+    if (!tex) {
+      tex = regl.texture(textureOptions(levelsAt(mr, mc), mr, mc));
+      pooled.set(key, tex);
     }
-    return hit;
+    return tex;
   }
 
   function dropPooled() {
-    for (const p of pooled.values()) p.tex.destroy();
+    for (const tex of pooled.values()) tex.destroy();
     pooled.clear();
   }
 
@@ -734,9 +687,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     try {
       regl.poll();
       regl.clear({ color: [1, 1, 1, 1], depth: 1 });
-      const view = viewTexture();
-      drawTex = view.tex;
-      drawScale = view.scale;
+      drawTex = viewTexture();
       draw();
     } catch {
       drawFailed = true;
@@ -1170,22 +1121,13 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
 };
 
 // ---- small utilities ------------------------------------------------------
-/** A texture of the matrix, and the scale from data to texture coordinates. */
-interface PooledTexture {
-  tex: Texture2D;
-  scale: [number, number];
-}
-/** Texture options for a matrix of levels, one texel per cell. */
-function textureOptions(m: {
-  values: Uint8Array;
-  nrows: number;
-  ncols: number;
-}) {
+/** Texture options for an `nrows` x `ncols` matrix of levels. */
+function textureOptions(data: Uint8Array, nrows: number, ncols: number) {
   return {
-    width: m.ncols,
-    height: m.nrows,
+    width: ncols,
+    height: nrows,
     format: "luminance" as const,
-    data: m.values,
+    data,
     min: "nearest" as const,
     mag: "nearest" as const,
     wrapS: "clamp" as const,

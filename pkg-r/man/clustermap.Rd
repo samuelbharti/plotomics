@@ -29,7 +29,9 @@ clustermap(
 labels. Values are transported row-major to the browser. A missing cell
 (\code{NA}, \code{NaN} or an infinite value) is drawn grey, and distances between
 rows or columns use the cells both have, scaled up as \code{\link[stats:dist]{stats::dist()}}
-does.}
+does. Where several rows or columns share a pixel, the pixel shows the
+mean of their finite cells, so it is grey only when all of them are
+missing.}
 
 \item{metric}{Distance metric for clustering: \code{"euclidean"} or
 \code{"correlation"} (1 - Pearson correlation).}
@@ -83,8 +85,8 @@ layer so large matrices stay smooth, while dendrograms, tick labels and the
 colorbar are crisp vector overlays. Rows and columns are agglomeratively
 clustered and reordered so structure appears as blocks along the diagonal.
 A matrix with more rows or columns than the plot has pixels is pooled for
-drawing: each block of cells shows its cell farthest from the block's mean,
-so a lone outlier row stays visible.
+drawing: each pixel shows the mean of the cells under it, so a lone
+outlier row still shows, fainter the more rows share its pixel.
 }
 \details{
 Clustering is at least \code{O(n^2)} in the number of rows/columns (it builds a

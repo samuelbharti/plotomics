@@ -35,7 +35,9 @@ heatmap_plotomics(
 \item{mat}{A numeric matrix (rows x columns). \code{rownames(mat)} and
 \code{colnames(mat)}, when present, are used as row/column tick labels. A
 missing cell (\code{NA}, \code{NaN} or an infinite value) is drawn grey and left
-out of the colour range and the z-score, with a warning.}
+out of the colour range and the z-score, with a warning. Where several
+rows or columns share a pixel, the pixel shows the mean of their
+finite cells, so it is grey only when all of them are missing.}
 
 \item{colormap}{Color ramp: sequential \code{"viridis"} or \code{"ltc"} (an earthy
 teal to sand to rust ramp), or diverging \code{"rdbu"} or \code{"ltcdiv"} (its
@@ -72,9 +74,9 @@ and zoom smoothly. The colorbar legend and row/column tick labels are drawn
 as crisp vector overlays; when rows or columns are too tight for every
 label, every second, third or fourth one is drawn, and zooming in shows
 the rest. A matrix with more rows or columns than the plot has pixels,
-or than the GPU's texture limit, is pooled for drawing: each block of
-cells shows its cell farthest from the block's mean, so a lone outlier row
-stays visible.
+or than the GPU's texture limit, is pooled for drawing: each pixel shows
+the mean of the cells under it, so a lone outlier row still shows, fainter
+the more rows share its pixel.
 }
 \details{
 The function is exported as \code{bioheatmap()} (and aliased as \code{heatmap_plotomics()})

@@ -7,8 +7,7 @@ import {
   buildRampLUT,
   tickIndices,
   toFloat32,
-  poolLevels,
-  poolStep,
+  pooledSize,
   labelEvery,
 } from "../src/components/heatmap.js";
 
@@ -160,38 +159,21 @@ describe("heatmap helpers", () => {
     expect(low).not.toEqual([0xcc, 0xcc, 0xcc]);
   });
 
-  it("pools levels to the cell farthest from its block's mean", () => {
-    // Eleven rows at the low end and one outlier row at the high end. A
-    // block mean would draw level 22, close to the low end.
-    const col = new Uint8Array(12).fill(1);
-    col[5] = 255;
-    expect([...poolLevels(col, 12, 1, 12, 1).values]).toEqual([255]);
-    // A low outlier among high levels is kept too, where a block maximum
-    // would hide it.
-    expect([...poolLevels([200, 200, 200, 10], 4, 1, 4, 1).values]).toEqual([
-      10,
-    ]);
+  it("pools to halvings of the rows until each texel has a pixel", () => {
+    // Rows that fit keep a texel each.
+    expect(pooledSize(400, 1, 424)).toBe(400);
+    expect(pooledSize(424, 1, 424)).toBe(424);
+    // 464 rows in 424 px: blocks of two rows.
+    expect(pooledSize(464, 1, 424)).toBe(232);
+    // 5000 rows: halved four times, to blocks of 15 or 16 rows.
+    expect(pooledSize(5000, 1, 424)).toBe(313);
+    // Zoomed in to an eighth of them, 625 rows in view: blocks of two.
+    expect(pooledSize(5000, 1 / 8, 424)).toBe(2500);
   });
 
-  it("leaves missing cells out of a pooled block", () => {
-    // 3 x 2 pooled by 2 rows and 2 columns: blocks [1,2,3,4] and [5,missing].
-    const p = poolLevels([1, 2, 3, 4, 5, 0], 3, 2, 2, 2);
-    expect(p.nrows).toBe(2);
-    expect(p.ncols).toBe(1);
-    // 1 and 4 are equally far from the mean of 2.5; the first one is kept.
-    expect(p.values[0]).toBe(1);
-    expect(p.values[1]).toBe(5);
-    // A block of missing cells stays missing.
-    expect(poolLevels([0, 0], 2, 1, 2, 1).values[0]).toBe(0);
-  });
-
-  it("pools by the power of two that leaves one cell a pixel or fewer", () => {
-    expect(poolStep(100, 400)).toBe(1);
-    expect(poolStep(400, 400)).toBe(1);
-    expect(poolStep(401, 400)).toBe(2);
-    expect(poolStep(5000, 400)).toBe(16);
-    expect(poolStep(6400, 400)).toBe(16);
-    expect(poolStep(6401, 400)).toBe(32);
+  it("pools to the GPU's texture limit at the most", () => {
+    expect(pooledSize(8292, 1e-4, 424, 8192)).toBe(8192);
+    expect(pooledSize(20000, 1, 424, 8192)).toBe(313);
   });
 
   it("labels every cell, every k-th cell, or none by the cell size", () => {

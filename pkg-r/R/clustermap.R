@@ -6,8 +6,8 @@
 #' colorbar are crisp vector overlays. Rows and columns are agglomeratively
 #' clustered and reordered so structure appears as blocks along the diagonal.
 #' A matrix with more rows or columns than the plot has pixels is pooled for
-#' drawing: each block of cells shows its cell farthest from the block's mean,
-#' so a lone outlier row stays visible.
+#' drawing: each pixel shows the mean of the cells under it, so a lone
+#' outlier row still shows, fainter the more rows share its pixel.
 #'
 #' Clustering is at least `O(n^2)` in the number of rows/columns (it builds a
 #' full distance matrix), so `clustermap()` only clusters automatically when a
@@ -20,7 +20,9 @@
 #'   labels. Values are transported row-major to the browser. A missing cell
 #'   (`NA`, `NaN` or an infinite value) is drawn grey, and distances between
 #'   rows or columns use the cells both have, scaled up as [stats::dist()]
-#'   does.
+#'   does. Where several rows or columns share a pixel, the pixel shows the
+#'   mean of their finite cells, so it is grey only when all of them are
+#'   missing.
 #' @param metric Distance metric for clustering: `"euclidean"` or
 #'   `"correlation"` (1 - Pearson correlation).
 #' @param linkage Agglomeration method: `"average"`, `"complete"` or `"ward"`.

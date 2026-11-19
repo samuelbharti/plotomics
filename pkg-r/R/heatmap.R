@@ -7,9 +7,9 @@
 #' as crisp vector overlays; when rows or columns are too tight for every
 #' label, every second, third or fourth one is drawn, and zooming in shows
 #' the rest. A matrix with more rows or columns than the plot has pixels,
-#' or than the GPU's texture limit, is pooled for drawing: each block of
-#' cells shows its cell farthest from the block's mean, so a lone outlier row
-#' stays visible.
+#' or than the GPU's texture limit, is pooled for drawing: each pixel shows
+#' the mean of the cells under it, so a lone outlier row still shows, fainter
+#' the more rows share its pixel.
 #'
 #' The function is exported as `bioheatmap()` (and aliased as `heatmap_plotomics()`)
 #' to avoid masking [stats::heatmap()].
@@ -17,7 +17,9 @@
 #' @param mat A numeric matrix (rows x columns). `rownames(mat)` and
 #'   `colnames(mat)`, when present, are used as row/column tick labels. A
 #'   missing cell (`NA`, `NaN` or an infinite value) is drawn grey and left
-#'   out of the colour range and the z-score, with a warning.
+#'   out of the colour range and the z-score, with a warning. Where several
+#'   rows or columns share a pixel, the pixel shows the mean of their
+#'   finite cells, so it is grey only when all of them are missing.
 #' @param colormap Color ramp: sequential `"viridis"` or `"ltc"` (an earthy
 #'   teal to sand to rust ramp), or diverging `"rdbu"` or `"ltcdiv"` (its
 #'   counterpart, neutral cream at the midpoint). `NULL` (the default) uses

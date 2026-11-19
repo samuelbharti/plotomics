@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createHeatmap } from "../../src/components/heatmap.js";
+import { buildRampLUT, createHeatmap } from "../../src/components/heatmap.js";
 import type { PlotomicsInstance } from "../../src/core/index.js";
 
 function container(width = 600, height = 480) {
@@ -83,6 +83,51 @@ function colourRuns(
     inRun = on;
   }
   return runs;
+}
+
+/** Any colour but that of 0 in viridis or the white of an empty canvas. */
+function lit(rgb: number[]): boolean {
+  const [r, g, b] = rgb;
+  return (
+    !(r === 68 && g === 1 && b === 84) && !(r === 255 && g === 255 && b === 255)
+  );
+}
+
+/** A matrix of 0 with `fill` in the given rows. */
+function withRows(nrows: number, ncols: number, rows: number[], fill = 1) {
+  const values = new Float32Array(nrows * ncols);
+  for (const r of rows) values.fill(fill, r * ncols, (r + 1) * ncols);
+  return values;
+}
+
+/** The height in device pixels of the plot of a heatmap in `container()`. */
+function plotHeight(): number {
+  const el = container();
+  const plot = createHeatmap(el, {
+    data: {
+      columns: { values: new Float32Array(40) },
+      meta: { nrows: 10, ncols: 4 },
+    },
+  });
+  const h = (el.querySelector("canvas") as HTMLCanvasElement).height;
+  plot.destroy();
+  el.remove();
+  return h;
+}
+
+/** Zoom by `factor` (below 1 zooms in) about a point of the plot canvas. */
+function zoom(el: HTMLElement, factor: number, fy = 0.5) {
+  const gl = el.querySelector("canvas") as HTMLCanvasElement;
+  const r = gl.getBoundingClientRect();
+  gl.dispatchEvent(
+    new WheelEvent("wheel", {
+      deltaY: Math.log(factor) * 1000,
+      clientX: r.left + r.width / 2,
+      clientY: r.top + fy * r.height,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
 }
 
 let instances: PlotomicsInstance<unknown>[] = [];
@@ -185,23 +230,143 @@ describe("heatmap in a browser", () => {
         data: { columns: { values }, meta: { nrows, ncols } },
       }),
     );
-    // Viridis draws 1 yellow and 0 dark purple; white is neither.
-    const yellow = (rgb: number[]) =>
-      (rgb[0] as number) > 200 && (rgb[2] as number) < 100;
-    expect(colourRuns(el, 0.5, yellow)).toBe(outliers.length);
+    // Each pixel shows the mean of its rows: an outlier row fades with the
+    // rows it shares a pixel with, but does not take the colour of 0.
+    expect(colourRuns(el, 0.5, lit)).toBe(outliers.length);
     // Zoomed in on the middle, fewer rows share a pixel; all still show.
-    const gl = el.querySelector("canvas") as HTMLCanvasElement;
-    const r = gl.getBoundingClientRect();
-    gl.dispatchEvent(
-      new WheelEvent("wheel", {
-        deltaY: -500,
-        clientX: r.left + r.width / 2,
-        clientY: r.top + r.height / 2,
-        bubbles: true,
-        cancelable: true,
+    zoom(el, Math.exp(-0.5));
+    expect(colourRuns(el, 0.5, lit)).toBe(outliers.length);
+  });
+
+  it("keeps lone outlier rows when rows are 1 to 2 times the pixels", () => {
+    // Odd rows come second in a block of two rows.
+    const nrows = plotHeight() + 40;
+    const rows = [101, 203, 305];
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: {
+          columns: { values: withRows(nrows, 4, rows) },
+          meta: { nrows, ncols: 4 },
+        },
       }),
     );
-    expect(colourRuns(el, 0.5, yellow)).toBe(outliers.length);
+    expect(colourRuns(el, 0.5, lit)).toBe(rows.length);
+  });
+
+  it("keeps lone outlier rows zoomed in to about 1.5 rows a pixel", () => {
+    const nrows = 5000;
+    const rows = [2401, 2451, 2501, 2551];
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: {
+          columns: { values: withRows(nrows, 4, rows) },
+          meta: { nrows, ncols: 4 },
+        },
+      }),
+    );
+    const h = (el.querySelector("canvas") as HTMLCanvasElement).height;
+    zoom(el, (1.5 * h) / nrows);
+    expect(colourRuns(el, 0.5, lit)).toBe(rows.length);
+  });
+
+  it("draws the last row when it is alone past the last full block", () => {
+    // 16 rows to a pooled block at most, and one row more.
+    const nrows = 16 * (Math.ceil(plotHeight() / 2) + 10) + 1;
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: {
+          columns: { values: withRows(nrows, 4, [nrows - 1]) },
+          meta: { nrows, ncols: 4 },
+        },
+      }),
+    );
+    expect(colourRuns(el, 0.5, lit)).toBe(1);
+  });
+
+  it("keeps an outlier row past the texture limit at every zoom", () => {
+    const probe = document
+      .createElement("canvas")
+      .getContext("webgl") as WebGLRenderingContext;
+    const maxTex = probe.getParameter(probe.MAX_TEXTURE_SIZE) as number;
+    // Nearly twice the limit, so the base texture pools rows two by two.
+    // The odd middle row is second in a block of two that starts at an even
+    // row, and the zoom below stays centred on it.
+    const nrows = 2 * maxTex - 1;
+    const row = maxTex - 1;
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: {
+          columns: { values: withRows(nrows, 2, [row]) },
+          meta: { nrows, ncols: 2 },
+        },
+      }),
+    );
+    const seen = [colourRuns(el, 0.5, lit)];
+    // Zoom in on the middle, step by step, down to a row or two in view.
+    for (let i = 0; i < 6; i += 1) {
+      zoom(el, Math.exp(-1.5));
+      seen.push(colourRuns(el, 0.5, lit));
+    }
+    expect(seen).toEqual([1, 1, 1, 1, 1, 1, 1]);
+  });
+
+  it("draws noise as its average, not pushed to the ends of the ramp", () => {
+    const nrows = 5000;
+    const ncols = 400;
+    const values = new Float32Array(nrows * ncols);
+    let s = 7;
+    for (let i = 0; i < values.length; i += 1) {
+      s = (s * 16807) % 2147483647;
+      values[i] = s / 2147483647;
+    }
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: { columns: { values }, meta: { nrows, ncols } },
+      }),
+    );
+    // Each pixel is an entry of the colour lookup table; find its level.
+    const lut = buildRampLUT("viridis");
+    const levelOf = new Map<number, number>();
+    for (let i = 1; i < 256; i += 1) {
+      const key =
+        (lut[i * 4] as number) * 65536 +
+        (lut[i * 4 + 1] as number) * 256 +
+        (lut[i * 4 + 2] as number);
+      levelOf.set(key, i);
+    }
+    const gl = el.querySelector("canvas") as HTMLCanvasElement;
+    const c = document.createElement("canvas");
+    c.width = gl.width;
+    c.height = gl.height;
+    const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+    ctx.drawImage(gl, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    let ends = 0;
+    let unknown = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const key =
+        (d[i] as number) * 65536 +
+        (d[i + 1] as number) * 256 +
+        (d[i + 2] as number);
+      const level = levelOf.get(key);
+      if (level === undefined) {
+        unknown += 1;
+        continue;
+      }
+      const t = (level - 1) / 254;
+      n += 1;
+      if (t <= 0.05 || t >= 0.95) ends += 1;
+    }
+    expect(unknown).toBe(0);
+    // In the data, the outer 5% at each end of the range hold 10% of the
+    // cells; pooled to their means, fewer pixels reach those ends.
+    expect(ends / n).toBeLessThan(0.1);
   });
 
   it("draws z-scores with rdbu, centred on white, when no colormap is given", () => {

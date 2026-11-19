@@ -29,8 +29,9 @@ class Clustermap(PlotomicsWidget):
     tick labels and the colorbar are crisp vector overlays. Rows and columns
     are agglomeratively clustered and reordered so structure appears as blocks
     along the diagonal. A matrix with more rows or columns than the plot has
-    pixels is pooled for drawing: each block of cells shows its cell farthest
-    from the block's mean, so a lone outlier row stays visible.
+    pixels is pooled for drawing: each pixel shows the mean of the cells under
+    it, so a lone outlier row still shows, fainter the more rows share its
+    pixel.
 
     Clustering is at least ``O(n^2)`` in the number of rows/columns (it builds a
     full distance matrix), so clustering runs automatically only when a
@@ -46,7 +47,9 @@ class Clustermap(PlotomicsWidget):
         index becomes row labels and the columns become column labels. Values
         are packed as ``float32`` and transported row-major. A missing cell
         (NaN) is drawn grey, and distances between rows or columns use the
-        cells both have, scaled up as R's ``dist()`` does.
+        cells both have, scaled up as R's ``dist()`` does. Where several rows
+        or columns share a pixel, the pixel shows the mean of their finite
+        cells, so it is grey only when all of them are missing.
     metric:
         Distance metric for clustering: ``"euclidean"`` or ``"correlation"``
         (1 - Pearson correlation).

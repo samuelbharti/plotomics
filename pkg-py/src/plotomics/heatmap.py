@@ -26,8 +26,8 @@ class Heatmap(PlotomicsWidget):
     with a million or more cells pan and zoom smoothly. The colorbar legend and
     row/column tick labels are drawn as vector overlays. A matrix with more
     rows or columns than the plot has pixels, or than the GPU's texture limit,
-    is pooled for drawing: each block of cells shows its cell farthest from
-    the block's mean, so a lone outlier row stays visible.
+    is pooled for drawing: each pixel shows the mean of the cells under it, so
+    a lone outlier row still shows, fainter the more rows share its pixel.
 
     Parameters
     ----------
@@ -36,7 +36,9 @@ class Heatmap(PlotomicsWidget):
         ``(nrows, ncols)``. For a DataFrame, the index becomes the row labels
         and the columns become the column labels. A missing cell (NaN, or NA
         in a nullable column) is drawn grey and left out of the colour range
-        and the z-score.
+        and the z-score. Where several rows or columns share a pixel, the
+        pixel shows the mean of their finite cells, so it is grey only when
+        all of them are missing.
     colormap:
         Color ramp: sequential ``"viridis"`` or ``"ltc"`` (an earthy teal to
         sand to rust ramp), or diverging ``"rdbu"`` or ``"ltcdiv"`` (its
