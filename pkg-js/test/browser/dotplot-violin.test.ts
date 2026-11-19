@@ -8,7 +8,9 @@ import {
 import {
   type PlotomicsData,
   type PlotomicsInstance,
+  defaultTheme,
   ramp,
+  textSizes,
 } from "../../src/core/index.js";
 
 function container(width = 600, height = 400) {
@@ -636,12 +638,15 @@ describe("violin shape", () => {
   it.each([
     [800, 560],
     [1440, 900],
+    [1920, 560],
+    [2560, 560],
   ])(
     "draws the widest violin 0.8 times as wide as its row is tall, %i x %i px",
     (width, height) => {
       // Filling 85% of its column, the widest violin here was 121 px wide
       // in an 84 px row at 800 x 560, and 229 px wide in a 140 px row at
-      // 1440 x 900.
+      // 1440 x 900. A floor of 0.4 times that width outgrew the cap in
+      // wide widgets: 122 px in an 84 px row at 1920 x 560.
       const rows = expectWidest(
         width,
         height,
@@ -690,19 +695,31 @@ describe("violin shape", () => {
     for (const r of rows) expect(0.3 * r.cellW).toBeLessThan(0.8 * r.rowH);
   });
 
-  it("never caps a violin under 0.4 times the width violinWidth gives it", () => {
-    // 20 features at 800 x 560: rows of about 24 px, under the floor.
+  it("never caps a violin under four times the label size", () => {
+    // 20 features at 1440 x 560: rows of about 25 px, so the cap of 0.8
+    // times the row is under the floor of 4 x 11 = 44 px.
+    const rows = expectWidest(1440, 560, panel(20, 5), {}, () => 44);
+    expect(rows).toHaveLength(20);
+    for (const r of rows) expect(0.8 * r.rowH).toBeLessThan(44 - 5);
+  });
+
+  it("grows the floor with the label size", () => {
+    const theme = { fontSize: 16 };
+    const floor = 4 * textSizes({ ...defaultTheme, ...theme }).label;
+    const rows = expectWidest(800, 560, panel(20, 5), { theme }, () => floor);
+    for (const r of rows) expect(0.8 * r.rowH).toBeLessThan(floor - 5);
+  });
+
+  it("keeps the floor within violinWidth of a narrow column", () => {
+    // 20 features by 20 groups: columns of about 33 px.
     const rows = expectWidest(
       800,
       560,
-      panel(20, 5),
+      panel(20, 20),
       {},
-      (r) => 0.4 * 0.85 * r.cellW,
+      (r) => 0.85 * r.cellW,
     );
-    expect(rows).toHaveLength(20);
-    for (const r of rows) {
-      expect(0.4 * 0.85 * r.cellW).toBeGreaterThan(0.8 * r.rowH + 5);
-    }
+    for (const r of rows) expect(0.85 * r.cellW).toBeLessThan(44 - 5);
   });
 
   it("takes the cap from violinAspect", () => {
@@ -714,5 +731,20 @@ describe("violin shape", () => {
     ["Infinity", Number.POSITIVE_INFINITY],
   ])("turns the cap off with violinAspect %s", (_, violinAspect) => {
     expectWidest(800, 560, panel(), { violinAspect }, (r) => 0.85 * r.cellW);
+  });
+
+  it("goes back to the default cap when violinAspect is unset", () => {
+    const el = container(800, 560);
+    const plot = createViolin(el, {
+      data: panel(),
+      options: { violinAspect: null },
+    });
+    instances.push(plot);
+    plot.setOptions({ violinAspect: undefined });
+    const rows = shapes(el);
+    expect(rows).toHaveLength(6);
+    for (const r of rows) {
+      expect(Math.abs(Math.max(...r.widths) - 0.8 * r.rowH)).toBeLessThan(2.5);
+    }
   });
 });

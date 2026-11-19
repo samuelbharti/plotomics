@@ -64,6 +64,36 @@ test_that("violin() passes violin_aspect, and NULL or Inf turn the cap off", {
   }
 })
 
+test_that("violin() sends violin_width and violin_aspect as plain numbers", {
+  a <- make_args()
+  json <- function(w) {
+    as.character(jsonlite::toJSON(w$preRenderHook(w)$x, auto_unbox = TRUE,
+                                  null = "null", na = "null"))
+  }
+  # A named vector reached the browser as an object and a 1 x 1 matrix
+  # as an array, which it does not read as a number.
+  for (aspect in list(c(a = 1.2), matrix(1.2))) {
+    w <- violin(a$data, a$grid, a$density, violin_aspect = aspect)
+    expect_match(json(w), '"violinAspect":1.2,', fixed = TRUE)
+  }
+  for (width in list(c(a = 0.5), matrix(0.5))) {
+    w <- violin(a$data, a$grid, a$density, violin_width = width)
+    expect_match(json(w), '"violinWidth":0.5,', fixed = TRUE)
+  }
+  expect_error(violin(a$data, a$grid, a$density, violin_width = c(0.5, 0.6)),
+               "must be in")
+})
+
+test_that("violin() keeps the argument order of earlier releases", {
+  # Calls that pass arguments by position keep working: the arguments
+  # added since come after the old ones.
+  old <- c("data", "grid", "density", "grids", "median", "features",
+           "groups", "group_colors", "violin_width", "scale_per_violin",
+           "show_median", "show_feature_labels", "show_value_axis",
+           "theme", "width", "height", "element_id")
+  expect_equal(head(names(formals(violin)), length(old)), old)
+})
+
 test_that("violin() checks violin_aspect", {
   a <- make_args()
   for (bad in list(0, -1, NA_real_, NA, TRUE, "1", c(1, 2), numeric(0))) {

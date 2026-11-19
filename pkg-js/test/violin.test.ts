@@ -4,9 +4,11 @@ import {
   gridForRow,
   layoutViolin,
   maxDensity,
+  resolveViolinAspect,
   violinMaxWidth,
   violinPolygon,
 } from "../src/components/violin.js";
+import { defaultTheme, textSizes } from "../src/core/index.js";
 
 describe("violin helpers", () => {
   it("reads a density row out of the flattened matrix", () => {
@@ -145,12 +147,39 @@ describe("violin helpers", () => {
     expect(at(40, 130, 0.5)).toBeCloseTo(20, 10);
   });
 
-  it("never caps a violin under 0.4 times its uncapped width", () => {
-    // 0.8 x 22 = 17.6 px would be under 0.4 x 0.85 x 140 = 47.6 px.
-    expect(violinMaxWidth({ cellW: 140, rowH: 22 }, 0.85, 0.8)).toBeCloseTo(
-      47.6,
-      10,
-    );
+  it("never caps a violin under four times the label size", () => {
+    const at = (cellW: number, labelSize?: number) =>
+      violinMaxWidth({ cellW, rowH: 22 }, 0.85, 0.8, labelSize);
+    // 0.8 x 22 = 17.6 px is under the floor of 4 x 11 = 44 px.
+    expect(at(140, 11)).toBe(44);
+    // The floor does not grow with the column.
+    expect(at(900, 11)).toBe(44);
+    // It grows with the text.
+    expect(at(140, 16)).toBe(64);
+    expect(at(140)).toBe(4 * textSizes(defaultTheme).label);
+    // It never takes a violin past violinWidth of its cell.
+    expect(at(40, 11)).toBeCloseTo(34, 10);
+  });
+
+  it("reads violinAspect as a cap, no cap or the default 0.8", () => {
+    expect(resolveViolinAspect(1.2)).toBe(1.2);
+    expect(resolveViolinAspect(1e-9)).toBe(1e-9);
+    expect(resolveViolinAspect(null)).toBeNull();
+    expect(resolveViolinAspect(Number.POSITIVE_INFINITY)).toBeNull();
+    const others = [
+      undefined,
+      0,
+      -1,
+      Number.NEGATIVE_INFINITY,
+      Number.NaN,
+      "1.2",
+      {},
+      [1.2],
+      true,
+    ];
+    for (const v of others) {
+      expect(resolveViolinAspect(v), String(v)).toBe(0.8);
+    }
   });
 
   it("turns the cap off for a null or infinite violinAspect", () => {

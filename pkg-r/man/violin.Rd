@@ -14,7 +14,6 @@ violin(
   groups = NULL,
   group_colors = NULL,
   violin_width = 0.85,
-  violin_aspect = 0.8,
   scale_per_violin = FALSE,
   show_median = TRUE,
   show_feature_labels = TRUE,
@@ -22,7 +21,8 @@ violin(
   theme = NULL,
   width = NULL,
   height = NULL,
-  element_id = NULL
+  element_id = NULL,
+  violin_aspect = 0.8
 )
 }
 \arguments{
@@ -49,12 +49,6 @@ palette.}
 (0, 1]. When rows are short next to the column width (many features, or
 a short or wide widget), \code{violin_aspect} can make it fill less.}
 
-\item{violin_aspect}{The largest width of the widest violin, as a multiple
-of its row height. A violin much wider than its row is tall reads as a
-flat band. The cap never makes a violin narrower than 0.4 times the
-width \code{violin_width} gives it, so with many features the violins stay
-visible. \code{NULL} turns the cap off.}
-
 \item{scale_per_violin}{Scale each violin to its own maximum rather than the
 row's. Per-row is the default so groups stay comparable within a feature.}
 
@@ -69,6 +63,13 @@ lowest.}
 \item{width, height}{Widget dimensions (any valid CSS size).}
 
 \item{element_id}{Optional explicit DOM id.}
+
+\item{violin_aspect}{The largest width of the widest violin, as a multiple
+of its row height. A violin much wider than its row is tall reads as a
+flat band. The cap never makes a violin narrower than four times the
+label text size (44 px at the default font size), so with many features
+the violins stay visible; nor wider than \code{violin_width} of its cell.
+\code{NULL} turns the cap off.}
 }
 \value{
 An \code{htmlwidget} object.
