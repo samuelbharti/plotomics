@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, _as_matrix, _check_labels, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _as_matrix,
+    _check_choice,
+    _check_labels,
+    pack_columns,
+)
 
 _METRICS = ("euclidean", "correlation")
 _LINKAGES = ("average", "complete", "ward")
-_COLORMAPS = ("viridis", "rdbu")
+_COLORMAPS = ("viridis", "rdbu", "ltc", "ltcdiv")
 
 
 class Clustermap(PlotomicsWidget):
@@ -21,7 +28,9 @@ class Clustermap(PlotomicsWidget):
     a GPU/canvas data layer so large matrices stay smooth, while dendrograms,
     tick labels and the colorbar are crisp vector overlays. Rows and columns
     are agglomeratively clustered and reordered so structure appears as blocks
-    along the diagonal.
+    along the diagonal. A matrix with more rows or columns than the plot has
+    pixels is pooled for drawing: each block of cells shows its cell farthest
+    from the block's mean, so a lone outlier row stays visible.
 
     Clustering is at least ``O(n^2)`` in the number of rows/columns (it builds a
     full distance matrix), so clustering runs automatically only when a
@@ -47,7 +56,12 @@ class Clustermap(PlotomicsWidget):
         and it assumes the euclidean metric (a warning says so for
         correlation).
     colormap:
-        Color ramp: ``"viridis"`` (sequential) or ``"rdbu"`` (diverging).
+        Color ramp: sequential ``"viridis"`` or ``"ltc"`` (an earthy teal to
+        sand to rust ramp), or diverging ``"rdbu"`` or ``"ltcdiv"`` (its
+        counterpart, neutral cream at the midpoint), whose range is symmetric
+        about zero. ``None`` (the default) uses ``"rdbu"`` when ``z_score`` is
+        on, so values above and below the row mean get opposite colours, and
+        ``"viridis"`` otherwise.
     z_score:
         Standardize each row to mean 0 / sd 1 before coloring.
     cluster_rows, cluster_cols:
@@ -90,7 +104,7 @@ class Clustermap(PlotomicsWidget):
         *,
         metric: str = "euclidean",
         linkage: str = "average",
-        colormap: str = "viridis",
+        colormap: Literal["viridis", "rdbu", "ltc", "ltcdiv"] | None = None,
         z_score: bool = False,
         cluster_rows: bool = True,
         cluster_cols: bool = True,
@@ -120,8 +134,8 @@ class Clustermap(PlotomicsWidget):
                 f"metric={metric!r} its merge heights have no clear meaning.",
                 stacklevel=2,
             )
-        if colormap not in _COLORMAPS:
-            raise ValueError("`colormap` must be 'viridis' or 'rdbu'.")
+        if colormap is not None:
+            _check_choice(colormap, "colormap", _COLORMAPS)
 
         arr, inferred_rows, inferred_cols = _as_matrix(matrix)
         if arr.ndim != 2:
@@ -166,6 +180,8 @@ class Clustermap(PlotomicsWidget):
         if col_linkage is not None:
             meta["colLinkage"] = col_linkage
 
+        # A None colormap lets the browser pick: "rdbu" for z-scores and
+        # "viridis" otherwise.
         options: dict[str, Any] = {
             "metric": metric,
             "linkage": linkage,

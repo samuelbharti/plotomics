@@ -5,6 +5,9 @@
 #' layer so large matrices stay smooth, while dendrograms, tick labels and the
 #' colorbar are crisp vector overlays. Rows and columns are agglomeratively
 #' clustered and reordered so structure appears as blocks along the diagonal.
+#' A matrix with more rows or columns than the plot has pixels is pooled for
+#' drawing: each block of cells shows its cell farthest from the block's mean,
+#' so a lone outlier row stays visible.
 #'
 #' Clustering is at least `O(n^2)` in the number of rows/columns (it builds a
 #' full distance matrix), so `clustermap()` only clusters automatically when a
@@ -24,7 +27,12 @@
 #'   `"ward"` is Ward's method as `hclust(method = "ward.D2")` and scipy
 #'   compute it, and it assumes the euclidean metric (a warning says so for
 #'   correlation).
-#' @param colormap Color ramp: `"viridis"` (sequential) or `"rdbu"` (diverging).
+#' @param colormap Color ramp: sequential `"viridis"` or `"ltc"` (an earthy
+#'   teal to sand to rust ramp), or diverging `"rdbu"` or `"ltcdiv"` (its
+#'   counterpart, neutral cream at the midpoint), whose range is symmetric
+#'   about zero. `NULL` (the default) uses `"rdbu"` when `z_score` is `TRUE`,
+#'   so values above and below the row mean get opposite colours, and
+#'   `"viridis"` otherwise.
 #' @param z_score Standardize each row to mean 0 / sd 1 before coloring.
 #' @param cluster_rows,cluster_cols Cluster and reorder rows / columns. Ignored
 #'   for an axis when a precomputed `row_linkage` / `col_linkage` is supplied.
@@ -58,7 +66,7 @@
 clustermap <- function(mat,
                        metric = c("euclidean", "correlation"),
                        linkage = c("average", "complete", "ward"),
-                       colormap = c("viridis", "rdbu"),
+                       colormap = NULL,
                        z_score = FALSE,
                        cluster_rows = TRUE,
                        cluster_cols = TRUE,
@@ -89,7 +97,9 @@ clustermap <- function(mat,
       call. = FALSE
     )
   }
-  colormap <- match.arg(colormap)
+  if (!is.null(colormap)) {
+    colormap <- match.arg(colormap, c("viridis", "rdbu", "ltc", "ltcdiv"))
+  }
 
   nr <- nrow(mat)
   nc <- ncol(mat)
@@ -114,7 +124,6 @@ clustermap <- function(mat,
   options <- list(
     metric = metric,
     linkage = linkage,
-    colormap = colormap,
     zScore = z_score,
     clusterRows = cluster_rows,
     clusterCols = cluster_cols,
@@ -123,6 +132,9 @@ clustermap <- function(mat,
     showLabels = show_labels,
     legendTitle = legend_title
   )
+  # A NULL colormap drops the key, and the browser then draws "rdbu" for
+  # z-scores and "viridis" otherwise.
+  options$colormap <- colormap
   if (!is.null(theme)) options$theme <- theme
 
   plotomics_widget(

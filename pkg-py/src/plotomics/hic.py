@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, _column, pack_columns
+from ._base import STATIC, PlotomicsWidget, _check_choice, _column, pack_columns
+
+_COLORMAPS = ("viridis", "rdbu", "ltc", "ltcdiv")
 
 
 class HiC(PlotomicsWidget):
@@ -37,8 +39,9 @@ class HiC(PlotomicsWidget):
     chrom:
         Optional chromosome name shown as the axis title.
     colormap:
-        Colormap for intensity: sequential ``"viridis"`` (default) or diverging
-        ``"rdbu"``.
+        Colormap for intensity: sequential ``"viridis"`` (default) or ``"ltc"``
+        (an earthy teal to sand to rust ramp), or diverging ``"rdbu"`` or
+        ``"ltcdiv"`` (its counterpart, neutral cream at the midpoint).
     transform:
         Intensity transform, ``"log"`` (default) or ``"linear"``.
     vmax:
@@ -84,7 +87,7 @@ class HiC(PlotomicsWidget):
         n: int | None = None,
         bin_size: float | None = None,
         chrom: str | None = None,
-        colormap: str = "viridis",
+        colormap: Literal["viridis", "rdbu", "ltc", "ltcdiv"] = "viridis",
         transform: str = "log",
         vmax: float | None = None,
         vmax_percentile: float | None = None,
@@ -97,8 +100,7 @@ class HiC(PlotomicsWidget):
     ) -> None:
         if transform not in ("log", "linear"):
             raise ValueError("`transform` must be 'log' or 'linear'.")
-        if colormap not in ("viridis", "rdbu"):
-            raise ValueError("`colormap` must be 'viridis' or 'rdbu'.")
+        _check_choice(colormap, "colormap", _COLORMAPS)
 
         columns: dict[str, Any] = {}
 

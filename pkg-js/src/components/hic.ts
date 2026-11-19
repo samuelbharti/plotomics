@@ -25,6 +25,7 @@ import {
   type PlotomicsFactory,
   type PlotomicsInstance,
   type PlotomicsTheme,
+  type RampName,
   resolveTheme,
   textSizes,
   textWidth,
@@ -41,11 +42,15 @@ import { releaseRegl } from "../core/gl.js";
 import createREGL from "regl";
 import type { Regl, Texture2D, DrawCommand } from "regl";
 
-export type HicColormap = "viridis" | "rdbu";
+/** Any colour ramp of the core: "viridis", "rdbu", "ltc" or "ltcdiv". */
+export type HicColormap = RampName;
 export type HicTransform = "log" | "linear";
 
 export interface HicOptions {
-  /** Colormap for intensity: sequential `"viridis"` or diverging `"rdbu"`. */
+  /**
+   * Colormap for intensity: sequential `"viridis"` or `"ltc"`, or diverging
+   * `"rdbu"` or `"ltcdiv"`.
+   */
   colormap: HicColormap;
   /** Intensity transform applied before color mapping. */
   transform: HicTransform;

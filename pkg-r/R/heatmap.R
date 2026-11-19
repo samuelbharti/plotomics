@@ -6,8 +6,10 @@
 #' and zoom smoothly. The colorbar legend and row/column tick labels are drawn
 #' as crisp vector overlays; when rows or columns are too tight for every
 #' label, every second, third or fourth one is drawn, and zooming in shows
-#' the rest. A matrix larger than the GPU's texture limit is averaged down to
-#' the limit for drawing.
+#' the rest. A matrix with more rows or columns than the plot has pixels,
+#' or than the GPU's texture limit, is pooled for drawing: each block of
+#' cells shows its cell farthest from the block's mean, so a lone outlier row
+#' stays visible.
 #'
 #' The function is exported as `bioheatmap()` (and aliased as `heatmap_plotomics()`)
 #' to avoid masking [stats::heatmap()].
@@ -16,12 +18,17 @@
 #'   `colnames(mat)`, when present, are used as row/column tick labels. A
 #'   missing cell (`NA`, `NaN` or an infinite value) is drawn grey and left
 #'   out of the colour range and the z-score, with a warning.
-#' @param colormap Color ramp: `"viridis"` (sequential) or `"rdbu"` (diverging).
+#' @param colormap Color ramp: sequential `"viridis"` or `"ltc"` (an earthy
+#'   teal to sand to rust ramp), or diverging `"rdbu"` or `"ltcdiv"` (its
+#'   counterpart, neutral cream at the midpoint). `NULL` (the default) uses
+#'   `"rdbu"` when `z_score` is `TRUE`, so values above and below the row
+#'   mean get opposite colours, and `"viridis"` otherwise.
 #' @param z_score Logical; if `TRUE`, each row is z-score normalized before
 #'   coloring (a row-centered heatmap).
 #' @param vmin,vmax Lower/upper clamp of the color domain. `NULL` (the default)
-#'   auto-scales from the data; for `"rdbu"` the auto domain is symmetric about
-#'   zero.
+#'   auto-scales from the data. For a diverging colormap the auto domain is
+#'   symmetric about zero, and a positive `vmax` or a negative `vmin` given
+#'   alone is mirrored about zero, so zero keeps the neutral colour.
 #' @param show_colorbar Logical; draw the colorbar legend.
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
 #'   merged over the component defaults in the browser. `NULL` uses the default
@@ -37,7 +44,7 @@
 #' bioheatmap(m, z_score = TRUE)
 #' @export
 bioheatmap <- function(mat,
-                       colormap = c("viridis", "rdbu"),
+                       colormap = NULL,
                        z_score = FALSE,
                        vmin = NULL,
                        vmax = NULL,
@@ -49,7 +56,9 @@ bioheatmap <- function(mat,
   if (!is.matrix(mat) || !is.numeric(mat)) {
     stop("`mat` must be a numeric matrix.", call. = FALSE)
   }
-  colormap <- match.arg(colormap)
+  if (!is.null(colormap)) {
+    colormap <- match.arg(colormap, c("viridis", "rdbu", "ltc", "ltcdiv"))
+  }
 
   nrows <- nrow(mat)
   ncols <- ncol(mat)
@@ -71,12 +80,13 @@ bioheatmap <- function(mat,
   }
 
   options <- list(
-    colormap = colormap,
     zScore = z_score,
     showColorbar = show_colorbar
   )
-  # A NULL clamp drops the key (assigning NULL removes a list element), and the
-  # browser then uses its default, which is "auto".
+  # A NULL colormap or clamp drops the key (assigning NULL removes a list
+  # element), and the browser then uses its default: "rdbu" for z-scores and
+  # "viridis" otherwise, and an auto clamp.
+  options$colormap <- colormap
   options$vmin <- vmin
   options$vmax <- vmax
   if (!is.null(theme)) options$theme <- theme

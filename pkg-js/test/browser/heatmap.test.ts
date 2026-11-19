@@ -47,6 +47,44 @@ function svgTexts(el: HTMLElement): SVGTextElement[] {
   return Array.from(el.querySelectorAll("svg text")) as SVGTextElement[];
 }
 
+/** The colour of the colour bar's low end. */
+function lowStop(el: HTMLElement): string | null {
+  return (
+    el.querySelector("linearGradient stop")?.getAttribute("stop-color") ?? null
+  );
+}
+
+/**
+ * Runs of pixels down one column of the plot canvas, at a fraction of its
+ * width, whose colour passes `hit`.
+ */
+function colourRuns(
+  el: HTMLElement,
+  fx: number,
+  hit: (rgb: number[]) => boolean,
+): number {
+  const gl = el.querySelector("canvas") as HTMLCanvasElement;
+  const c = document.createElement("canvas");
+  c.width = gl.width;
+  c.height = gl.height;
+  const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+  ctx.drawImage(gl, 0, 0);
+  const x = Math.min(c.width - 1, Math.floor(fx * c.width));
+  const d = ctx.getImageData(x, 0, 1, c.height).data;
+  let runs = 0;
+  let inRun = false;
+  for (let y = 0; y < c.height; y += 1) {
+    const on = hit([
+      d[y * 4] as number,
+      d[y * 4 + 1] as number,
+      d[y * 4 + 2] as number,
+    ]);
+    if (on && !inRun) runs += 1;
+    inRun = on;
+  }
+  return runs;
+}
+
 let instances: PlotomicsInstance<unknown>[] = [];
 afterEach(() => {
   for (const i of instances) i.destroy();
@@ -115,6 +153,105 @@ describe("heatmap in a browser", () => {
     expect(svgTexts(el).map((t) => t.textContent)).toContain(
       "The matrix could not be drawn with WebGL here.",
     );
+  });
+
+  it("draws nothing of an earlier matrix after empty values", () => {
+    const el = container();
+    const meta = { nrows: 2, ncols: 2, rowLabels: ["a", "b"] };
+    const plot = createHeatmap(el, {
+      data: {
+        columns: { values: [1, null, 3, 5] as unknown as number[] },
+        meta,
+      },
+    });
+    instances.push(plot);
+    expect(svgTexts(el).map((t) => t.textContent)).toContain("NA");
+    plot.setData({ columns: { values: [] }, meta });
+    expect(glPixel(el, 0.25, 0.25)).toEqual([255, 255, 255]);
+    // No row labels, colour bar values or NA key are left from the first.
+    expect(svgTexts(el)).toHaveLength(0);
+  });
+
+  it("keeps lone outlier rows when rows outnumber the plot's pixels", () => {
+    // 5000 rows in about 420 px: about 12 rows to a pixel.
+    const nrows = 5000;
+    const ncols = 4;
+    const outliers = [1500, 2001, 2502, 3003, 3504];
+    const values = new Float32Array(nrows * ncols);
+    for (const r of outliers) values.fill(1, r * ncols, (r + 1) * ncols);
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: { columns: { values }, meta: { nrows, ncols } },
+      }),
+    );
+    // Viridis draws 1 yellow and 0 dark purple; white is neither.
+    const yellow = (rgb: number[]) =>
+      (rgb[0] as number) > 200 && (rgb[2] as number) < 100;
+    expect(colourRuns(el, 0.5, yellow)).toBe(outliers.length);
+    // Zoomed in on the middle, fewer rows share a pixel; all still show.
+    const gl = el.querySelector("canvas") as HTMLCanvasElement;
+    const r = gl.getBoundingClientRect();
+    gl.dispatchEvent(
+      new WheelEvent("wheel", {
+        deltaY: -500,
+        clientX: r.left + r.width / 2,
+        clientY: r.top + r.height / 2,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(colourRuns(el, 0.5, yellow)).toBe(outliers.length);
+  });
+
+  it("draws z-scores with rdbu, centred on white, when no colormap is given", () => {
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: { columns: { values: [1, 2, 3] }, meta: { nrows: 1, ncols: 3 } },
+        options: { zScore: true },
+      }),
+    );
+    // The middle cell has z = 0, the neutral middle of rdbu.
+    expect(glPixel(el, 0.5, 0.5)).toEqual([247, 247, 247]);
+    expect(lowStop(el)).toBe("#2166ac");
+  });
+
+  it("keeps an explicit colormap when z-scores are on", () => {
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: { columns: { values: [1, 2, 3] }, meta: { nrows: 1, ncols: 3 } },
+        options: { zScore: true, colormap: "viridis" },
+      }),
+    );
+    expect(lowStop(el)).toBe("#440154");
+  });
+
+  it("centres ltcdiv on 0, as rdbu is", () => {
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: {
+          columns: { values: [0, 1, 2, 3] },
+          meta: { nrows: 1, ncols: 4 },
+        },
+        options: { colormap: "ltcdiv" },
+      }),
+    );
+    // The 0 cell takes the cream middle of the ramp, not its teal low end.
+    expect(glPixel(el, 1 / 8, 0.5)).toEqual([244, 238, 224]);
+  });
+
+  it("keeps 0 at the middle of rdbu when only vmax is set", () => {
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: { columns: { values: [-3, 0, 1] }, meta: { nrows: 1, ncols: 3 } },
+        options: { colormap: "rdbu", vmax: 2 },
+      }),
+    );
+    expect(glPixel(el, 0.5, 0.5)).toEqual([247, 247, 247]);
   });
 
   it("draws an R null cell grey, keys it, and leaves it out of the range", () => {

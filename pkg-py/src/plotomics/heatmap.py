@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, _as_matrix, _check_labels, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _as_matrix,
+    _check_choice,
+    _check_labels,
+    pack_columns,
+)
+
+_COLORMAPS = ("viridis", "rdbu", "ltc", "ltcdiv")
 
 
 class Heatmap(PlotomicsWidget):
@@ -15,7 +24,10 @@ class Heatmap(PlotomicsWidget):
     The matrix is packed as a single row-major ``float32`` column and uploaded
     to the GPU as one texture, colormapped in a fragment shader, so matrices
     with a million or more cells pan and zoom smoothly. The colorbar legend and
-    row/column tick labels are drawn as vector overlays.
+    row/column tick labels are drawn as vector overlays. A matrix with more
+    rows or columns than the plot has pixels, or than the GPU's texture limit,
+    is pooled for drawing: each block of cells shows its cell farthest from
+    the block's mean, so a lone outlier row stays visible.
 
     Parameters
     ----------
@@ -26,13 +38,18 @@ class Heatmap(PlotomicsWidget):
         in a nullable column) is drawn grey and left out of the colour range
         and the z-score.
     colormap:
-        Color ramp: ``"viridis"`` (sequential) or ``"rdbu"`` (diverging).
+        Color ramp: sequential ``"viridis"`` or ``"ltc"`` (an earthy teal to
+        sand to rust ramp), or diverging ``"rdbu"`` or ``"ltcdiv"`` (its
+        counterpart, neutral cream at the midpoint). ``None`` (the default)
+        uses ``"rdbu"`` when ``z_score`` is on, so values above and below the
+        row mean get opposite colours, and ``"viridis"`` otherwise.
     z_score:
         If ``True``, each row is z-score normalized before coloring.
     vmin, vmax:
         Lower/upper clamp of the color domain. ``None`` (the default)
-        auto-scales from the data; for ``"rdbu"`` the auto domain is symmetric
-        about zero.
+        auto-scales from the data. For a diverging colormap the auto domain is
+        symmetric about zero, and a positive ``vmax`` or a negative ``vmin``
+        given alone is mirrored about zero, so zero keeps the neutral colour.
     show_colorbar:
         Draw the colorbar legend.
     row_labels, col_labels:
@@ -55,7 +72,7 @@ class Heatmap(PlotomicsWidget):
         self,
         matrix: Any,
         *,
-        colormap: str = "viridis",
+        colormap: Literal["viridis", "rdbu", "ltc", "ltcdiv"] | None = None,
         z_score: bool = False,
         vmin: float | None = None,
         vmax: float | None = None,
@@ -66,8 +83,8 @@ class Heatmap(PlotomicsWidget):
         height: int = 480,
         **kwargs: Any,
     ) -> None:
-        if colormap not in ("viridis", "rdbu"):
-            raise ValueError("`colormap` must be 'viridis' or 'rdbu'.")
+        if colormap is not None:
+            _check_choice(colormap, "colormap", _COLORMAPS)
 
         # A DataFrame gives its labels; a nested list or array gives none.
         arr, inferred_rows, inferred_cols = _as_matrix(matrix)
@@ -93,6 +110,8 @@ class Heatmap(PlotomicsWidget):
         if clabels is not None:
             meta["colLabels"] = clabels
 
+        # A None colormap lets the browser pick: "rdbu" for z-scores and
+        # "viridis" otherwise.
         options: dict[str, Any] = {
             "colormap": colormap,
             "zScore": z_score,

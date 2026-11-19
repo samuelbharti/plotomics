@@ -30,6 +30,8 @@ export {
   rdbu,
   ramp,
   RAMPS,
+  isDivergingRamp,
+  matrixRamp,
   rgbToHex,
   categoricalColors,
   categoricalScale,

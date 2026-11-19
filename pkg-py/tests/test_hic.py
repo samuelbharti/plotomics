@@ -130,3 +130,8 @@ def test_hic_accepts_rdbu_and_rejects_unknown_colormaps():
     assert HiC(m, colormap="rdbu").options["colormap"] == "rdbu"
     with pytest.raises(ValueError, match="colormap"):
         HiC(m, colormap="magma")
+
+
+@pytest.mark.parametrize("colormap", ["viridis", "rdbu", "ltc", "ltcdiv"])
+def test_hic_accepts_every_colormap_the_browser_draws(colormap):
+    assert HiC(np.eye(4), colormap=colormap).options["colormap"] == colormap

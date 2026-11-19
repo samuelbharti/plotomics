@@ -49,7 +49,8 @@ test_that("clustermap() defaults match the JS/Python option names", {
   w <- clustermap(matrix(rnorm(6), nrow = 2))
   expect_equal(w$x$options$metric, "euclidean")
   expect_equal(w$x$options$linkage, "average")
-  expect_equal(w$x$options$colormap, "viridis")
+  # No colormap is sent; the browser picks one from zScore.
+  expect_false("colormap" %in% names(w$x$options))
   expect_false(w$x$options$zScore)
   expect_true(w$x$options$clusterRows)
   expect_true(w$x$options$clusterCols)
@@ -110,4 +111,23 @@ test_that("clustermap() warns on ward linkage with a correlation metric", {
     clustermap(m, linkage = "ward", metric = "correlation"),
     "Ward linkage assumes euclidean"
   )
+})
+
+test_that("clustermap() leaves the colormap to the browser unless one is given", {
+  m <- matrix(rnorm(6), nrow = 2)
+  # With no colormap the key is left out, and the browser draws z-scores
+  # with "rdbu" and other values with "viridis".
+  expect_null(formals(clustermap)$colormap)
+  expect_false("colormap" %in% names(clustermap(m, z_score = TRUE)$x$options))
+  # A colormap that is given wins over the z-score default.
+  w <- clustermap(m, colormap = "viridis", z_score = TRUE)
+  expect_equal(w$x$options$colormap, "viridis")
+})
+
+test_that("clustermap() accepts every colormap the browser draws", {
+  m <- matrix(rnorm(6), nrow = 2)
+  for (cm in c("viridis", "rdbu", "ltc", "ltcdiv")) {
+    expect_equal(clustermap(m, colormap = cm)$x$options$colormap, cm)
+  }
+  expect_error(clustermap(m, colormap = "plasma"), "should be one of")
 })

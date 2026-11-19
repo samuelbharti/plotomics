@@ -32,6 +32,45 @@ function cellPixel(el: HTMLElement, fx: number, fy: number): number[] {
   return [d[0] as number, d[1] as number, d[2] as number];
 }
 
+/** The colour bar's gradient stops, low end first. */
+function stops(el: HTMLElement): string[] {
+  return Array.from(el.querySelectorAll("linearGradient stop")).map(
+    (s) => s.getAttribute("stop-color") ?? "",
+  );
+}
+
+function hex(rgb: number[]): string {
+  return `#${rgb.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** Runs of pixels down column `x` of an image whose colour passes `hit`. */
+function columnRuns(
+  image: CanvasImageSource,
+  width: number,
+  height: number,
+  x: number,
+  hit: (rgb: number[]) => boolean,
+): number {
+  const c = document.createElement("canvas");
+  c.width = width;
+  c.height = height;
+  const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+  ctx.drawImage(image, 0, 0);
+  const d = ctx.getImageData(Math.floor(x), 0, 1, height).data;
+  let runs = 0;
+  let inRun = false;
+  for (let y = 0; y < height; y += 1) {
+    const on = hit([
+      d[y * 4] as number,
+      d[y * 4 + 1] as number,
+      d[y * 4 + 2] as number,
+    ]);
+    if (on && !inRun) runs += 1;
+    inRun = on;
+  }
+  return runs;
+}
+
 let instances: PlotomicsInstance<unknown>[] = [];
 afterEach(() => {
   for (const i of instances) i.destroy();
@@ -267,5 +306,95 @@ describe("clustermap in a browser", () => {
       }),
     );
     expect(svgTexts(el)).toContain("0");
+  });
+});
+
+describe("clustermap colours in a browser", () => {
+  const flat = { clusterRows: false, clusterCols: false };
+
+  it("paints the cells with the colour bar's ramp", () => {
+    for (const colormap of ["ltc", "ltcdiv"] as const) {
+      const el = container();
+      instances.push(
+        createClustermap(el, {
+          data: {
+            columns: { values: [-3, -1, 1, 3] },
+            meta: { nrows: 2, ncols: 2 },
+          },
+          options: { ...flat, colormap },
+        }),
+      );
+      const s = stops(el);
+      // The lowest cell is the bottom of the bar, the highest its top.
+      expect(hex(cellPixel(el, 0.25, 0.25)), colormap).toBe(s[0]);
+      expect(hex(cellPixel(el, 0.75, 0.75)), colormap).toBe(s[s.length - 1]);
+    }
+  });
+
+  it("centres ltcdiv on 0, as rdbu is", () => {
+    const el = container();
+    instances.push(
+      createClustermap(el, {
+        data: {
+          columns: { values: [0, 1, 2, 3] },
+          meta: { nrows: 2, ncols: 2 },
+        },
+        options: { ...flat, colormap: "ltcdiv" },
+      }),
+    );
+    // The 0 cell takes the cream middle of the ramp, and the scale runs
+    // from -3 to 3.
+    expect(cellPixel(el, 0.25, 0.25)).toEqual([244, 238, 224]);
+    expect(svgTexts(el)).toContain("-3");
+  });
+
+  it("draws z-scores with rdbu unless a colormap is given", () => {
+    const data = {
+      columns: { values: [1, 2, 3, 4, 5, 6] },
+      meta: { nrows: 2, ncols: 3 },
+    };
+    const a = container();
+    const b = container();
+    instances.push(
+      createClustermap(a, { data, options: { ...flat, zScore: true } }),
+      createClustermap(b, {
+        data,
+        options: { ...flat, zScore: true, colormap: "viridis" },
+      }),
+    );
+    expect(stops(a)[0]).toBe("#2166ac");
+    // The middle column has z = 0, the white middle of rdbu.
+    expect(cellPixel(a, 0.5, 0.25)).toEqual([247, 247, 247]);
+    expect(stops(b)[0]).toBe("#440154");
+  });
+
+  it("keeps lone outlier rows when rows outnumber the heatmap's pixels", async () => {
+    // 3000 rows in about 450 px: about 7 rows to a pixel.
+    const nrows = 3000;
+    const ncols = 3;
+    const outliers = [600, 1201, 1802, 2403];
+    const values = new Float32Array(nrows * ncols);
+    for (const r of outliers) values.fill(1, r * ncols, (r + 1) * ncols);
+    const el = container();
+    const plot = createClustermap(el, {
+      data: { columns: { values }, meta: { nrows, ncols } },
+      options: { ...flat, showLabels: false },
+    });
+    instances.push(plot);
+    // Viridis draws 1 yellow and 0 dark purple; white is neither.
+    const yellow = (rgb: number[]) =>
+      (rgb[0] as number) > 200 && (rgb[2] as number) < 100;
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    expect(
+      columnRuns(canvas, canvas.width, canvas.height, canvas.width / 2, yellow),
+    ).toBe(outliers.length);
+    // The exported image draws them too.
+    const blob = (await plot.exportPNG(1)) as Blob;
+    const png = await createImageBitmap(blob);
+    const k = png.width / el.clientWidth;
+    const x = (canvas.offsetLeft + canvas.clientWidth / 2) * k;
+    expect(columnRuns(png, png.width, png.height, x, yellow)).toBe(
+      outliers.length,
+    );
   });
 });

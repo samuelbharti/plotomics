@@ -363,6 +363,74 @@ export function symmetricExtent(values: ArrayLike<number>): [number, number] {
 }
 
 /**
+ * Pool a row-major matrix, in the drawn row and column order, to `outRows` x
+ * `outCols` blocks, one per pixel of the image. Block i spans the drawn rows
+ * from floor(i * n / outRows) up to floor((i + 1) * n / outRows), so blocks
+ * differ by one row at most, and columns likewise; `outRows` and `outCols`
+ * are at most the row and column counts. Each block keeps the cell farthest
+ * from the mean of its block, so a lone outlier row still shows: a block mean
+ * would fade it by the block size, and a block maximum would hide a low one.
+ * Missing cells (NaN) are left out, and a block with no other cell stays NaN.
+ */
+export function poolBlocks(
+  values: ArrayLike<number>,
+  ncols: number,
+  rowOrder: ArrayLike<number>,
+  colOrder: ArrayLike<number>,
+  outRows: number,
+  outCols: number,
+): Float32Array {
+  const nr = rowOrder.length;
+  const nc = colOrder.length;
+  const out = new Float32Array(outRows * outCols).fill(Number.NaN);
+  // Block j holds the drawn columns from colEnd[j] up to colEnd[j + 1].
+  const colEnd = new Int32Array(outCols + 1);
+  for (let j = 0; j <= outCols; j += 1) {
+    colEnd[j] = Math.floor((j * nc) / outCols);
+  }
+  const sum = new Float64Array(outCols);
+  const cnt = new Uint32Array(outCols);
+  for (let i = 0; i < outRows; i += 1) {
+    const r0 = Math.floor((i * nr) / outRows);
+    const r1 = Math.floor(((i + 1) * nr) / outRows);
+    sum.fill(0);
+    cnt.fill(0);
+    for (let r = r0; r < r1; r += 1) {
+      const base = (rowOrder[r] as number) * ncols;
+      for (let j = 0; j < outCols; j += 1) {
+        const end = colEnd[j + 1] as number;
+        for (let c = colEnd[j] as number; c < end; c += 1) {
+          const v = values[base + (colOrder[c] as number)] as number;
+          if (!Number.isFinite(v)) continue;
+          sum[j] = (sum[j] as number) + v;
+          cnt[j] = (cnt[j] as number) + 1;
+        }
+      }
+    }
+    const row = i * outCols;
+    for (let r = r0; r < r1; r += 1) {
+      const base = (rowOrder[r] as number) * ncols;
+      for (let j = 0; j < outCols; j += 1) {
+        const mean = (sum[j] as number) / (cnt[j] as number);
+        const end = colEnd[j + 1] as number;
+        for (let c = colEnd[j] as number; c < end; c += 1) {
+          const v = values[base + (colOrder[c] as number)] as number;
+          if (!Number.isFinite(v)) continue;
+          const kept = out[row + j] as number;
+          if (
+            Number.isNaN(kept) ||
+            Math.abs(v - mean) > Math.abs(kept - mean)
+          ) {
+            out[row + j] = v;
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * Compute pixel y-position of each dendrogram node for a horizontal (column)
  * dendrogram drawn above the heatmap, or the transposed layout for rows. This
  * is layout-only math kept pure so it is testable.

@@ -10,6 +10,7 @@ import {
   euclidean,
   identityOrder,
   normalizePrecomputed,
+  poolBlocks,
   symmetricExtent,
   toColVectors,
   toRowVectors,
@@ -388,5 +389,54 @@ describe("clustermap layout from its labels", () => {
     expect(l.colorbarX + 12).toBeLessThanOrEqual(800);
     // 60 px dendrogram, 12 px padding, 60 px column labels.
     expect(l.heat.h).toBe(560 - 12 - 60 - 60);
+  });
+});
+
+describe("clustermap pooling", () => {
+  it("keeps a lone outlier row when rows outnumber pixels", () => {
+    const values = new Array(12).fill(0);
+    values[5] = 10;
+    expect([...poolBlocks(values, 1, identityOrder(12), [0], 1, 1)]).toEqual([
+      10,
+    ]);
+    // A low outlier among high values is kept too.
+    expect([
+      ...poolBlocks([5, 5, 0, 5], 1, identityOrder(4), [0], 1, 1),
+    ]).toEqual([0]);
+  });
+
+  it("pools rows and columns in the drawn order", () => {
+    // Row 5 is drawn first, so it falls in the first block.
+    const rows = [0, 0, 0, 0, 0, 9];
+    expect([...poolBlocks(rows, 1, [5, 0, 1, 2, 3, 4], [0], 2, 1)]).toEqual([
+      9, 0,
+    ]);
+    expect([...poolBlocks(rows, 6, [0], [5, 0, 1, 2, 3, 4], 1, 2)]).toEqual([
+      9, 0,
+    ]);
+  });
+
+  it("splits the rows into blocks that differ by one row at most", () => {
+    // Five rows in two blocks: rows 0-1 and rows 2-4.
+    expect([
+      ...poolBlocks([0, 0, 1, 1, 1], 1, identityOrder(5), [0], 2, 1),
+    ]).toEqual([0, 1]);
+    // As many blocks as rows draws every row as it is.
+    expect([...poolBlocks([3, 1, 2], 1, identityOrder(3), [0], 3, 1)]).toEqual([
+      3, 1, 2,
+    ]);
+  });
+
+  it("leaves missing cells out and keeps an all-missing block missing", () => {
+    const p = poolBlocks(
+      [Number.NaN, Number.NaN, 3, Number.NaN],
+      1,
+      identityOrder(4),
+      [0],
+      2,
+      1,
+    );
+    expect(Number.isNaN(p[0] as number)).toBe(true);
+    expect(p[1]).toBe(3);
   });
 });

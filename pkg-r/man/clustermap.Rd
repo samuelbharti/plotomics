@@ -8,7 +8,7 @@ clustermap(
   mat,
   metric = c("euclidean", "correlation"),
   linkage = c("average", "complete", "ward"),
-  colormap = c("viridis", "rdbu"),
+  colormap = NULL,
   z_score = FALSE,
   cluster_rows = TRUE,
   cluster_cols = TRUE,
@@ -39,7 +39,12 @@ does.}
 compute it, and it assumes the euclidean metric (a warning says so for
 correlation).}
 
-\item{colormap}{Color ramp: \code{"viridis"} (sequential) or \code{"rdbu"} (diverging).}
+\item{colormap}{Color ramp: sequential \code{"viridis"} or \code{"ltc"} (an earthy
+teal to sand to rust ramp), or diverging \code{"rdbu"} or \code{"ltcdiv"} (its
+counterpart, neutral cream at the midpoint), whose range is symmetric
+about zero. \code{NULL} (the default) uses \code{"rdbu"} when \code{z_score} is \code{TRUE},
+so values above and below the row mean get opposite colours, and
+\code{"viridis"} otherwise.}
 
 \item{z_score}{Standardize each row to mean 0 / sd 1 before coloring.}
 
@@ -77,6 +82,9 @@ A hierarchically-clustered expression heatmap (in the spirit of
 layer so large matrices stay smooth, while dendrograms, tick labels and the
 colorbar are crisp vector overlays. Rows and columns are agglomeratively
 clustered and reordered so structure appears as blocks along the diagonal.
+A matrix with more rows or columns than the plot has pixels is pooled for
+drawing: each block of cells shows its cell farthest from the block's mean,
+so a lone outlier row stays visible.
 }
 \details{
 Clustering is at least \code{O(n^2)} in the number of rows/columns (it builds a
