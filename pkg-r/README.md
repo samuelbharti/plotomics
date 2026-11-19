@@ -69,8 +69,9 @@ km(survival::survfit(survival::Surv(time, status) ~ sex,
 | Sets, hierarchies, networks | `upset()`, `treemap()`, `network()` |
 | Genome and chromatin | `hic()` |
 
-The Python and JavaScript packages ship two more: `igv()` and `gosling()`, both
-genome browsers. They came out of the R package before the CRAN submission,
+The Python and JavaScript packages ship two more, both genome browsers:
+`IGV` and `Gosling` in Python, `createIgv()` and `createGosling()` in
+JavaScript. They came out of the R package before the CRAN submission,
 because their bundles push the installed size past CRAN's 5 MB limit. Whether
 they return is [open](https://github.com/samuelbharti/plotomics/issues/78).
 
@@ -89,6 +90,8 @@ Every widget has a Shiny pair. The network and embedding widgets also report
 selections back to the server:
 
 ``` r
+library(shiny)
+
 ui <- fluidPage(networkOutput("net"))
 
 server <- function(input, output) {

@@ -34,9 +34,28 @@ component (see [Optional engine peer dependencies](#optional-engine-peer-depende
 ```js
 import { createEmbedding } from "plotomics/embedding";
 
+// 3,000 cells in three clusters.
+const centres = { "T cell": [0, 0], "B cell": [4, 1], NK: [2, 4] };
+const x = [];
+const y = [];
+const color = [];
+for (const [type, [cx, cy]] of Object.entries(centres)) {
+  for (let i = 0; i < 1000; i += 1) {
+    x.push(cx + Math.random() + Math.random() - 1);
+    y.push(cy + Math.random() + Math.random() - 1);
+    color.push(type);
+  }
+}
+
+// An element on the page, such as <div id="plot"></div>.
+const el = document.getElementById("plot");
 const inst = createEmbedding(el, {
   data: { columns: { x, y, color } },
-  options: { pointSize: 4, mouseMode: "lasso", onSelect: (idx) => …},
+  options: {
+    pointSize: 4,
+    mouseMode: "lasso",
+    onSelect: (idx) => console.log(`${idx.length} cells selected`),
+  },
 });
 ```
 
@@ -45,9 +64,10 @@ component, so the bundler must resolve all eight optional peers, also the
 ones of components you never use. The package sets `"sideEffects": false`,
 which lets a bundler drop the unused code, but only after it has resolved
 those imports. Without the peers the build stops: esbuild cannot resolve
-`gosling.js`, `igv`, `graphology`, `sigma` and `react`, and Vite reports
-exports missing from them. Use the barrel only when all the peers are
-installed.
+`gosling.js`, `react`, `react-dom/client`, `igv/dist/igv.esm.js`,
+`graphology`, `graphology-layout-forceatlas2`, `sigma` and `sigma/rendering`,
+and Vite reports exports missing from them. Use the barrel only when all the
+peers are installed.
 
 ## Browser and bundler
 
@@ -152,15 +172,9 @@ npm checks an optional peer whenever the project has that package. In a
 project on React 19, `npm install plotomics` therefore stops with an
 `ERESOLVE` error, even when the project never imports `plotomics/gosling`.
 Until Gosling.js supports React 19
-([#72](https://github.com/samuelbharti/plotomics/issues/72)), install with
-`--legacy-peer-deps`:
-
-```sh
-npm install plotomics --legacy-peer-deps
-```
-
-or add an override to the `package.json` of the project, which keeps the
-peer check for every other package:
+([#72](https://github.com/samuelbharti/plotomics/issues/72)), add an override
+to the `package.json` of the project. It gives plotomics the React of the
+project and keeps the peer check for every other package:
 
 ```json
 "overrides": {
@@ -169,6 +183,17 @@ peer check for every other package:
     "react-dom": "$react-dom"
   }
 }
+```
+
+The other way is `--legacy-peer-deps`, which turns the peer check off for
+every package. It holds for one install only: a later plain `npm install`
+stops with `ERESOLVE` again. Pass it on every install, or set it once in the
+`.npmrc` of the project:
+
+```sh
+npm install plotomics --legacy-peer-deps
+# or, for every install:
+echo "legacy-peer-deps=true" >> .npmrc
 ```
 
 Every component except `plotomics/gosling` then works with React 19.

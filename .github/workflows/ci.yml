@@ -83,6 +83,14 @@ jobs:
           working-directory: pkg-r
           args: 'c("--no-manual", "--as-cran")'
           error-on: '"warning"'
+      # test-docs.R checks the README code, the help examples and the URL
+      # in DESCRIPTION. R CMD check runs the tests on the built package,
+      # which has no README.md, _pkgdown.yml or man/*.Rd, so it skips them
+      # there. This runs them on the source tree.
+      - name: Test the docs in the source tree
+        run: |
+          R CMD INSTALL pkg-r
+          Rscript -e 'testthat::test_file("pkg-r/tests/testthat/test-docs.R", package = "plotomics", load_package = "installed", stop_on_failure = TRUE)'
 
   python:
     name: Python (pytest)

@@ -41,16 +41,20 @@ npm run app        # Rscript shiny::runApp('r/app.R', port = 8000)
 # or: npm run dev  # rebuild-on-change + live Shiny in one command
 ```
 
-Then open http://localhost:8000 and drag a lasso across the points.
+Then open http://localhost:8000. A drag pans the view until the lasso is
+on: click **Lasso OFF** in the toolbar to turn it on, then drag a lasso
+across the points. The count of selected points, which the R server sends
+back, shows next to the button.
 
 This example sits outside the pnpm workspace on purpose, so its shiny-react
 dependencies stay out of the library's own build. It uses React 18, the range
 plotomics accepts for its optional `react` peer. Only the Gosling component
 uses React, but npm checks that range on every install, so in a React 19 app
 `npm install` stops with an `ERESOLVE` error. Until
-[#72](https://github.com/samuelbharti/plotomics/issues/72) lands, install a
-React 19 app with `npm install --legacy-peer-deps` or with an npm override, as
-the [plotomics README](../../pkg-js/README.md#react-19) shows.
+[#72](https://github.com/samuelbharti/plotomics/issues/72) lands, give a React
+19 app an npm override, or pass `--legacy-peer-deps` on every install (or set
+`legacy-peer-deps=true` in `.npmrc`), as the
+[plotomics README](../../pkg-js/README.md#react-19) shows.
 
 To run it against a local build rather than the published package, build the
 library first and link it:
