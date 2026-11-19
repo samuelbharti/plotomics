@@ -74,7 +74,9 @@ class Lollipop(PlotomicsWidget):
         raise ``max_head_radius`` when one hotspot dwarfs the rest and you want
         the difference to read at a glance.
     y_label:
-        Axis title for the recurrence axis.
+        Axis title for the recurrence axis. It also names the count in the
+        tooltip: "12 samples" with the default, and "frequency: 0.3" for
+        ``y_label="frequency"``.
     backbone_color, stem_color:
         Hex colors for the protein backbone rectangle and the mutation stems.
     theme:
