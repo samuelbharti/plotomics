@@ -607,21 +607,32 @@ describe("clustermap colour bar in a small widget", () => {
     ).getBoundingClientRect();
 
   it("keeps the heatmap and short exact labels for tiny values", () => {
-    // Values of about 1e-15 at 300 x 300 px, fontSize 20. Before the fix
-    // the labels were 17 characters long, the colour bar gutter took the
-    // width and the heatmap was 1 px wide.
-    const el = container(300, 300);
-    instances.push(make(el, spread(-3e-15, 6.2e-15), 20));
-    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
-    expect(canvas.clientWidth).toBeGreaterThanOrEqual(80);
-    const labels = tickLabels(el).map((t) => t.textContent);
-    expect(labels).toContain("2e-15");
-    const title = titleBox(el);
-    for (const t of tickLabels(el)) {
+    // Values of about 1e-15. Before the fix the labels were 17 characters
+    // long, the colour bar gutter took the width, and at 300 x 300 px,
+    // fontSize 20, the heatmap was 1 px wide.
+    const values = spread(-3e-15, 6.2e-15);
+    const small = container(300, 300);
+    instances.push(make(small, values, 20));
+    // The gutter takes at most its share in any font, and its labels end
+    // left of the title.
+    const canvas = small.querySelector("canvas") as HTMLCanvasElement;
+    expect(canvas.clientWidth).toBeGreaterThanOrEqual(60);
+    const title = titleBox(small);
+    for (const t of tickLabels(small)) {
       expect(t.getBoundingClientRect().right + 2).toBeLessThanOrEqual(
         title.left,
       );
     }
+    // With room for them, the labels are whole, in one power of ten.
+    const wide = container(400, 300);
+    instances.push(make(wide, values, 20));
+    expect(tickLabels(wide).map((t) => t.textContent)).toEqual([
+      "-2e-15",
+      "0",
+      "2e-15",
+      "4e-15",
+      "6e-15",
+    ]);
   });
 
   it("cuts labels too long for its largest share, and keeps the heatmap", () => {

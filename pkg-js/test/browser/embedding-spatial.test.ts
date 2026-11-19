@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { createEmbedding } from "../../src/components/embedding.js";
 import { createSpatial } from "../../src/components/spatial.js";
-import { type PlotomicsInstance, ramp } from "../../src/core/index.js";
+import {
+  type PlotomicsInstance,
+  defaultTheme,
+  ramp,
+  textSizes,
+  textWidth,
+} from "../../src/core/index.js";
 import { canvasPNG, drawnPixels } from "./helpers.js";
 
 function container(width = 500, height = 400) {
@@ -1304,23 +1310,22 @@ describe("spatial colour bar with long labels", () => {
       .sort((a, b) => Number(a.getAttribute("y")) - Number(b.getAttribute("y")))
       .map((t) => t.textContent ?? "");
 
-  // Before the fix fixed-point labels such as "0.000000002" or "0.50002"
-  // were too long for the gutter, and these widgets drew no colour bar.
+  // Before the fix fixed-point labels such as "0.000000002" were too
+  // long for the gutter at 300 px, fontSize 16, and the widget drew no
+  // colour bar. These widgets leave the labels clear room in any font.
   const cases: [number, number, number, number, number, string[]][] = [
-    [300, 300, 16, 1.2e-9, 5.1e-9, ["4e-9", "2e-9"]],
-    [300, 300, 16, 1.2e-6, 5.1e-6, ["4e-6", "2e-6"]],
+    [400, 300, 16, 1.2e-9, 5.1e-9, ["4e-9", "2e-9"]],
+    [400, 300, 16, 1.2e-6, 5.1e-6, ["4e-6", "2e-6"]],
     [
-      250,
+      400,
       300,
       16,
       -3.1e-4,
       -1.2e-4,
       ["-1.5e-4", "-2.0e-4", "-2.5e-4", "-3.0e-4"],
     ],
-    [250, 300, 16, 0.5, 0.5001, ["0.5001", "0.5000"]],
-    [300, 300, 16, 1000, 1000.0001, ["1000.0001", "1000.0000"]],
     // A bar too short for three labels keeps two: before the fix one,
-    // "500k".
+    // "500k". The height decides this, not the font.
     [300, 90, 20, 850, 1.2e6, ["1.2M", "0.2M"]],
   ];
   for (const [w, h, fontSize, lo, hi, labels] of cases) {
@@ -1339,6 +1344,55 @@ describe("spatial colour bar with long labels", () => {
         expect(r.right).toBeLessThanOrEqual(box.right + 0.5);
         expect(r.bottom).toBeLessThanOrEqual(box.bottom + 0.5);
       }
+    });
+  }
+
+  /**
+   * The width of a widget whose colour bar gutter, at most 35% of it,
+   * holds labels `coarse` but not `fine`, measured in the plot's own font
+   * at `fontSize`. The gutter is 8 px either side of the 10 px bar, 5 px
+   * and the widest label.
+   */
+  function widthBetween(coarse: string[], fine: string[], fontSize: number) {
+    const size = textSizes({ fontSize }).label;
+    const gutter = (labels: string[]) =>
+      16 +
+      Math.ceil(
+        15 +
+          Math.max(
+            ...labels.map((s) => textWidth(s, size, defaultTheme.fontFamily)),
+          ),
+      );
+    // At least 3 px of gutter on either side of the line between them.
+    expect(gutter(fine) - gutter(coarse)).toBeGreaterThanOrEqual(6);
+    return Math.ceil((gutter(coarse) + gutter(fine)) / 2 / 0.35);
+  }
+
+  // A narrow range far from 0 has long labels in any form. Where the
+  // gutter holds those of a coarse step but not those of a finer one, the
+  // bar takes the coarse step. Before the fix it asked room for the finer
+  // labels too and drew no colour bar.
+  const narrow: [number, number, string[], string[]][] = [
+    [0.5, 0.5001, ["0.5001", "0.5000"], ["0.50000", "0.50005", "0.50010"]],
+    [
+      1000,
+      1000.0001,
+      ["1000.0001", "1000.0000"],
+      ["1000.00000", "1000.00005", "1000.00010"],
+    ],
+  ];
+  for (const [lo, hi, coarse, fine] of narrow) {
+    it(`labels ${lo} to ${hi} on a coarse step when the finer one does not fit`, () => {
+      const w = widthBetween(coarse, fine, 16);
+      const el = container(w, 300);
+      // With no theme padding, the plot box is the widget.
+      instances.push(
+        createSpatial(el, {
+          data: spots([lo, (lo + hi) / 2, hi]),
+          options: { theme: { fontSize: 16, padding: 0 } },
+        }),
+      );
+      expect(barLabels(el), `${w} px`).toEqual(coarse);
     });
   }
 });
