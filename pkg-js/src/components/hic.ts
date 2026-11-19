@@ -30,11 +30,13 @@ import {
   textSizes,
   textWidth,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   releaseContainer,
   dpr,
   serializeSVG,
+  padSVG,
   compositePNG,
   RAMPS,
   type RGB,
@@ -424,8 +426,18 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   svg.style.cssText =
     "position:absolute;inset:0;pointer-events:none;overflow:visible;";
-  el.appendChild(canvas);
-  el.appendChild(svg);
+  // The size of the element, and the plot box inside its padding: `width`
+  // and `height` are the box, which every layer and coordinate is in.
+  const plot = createPlotBox(el);
+  let outerW = 0;
+  let outerH = 0;
+  /** Fit the plot box to an element `w` x `h` px and take its size. */
+  function fitBox(w = outerW, h = outerH) {
+    outerW = w;
+    outerH = h;
+    ({ width, height } = plot.fit(w, h, theme));
+  }
+  plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
   let regl: Regl | null = null;
@@ -987,7 +999,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     canvas.style.cursor = "grab";
   };
   const onMove = (e: MouseEvent) => {
-    const rect = el.getBoundingClientRect();
+    const at = plot.pointer(e.clientX, e.clientY);
     if (dragging) {
       const span = dragStart.hi - dragStart.lo;
       const dxBins = ((e.clientX - dragStart.x) / plotSize()) * span;
@@ -1014,8 +1026,8 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       tooltip.hide();
       return;
     }
-    const mx = e.clientX - rect.left - plotLeft();
-    const my = e.clientY - rect.top - plotTop();
+    const mx = at.x - plotLeft();
+    const my = at.y - plotTop();
     if (mx < 0 || my < 0 || mx >= plotSize() || my >= plotSize()) {
       tooltip.hide();
       return;
@@ -1039,8 +1051,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   const onWheel = (e: WheelEvent) => {
     if (n === 0) return;
     e.preventDefault();
-    const rect = el.getBoundingClientRect();
-    const anchorX = pxToBin(e.clientX - rect.left);
+    const anchorX = pxToBin(plot.pointer(e.clientX, e.clientY).x);
     const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
     let span = (viewHi - viewLo) * factor;
     // Stop at a few bins, or at the whole map when it has fewer bins than that.
@@ -1071,8 +1082,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   canvas.addEventListener("wheel", onWheel, { passive: false });
 
   function doResize(w: number, h: number) {
-    width = w;
-    height = h;
+    fitBox(w, h);
     tickRoom = 0;
     layoutCanvas();
     render();
@@ -1174,7 +1184,8 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
         resolveVmax();
         invalidateLevels();
       }
-      render();
+      // A new padding changes the plot box.
+      doResize(outerW, outerH);
     },
     resize(w, h) {
       doResize(w, h);
@@ -1192,7 +1203,9 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       drawMatrix();
       img.setAttribute("href", cropCanvas(canvas, plotLeft(), plotTop(), size));
       out.insertBefore(img, out.firstChild);
-      return serializeSVG(out);
+      return serializeSVG(
+        padSVG(out, width, height, plot.padding, theme.background),
+      );
     },
     async exportPNG(scale = 2) {
       drawMatrix();
@@ -1204,6 +1217,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
         width,
         height,
         scale,
+        padding: plot.padding,
         background: theme.background,
         layers: [
           {
@@ -1234,8 +1248,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       invalidateLevels();
       cmapTex?.destroy?.();
       releaseRegl(regl);
-      canvas.remove();
-      svg.remove();
+      plot.remove();
     },
   };
 

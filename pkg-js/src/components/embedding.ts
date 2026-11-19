@@ -30,6 +30,7 @@ import {
   resolveTheme,
   textSizes,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   releaseContainer,
@@ -37,6 +38,7 @@ import {
   fitText,
   dpr,
   serializeSVG,
+  padSVG,
   compositePNG,
   fitDomainTicks,
   formatTicks,
@@ -141,7 +143,8 @@ export interface EmbeddingInstance extends PlotomicsInstance<EmbeddingOptions> {
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const BARE_MARGIN = { top: 10, right: 10, bottom: 10, left: 10 };
+/** With no axes, the theme padding is the room around the plot area. */
+const BARE_MARGIN = { top: 0, right: 0, bottom: 0, left: 0 };
 /** Room between the plot area and the legend in the gutter right of it. */
 const LEGEND_GAP = 8;
 /** The largest share of the widget's width the categorical legend takes. */
@@ -508,9 +511,18 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     layer.style.cssText =
       "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   }
-  el.appendChild(under);
-  el.appendChild(canvas);
-  el.appendChild(svg);
+  // The size of the element, and the plot box inside its padding: `width`
+  // and `height` are the box, which every layer and coordinate is in.
+  const plot = createPlotBox(el);
+  let outerW = 0;
+  let outerH = 0;
+  /** Fit the plot box to an element `w` x `h` px and take its size. */
+  function fitBox(w = outerW, h = outerH) {
+    outerW = w;
+    outerH = h;
+    ({ width, height } = plot.fit(w, h, theme));
+  }
+  plot.box.append(under, canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
   // GPU scatter. It draws points in [-1, 1], and keeps the d3 scales in sync
@@ -1119,7 +1131,17 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     return r;
   }
   function legendBg(x: number, y: number, w: number, h: number) {
-    const r = rect(x, y, w, h, theme.background, theme.grid, 1);
+    // Half a px in on each side, so the 1 px border stays inside the box,
+    // which can end at the edge of the plot box.
+    const r = rect(
+      x + 0.5,
+      y + 0.5,
+      w - 1,
+      h - 1,
+      theme.background,
+      theme.grid,
+      1,
+    );
     r.setAttribute("fill-opacity", "0.82");
     r.setAttribute("rx", "4");
     return r;
@@ -1144,8 +1166,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   }
 
   function doResize(w: number, h: number) {
-    width = w;
-    height = h;
+    fitBox(w, h);
     // The legend's rows, and so its width, follow the height.
     gutter = legendGutter();
     layoutCanvas();
@@ -1178,22 +1199,27 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     setOptions(next) {
       const prev = opts;
       const prevMargin = margin();
+      const [prevW, prevH] = [width, height];
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       sizes = textSizes(theme);
+      fitBox();
       axisMargin = axisMargins(sizes);
       // The legend gutter follows showLegend and the text size.
       gutter = legendGutter();
       // aspect and padding decide the fitted range, so a change to either
-      // refits. showAxes and the text size change the plot area's size,
-      // which refits while the view is untouched, as a resize does. The
-      // wrappers may resend every option, so compare values.
+      // refits. showAxes, the text size and the theme padding change the
+      // plot area's size, which refits while the view is untouched, as a
+      // resize does. The wrappers may resend every option, so compare
+      // values.
       const m = margin();
       const areaChanged =
         m.top !== prevMargin.top ||
         m.right !== prevMargin.right ||
         m.bottom !== prevMargin.bottom ||
-        m.left !== prevMargin.left;
+        m.left !== prevMargin.left ||
+        width !== prevW ||
+        height !== prevH;
       const refit =
         opts.aspect !== prev.aspect ||
         opts.padding !== prev.padding ||
@@ -1211,11 +1237,11 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       // Re-layout in case showAxes toggled (it changes the canvas inset), then
       // recolor/redraw with the merged options — preserving the current view
       // unless the fitted range changed.
-      doResize(width, height);
+      doResize(outerW, outerH);
       applyData(refit);
     },
     resize(w, h) {
-      if (w === width && h === height) return;
+      if (w === outerW && h === outerH) return;
       doResize(w, h);
       refitAfterResize();
     },
@@ -1237,7 +1263,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       for (const node of Array.from(under.childNodes).reverse()) {
         out.insertBefore(node.cloneNode(true), out.firstChild);
       }
-      return serializeSVG(out);
+      return serializeSVG(
+        padSVG(out, width, height, plot.padding, theme.background),
+      );
     },
     async exportPNG(scale = 2) {
       // The points at their place, over the gridlines and under the axes
@@ -1247,6 +1275,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         width,
         height,
         scale,
+        padding: plot.padding,
         background: theme.background,
         layers: [
           { canvas, x: m.left, y: m.top, width: innerW(), height: innerH() },
@@ -1263,9 +1292,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       el.removeEventListener("mousemove", onMove);
       tooltip.destroy();
       scatterplot.destroy();
-      under.remove();
-      canvas.remove();
-      svg.remove();
+      plot.remove();
     },
   };
 

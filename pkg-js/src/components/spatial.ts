@@ -40,6 +40,7 @@ import {
   resolveTheme,
   textSizes,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   releaseContainer,
@@ -50,6 +51,7 @@ import {
   legendLabelsFit,
   dpr,
   serializeSVG,
+  padSVG,
   compositePNG,
   ramp,
   categoricalColors,
@@ -484,8 +486,18 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   svg.style.cssText =
     "position:absolute;inset:0;pointer-events:none;overflow:visible;";
-  el.appendChild(canvas);
-  el.appendChild(svg);
+  // The size of the element, and the plot box inside its padding: `width`
+  // and `height` are the box, which every layer and coordinate is in.
+  const plot = createPlotBox(el);
+  let outerW = 0;
+  let outerH = 0;
+  /** Fit the plot box to an element `w` x `h` px and take its size. */
+  function fitBox(w = outerW, h = outerH) {
+    outerW = w;
+    outerH = h;
+    ({ width, height } = plot.fit(w, h, theme));
+  }
+  plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
   // ---- accessors ----
@@ -578,9 +590,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
   function onMove(e: MouseEvent) {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
-    const rect = el.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const { x: mx, y: my } = plot.pointer(e.clientX, e.clientY);
     const x = xs();
     const r = spotRadius(spotD(), fit.scale, opts.spotScale);
     const hitR = Math.max(r, 3);
@@ -978,16 +988,14 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
   }
 
   function doResize(w: number, h: number) {
-    width = w;
-    height = h;
+    fitBox(w, h);
     layoutCanvas();
     render();
   }
 
   {
     const m = measure(el);
-    width = m.width;
-    height = m.height;
+    fitBox(m.width, m.height);
     layoutCanvas();
     ensureImage();
     render();
@@ -1003,7 +1011,8 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       sizes = textSizes(theme);
-      render();
+      // A new padding changes the plot box.
+      doResize(outerW, outerH);
     },
     resize(w, h) {
       doResize(w, h);
@@ -1026,7 +1035,9 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
         img.setAttribute("href", href);
         out.insertBefore(img, out.firstChild);
       }
-      return serializeSVG(out);
+      return serializeSVG(
+        padSVG(out, width, height, plot.padding, theme.background),
+      );
     },
     async exportPNG(scale = 2) {
       try {
@@ -1035,6 +1046,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
           width,
           height,
           scale,
+          padding: plot.padding,
           background: theme.background,
           layers: [{ canvas, x: 0, y: 0, width, height }],
           overlay: svg,
@@ -1050,8 +1062,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();
       image = null;
-      canvas.remove();
-      svg.remove();
+      plot.remove();
     },
   };
 

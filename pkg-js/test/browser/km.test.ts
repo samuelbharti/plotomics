@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createKm } from "../../src/components/km.js";
 import type { PlotomicsInstance } from "../../src/core/index.js";
+import { PLOTS } from "./plots.js";
 
 function container(width = 600, height = 400) {
   const el = document.createElement("div");
@@ -338,6 +339,58 @@ describe("km in a browser", () => {
       expect(errors).toEqual([]);
     } finally {
       window.removeEventListener("error", onError);
+    }
+  });
+});
+
+describe("km survival ticks on a short panel", () => {
+  // The km of the padding tests: three strata and a risk table, which
+  // leave a panel 40 px high in a widget of 200 or 160 px at a 16 px font.
+  const km = PLOTS.find((p) => p.name === "km");
+
+  /** The survival tick labels, top first. */
+  const survival = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll('svg text[text-anchor="end"]')).filter((t) =>
+      /%$/.test(t.textContent ?? ""),
+    ) as SVGTextElement[];
+
+  it("keeps the labels clear at 200 and 160 px, with a gridline for each", () => {
+    // Before the fix the five labels from 0 to 100% stayed, 10 px from each
+    // other in a 40 px panel at a 16 px font.
+    for (const height of [200, 160]) {
+      const el = container(640, height);
+      instances.push(
+        km?.make(el, { fontSize: 16 }) as PlotomicsInstance<unknown>,
+      );
+      const labels = survival(el);
+      expect(labels.map((t) => t.textContent)).toContain("100%");
+      const ys = labels.map((t) => Number(t.getAttribute("y")));
+      for (let i = 1; i < ys.length; i += 1) {
+        // 14.7 px labels, with 2 px between them at the least.
+        expect(
+          Math.abs((ys[i] as number) - (ys[i - 1] as number)),
+        ).toBeGreaterThanOrEqual(16.7);
+      }
+      // The canvas draws one gridline for each label, in a column at time
+      // 19, where no curve crosses a tick.
+      const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+      const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+      const ratio = canvas.width / canvas.clientWidth;
+      const x = Math.floor(
+        (tickX(el, "0") + 1.9 * (tickX(el, "10") - tickX(el, "0"))) * ratio,
+      );
+      const column = ctx.getImageData(x, 0, 1, canvas.height).data;
+      let runs = 0;
+      let inRun = false;
+      for (let i = 0; i < column.length; i += 4) {
+        const grid =
+          column[i] === 0xe5 &&
+          column[i + 1] === 0xe7 &&
+          column[i + 2] === 0xeb;
+        if (grid && !inRun) runs += 1;
+        inRun = grid;
+      }
+      expect(runs, `${height} px`).toBe(labels.length);
     }
   });
 });

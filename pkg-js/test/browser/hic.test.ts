@@ -152,6 +152,7 @@ describe("hic in a browser", () => {
 
     const png = (await canvasPNG(el)) as Blob;
     // Before the fix, every value at or below 0 was drawn as background.
-    expect(await drawnPixels(png)).toBeGreaterThan(338 * 338 * 0.9);
+    // The plot square is 318 px inside the default theme padding.
+    expect(await drawnPixels(png)).toBeGreaterThan(318 * 318 * 0.9);
   });
 });

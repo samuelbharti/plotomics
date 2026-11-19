@@ -42,8 +42,9 @@ function smallData(tmb = [2, 1, 1]) {
   };
 }
 
+/** Hover at (x, y) of the plot, which starts inside the theme padding. */
 function hoverAt(el: HTMLElement, x: number, y: number): string {
-  const r = el.getBoundingClientRect();
+  const r = (el.querySelector("svg") as SVGSVGElement).getBoundingClientRect();
   el.dispatchEvent(
     new MouseEvent("mousemove", {
       clientX: r.left + x,

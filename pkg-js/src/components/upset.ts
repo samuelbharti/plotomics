@@ -32,11 +32,13 @@ import {
   type PlotomicsTheme,
   resolveTheme,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   releaseContainer,
   dpr,
   serializeSVG,
+  padSVG,
   compositePNG,
   zeroTicks,
   fitZeroTicks,
@@ -127,6 +129,14 @@ export interface UpsetLayout {
 }
 
 /**
+ * Room right of the matrix and under it, past what the plot draws. The
+ * theme padding around the plot gives the rest: 12 and 16 px with the
+ * default.
+ */
+const RIGHT = 2;
+const BOTTOM = 6;
+
+/**
  * Frame the three panels. The left gutter holds set names and, when shown,
  * their total bars; the matrix gets whatever height the bars do not take.
  */
@@ -145,7 +155,7 @@ export function layoutUpset(
 ): UpsetLayout {
   // Room above the bars for the total, drawn 2 px under the top.
   const top = Math.max(14, Math.ceil(ASCENT * sizes.label) + 2);
-  const bottom = 16;
+  const bottom = BOTTOM;
   const avail = Math.max(1, height - top - bottom);
   // Clamp the split so neither panel can vanish at extreme aspect ratios.
   const frac = Math.min(0.8, Math.max(0.2, opts.barFraction));
@@ -176,7 +186,7 @@ export function layoutUpset(
     rowText,
     colW:
       nIntersections > 0
-        ? Math.max(1, (width - left - 12) / nIntersections)
+        ? Math.max(1, (width - left - RIGHT) / nIntersections)
         : 1,
     matrixH,
     setPanelW,
@@ -233,8 +243,18 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   svg.style.cssText =
     "position:absolute;inset:0;pointer-events:none;overflow:visible;";
-  el.appendChild(canvas);
-  el.appendChild(svg);
+  // The size of the element, and the plot box inside its padding: `width`
+  // and `height` are the box, which every layer and coordinate is in.
+  const plot = createPlotBox(el);
+  let outerW = 0;
+  let outerH = 0;
+  /** Fit the plot box to an element `w` x `h` px and take its size. */
+  function fitBox(w = outerW, h = outerH) {
+    outerW = w;
+    outerH = h;
+    ({ width, height } = plot.fit(w, h, theme));
+  }
+  plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
   // ---- accessors ----
@@ -259,9 +279,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
   function onMove(e: MouseEvent) {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
-    const rect = el.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const { x: mx, y: my } = plot.pointer(e.clientX, e.clientY);
     const s = sizes();
     // Left of the matrix, on a set's row: the full name and its size, since
     // a long name is shortened on the plot.
@@ -353,6 +371,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       : fitZeroTicks(finiteMax(s), layout.barH - 6, {
           integer: true,
           minGapPx: fontSizes.label + 5,
+          endGapPx: fontSizes.label + 2,
         });
     const ssAll = setSizes();
     let countWidth = 0;
@@ -372,7 +391,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
         // On a half pixel, so the 1 px line fills one row of pixels.
         const y = Math.round(tickY(v, axis.top)) + 0.5;
         ctx.moveTo(layout.left, y);
-        ctx.lineTo(width - 12, y);
+        ctx.lineTo(width - RIGHT, y);
       }
       ctx.stroke();
     }
@@ -402,7 +421,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
         ctx.fillRect(
           layout.left,
           layout.barBaseline + r * layout.rowH,
-          width - layout.left - 12,
+          width - layout.left - RIGHT,
           layout.rowH,
         );
       }
@@ -576,7 +595,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     if (total) {
       svg.appendChild(
         text(
-          width - 12,
+          width - RIGHT,
           layout.top + 2,
           `${total.toLocaleString()} total`,
           theme.muted,
@@ -618,8 +637,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     return t;
   }
   function doResize(w: number, h: number) {
-    width = w;
-    height = h;
+    fitBox(w, h);
     layoutCanvas();
     render();
   }
@@ -638,7 +656,8 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       fontSizes = textSizes(theme);
-      render();
+      // A new padding changes the plot box.
+      doResize(outerW, outerH);
     },
     resize(w, h) {
       doResize(w, h);
@@ -652,7 +671,9 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       img.setAttribute("height", String(height));
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
-      return serializeSVG(out);
+      return serializeSVG(
+        padSVG(out, width, height, plot.padding, theme.background),
+      );
     },
     async exportPNG(scale = 2) {
       // The canvas with the axes, labels and legend over it.
@@ -660,6 +681,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
         width,
         height,
         scale,
+        padding: plot.padding,
         background: theme.background,
         layers: [{ canvas, x: 0, y: 0, width, height }],
         overlay: svg,
@@ -670,8 +692,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();
-      canvas.remove();
-      svg.remove();
+      plot.remove();
     },
   };
 

@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { createLollipop } from "../../src/components/lollipop.js";
+import { PLOTS } from "./plots.js";
 import {
+  DEFAULT_PADDING,
   OKABE_ITO,
   PALETTE_20,
   type PlotomicsInstance,
@@ -10,6 +12,9 @@ import {
   textWidth,
 } from "../../src/core/index.js";
 
+/** Width of the plot box of a 900 px widget: less the theme padding. */
+const BOX_W = 900 - 2 * DEFAULT_PADDING;
+
 function container(width = 900, height = 440) {
   const el = document.createElement("div");
   el.style.cssText = `width:${width}px;height:${height}px;`;
@@ -17,8 +22,9 @@ function container(width = 900, height = 440) {
   return el;
 }
 
+/** Hover at (x, y) of the plot, which starts inside the theme padding. */
 function hoverAt(el: HTMLElement, x: number, y: number): string {
-  const r = el.getBoundingClientRect();
+  const r = (el.querySelector("svg") as SVGSVGElement).getBoundingClientRect();
   el.dispatchEvent(
     new MouseEvent("mousemove", {
       clientX: r.left + x,
@@ -248,7 +254,7 @@ describe("lollipop in a browser", () => {
       }),
     );
     // x of residue 248 and y of counts 1 and 2 (the stem holds both).
-    const x = 52 + ((248 - 1) / (393 - 1)) * (900 - 52 - 16);
+    const x = 52 + ((248 - 1) / (393 - 1)) * (BOX_W - 52 - 16);
     const zero = svgTexts(el).find(
       (t) => t.textContent === "0",
     ) as SVGTextElement;
@@ -330,7 +336,7 @@ describe("lollipop in a browser", () => {
         },
       }),
     );
-    const x = 52 + ((248 - 1) / (393 - 1)) * (900 - 52 - 16);
+    const x = 52 + ((248 - 1) / (393 - 1)) * (BOX_W - 52 - 16);
     let blue = 0;
     for (let y = 200; y < 420; y += 1) {
       if (!isBlue(pixel(el, x, y))) continue;
@@ -360,7 +366,7 @@ describe("lollipop in a browser", () => {
         },
       }),
     );
-    const x = 52 + ((248 - 1) / (393 - 1)) * (900 - 52 - 16);
+    const x = 52 + ((248 - 1) / (393 - 1)) * (BOX_W - 52 - 16);
     let red = 0;
     for (let y = 0; y < 440; y += 1) if (isRed(pixel(el, x, y))) red += 1;
     expect(red).toBeGreaterThan(0);
@@ -388,14 +394,17 @@ describe("lollipop in a browser", () => {
     expect(texts.some((t) => /^\+\d+ more$/.test(t.textContent ?? ""))).toBe(
       true,
     );
+    // The stems keep room for the count labels 0 and 10: the 11 px label
+    // size and 2 px between their baselines.
     const zero = texts.find((t) => t.textContent === "0") as SVGTextElement;
     const ten = texts.find((t) => t.textContent === "10") as SVGTextElement;
     expect(
       Number(zero.getAttribute("y")) - Number(ten.getAttribute("y")),
-    ).toBeGreaterThan(30);
+    ).toBeGreaterThanOrEqual(11 + 2);
+    // In the plot box, 20 px less than the widget with the default padding.
     for (const t of texts) {
       const b = t.getBBox();
-      expect(b.y + b.height).toBeLessThanOrEqual(200);
+      expect(b.y + b.height).toBeLessThanOrEqual(200 - 2 * DEFAULT_PADDING);
     }
   });
 
@@ -547,33 +556,38 @@ describe("lollipop in a browser", () => {
         ticks.find((t) => t.textContent === label)?.getAttribute("y") ?? 0,
       ) -
       0.35 * 11;
+    // In the plot box, which starts inside the theme padding; the images
+    // keep the padding around it.
+    const P = DEFAULT_PADDING;
     const x = (residue: number) =>
-      52 + ((residue - 1) / (393 - 1)) * (800 - 52 - 16);
+      52 + ((residue - 1) / (393 - 1)) * (800 - 2 * P - 52 - 16);
     const grid = [0xe5, 0xe7, 0xeb];
-    const images = [
-      await screenPNG(el),
-      (await plot.exportPNG?.(1)) as Blob,
-      svgImagePNG(plot.exportSVG?.() ?? ""),
+    // Each image with the offset of the plot box in it and its width: the
+    // canvas image in the SVG export is the plot box alone.
+    const images: [Blob, number, number][] = [
+      [await screenPNG(el), P, 800],
+      [(await plot.exportPNG?.(1)) as Blob, P, 800],
+      [svgImagePNG(plot.exportSVG?.() ?? ""), 0, 800 - 2 * P],
     ];
-    for (const png of images) {
+    for (const [png, o, w] of images) {
       for (const label of ["5", "10", "15", "20"]) {
         // The gridline shows where no stem stands, at residue 200.
         let nearest = 255;
         for (let dy = -2; dy <= 2; dy += 1) {
-          const p = await pngPixel(png, 800, x(200), lineY(label) + dy);
+          const p = await pngPixel(png, w, x(200) + o, lineY(label) + dy + o);
           nearest = Math.min(nearest, far(p, grid));
         }
         expect(nearest).toBeLessThan(12);
       }
       // The head at count 10 sits on the line through 10 and covers it.
       for (let dy = -2; dy <= 2; dy += 1) {
-        const p = await pngPixel(png, 800, x(100), lineY("10") + dy);
+        const p = await pngPixel(png, w, x(100) + o, lineY("10") + dy + o);
         expect(isRed(p)).toBe(true);
       }
       // The stem at residue 300 crosses the line through 5 and covers it.
       let crossing = 0;
       for (let dx = -1; dx <= 1; dx += 1) {
-        const p = await pngPixel(png, 800, x(300) + dx, lineY("5"));
+        const p = await pngPixel(png, w, x(300) + dx + o, lineY("5") + o);
         crossing = Math.max(crossing, far(p, grid));
       }
       expect(crossing).toBeGreaterThan(20);
@@ -855,7 +869,8 @@ describe("lollipop in a browser", () => {
         }),
       );
       const ys = yTicks(el).map((t) => Number(t.getAttribute("y")));
-      expect(ys.length).toBeGreaterThanOrEqual(2);
+      // A stem area too short for two labels keeps its top label alone.
+      expect(ys.length).toBeGreaterThanOrEqual(1);
       // The digits of neighbouring labels do not touch.
       const size = textSizes({ fontSize }).label;
       for (let i = 1; i < ys.length; i += 1) {
@@ -1043,5 +1058,104 @@ describe("lollipop counts from Python and large counts", () => {
     };
     expect(at("N1")).toEqual([255, 255, 255]);
     expect(at("N2")).toEqual([255, 0, 255]);
+  });
+});
+
+describe("lollipop count labels and legend rows on a short widget", () => {
+  const CLASSES = [
+    "Missense_Mutation",
+    "Nonsense_Mutation",
+    "Frame_Shift_Del",
+    "Frame_Shift_Ins",
+    "Splice_Site",
+    "In_Frame_Del",
+    "In_Frame_Ins",
+    "Translation_Start_Site",
+  ];
+  /** One stem of each of the eight classes. */
+  const eight = () => ({
+    columns: {
+      position: CLASSES.map((_, i) => 40 + i * 40),
+      count: CLASSES.map((_, i) => 40 - i * 4),
+      class: CLASSES,
+    },
+    meta: { length: 393, classes: CLASSES },
+  });
+  const counts = (el: HTMLElement) => yTicks(el).map((t) => t.textContent);
+  /** Smallest distance between the baselines of two count labels. */
+  function closest(el: HTMLElement): number {
+    const ys = yTicks(el).map((t) => Number(t.getAttribute("y")));
+    let d = Number.POSITIVE_INFINITY;
+    for (let i = 1; i < ys.length; i += 1) {
+      d = Math.min(d, Math.abs((ys[i] as number) - (ys[i - 1] as number)));
+    }
+    return d;
+  }
+
+  it("keeps 0 and the top where they are clear but closer than the full gap", () => {
+    // Before the fix a 200 px widget at a 16 px font showed "50" alone,
+    // where "0" and "50" were 19 px from each other with 14.7 px text.
+    const plot = PLOTS.find((p) => p.name === "lollipop");
+    for (const width of [640, 400, 900]) {
+      const el = container(width, 200);
+      instances.push(
+        plot?.make(el, { fontSize: 16 }) as PlotomicsInstance<unknown>,
+      );
+      expect(counts(el), `${width} px`).toEqual(["0", "50"]);
+      expect(closest(el)).toBeGreaterThanOrEqual(14.7 + 2);
+    }
+  });
+
+  it("keeps the legend rows while 0 and the top count fit", () => {
+    // Before the fix the legend gave up a row for three count labels: at
+    // 640 x 200 it showed four classes and "+4 more".
+    const el = container(640, 200);
+    instances.push(
+      createLollipop(el, {
+        data: eight(),
+        options: { theme: { fontSize: 12 } },
+      }),
+    );
+    const texts = svgTexts(el).map((t) => t.textContent);
+    for (const c of CLASSES) expect(texts).toContain(c);
+    expect(texts.some((t) => /^\+\d+ more$/.test(t ?? ""))).toBe(false);
+    expect(counts(el)).toEqual(["0", "50"]);
+  });
+
+  it("keeps the count labels clear at 800 x 180 with a 16 px font", () => {
+    // Eight classes, and the two stems of one class that #207 checked.
+    const two = {
+      columns: {
+        position: [100, 200],
+        count: [3, 1],
+        class: ["Missense", "Missense"],
+      },
+      meta: { length: 393, classes: ["Missense"] },
+    };
+    for (const data of [eight(), two]) {
+      const el = container(800, 180);
+      instances.push(
+        createLollipop(el, { data, options: { theme: { fontSize: 16 } } }),
+      );
+      expect(counts(el).length).toBeGreaterThanOrEqual(1);
+      expect(closest(el)).toBeGreaterThanOrEqual(14.7 + 2);
+    }
+  });
+
+  it("keeps the layout of the default height", () => {
+    // At the R and Python default of 440 px the legend shows every class
+    // and the count axis its five labels.
+    for (const width of [640, 900]) {
+      const el = container(width, 440);
+      instances.push(
+        createLollipop(el, {
+          data: eight(),
+          options: { theme: { fontSize: 12 } },
+        }),
+      );
+      const texts = svgTexts(el).map((t) => t.textContent);
+      for (const c of CLASSES) expect(texts).toContain(c);
+      expect(counts(el)).toEqual(["0", "10", "20", "30", "40"]);
+    }
   });
 });

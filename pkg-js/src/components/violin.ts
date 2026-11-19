@@ -41,14 +41,17 @@ import {
   textSizes,
   textWidth,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   releaseContainer,
   dpr,
   serializeSVG,
+  padSVG,
   compositePNG,
   categoricalColors,
 } from "../core/index.js";
+import { setCanvasColour } from "../core/paint.js";
 
 export interface ViolinOptions {
   /** Fraction of a cell's width the widest violin fills, in (0, 1].
@@ -333,8 +336,18 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   svg.style.cssText =
     "position:absolute;inset:0;pointer-events:none;overflow:visible;";
-  el.appendChild(canvas);
-  el.appendChild(svg);
+  // The size of the element, and the plot box inside its padding: `width`
+  // and `height` are the box, which every layer and coordinate is in.
+  const plot = createPlotBox(el);
+  let outerW = 0;
+  let outerH = 0;
+  /** Fit the plot box to an element `w` x `h` px and take its size. */
+  function fitBox(w = outerW, h = outerH) {
+    outerW = w;
+    outerH = h;
+    ({ width, height } = plot.fit(w, h, theme));
+  }
+  plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
   // ---- accessors ----
@@ -405,9 +418,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
   function onMove(e: MouseEvent) {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
-    const rect = el.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const { x: mx, y: my } = plot.pointer(e.clientX, e.clientY);
     const f = features();
     const g = groups();
     const col = Math.floor((mx - layout.left) / layout.cellW);
@@ -486,6 +497,21 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       violinMaxWidth(layout, opts.violinWidth, opts.violinAspect, sizes.label) /
       2;
 
+    // Row separators, so a tall stack does not read as one continuous field.
+    // They go first, under the violins, so no line crosses a violin's tip. A
+    // grid colour that paints nothing, such as "none", draws no line.
+    if (setCanvasColour(ctx, "strokeStyle", theme.grid, el)) {
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let r = 1; r < f.length; r += 1) {
+        // On a half pixel, so the 1 px line fills one row of pixels.
+        const y = Math.round(layout.top + r * layout.rowH) + 0.5;
+        ctx.moveTo(layout.left, y);
+        ctx.lineTo(layout.left + layout.plotW, y);
+      }
+      ctx.stroke();
+    }
+
     for (let r = 0; r < f.length; r += 1) {
       // Collect the row first so every violin in it shares one density scale.
       const rows: number[][] = [];
@@ -556,14 +582,6 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     if (!width || !height) return;
     const f = features();
     const g = groups();
-
-    // Row separators, so a tall stack does not read as one continuous field.
-    for (let r = 1; r < f.length; r += 1) {
-      const y = layout.top + r * layout.rowH;
-      svg.appendChild(
-        line(layout.left, y, layout.left + layout.plotW, y, theme.grid),
-      );
-    }
 
     const { label } = sizes;
     if (opts.showFeatureLabels) {
@@ -689,8 +707,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
   }
 
   function doResize(w: number, h: number) {
-    width = w;
-    height = h;
+    fitBox(w, h);
     layoutCanvas();
     render();
   }
@@ -709,7 +726,8 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       sizes = textSizes(theme);
-      render();
+      // A new padding changes the plot box.
+      doResize(outerW, outerH);
     },
     resize(w, h) {
       doResize(w, h);
@@ -723,7 +741,9 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       img.setAttribute("height", String(height));
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
-      return serializeSVG(out);
+      return serializeSVG(
+        padSVG(out, width, height, plot.padding, theme.background),
+      );
     },
     async exportPNG(scale = 2) {
       // The canvas with the axes, labels and legend over it.
@@ -731,6 +751,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
         width,
         height,
         scale,
+        padding: plot.padding,
         background: theme.background,
         layers: [{ canvas, x: 0, y: 0, width, height }],
         overlay: svg,
@@ -741,8 +762,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();
-      canvas.remove();
-      svg.remove();
+      plot.remove();
     },
   };
 

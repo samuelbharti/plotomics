@@ -35,11 +35,13 @@ import {
   type PlotomicsTheme,
   resolveTheme,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   releaseContainer,
   dpr,
   serializeSVG,
+  padSVG,
   compositePNG,
   zeroTicks,
   fitZeroTicks,
@@ -241,25 +243,36 @@ export interface ValueAxis {
  * below both 0 and `min` to a round top at or above both 0 and `max`, so the
  * zero line is a tick and a negative bar stays inside the plot. It takes as
  * many intervals, up to `maxCount`, as leave at least `minGapPx` between
- * neighbouring labels. With no value below 0 these are the ticks of
- * `fitZeroTicks`.
+ * neighbouring labels; when even one interval crowds, the two ends when
+ * they keep `endGapPx` (by default `minGapPx`), or the end farther from 0
+ * alone. With no value below 0 these are the ticks of `fitZeroTicks`.
  */
 export function valueTicks(
   min: number,
   max: number,
   lengthPx: number,
-  opts: { maxCount?: number; minGapPx?: number } = {},
+  opts: { maxCount?: number; minGapPx?: number; endGapPx?: number } = {},
 ): ValueAxis {
   const lo = Number.isFinite(min) ? Math.min(0, min) : 0;
   if (!(lo < 0)) return { ...fitZeroTicks(max, lengthPx, opts), bottom: 0 };
   const hi = Number.isFinite(max) ? Math.max(0, max) : 0;
   const minGap = opts.minGapPx ?? 16;
+  const endGap = opts.endGapPx ?? minGap;
   let axis = signedTicks(lo, hi, 1);
   for (let count = opts.maxCount ?? 5; count >= 1; count -= 1) {
     axis = signedTicks(lo, hi, count);
     if (lengthPx / Math.max(1, axis.ticks.length - 1) >= minGap) return axis;
   }
-  return axis;
+  // Even the coarsest step crowds: the two ends when they fit, else the
+  // end farther from 0 alone, so no two labels come closer than the gap.
+  const { bottom, top } = axis;
+  const ticks =
+    lengthPx >= endGap
+      ? [bottom, top]
+      : lengthPx > 0
+        ? [Math.abs(bottom) > Math.abs(top) ? bottom : top]
+        : [];
+  return { ...axis, ticks };
 }
 
 /**
@@ -320,7 +333,9 @@ export function layoutProfile(
     56,
     Math.ceil(t.titleX + DESCENT * sizes.axisTitle + 3 + tickWidth + 8),
   );
-  const right = 14;
+  // Room right of the last bar; the theme padding gives the rest, 14 px
+  // with the default.
+  const right = 4;
   const titleH = hasTitle ? t.titleH : 0;
   const headerTop = titleH + (opts.showHeader ? 6 : 0);
   const plotTop = opts.showHeader
@@ -369,8 +384,18 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   svg.style.cssText =
     "position:absolute;inset:0;pointer-events:none;overflow:visible;";
-  el.appendChild(canvas);
-  el.appendChild(svg);
+  // The size of the element, and the plot box inside its padding: `width`
+  // and `height` are the box, which every layer and coordinate is in.
+  const plot = createPlotBox(el);
+  let outerW = 0;
+  let outerH = 0;
+  /** Fit the plot box to an element `w` x `h` px and take its size. */
+  function fitBox(w = outerW, h = outerH) {
+    outerW = w;
+    outerH = h;
+    ({ width, height } = plot.fit(w, h, theme));
+  }
+  plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
   // ---- accessors ----
@@ -420,9 +445,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
   function onMove(e: MouseEvent) {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
-    const rect = el.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const { x: mx, y: my } = plot.pointer(e.clientX, e.clientY);
     const v = values();
     if (my < layout.plotTop || my > layout.baseline || mx < layout.left) {
       tooltip.hide();
@@ -493,6 +516,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     const axis: ValueAxis = v.length
       ? valueTicks(finiteMin(v), finiteMax(v), layout.plotH, {
           minGapPx: sizes.label + 5,
+          endGapPx: sizes.label + 2,
         })
       : { ...zeroTicks(1, 4), bottom: 0 };
     let tickWidth = 0;
@@ -698,8 +722,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     return t;
   }
   function doResize(w: number, h: number) {
-    width = w;
-    height = h;
+    fitBox(w, h);
     layoutCanvas();
     render();
   }
@@ -718,7 +741,8 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       sizes = textSizes(theme);
-      render();
+      // A new padding changes the plot box.
+      doResize(outerW, outerH);
     },
     resize(w, h) {
       doResize(w, h);
@@ -732,7 +756,9 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
       img.setAttribute("height", String(height));
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
-      return serializeSVG(out);
+      return serializeSVG(
+        padSVG(out, width, height, plot.padding, theme.background),
+      );
     },
     async exportPNG(scale = 2) {
       // The canvas with the axes, labels and legend over it.
@@ -740,6 +766,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
         width,
         height,
         scale,
+        padding: plot.padding,
         background: theme.background,
         layers: [{ canvas, x: 0, y: 0, width, height }],
         overlay: svg,
@@ -750,8 +777,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();
-      canvas.remove();
-      svg.remove();
+      plot.remove();
     },
   };
 

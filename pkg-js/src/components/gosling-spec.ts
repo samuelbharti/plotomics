@@ -21,7 +21,13 @@ export interface GoslingOptions {
    * own `data` blocks; the factory's `data` argument is ignored. Typed as
    * `unknown` here to avoid importing `gosling.js`; `gosling.ts` narrows it. */
   spec: unknown;
-  /** Passed through to `embed()`'s options (outer padding, px). */
+  /**
+   * Gosling's own outer padding in px, passed to its component. The host
+   * keeps the default theme padding of 10 px around Gosling, so the views
+   * sit this padding plus 10 px in, and 10 px in with a padding of 0.
+   * Unset, it is 50, so the views sit 60 px in, as with Gosling's own
+   * default.
+   */
   padding?: number;
   /**
    * Gosling's own theme, passed to Gosling as is: a built-in name such as
@@ -29,8 +35,9 @@ export interface GoslingOptions {
    * a plotomics theme. Every other component takes a
    * `Partial<PlotomicsTheme>` here, but Gosling draws its own tracks, so no
    * plotomics theme field applies: `background`, `foreground`, `muted`,
-   * `grid`, `axis`, `fontFamily`, `fontSize` and `categorical` are not
-   * read. Set colours and fonts in the Gosling theme or in the spec.
+   * `grid`, `axis`, `fontFamily`, `fontSize`, `categorical` and `padding`
+   * are not read. Set colours and fonts in the Gosling theme or in the
+   * spec; the host keeps the default padding of 10 px around Gosling.
    */
   theme?: unknown;
 }
@@ -50,6 +57,22 @@ export function isValidSpec(spec: unknown): spec is Record<string, unknown> {
     return false;
   }
   return SPEC_KEYS.some((k) => k in (spec as Record<string, unknown>));
+}
+
+/** Gosling's own default outer padding, in px. */
+export const GOSLING_PADDING = 60;
+
+/**
+ * The outer padding to give Gosling: the one set, or what is left of
+ * Gosling's default of 60 px after the `hostPadding` px the host keeps
+ * around it, so the views sit 60 px in.
+ */
+export function goslingPadding(
+  padding: number | undefined,
+  hostPadding: number,
+): number {
+  if (padding !== undefined) return padding;
+  return Math.max(0, GOSLING_PADDING - hostPadding);
 }
 
 /** Build the option object passed to `embed()` from component options,

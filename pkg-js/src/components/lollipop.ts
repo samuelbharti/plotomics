@@ -50,11 +50,13 @@ import {
   type PlotomicsTheme,
   resolveTheme,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   releaseContainer,
   dpr,
   serializeSVG,
+  padSVG,
   compositePNG,
   rangeTicks,
   spaceTicks,
@@ -497,7 +499,8 @@ export function residueTicks(length: number, count = 6): number[] {
 /**
  * Ticks for the count axis of stems up to `max` on an axis `lengthPx` tall:
  * round values from 0, as many as keep `minGapPx` between neighbouring
- * labels. With `integer`, for counts that are all whole numbers, the steps
+ * labels, and 0 and the top alone when they keep `endGapPx` (see
+ * {@link fitZeroTicks}). With `integer`, for counts that are all whole numbers, the steps
  * are whole numbers too, since a count of samples has no fractions; without
  * it, counts below 1, such as frequencies, get decimal steps. The stems are
  * scaled against `top`, the round value at the top of the axis.
@@ -507,11 +510,13 @@ export function countTicks(
   lengthPx: number,
   minGapPx: number,
   integer = true,
+  endGapPx = minGapPx,
 ): { ticks: number[]; top: number; step: number } {
   return fitZeroTicks(max, lengthPx, {
     integer,
     maxCount: COUNT_TICKS,
     minGapPx,
+    endGapPx,
   });
 }
 
@@ -561,8 +566,18 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   svg.style.cssText =
     "position:absolute;inset:0;pointer-events:none;overflow:visible;";
-  el.appendChild(canvas);
-  el.appendChild(svg);
+  // The size of the element, and the plot box inside its padding: `width`
+  // and `height` are the box, which every layer and coordinate is in.
+  const plot = createPlotBox(el);
+  let outerW = 0;
+  let outerH = 0;
+  /** Fit the plot box to an element `w` x `h` px and take its size. */
+  function fitBox(w = outerW, h = outerH) {
+    outerW = w;
+    outerH = h;
+    ({ width, height } = plot.fit(w, h, theme));
+  }
+  plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
   // ---- accessors ----
@@ -734,7 +749,9 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   }
   /**
    * Each shown legend entry's x and row, and a "+N more" note when the
-   * entries need more rows than the legend may take (a fifth of the height).
+   * entries need more rows than the legend may take: a fifth of the height,
+   * less any row that would leave the stems too short for the count labels
+   * 0 and the top.
    */
   function legendLayout(): {
     items: { x: number; row: number }[];
@@ -747,7 +764,12 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     const names = classes().map((c) => fit(c, maxW - 12, sizes.label));
     const widths = names.map((c) => 12 + textWidth(c, sizes.label));
     const rowH = lollipopText(sizes).legendRowH;
-    const maxRows = Math.max(1, Math.floor((height * 0.2) / rowH));
+    // A fifth of the height, and no row that would leave the stems less
+    // room than the count labels 0 and the top need: the label size and
+    // 2 px, as the count axis asks of them.
+    let maxRows = Math.max(1, Math.floor((height * 0.2) / rowH));
+    const stemRoom = sizes.label + 2;
+    while (maxRows > 1 && frame(maxRows).stemH < stemRoom) maxRows -= 1;
     const all = wrapRows(widths, maxW);
     const items = all.filter((it) => it.row < maxRows);
     if (items.length === all.length) return { items, note: null, names };
@@ -783,9 +805,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   function onMove(e: MouseEvent) {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
-    const rect = el.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const { x: mx, y: my } = plot.pointer(e.clientX, e.clientY);
 
     // The head drawn on top wins: of the heads under the cursor, the last in
     // drawing order. Near a head but on none, the nearest within 2 px.
@@ -879,7 +899,13 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     restack();
     layout = frame(legendRows());
     // As many round counts as the stem area holds without crowding.
-    yAxis = countTicks(maxStack(), layout.stemH, sizes.label + 5, wholeCounts);
+    yAxis = countTicks(
+      maxStack(),
+      layout.stemH,
+      sizes.label + 5,
+      wholeCounts,
+      sizes.label + 2,
+    );
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, width, height);
@@ -1261,8 +1287,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
   }
 
   function doResize(w: number, h: number) {
-    width = w;
-    height = h;
+    fitBox(w, h);
     layoutCanvas();
     render();
   }
@@ -1281,7 +1306,8 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       sizes = textSizes(theme);
-      render();
+      // A new padding changes the plot box.
+      doResize(outerW, outerH);
     },
     resize(w, h) {
       doResize(w, h);
@@ -1295,7 +1321,9 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       img.setAttribute("height", String(height));
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
-      return serializeSVG(out);
+      return serializeSVG(
+        padSVG(out, width, height, plot.padding, theme.background),
+      );
     },
     async exportPNG(scale = 2) {
       // The canvas with the axes, labels and legend over it.
@@ -1303,6 +1331,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
         width,
         height,
         scale,
+        padding: plot.padding,
         background: theme.background,
         layers: [{ canvas, x: 0, y: 0, width, height }],
         overlay: svg,
@@ -1313,8 +1342,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();
-      canvas.remove();
-      svg.remove();
+      plot.remove();
     },
   };
 

@@ -5,6 +5,7 @@ import {
   formatTime,
   layoutKm,
   stepPoints,
+  survivalTicks,
   tickDecimals,
   timeTicks,
 } from "../src/components/km.js";
@@ -191,5 +192,28 @@ describe("km layout at other text sizes", () => {
       small.riskTop - small.axisY,
     );
     expect(large.riskRowH).toBeGreaterThan(small.riskRowH);
+  });
+});
+
+describe("km survival ticks", () => {
+  it("takes 25% steps when their labels keep clear", () => {
+    expect(survivalTicks(0, 200, 11)).toEqual([0, 0.25, 0.5, 0.75, 1]);
+    expect(survivalTicks(0.4, 200, 11)).toEqual([0.4, 0.55, 0.7, 0.85, 1]);
+  });
+
+  it("takes fewer ticks on a short axis, never closer than the label size", () => {
+    // Before the fix the five ticks stayed at any height: on a 40 px axis
+    // with 14.7 px labels they were 10 px from each other.
+    expect(survivalTicks(0, 40, 14.7)).toEqual([0, 0.5, 1]);
+    expect(survivalTicks(0, 30, 14.7)).toEqual([0, 1]);
+    expect(survivalTicks(0, 10, 14.7)).toEqual([1]);
+    expect(survivalTicks(0, 0, 14.7)).toEqual([]);
+    for (let px = 0; px <= 120; px += 1) {
+      const t = survivalTicks(0.2, px, 14.7);
+      for (let i = 1; i < t.length; i += 1) {
+        const gap = (((t[i] as number) - (t[i - 1] as number)) / 0.8) * px;
+        expect(gap, `${px} px`).toBeGreaterThanOrEqual(14.7 + 2 - 1e-9);
+      }
+    }
   });
 });

@@ -41,7 +41,7 @@ plotomics_widget <- function(name, columns, meta = list(), options = list(),
                           array_options = character()) {
   x <- list(
     data = list(columns = columns, meta = meta),
-    options = options
+    options = bv_theme_padding(options)
   )
 
   htmlwidgets::createWidget(
@@ -98,6 +98,57 @@ bv_keep_arrays <- function(widget, array_meta = character(),
   }
   widget$x <- x
   widget
+}
+
+#' Check the theme padding and shape it for the browser
+#'
+#' `theme$padding` is the space in px between the edge of the widget and
+#' the plot. A single number of 0 or more sets all four sides and is sent as
+#' a JSON number. Numbers named from `top`, `right`, `bottom` and `left`, as
+#' a named vector or a named list, set those sides and are sent as a JSON
+#' object; jsonlite would drop the names of a vector. Anything else (a
+#' negative number, `NA`, `NaN`, `Inf`, text, or another name) is an error,
+#' the one Python raises too.
+#'
+#' @param options Named list of component options.
+#' @return `options`, with `theme$padding` as a number or a named list.
+#' @keywords internal
+#' @noRd
+bv_theme_padding <- function(options) {
+  theme <- options[["theme"]]
+  if (!is.list(theme) || is.null(theme[["padding"]])) {
+    return(options)
+  }
+  options$theme$padding <- bv_padding(theme[["padding"]])
+  options
+}
+
+#' A padding value as a number or a named list of numbers
+#' @noRd
+bv_padding <- function(padding) {
+  ok <- function(v) {
+    is.numeric(v) && !is.factor(v) && length(v) == 1L && is.finite(v) &&
+      v >= 0
+  }
+  nms <- names(padding)
+  if (is.null(nms) && !is.list(padding) && ok(padding)) {
+    return(as.numeric(padding))
+  }
+  sides <- if (is.list(padding)) {
+    padding
+  } else if (is.numeric(padding) && !is.factor(padding)) {
+    as.list(padding)
+  }
+  if (length(sides) > 0L && !is.null(nms) &&
+    all(nms %in% c("top", "right", "bottom", "left")) &&
+    !anyDuplicated(nms) && all(vapply(sides, ok, logical(1)))) {
+    return(lapply(sides, as.numeric))
+  }
+  stop(
+    "`theme$padding` must be a number of 0 or more, or a named list of ",
+    "them with names from top, right, bottom and left.",
+    call. = FALSE
+  )
 }
 
 #' Mark an atomic vector with I() so it serialises as a JSON array

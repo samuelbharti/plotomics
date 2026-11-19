@@ -52,5 +52,6 @@ def test_gosling_theme_doc_says_it_is_not_a_plotomics_theme():
         "fontFamily",
         "fontSize",
         "categorical",
+        "padding",
     ):
         assert f"``{field}``" in doc

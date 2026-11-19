@@ -292,8 +292,11 @@ describe("embedding gridlines", () => {
     ) as SVGTextElement;
     const canvas = el.querySelector("canvas") as HTMLCanvasElement;
     const plot = boxIn(el, canvas);
+    // In the element: the label's x is in the plot box, which sits inside
+    // the theme padding.
+    const svg = boxIn(el, el.querySelector("svg") as SVGSVGElement);
     return {
-      x: Number(label.getAttribute("x")),
+      x: Number(label.getAttribute("x")) + svg.left,
       y: Math.round((plot.top + plot.bottom) / 2),
     };
   }
@@ -414,6 +417,8 @@ describe("embedding legend gutter", () => {
     const narrow = parts(el).plot.right;
     expect(narrow).toBeLessThan(450);
     plot.setOptions({ showLegend: false });
+    // The plot area runs to the right edge of the plot box, which is the
+    // default theme padding of 10 px in from the widget's.
     await expect.poll(() => parts(el).plot.right, poll).toBe(490);
   });
 
@@ -516,7 +521,8 @@ describe("spatial colours and missing values", () => {
           columns: { ...base, color: ["a", "b", "c", "a"] },
           meta: { ...meta, colors: ["#ff0000"] },
         },
-        options: { showImage: false, spotOpacity: 1 },
+        // No theme padding, so the image fills the widget at scale 2.5.
+        options: { showImage: false, spotOpacity: 1, theme: { padding: 0 } },
       }),
     );
     const a = pixel(el, 20 * 2.5, 50 * 2.5);
@@ -584,6 +590,17 @@ describe("spatial colours and missing values", () => {
   });
 });
 
+/**
+ * A spatial plot with no theme padding, for tests that read its layout at
+ * the widget's own size.
+ */
+function flush(el: HTMLElement, args: Parameters<typeof createSpatial>[1]) {
+  return createSpatial(el, {
+    ...args,
+    options: { ...args.options, theme: { padding: 0 } },
+  });
+}
+
 describe("spatial spot size and legend gutter", () => {
   /** Spots every 100 px on a 2000 px image, as on a full-resolution slide. */
   function fullRes() {
@@ -603,7 +620,7 @@ describe("spatial spot size and legend gutter", () => {
   it("sizes spots from their spacing when no diameter is given", () => {
     const el = container(400, 400);
     instances.push(
-      createSpatial(el, {
+      flush(el, {
         data: {
           columns: fullRes(),
           meta: { imgWidth: 2000, imgHeight: 2000 },
@@ -623,7 +640,7 @@ describe("spatial spot size and legend gutter", () => {
   it("keeps a given diameter", () => {
     const el = container(400, 400);
     instances.push(
-      createSpatial(el, {
+      flush(el, {
         data: {
           columns: fullRes(),
           meta: { imgWidth: 2000, imgHeight: 2000, spotDiameter: 20 },
@@ -671,7 +688,7 @@ describe("spatial spot size and legend gutter", () => {
   for (const [name, color] of cases) {
     it(`keeps the ${name} in a gutter clear of the image`, () => {
       const el = container(300, 300);
-      instances.push(createSpatial(el, { data: tissue(color) }));
+      instances.push(flush(el, { data: tissue(color) }));
       const box = el.getBoundingClientRect();
       const edge = drawnRight(el);
       // Before the fix the image took the whole width, under the legend.
@@ -693,7 +710,7 @@ describe("spatial spot size and legend gutter", () => {
   it("gives the image the whole width with showLegend false", () => {
     const el = container(300, 300);
     instances.push(
-      createSpatial(el, {
+      flush(el, {
         data: tissue(["Tumour", "Stroma"]),
         options: { showLegend: false },
       }),
@@ -714,7 +731,7 @@ describe("spatial spot size and legend gutter", () => {
 
   it("keeps every legend row inside a short widget", () => {
     const el = container(600, 40);
-    instances.push(createSpatial(el, { data: tissue(["A", "B", "C", null]) }));
+    instances.push(flush(el, { data: tissue(["A", "B", "C", null]) }));
     // Before the fix the rows were "A", "+2 more" and "NA", the last at
     // baseline 44 in a 40 px widget.
     expect(svgTexts(el)).toEqual(["A", "+2 more"]);
@@ -723,7 +740,7 @@ describe("spatial spot size and legend gutter", () => {
 
   it("shortens the colour bar to fit a short widget, with the NA key", () => {
     const el = container(600, 80);
-    instances.push(createSpatial(el, { data: tissue([1, 250, 3000, null]) }));
+    instances.push(flush(el, { data: tissue([1, 250, 3000, null]) }));
     // Before the fix the bar was 90 px tall from y = 18, past the bottom.
     expect(svgTexts(el)).toContain("NA");
     expect(outsideBox(el)).toEqual([]);
@@ -735,7 +752,7 @@ describe("spatial spot size and legend gutter", () => {
       [1, 2],
     ]) {
       const el = container(300, 24);
-      instances.push(createSpatial(el, { data: tissue(color) }));
+      instances.push(flush(el, { data: tissue(color) }));
       expect(svgTexts(el)).toEqual([]);
     }
   });
@@ -747,7 +764,7 @@ describe("spatial spot size and legend gutter", () => {
   for (const [name, color] of narrow) {
     it(`leaves the ${name} out when its gutter cannot show the labels`, () => {
       const el = container(120, 300);
-      instances.push(createSpatial(el, { data: tissue(color) }));
+      instances.push(flush(el, { data: tissue(color) }));
       // Before the fix the gutter kept 42 px and showed only ellipses.
       expect(svgTexts(el)).toEqual([]);
       expect(drawnRight(el)).toBe(120);
@@ -757,7 +774,7 @@ describe("spatial spot size and legend gutter", () => {
   it("keeps a legend whose labels show a few characters", () => {
     const el = container(200, 300);
     instances.push(
-      createSpatial(el, { data: tissue(["Cytotoxic T cells", "B cells"]) }),
+      flush(el, { data: tissue(["Cytotoxic T cells", "B cells"]) }),
     );
     const texts = svgTexts(el);
     expect(texts.length).toBe(2);

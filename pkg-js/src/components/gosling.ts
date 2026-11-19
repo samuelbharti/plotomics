@@ -25,7 +25,7 @@ import type {
   PlotomicsFactory,
   PlotomicsInstance,
 } from "../core/index.js";
-import { canvasToPNG } from "../core/index.js";
+import { canvasToPNG, themePadding } from "../core/index.js";
 import { GoslingComponent } from "gosling.js";
 import { createElement, createRef } from "react";
 import { type Root, createRoot } from "react-dom/client";
@@ -33,6 +33,7 @@ import {
   type GoslingOptions,
   defaultGoslingOptions,
   embedOptions,
+  goslingPadding,
   isValidSpec,
   mergeGoslingOptions,
 } from "./gosling-spec.js";
@@ -71,7 +72,12 @@ export const createGosling: PlotomicsFactory<GoslingOptions> = (
 
   el.style.position = el.style.position || "relative";
   const host = document.createElement("div");
-  host.style.cssText = "position:relative;width:100%;height:100%;";
+  // The host keeps the padding of the default theme inside its own box,
+  // around the space Gosling pads with its own `padding` option.
+  const pad = themePadding({});
+  host.style.cssText =
+    "position:relative;box-sizing:border-box;width:100%;height:100%;" +
+    `padding:${pad.top}px ${pad.right}px ${pad.bottom}px ${pad.left}px;`;
   el.appendChild(host);
 
   let root: Root | null = null;
@@ -101,7 +107,12 @@ export const createGosling: PlotomicsFactory<GoslingOptions> = (
         // which throws if the view is unmounted first. Without it the new
         // spec applies at once, as each embed() call did.
         reactive: false,
-        ...embedOptions(opts),
+        // The host already pads by the theme default, so Gosling, unless
+        // told otherwise, pads by the rest of its own 60 px.
+        ...embedOptions({
+          ...opts,
+          padding: goslingPadding(opts.padding, pad.top),
+        }),
       }),
     );
   }

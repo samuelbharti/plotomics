@@ -51,6 +51,10 @@
 #'   wide enough that the gaps eat more pixels than the cells.
 #' @param theme Optional named list of theme overrides merged over the
 #'   component defaults in the browser.
+#'   Its `padding` entry is the space in px between the edge of the widget
+#'   and the plot: one number for every side, or numbers named `top`,
+#'   `right`, `bottom` and `left` in a list or vector, a side left out
+#'   keeping the default of 10.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.

@@ -4,7 +4,11 @@ import { createHeatmap } from "../../src/components/heatmap.js";
 import { createIgv } from "../../src/components/igv.js";
 import { createProfile } from "../../src/components/profile.js";
 import { createVolcano } from "../../src/components/volcano.js";
-import { autoResize, type PlotomicsInstance } from "../../src/core/index.js";
+import {
+  DEFAULT_PADDING,
+  autoResize,
+  type PlotomicsInstance,
+} from "../../src/core/index.js";
 import { registerComponent } from "../../src/lib/umd.js";
 
 // A plot made in plain JavaScript, with no wrapper to size its element.
@@ -54,8 +58,10 @@ const frames = (n = 4) =>
     requestAnimationFrame(step);
   });
 
+/** The height of the plot: its SVG layer with the theme padding around it. */
 const svgHeight = (el: HTMLElement) =>
-  Number((el.querySelector("svg") as SVGSVGElement).getAttribute("height"));
+  Number((el.querySelector("svg") as SVGSVGElement).getAttribute("height")) +
+  2 * DEFAULT_PADDING;
 const height = (el: HTMLElement) => el.getBoundingClientRect().height;
 
 describe("an element with no CSS height", () => {
@@ -238,8 +244,10 @@ describe("autoResize", () => {
     const plot = createHeatmap(el, { data: heatmapData });
     instances.push(plot);
     stops.push(autoResize(el, plot));
+    // The SVG fills the plot box, inside the theme padding.
     const svgWidth = () =>
-      Number((el.querySelector("svg") as SVGSVGElement).getAttribute("width"));
+      Number((el.querySelector("svg") as SVGSVGElement).getAttribute("width")) +
+      2 * DEFAULT_PADDING;
     expect(svgWidth()).toBe(600);
     el.style.width = "400px";
     await frames(2);
@@ -275,17 +283,19 @@ function heat(el: HTMLElement) {
 const el2 = (a: Element, b: Element) => [height(a), height(b)];
 
 /**
- * Where the SVG layer of a plot sits, relative to the padding box of its
- * element, where absolutely placed layers start.
+ * Where the plot sits, relative to the padding box of its element, where
+ * absolutely placed layers start: its SVG layer, with the theme padding
+ * around it.
  */
 function svgBox(el: HTMLElement) {
   const e = el.getBoundingClientRect();
   const s = (el.querySelector("svg") as SVGSVGElement).getBoundingClientRect();
+  const p = DEFAULT_PADDING;
   return {
-    x: s.left - e.left - el.clientLeft,
-    y: s.top - e.top - el.clientTop,
-    width: s.width,
-    height: s.height,
+    x: s.left - e.left - el.clientLeft - p,
+    y: s.top - e.top - el.clientTop - p,
+    width: s.width + 2 * p,
+    height: s.height + 2 * p,
   };
 }
 

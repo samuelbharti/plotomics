@@ -39,11 +39,13 @@ import {
   type PlotomicsTheme,
   resolveTheme,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   releaseContainer,
   dpr,
   serializeSVG,
+  padSVG,
   compositePNG,
   defaultTheme,
   type TextSizes,
@@ -322,6 +324,27 @@ export function tickDecimals(ticks: readonly number[]): number {
   return d;
 }
 
+/**
+ * The survival ticks from the axis floor `lo` to 1 (100%) on an axis
+ * `lengthPx` long, for labels `labelPx` in size: four steps, as 0, 25, 50,
+ * 75 and 100% from a floor of 0, or two, when their labels keep `labelPx`
+ * + 5 px from each other; the floor and 1 alone when those keep `labelPx`
+ * + 2 px; 1 alone on a shorter axis, and none on an axis with no length.
+ */
+export function survivalTicks(
+  lo: number,
+  lengthPx: number,
+  labelPx: number,
+): number[] {
+  for (const n of [4, 2]) {
+    if (lengthPx / n >= labelPx + 5) {
+      return Array.from({ length: n + 1 }, (_, k) => lo + (k / n) * (1 - lo));
+    }
+  }
+  if (lengthPx >= labelPx + 2) return [lo, 1];
+  return lengthPx > 0 ? [1] : [];
+}
+
 /** Round `max` up to a readable axis bound and produce evenly spaced ticks. */
 export function timeTicks(max: number, target = 6): number[] {
   if (!isFinite(max) || max <= 0) return [0];
@@ -355,8 +378,18 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   svg.style.cssText =
     "position:absolute;inset:0;pointer-events:none;overflow:visible;";
-  el.appendChild(canvas);
-  el.appendChild(svg);
+  // The size of the element, and the plot box inside its padding: `width`
+  // and `height` are the box, which every layer and coordinate is in.
+  const plot = createPlotBox(el);
+  let outerW = 0;
+  let outerH = 0;
+  /** Fit the plot box to an element `w` x `h` px and take its size. */
+  function fitBox(w = outerW, h = outerH) {
+    outerW = w;
+    outerH = h;
+    ({ width, height } = plot.fit(w, h, theme));
+  }
+  plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
   // ---- accessors ----
@@ -502,9 +535,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   function onMove(e: MouseEvent) {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
-    const rect = el.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const { x: mx, y: my } = plot.pointer(e.clientX, e.clientY);
     if (
       my < layout.top ||
       my > layout.axisY ||
@@ -713,9 +744,12 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     renderOverlay();
   }
 
-  /** The values of the five y ticks, from the axis floor to 100%. */
+  /**
+   * The values of the y ticks and their gridlines, from the axis floor to
+   * 100%, as many as the panel keeps clear (see survivalTicks).
+   */
   function gridValues(lo: number): number[] {
-    return [0, 1, 2, 3, 4].map((k) => lo + (k / 4) * (1 - lo));
+    return survivalTicks(lo, layout.plotH, sizes.label);
   }
 
   function renderOverlay() {
@@ -947,8 +981,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   }
 
   function doResize(w: number, h: number) {
-    width = w;
-    height = h;
+    fitBox(w, h);
     layoutCanvas();
     render();
   }
@@ -967,7 +1000,8 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       sizes = textSizes(theme);
-      render();
+      // A new padding changes the plot box.
+      doResize(outerW, outerH);
     },
     resize(w, h) {
       doResize(w, h);
@@ -981,7 +1015,9 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       img.setAttribute("height", String(height));
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
-      return serializeSVG(out);
+      return serializeSVG(
+        padSVG(out, width, height, plot.padding, theme.background),
+      );
     },
     async exportPNG(scale = 2) {
       // The canvas with the axes, labels and legend over it.
@@ -989,6 +1025,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
         width,
         height,
         scale,
+        padding: plot.padding,
         background: theme.background,
         layers: [{ canvas, x: 0, y: 0, width, height }],
         overlay: svg,
@@ -999,8 +1036,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();
-      canvas.remove();
-      svg.remove();
+      plot.remove();
     },
   };
 

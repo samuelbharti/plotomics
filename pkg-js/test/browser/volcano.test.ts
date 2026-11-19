@@ -38,6 +38,9 @@ const geneLabels = (el: HTMLElement) =>
   ) as SVGTextElement[];
 
 const poll = { timeout: 10_000, interval: 100 };
+/** For a view change, which a slow machine can take a while to draw. */
+const slow = { timeout: 30_000, interval: 100 };
+const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
 
 let instances: PlotomicsInstance<unknown>[] = [];
 afterEach(() => {
@@ -96,7 +99,10 @@ describe("volcano in a browser", () => {
       );
     const px = (tickX("2") + tickX("4")) / 2;
     const canvas = el.querySelector("canvas") as HTMLCanvasElement;
-    const box = el.getBoundingClientRect();
+    // The SVG holds the plot box, inside the theme padding.
+    const box = (
+      el.querySelector("svg") as SVGSVGElement
+    ).getBoundingClientRect();
     const tip = () =>
       Array.from(el.children).find((c) => c.tagName === "DIV")?.textContent ??
       "";
@@ -246,12 +252,17 @@ describe("volcano gridlines", () => {
       (t) =>
         t.textContent === value && t.getAttribute("text-anchor") === "middle",
     ) as SVGTextElement;
+    // In the element: the label's x is in the plot box, which sits inside
+    // the theme padding.
     const e = el.getBoundingClientRect();
+    const box = (
+      el.querySelector("svg") as SVGSVGElement
+    ).getBoundingClientRect();
     const plot = (
       el.querySelector("canvas") as HTMLCanvasElement
     ).getBoundingClientRect();
     return {
-      x: Number(label.getAttribute("x")),
+      x: Number(label.getAttribute("x")) + box.left - e.left,
       y: Math.round((plot.top + plot.bottom) / 2 - e.top),
     };
   }
@@ -356,21 +367,35 @@ describe("volcano gridlines", () => {
       .map((l) => at(l, "y1"));
     expect(xs.length).toBeGreaterThan(2);
     expect(ys.length).toBeGreaterThan(2);
-    expect(vertical).toEqual(xs);
-    expect(horizontal).toEqual(ys);
+    // A y label is placed at its line plus 4 px, so taking the 4 px off
+    // again can differ from the line in the last bit of a double.
+    expect(vertical.length).toBe(xs.length);
+    expect(horizontal.length).toBe(ys.length);
+    for (const [i, x] of vertical.entries()) {
+      expect(x).toBeCloseTo(xs[i] as number, 9);
+    }
+    for (const [i, y] of horizontal.entries()) {
+      expect(y).toBeCloseTo(ys[i] as number, 9);
+    }
   }
 
   it("keeps the gridlines on the tick labels after a zoom and a pan", async () => {
     const el = container(W, 400);
     instances.push(createVolcano(el, { data: blockData(), options }));
+    // The points are drawn, and two more frames pass, so the scatterplot
+    // has its listeners and its first view before the wheel turns.
     await ready(el);
+    await frame();
+    await frame();
     gridOnLabels(el);
     const start = labelXs(el);
     const canvas = el.querySelector("canvas") as HTMLCanvasElement;
     const r = canvas.getBoundingClientRect();
     const centre = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 
-    // Zoom in at the centre with the mouse wheel.
+    // Zoom in at the centre with the mouse wheel, one step a frame: the
+    // scatterplot moves its camera, and reports the new view, on its next
+    // frame. A slow machine (CI) gets more time to redraw the axes.
     for (let i = 0; i < 5; i += 1) {
       canvas.dispatchEvent(
         new WheelEvent("wheel", {
@@ -381,8 +406,9 @@ describe("volcano gridlines", () => {
           cancelable: true,
         }),
       );
+      await frame();
     }
-    await expect.poll(() => labelXs(el), poll).not.toBe(start);
+    await expect.poll(() => labelXs(el), slow).not.toBe(start);
     await new Promise((res) => setTimeout(res, 300));
     gridOnLabels(el);
     const zoomed = labelXs(el);
@@ -400,7 +426,7 @@ describe("volcano gridlines", () => {
       await new Promise((res) => setTimeout(res, 10));
     }
     window.dispatchEvent(new MouseEvent("mouseup", at(80)));
-    await expect.poll(() => labelXs(el), poll).not.toBe(zoomed);
+    await expect.poll(() => labelXs(el), slow).not.toBe(zoomed);
     await new Promise((res) => setTimeout(res, 300));
     gridOnLabels(el);
   });

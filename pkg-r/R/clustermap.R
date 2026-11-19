@@ -46,6 +46,10 @@
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
 #'   merged over the component defaults in the browser. `NULL` uses the default
 #'   theme.
+#'   Its `padding` entry is the space in px between the edge of the widget
+#'   and the plot: one number for every side, or numbers named `top`,
+#'   `right`, `bottom` and `left` in a list or vector, a side left out
+#'   keeping the default of 10.
 #' @param row_linkage,col_linkage Optional precomputed leaf order or dendrogram
 #'   to skip clustering that axis. Either an integer vector giving the 0-based
 #'   leaf order, or a list with `order` (0-based) and `merges` (each a list with

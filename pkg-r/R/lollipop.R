@@ -46,7 +46,10 @@
 #'   rectangle and the mutation stems.
 #' @param theme Optional named list of theme overrides. Its `categorical`
 #'   palette colours the variant classes only, not the domains; see
-#'   `domain_colors`.
+#'   `domain_colors`. Its `padding` entry is the space in px between the edge
+#'   of the widget and the plot: one number for every side, or numbers named
+#'   `top`, `right`, `bottom` and `left` in a list or vector, a side left out
+#'   keeping the default of 10.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.

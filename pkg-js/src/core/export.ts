@@ -7,6 +7,7 @@
  */
 
 import { dpr } from "./dom.js";
+import type { PlotPadding } from "./theme.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -71,13 +72,19 @@ export interface CompositeOptions {
   overlay: SVGSVGElement | null;
   /** Multiplier on top of the device pixel ratio. Default 1. */
   scale?: number;
+  /**
+   * Space around the widget in CSS px, filled with the background. The
+   * image grows by it, and the layers and SVGs move in by the left and top
+   * padding. None by default.
+   */
+  padding?: PlotPadding;
 }
 
 /**
  * The widget as one PNG: the background, the SVG underlay when there is
  * one, each canvas at its place, and the SVG overlay on top, as the screen
- * shows them. The image is `width` times `dpr()` times `scale` px wide, the
- * size the canvas alone used to give.
+ * shows them, with the padding around them. The image is `width` plus the
+ * left and right padding, times `dpr()` times `scale`, px wide.
  * Resolves to null without a 2D context. Rejects when a layer holds a
  * cross-origin image served without CORS headers, since the browser then
  * refuses to encode the canvas.
@@ -90,9 +97,18 @@ export async function compositePNG(
   opts: CompositeOptions,
 ): Promise<Blob | null> {
   const k = dpr() * (opts.scale ?? 1);
+  const pad = opts.padding ?? { top: 0, right: 0, bottom: 0, left: 0 };
+  // The SVGs are drawn over the whole image, the padding too, so a mark
+  // that runs past the widget shows as it does on screen.
+  const view = {
+    x: -pad.left,
+    y: -pad.top,
+    width: opts.width + pad.left + pad.right,
+    height: opts.height + pad.top + pad.bottom,
+  };
   const out = document.createElement("canvas");
-  out.width = Math.max(1, Math.round(opts.width * k));
-  out.height = Math.max(1, Math.round(opts.height * k));
+  out.width = Math.max(1, Math.round(view.width * k));
+  out.height = Math.max(1, Math.round(view.height * k));
   const ctx = out.getContext("2d");
   if (!ctx) return null;
   ctx.fillStyle = opts.background;
@@ -128,31 +144,19 @@ export async function compositePNG(
       s.y,
       s.width,
       s.height,
-      layer.x * k,
-      layer.y * k,
+      (layer.x + pad.left) * k,
+      (layer.y + pad.top) * k,
       layer.width * k,
       layer.height * k,
     );
   }
   if (marks && opts.underlay) {
-    const image = await svgImage(
-      opts.underlay,
-      opts.width,
-      opts.height,
-      out.width,
-      out.height,
-    );
+    const image = await svgImage(opts.underlay, view, out.width, out.height);
     if (image) ctx.drawImage(image, 0, 0, out.width, out.height);
     ctx.drawImage(marks, 0, 0);
   }
   if (opts.overlay) {
-    const image = await svgImage(
-      opts.overlay,
-      opts.width,
-      opts.height,
-      out.width,
-      out.height,
-    );
+    const image = await svgImage(opts.overlay, view, out.width, out.height);
     if (image) ctx.drawImage(image, 0, 0, out.width, out.height);
   }
   return new Promise((resolve, reject) => {
@@ -169,18 +173,21 @@ const LONE_SURROGATE =
   /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
 /**
- * An SVG element as an image `outW` x `outH` px. The vector overlay is drawn
- * at the output size, so its text stays sharp at any scale.
+ * The part `view` of an SVG element as an image `outW` x `outH` px. The
+ * vector overlay is drawn at the output size, so its text stays sharp at
+ * any scale.
  */
 async function svgImage(
   svg: SVGSVGElement,
-  width: number,
-  height: number,
+  view: { x: number; y: number; width: number; height: number },
   outW: number,
   outH: number,
 ): Promise<HTMLImageElement | null> {
   const clone = svg.cloneNode(true) as SVGSVGElement;
-  clone.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  clone.setAttribute(
+    "viewBox",
+    `${view.x} ${view.y} ${view.width} ${view.height}`,
+  );
   clone.setAttribute("preserveAspectRatio", "none");
   clone.setAttribute("width", String(outW));
   clone.setAttribute("height", String(outH));
@@ -198,6 +205,36 @@ async function svgImage(
     );
     return null;
   }
+}
+
+/**
+ * Give an exported SVG the padding of the plot. The SVG grows by the
+ * padding on each side, through its size and a view box that starts at
+ * minus the left and top padding, so the content keeps its coordinates. A
+ * rectangle in `background` goes first and fills the whole SVG, the
+ * padding too, as in the PNG. `width` and `height` are the size of the
+ * content. Returns `svg`.
+ */
+export function padSVG(
+  svg: SVGSVGElement,
+  width: number,
+  height: number,
+  pad: PlotPadding,
+  background: string,
+): SVGSVGElement {
+  const w = width + pad.left + pad.right;
+  const h = height + pad.top + pad.bottom;
+  svg.setAttribute("width", String(w));
+  svg.setAttribute("height", String(h));
+  svg.setAttribute("viewBox", `${-pad.left} ${-pad.top} ${w} ${h}`);
+  const rect = document.createElementNS(SVG_NS, "rect");
+  rect.setAttribute("x", String(-pad.left));
+  rect.setAttribute("y", String(-pad.top));
+  rect.setAttribute("width", String(w));
+  rect.setAttribute("height", String(h));
+  rect.setAttribute("fill", background);
+  svg.insertBefore(rect, svg.firstChild);
+  return svg;
 }
 
 /** Trigger a browser download of a Blob (no-op outside a browser). */
