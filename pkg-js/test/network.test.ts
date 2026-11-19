@@ -3,6 +3,7 @@ import {
   buildGraph,
   extractEdges,
   groupColorResolver,
+  groupLegend,
   needsLayout,
   runForceAtlas2,
   edgeWidths,
@@ -272,5 +273,41 @@ describe("weights and missing values", () => {
     expect(graph.getNodeAttribute("a", "label")).toBe("a");
     const e = graph.edge("a", "b") as string;
     expect(graph.getEdgeAttribute(e, "weight")).toBeUndefined();
+  });
+});
+
+describe("network group legend", () => {
+  it("lists the groups in the order they took their colours", () => {
+    const g = build({
+      columns: { id: ["a", "b", "c", "d"] },
+      meta: { nodeGroup: ["T cell", "B cell", "T cell", "NK"] },
+    });
+    expect(groupLegend(g, "#000")).toEqual([
+      { label: "T cell", color: "#a" },
+      { label: "B cell", color: "#b" },
+      { label: "NK", color: "#c" },
+    ]);
+  });
+
+  it("adds an NA entry in the default colour for nodes with no group", () => {
+    const g = build({
+      columns: { id: ["a", "b", "c"] },
+      meta: { nodeGroup: ["T cell", null, ""] as unknown as string[] },
+    });
+    expect(groupLegend(g, "#000")).toEqual([
+      { label: "T cell", color: "#a" },
+      { label: "NA", color: "#000", missing: true },
+    ]);
+  });
+
+  it("is empty when no node has a group", () => {
+    expect(groupLegend(build({ columns: { id: ["a", "b"] } }), "#000")).toEqual(
+      [],
+    );
+    const g = build({
+      columns: { id: ["a"] },
+      meta: { nodeGroup: [null] as unknown as string[] },
+    });
+    expect(groupLegend(g, "#000")).toEqual([]);
   });
 });
