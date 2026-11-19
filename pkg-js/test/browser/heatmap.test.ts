@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createHeatmap } from "../../src/components/heatmap.js";
-import type { PlotomicsInstance } from "../../src/core/index.js";
+import { type PlotomicsInstance, ramp } from "../../src/core/index.js";
 
 function container(width = 600, height = 480) {
   const el = document.createElement("div");
@@ -207,5 +207,133 @@ describe("heatmap in a browser", () => {
     const idB = b.querySelector("linearGradient")?.getAttribute("id");
     expect(idA).toBeTruthy();
     expect(idA).not.toBe(idB);
+  });
+});
+
+describe("heatmap colour bar", () => {
+  // A 2 x 2 matrix over -1.75 to 4.6, as in the dev demo of issue #101.
+  const data = {
+    columns: { values: [4.6, -1.75, 0.5, 2] },
+    meta: { nrows: 2, ncols: 2 },
+  };
+  /** The colour bar's tick labels: the start-anchored texts. */
+  const ticks = (el: HTMLElement) =>
+    svgTexts(el).filter((t) => t.getAttribute("text-anchor") === "start");
+
+  it("labels round values inside the colour range, each at its value", () => {
+    // Before the fix the bar read the raw ends and middle: 4.6, 1.43, -1.75.
+    const el = container();
+    instances.push(createHeatmap(el, { data }));
+    expect(ticks(el).map((t) => t.textContent)).toEqual(["0", "2", "4"]);
+    const y = (s: string) =>
+      Number(
+        ticks(el)
+          .find((t) => t.textContent === s)
+          ?.getAttribute("y"),
+      );
+    expect(y("2")).toBeCloseTo((y("0") + y("4")) / 2, 6);
+    expect(y("4")).toBeLessThan(y("0"));
+  });
+
+  it("widens a colour range too narrow for a round step, as for vmin = vmax", {
+    timeout: 10_000,
+  }, () => {
+    // The tick loop for 0.3 to 0.1 + 0.2 once never ended. After that fix
+    // the bar had one label, "0.3", at its top.
+    const near = container();
+    const same = container();
+    instances.push(
+      createHeatmap(near, { data, options: { vmin: 0.3, vmax: 0.1 + 0.2 } }),
+      createHeatmap(same, { data, options: { vmin: 0.3, vmax: 0.3 } }),
+    );
+    const placed = (el: HTMLElement) =>
+      ticks(el).map((t) => [t.textContent, t.getAttribute("y")]);
+    expect(placed(near).length).toBeGreaterThan(1);
+    expect(placed(near)).toEqual(placed(same));
+  });
+
+  it("colours cells at clamps that differ only in their last digits with the middle of the ramp", () => {
+    // Before the fix the clamps 0.3 and 0.1 + 0.2 kept the colour domain
+    // that narrow, and a cell of 0.3 took an end of the ramp. The values
+    // reach the GPU as float32, so values alone cannot be this close.
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: {
+          columns: { values: [0.3, 0.3, 0.3, 0.3] },
+          meta: { nrows: 2, ncols: 2 },
+        },
+        options: { vmin: 0.3, vmax: 0.1 + 0.2 },
+      }),
+    );
+    const middle = [1, 3, 5].map((i) =>
+      Number.parseInt(ramp("viridis")(0.5).slice(i, i + 2), 16),
+    );
+    for (const [fx, fy] of [
+      [0.25, 0.25],
+      [0.75, 0.25],
+    ]) {
+      const p = glPixel(el, fx as number, fy as number);
+      const far = Math.max(...p.map((v, i) => Math.abs(v - (middle[i] ?? 0))));
+      expect(far).toBeLessThan(3);
+    }
+  });
+
+  // Values 0 to 6, with clamps that reverse the colour domain.
+  const zeroToSix = {
+    columns: { values: [0, 1, 2, 3, 4, 5, 6, 3] },
+    meta: { nrows: 2, ncols: 4 },
+  };
+  for (const [what, options, top, bottom] of [
+    ["vmin 5 and vmax 1", { vmin: 5, vmax: 1 }, 1, 5],
+    ["only vmin 7, above the data", { vmin: 7 }, 6, 7],
+    ["only vmax -1, below the data", { vmax: -1 }, -1, 0],
+  ] as const) {
+    it(`places each label at its value on a reversed domain: ${what}`, () => {
+      // Before the fix every label sat at the middle of the bar.
+      const el = container();
+      instances.push(createHeatmap(el, { data: zeroToSix, options }));
+      const placed = ticks(el)
+        .map((t) => ({
+          v: Number(t.textContent),
+          y: Number(t.getAttribute("y")),
+        }))
+        .sort((a, b) => a.y - b.y);
+      expect(placed.length).toBeGreaterThan(1);
+      expect(new Set(placed.map((p) => p.y)).size).toBe(placed.length);
+      // The top of the bar is vmax, the bottom vmin.
+      expect(placed[0]?.v).toBe(top);
+      expect(placed[placed.length - 1]?.v).toBe(bottom);
+    });
+  }
+
+  it("titles the bar with legendTitle, and by the default otherwise", () => {
+    const el = container();
+    const plot = createHeatmap(el, { data });
+    instances.push(plot);
+    const titles = () =>
+      svgTexts(el)
+        .filter((t) => t.getAttribute("text-anchor") === "middle")
+        .map((t) => t.textContent);
+    expect(titles()).toEqual(["value"]);
+    plot.setOptions({ zScore: true });
+    expect(titles()).toEqual(["z-score"]);
+    // Before the fix there was no option for it.
+    plot.setOptions({ legendTitle: "log2 expression" });
+    expect(titles()).toEqual(["log2 expression"]);
+    // A title wider than the bar stays off the matrix and inside the widget.
+    const title = svgTexts(el).find(
+      (t) => t.textContent === "log2 expression",
+    ) as SVGTextElement;
+    const matrix = (
+      el.querySelector("canvas") as HTMLCanvasElement
+    ).getBoundingClientRect().right;
+    expect(title.getBoundingClientRect().left).toBeGreaterThanOrEqual(matrix);
+    expect(title.getBoundingClientRect().right).toBeLessThanOrEqual(
+      el.getBoundingClientRect().right,
+    );
+    // R drops a NULL title and Python sends None: both give the default.
+    plot.setOptions({ legendTitle: null });
+    expect(titles()).toEqual(["z-score"]);
   });
 });

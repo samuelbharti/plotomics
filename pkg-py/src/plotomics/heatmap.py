@@ -35,6 +35,9 @@ class Heatmap(PlotomicsWidget):
         about zero.
     show_colorbar:
         Draw the colorbar legend.
+    legend_title:
+        Colorbar title. ``None`` (the default) uses ``"value"``, or
+        ``"z-score"`` when ``z_score=True``.
     row_labels, col_labels:
         Optional explicit labels; override any inferred from a DataFrame.
     theme:
@@ -60,6 +63,7 @@ class Heatmap(PlotomicsWidget):
         vmin: float | None = None,
         vmax: float | None = None,
         show_colorbar: bool = True,
+        legend_title: str | None = None,
         row_labels: list[str] | None = None,
         col_labels: list[str] | None = None,
         theme: dict | None = None,
@@ -99,6 +103,8 @@ class Heatmap(PlotomicsWidget):
             "vmin": vmin,
             "vmax": vmax,
             "showColorbar": show_colorbar,
+            # None asks the browser for its default title.
+            "legendTitle": legend_title,
         }
         if theme is not None:
             options["theme"] = theme
