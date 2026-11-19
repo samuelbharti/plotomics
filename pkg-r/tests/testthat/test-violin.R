@@ -45,6 +45,34 @@ test_that("violin() validates its input", {
                "not present in `features`")
 })
 
+test_that("violin() passes violin_aspect, and NULL or Inf turn the cap off", {
+  a <- make_args()
+  json <- function(w) {
+    as.character(jsonlite::toJSON(w$preRenderHook(w)$x, auto_unbox = TRUE,
+                                  null = "null", na = "null"))
+  }
+  w <- violin(a$data, a$grid, a$density)
+  expect_equal(w$x$options$violinAspect, 0.8)
+  w <- violin(a$data, a$grid, a$density, violin_aspect = 1.2)
+  expect_equal(w$x$options$violinAspect, 1.2)
+  # The browser reads null as no cap; the option must not be dropped, or
+  # the browser falls back to its default of 0.8.
+  for (off in list(NULL, Inf)) {
+    w <- violin(a$data, a$grid, a$density, violin_aspect = off)
+    expect_true("violinAspect" %in% names(w$x$options))
+    expect_match(json(w), '"violinAspect":null', fixed = TRUE)
+  }
+})
+
+test_that("violin() checks violin_aspect", {
+  a <- make_args()
+  for (bad in list(0, -1, NA_real_, NA, TRUE, "1", c(1, 2), numeric(0))) {
+    expect_error(violin(a$data, a$grid, a$density, violin_aspect = bad),
+                 "`violin_aspect` must be a single positive number.",
+                 fixed = TRUE)
+  }
+})
+
 test_that("violin_density() evaluates every group on one shared grid", {
   set.seed(2)
   x <- rnorm(50)

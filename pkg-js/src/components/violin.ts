@@ -50,10 +50,16 @@ import {
 } from "../core/index.js";
 
 export interface ViolinOptions {
-  /** Fraction of a cell's width the widest violin fills, in (0, 1]. The
-   * widest violin is also at most 0.8 times as wide as its row is tall,
-   * so in a wide widget it fills less of its cell. */
+  /** Fraction of a cell's width the widest violin fills, in (0, 1].
+   * When rows are short next to the column width (many features, or a
+   * short or wide widget), `violinAspect` can make it fill less. */
   violinWidth: number;
+  /** The largest width of the widest violin, as a multiple of its row
+   * height. A violin much wider than its row is tall reads as a flat
+   * band. The cap never makes a violin narrower than 0.4 times the
+   * width `violinWidth` gives it, so with many features the violins
+   * stay visible. `null` or `Infinity` turns the cap off. */
+  violinAspect: number | null;
   /** Scale each violin to its own maximum rather than the row's. Per-row is
    * the honest default: within a gene, groups stay comparable. */
   scalePerViolin: boolean;
@@ -68,6 +74,11 @@ export interface ViolinOptions {
 
 export const defaultViolinOptions: ViolinOptions = {
   violinWidth: 0.85,
+  // scanpy sizes its stacked violin figure from fixed cells. There the
+  // widest violin comes out about 0.7 to 0.95 times as wide as its row
+  // is tall, depending on the numbers of genes and groups, and 0.8 for
+  // 6 genes by 5 groups.
+  violinAspect: 0.8,
   scalePerViolin: false,
   showMedian: true,
   showFeatureLabels: true,
@@ -83,12 +94,12 @@ const MAX_LEFT = 150;
 /** The largest share of the widget's width or height that a gutter takes. */
 const MAX_GUTTER_SHARE = 0.35;
 /**
- * The widest violin is at most this many times as wide as its row is
- * tall. Stretched across a wide column, a violin flattens into a band.
- * scanpy sizes its stacked violin figure from fixed cells, and there the
- * widest violin comes out 0.75 to 0.85 times as wide as its row is tall.
+ * The `violinAspect` cap never makes the widest violin narrower than
+ * this share of the width `violinWidth` gives it. scanpy keeps its
+ * ratio by making the figure taller; a widget has a fixed height, so
+ * without a floor many features would shrink the violins to specks.
  */
-const MAX_VIOLIN_ASPECT = 0.8;
+const MIN_CAPPED_SHARE = 0.4;
 const DEFAULT_SIZES = textSizes(defaultTheme);
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -192,14 +203,22 @@ function colLabelRoom(bottom: number, size: number): number {
 
 /**
  * Width in px of the widest violin in a row: `violinWidth` of its cell,
- * and at most 0.8 times the row height. Every violin in the plot is
- * drawn against this one width, so the widths in a row stay comparable.
+ * capped at `violinAspect` times the row height, but never under 0.4
+ * of the uncapped width. A `null` or non-finite `violinAspect` turns
+ * the cap off. Every violin in the plot is drawn against this one
+ * width, so the widths in a row stay comparable.
  */
 export function violinMaxWidth(
   layout: Pick<ViolinLayout, "cellW" | "rowH">,
   violinWidth: number,
+  violinAspect: number | null,
 ): number {
-  return Math.min(layout.cellW * violinWidth, layout.rowH * MAX_VIOLIN_ASPECT);
+  const full = layout.cellW * violinWidth;
+  if (typeof violinAspect !== "number" || !Number.isFinite(violinAspect)) {
+    return full;
+  }
+  const capped = Math.max(layout.rowH * violinAspect, MIN_CAPPED_SHARE * full);
+  return Math.min(full, capped);
 }
 
 /**
@@ -441,7 +460,8 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     const cols = groupColors();
     const med = medians();
     const grs = grids();
-    const halfW = violinMaxWidth(layout, opts.violinWidth) / 2;
+    const halfW =
+      violinMaxWidth(layout, opts.violinWidth, opts.violinAspect) / 2;
 
     for (let r = 0; r < f.length; r += 1) {
       // Collect the row first so every violin in it shares one density scale.

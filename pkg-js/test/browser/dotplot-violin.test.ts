@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { createDotplot } from "../../src/components/dotplot.js";
-import { createViolin } from "../../src/components/violin.js";
+import {
+  type ViolinOptions,
+  createViolin,
+} from "../../src/components/violin.js";
 import {
   type PlotomicsData,
   type PlotomicsInstance,
@@ -528,21 +531,24 @@ describe("violin value axis and missing medians", () => {
 
 describe("violin shape", () => {
   /**
-   * Six features by five groups, as in the violin demo of pkg-js/dev. In
-   * each row one violin peaks at density 1 and the other four at 0.5.
+   * Features by groups, by default six by five as in the violin demo of
+   * pkg-js/dev. In each row one violin peaks at density 1 and the others
+   * at 0.5.
    */
-  function panel(): PlotomicsData {
+  function panel(nFeatures = 6, nGroups = 5): PlotomicsData {
     const feats = ["CD3D", "MS4A1", "LYZ", "COL1A1", "EPCAM", "NKG7"];
     const groups = ["T cell", "B cell", "Myeloid", "Fibroblast", "Tumour"];
+    const featName = (i: number) => feats[i] ?? `GENE${i + 1}`;
+    const groupName = (j: number) => groups[j] ?? `Cluster ${j + 1}`;
     const grid = Array.from({ length: 61 }, (_, k) => k / 10);
     const feature: string[] = [];
     const group: string[] = [];
     const density: number[] = [];
-    for (let i = 0; i < feats.length; i += 1) {
+    for (let i = 0; i < nFeatures; i += 1) {
       const centre = 1 + (i % 5);
-      for (let j = 0; j < groups.length; j += 1) {
-        feature.push(feats[i] as string);
-        group.push(groups[j] as string);
+      for (let j = 0; j < nGroups; j += 1) {
+        feature.push(featName(i));
+        group.push(groupName(j));
         const peak = j === i % 5 ? 1 : 0.5;
         for (const v of grid) {
           density.push(peak * Math.exp(-((v - centre) ** 2) / (2 * 0.5 ** 2)));
@@ -552,13 +558,19 @@ describe("violin shape", () => {
     return { columns: { feature, group }, meta: { grid, density } };
   }
 
+  interface RowShape {
+    rowH: number;
+    cellW: number;
+    widths: number[];
+  }
+
   /**
-   * The height of each row and the width in px of each violin in it. Each
-   * row's value axis runs from 2 px under the top of the row to 2 px over
-   * its bottom, the band the violins are drawn in; the group labels sit
-   * under the column centres.
+   * The height of each row, the width of a column and the width in px of
+   * each violin in the row. Each row's value axis runs from 2 px under
+   * the top of the row to 2 px over its bottom, the band the violins are
+   * drawn in; the group labels sit under the column centres.
    */
-  function shapes(el: HTMLElement): { rowH: number; widths: number[] }[] {
+  function shapes(el: HTMLElement): RowShape[] {
     const canvas = el.querySelector("canvas") as HTMLCanvasElement;
     const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
     const ratio = canvas.width / canvas.clientWidth;
@@ -593,8 +605,32 @@ describe("violin shape", () => {
         }
         return hi < lo ? 0 : (hi - lo + 1) / ratio;
       });
-      return { rowH: at(axis, "y2") - at(axis, "y1") + 4, widths };
+      return { rowH: at(axis, "y2") - at(axis, "y1") + 4, cellW, widths };
     });
+  }
+
+  /**
+   * Draw a violin plot and check that the widest violin of every row is
+   * `want(row)` px wide, within one px of antialiasing on each side.
+   */
+  function expectWidest(
+    width: number,
+    height: number,
+    data: PlotomicsData,
+    options: Partial<ViolinOptions>,
+    want: (row: RowShape) => number,
+  ): RowShape[] {
+    const el = container(width, height);
+    instances.push(createViolin(el, { data, options }));
+    const rows = shapes(el);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const widest = Math.max(...row.widths);
+      expect(Math.abs(widest - want(row)), `widest ${widest}`).toBeLessThan(
+        2.5,
+      );
+    }
+    return rows;
   }
 
   it.each([
@@ -606,16 +642,14 @@ describe("violin shape", () => {
       // Filling 85% of its column, the widest violin here was 121 px wide
       // in an 84 px row at 800 x 560, and 229 px wide in a 140 px row at
       // 1440 x 900.
-      const el = container(width, height);
-      instances.push(createViolin(el, { data: panel() }));
-      const rows = shapes(el);
+      const rows = expectWidest(
+        width,
+        height,
+        panel(),
+        {},
+        (r) => 0.8 * r.rowH,
+      );
       expect(rows).toHaveLength(6);
-      for (const { rowH, widths } of rows) {
-        const widest = Math.max(...widths);
-        // One px of antialiasing on each side.
-        expect(widest).toBeLessThanOrEqual(0.8 * rowH + 2);
-        expect(widest).toBeGreaterThanOrEqual(0.8 * rowH - 2);
-      }
     },
   );
 
@@ -631,5 +665,54 @@ describe("violin shape", () => {
         expect(Math.abs(w - widest / 2)).toBeLessThanOrEqual(2);
       }
     }
+  });
+
+  it("fills violinWidth of a column narrower than the cap", () => {
+    // 20 groups at 800 px: columns of about 34 px, rows of about 88 px.
+    const rows = expectWidest(
+      800,
+      560,
+      panel(6, 20),
+      {},
+      (r) => 0.85 * r.cellW,
+    );
+    for (const r of rows) expect(0.85 * r.cellW).toBeLessThan(0.8 * r.rowH);
+  });
+
+  it("takes violinWidth when it is under the cap", () => {
+    const rows = expectWidest(
+      800,
+      560,
+      panel(),
+      { violinWidth: 0.3 },
+      (r) => 0.3 * r.cellW,
+    );
+    for (const r of rows) expect(0.3 * r.cellW).toBeLessThan(0.8 * r.rowH);
+  });
+
+  it("never caps a violin under 0.4 times the width violinWidth gives it", () => {
+    // 20 features at 800 x 560: rows of about 24 px, under the floor.
+    const rows = expectWidest(
+      800,
+      560,
+      panel(20, 5),
+      {},
+      (r) => 0.4 * 0.85 * r.cellW,
+    );
+    expect(rows).toHaveLength(20);
+    for (const r of rows) {
+      expect(0.4 * 0.85 * r.cellW).toBeGreaterThan(0.8 * r.rowH + 5);
+    }
+  });
+
+  it("takes the cap from violinAspect", () => {
+    expectWidest(800, 560, panel(), { violinAspect: 1.2 }, (r) => 1.2 * r.rowH);
+  });
+
+  it.each([
+    ["null", null],
+    ["Infinity", Number.POSITIVE_INFINITY],
+  ])("turns the cap off with violinAspect %s", (_, violinAspect) => {
+    expectWidest(800, 560, panel(), { violinAspect }, (r) => 0.85 * r.cellW);
   });
 });

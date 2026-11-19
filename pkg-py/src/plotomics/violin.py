@@ -51,9 +51,15 @@ class Violin(PlotomicsWidget):
     group_colors:
         One hex colour per group. ``None`` uses the categorical palette.
     violin_width:
-        Fraction of a cell's width the widest violin fills, in (0, 1]. The
-        widest violin is also at most 0.8 times as wide as its row is
-        tall, so in a wide widget it fills less of its cell.
+        Fraction of a cell's width the widest violin fills, in (0, 1]. When
+        rows are short next to the column width (many features, or a short
+        or wide widget), ``violin_aspect`` can make it fill less.
+    violin_aspect:
+        The largest width of the widest violin, as a multiple of its row
+        height. A violin much wider than its row is tall reads as a flat
+        band. The cap never makes a violin narrower than 0.4 times the
+        width ``violin_width`` gives it, so with many features the violins
+        stay visible. ``None`` turns the cap off.
     scale_per_violin:
         Scale each violin to its own maximum rather than the row's. Per-row is
         the default so groups stay comparable within a feature.
@@ -82,6 +88,7 @@ class Violin(PlotomicsWidget):
         groups: list[str] | None = None,
         group_colors: list[str] | None = None,
         violin_width: float = 0.85,
+        violin_aspect: float | None = 0.8,
         scale_per_violin: bool = False,
         show_median: bool = True,
         show_feature_labels: bool = True,
@@ -100,6 +107,17 @@ class Violin(PlotomicsWidget):
             raise ValueError("`data` is missing column(s): " + ", ".join(missing))
         if not 0 < violin_width <= 1:
             raise ValueError("`violin_width` must be in (0, 1].")
+        if violin_aspect is not None:
+            if (
+                isinstance(violin_aspect, bool)
+                or not isinstance(violin_aspect, (int, float, np.number))
+                or not violin_aspect > 0
+            ):
+                raise ValueError("`violin_aspect` must be a single positive number.")
+            # JSON has no infinity; null is the same: no cap.
+            violin_aspect = (
+                float(violin_aspect) if np.isfinite(violin_aspect) else None
+            )
 
         g = _to_float32(grid, "grid")
         if g.size == 0:
@@ -172,6 +190,7 @@ class Violin(PlotomicsWidget):
 
         options: dict[str, Any] = {
             "violinWidth": violin_width,
+            "violinAspect": violin_aspect,
             "scalePerViolin": scale_per_violin,
             "showMedian": show_median,
             "showFeatureLabels": show_feature_labels,

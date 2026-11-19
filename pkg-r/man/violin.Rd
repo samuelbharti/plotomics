@@ -14,6 +14,7 @@ violin(
   groups = NULL,
   group_colors = NULL,
   violin_width = 0.85,
+  violin_aspect = 0.8,
   scale_per_violin = FALSE,
   show_median = TRUE,
   show_feature_labels = TRUE,
@@ -45,8 +46,14 @@ Factor \code{feature} / \code{group} columns supply them from their levels.}
 palette.}
 
 \item{violin_width}{Fraction of a cell's width the widest violin fills, in
-(0, 1]. The widest violin is also at most 0.8 times as wide as its row
-is tall, so in a wide widget it fills less of its cell.}
+(0, 1]. When rows are short next to the column width (many features, or
+a short or wide widget), \code{violin_aspect} can make it fill less.}
+
+\item{violin_aspect}{The largest width of the widest violin, as a multiple
+of its row height. A violin much wider than its row is tall reads as a
+flat band. The cap never makes a violin narrower than 0.4 times the
+width \code{violin_width} gives it, so with many features the violins stay
+visible. \code{NULL} turns the cap off.}
 
 \item{scale_per_violin}{Scale each violin to its own maximum rather than the
 row's. Per-row is the default so groups stay comparable within a feature.}

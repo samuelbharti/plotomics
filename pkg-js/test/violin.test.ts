@@ -134,15 +134,31 @@ describe("violin helpers", () => {
     expect(on.plotW).toBe(off.plotW - (44 - 14));
   });
 
-  it("caps the widest violin at 0.8 times the row height", () => {
+  it("caps the widest violin at violinAspect times the row height", () => {
+    const at = (cellW: number, rowH: number, width: number, aspect = 0.8) =>
+      violinMaxWidth({ cellW, rowH }, width, aspect);
     // A wide cell: the row height sets the width.
-    expect(violinMaxWidth({ cellW: 260, rowH: 130 }, 0.85)).toBeCloseTo(
-      104,
+    expect(at(260, 130, 0.85)).toBeCloseTo(104, 10);
+    expect(at(260, 130, 0.85, 1.2)).toBeCloseTo(156, 10);
+    // A narrow cell: violinWidth of the cell.
+    expect(at(40, 130, 0.85)).toBeCloseTo(34, 10);
+    expect(at(40, 130, 0.5)).toBeCloseTo(20, 10);
+  });
+
+  it("never caps a violin under 0.4 times its uncapped width", () => {
+    // 0.8 x 22 = 17.6 px would be under 0.4 x 0.85 x 140 = 47.6 px.
+    expect(violinMaxWidth({ cellW: 140, rowH: 22 }, 0.85, 0.8)).toBeCloseTo(
+      47.6,
       10,
     );
-    // A narrow cell: violinWidth of the cell, as before.
-    expect(violinMaxWidth({ cellW: 40, rowH: 130 }, 0.85)).toBeCloseTo(34, 10);
-    expect(violinMaxWidth({ cellW: 40, rowH: 130 }, 0.5)).toBeCloseTo(20, 10);
+  });
+
+  it("turns the cap off for a null or infinite violinAspect", () => {
+    const layout = { cellW: 260, rowH: 130 };
+    expect(violinMaxWidth(layout, 0.85, null)).toBeCloseTo(221, 10);
+    expect(violinMaxWidth(layout, 0.85, Number.POSITIVE_INFINITY)).toBe(
+      violinMaxWidth(layout, 0.85, null),
+    );
   });
 
   it("stays well-defined with no rows or columns", () => {
