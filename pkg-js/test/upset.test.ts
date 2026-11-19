@@ -151,3 +151,46 @@ describe("upset layout at other text sizes", () => {
     expect(l.top + 2).toBeGreaterThanOrEqual(1.08 * s.label);
   });
 });
+
+describe("upset total beside the top tick", () => {
+  const opts = { barFraction: 0.55, showSetSizes: true };
+
+  it("keeps the bars where they are when the total fits beside the axis", () => {
+    const plain = layoutUpset(900, 520, 6, 30, opts, 120, 30);
+    const withTotal = layoutUpset(
+      900,
+      520,
+      6,
+      30,
+      opts,
+      120,
+      30,
+      undefined,
+      70,
+    );
+    expect(withTotal).toEqual(plain);
+    expect(withTotal.totalY).toBe(withTotal.top + 2);
+  });
+
+  it("gives a total wider than the bar panel a line of its own", () => {
+    // At 300 px wide and fontSize 16, "20,000 total" is about 85 px wide,
+    // more than the bars leave it. Before the fix it was drawn on the line
+    // of the top tick label and ran into it.
+    for (const fontSize of [16, 20]) {
+      const s = textSizes({ fontSize });
+      const plain = layoutUpset(300, 312, 6, 30, opts, 200, 30, s);
+      const l = layoutUpset(300, 312, 6, 30, opts, 200, 30, s, 7 * s.label);
+      expect(300 - 2 - 7 * s.label).toBeLessThan(l.left - 6);
+      // The line of the total ends 0.3 of a label under its baseline; the
+      // line of the top tick label starts 1.08 of a label above its
+      // baseline, which is 0.35 of a label under its tick, 6 px under the
+      // top of the bars.
+      expect(l.totalY + 0.3 * s.label).toBeLessThanOrEqual(
+        l.top + 6 + 0.35 * s.label - 1.08 * s.label,
+      );
+      expect(l.totalY - 1.08 * s.label).toBeGreaterThanOrEqual(0);
+      expect(l.top).toBeGreaterThan(plain.top);
+      expect(l.barBaseline).toBeCloseTo(l.top + l.barH, 10);
+    }
+  });
+});

@@ -655,7 +655,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       domain[0],
       domain[1],
       colorbarBox().cbH,
-      { maxCount: 4, minGapPx: 1.6 * sizes.label },
+      { maxCount: 4, minGapPx: 1.6 * sizes.label, endGapPx: sizes.label + 2 },
     );
     return {
       ticks,

@@ -554,7 +554,8 @@ const HARD: Hard[] = [
     height: 480,
     make: (el) =>
       createClustermap(el, { data: wideMatrix(), options: themed(16) }),
-    shows: ["88.28", "-17.59", "-123.45"],
+    // Round values inside -123.45 to 88.28, as on the heatmap.
+    shows: ["-100", "-50", "0", "50"],
   },
   {
     what: "heatmap with wide colour bar labels, fontSize 16",

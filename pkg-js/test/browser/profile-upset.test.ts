@@ -416,3 +416,119 @@ describe("profile tooltip of a negative zero", () => {
     expect(tip).not.toContain("-0");
   });
 });
+
+describe("profile tooltip of a small value", () => {
+  it("prints its significant digits", () => {
+    // A COSMIC signature fraction. Before the fix the tooltip read
+    // "0.00 (0.1%)".
+    const el = container(500, 300);
+    instances.push(
+      createProfile(el, {
+        data: { columns: { value: [0.00084, 0.6, 0.39916] } },
+      }),
+    );
+    // The value axis runs 0.0 to 0.6 in steps of 0.2.
+    const x = profileBarX(el, 0, 3, 500, "0.0");
+    const tip = hoverAt(el, x, tick(el, "0.0").y - 5);
+    expect(tip).toContain("0.00084 (0.1%)");
+  });
+});
+
+describe("upset total in a narrow widget", () => {
+  /**
+   * Intersections of six gene sets over 20,000 genes, the 30 largest, from
+   * a seeded draw (mulberry32).
+   */
+  function geneSets() {
+    let seed = 3;
+    const rand = () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const sets = [
+      "HALLMARK_OXIDATIVE_PHOSPHORYLATION",
+      "HALLMARK_E2F_TARGETS",
+      "KEGG_RIBOSOME",
+      "GO_IMMUNE_RESPONSE",
+      "REACTOME_CELL_CYCLE",
+      "DE_up_24h",
+    ];
+    const p = [0.1, 0.06, 0.03, 0.15, 0.08, 0.2];
+    const counts = new Map<string, number>();
+    const setSizes = new Array(sets.length).fill(0);
+    for (let g = 0; g < 20000; g += 1) {
+      let key = "";
+      for (let k = 0; k < sets.length; k += 1) {
+        const inSet = rand() < (p[k] as number);
+        key += inSet ? "1" : "0";
+        if (inSet) setSizes[k] += 1;
+      }
+      if (!key.includes("1")) continue;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const rows = [...counts]
+      .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+      .slice(0, 30);
+    return {
+      columns: { size: rows.map((r) => r[1]) },
+      meta: {
+        sets,
+        setSizes,
+        membership: rows.flatMap((r) => [...r[0]].map(Number)),
+        total: 20000,
+      },
+    };
+  }
+
+  for (const fontSize of [16, 20]) {
+    it(`keeps "20,000 total" clear of the top tick at fontSize ${fontSize}`, () => {
+      // Before the fix, at 300 px wide, the top tick ("3000" or "3k") ran
+      // into the total.
+      const el = container(300, 312);
+      instances.push(
+        createUpset(el, {
+          data: geneSets(),
+          options: { theme: { fontSize } },
+        }),
+      );
+      const all = texts(el);
+      const total = all.find((t) => t.textContent === "20,000 total");
+      expect(total).toBeDefined();
+      const tr = (total as SVGTextElement).getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      expect(tr.top).toBeGreaterThanOrEqual(box.top);
+      const ticks = all.filter(
+        (t) =>
+          t.getAttribute("text-anchor") === "end" &&
+          /^\d[\d.]*k?$/.test(t.textContent ?? ""),
+      );
+      expect(ticks.length).toBeGreaterThan(1);
+      for (const t of ticks) {
+        const r = t.getBoundingClientRect();
+        const clear =
+          r.right <= tr.left ||
+          tr.right <= r.left ||
+          r.bottom <= tr.top ||
+          tr.bottom <= r.top;
+        expect(clear, t.textContent ?? "").toBe(true);
+      }
+    });
+  }
+});
+
+describe("profile tooltip of a large value", () => {
+  it("prints its fraction with thousands separators", () => {
+    // Before the fix 1234567.5 read "1234568" and 123456.789 "123457",
+    // next to "1,234,567" for a whole value.
+    const el = container(500, 300);
+    const value = [1234567.5, 123456.789, 1234567];
+    instances.push(createProfile(el, { data: { columns: { value } } }));
+    const at = (i: number) =>
+      hoverAt(el, profileBarX(el, i, 3, 500), tick(el, "0").y - 5);
+    expect(at(0)).toContain("1,234,567.5");
+    expect(at(1)).toContain("123,456.79");
+    expect(at(2)).toContain("1,234,567");
+  });
+});

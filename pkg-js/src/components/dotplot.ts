@@ -381,6 +381,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     const { ticks, step } = fitDomainTicks(lo, hi, barH, {
       maxCount: 4,
       minGapPx: 1.6 * sizes.label,
+      endGapPx: sizes.label + 2,
     });
     return {
       ticks,

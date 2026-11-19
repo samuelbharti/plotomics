@@ -305,11 +305,12 @@ describe("clustermap in a browser", () => {
     expect(tr.top).toBeGreaterThanOrEqual(box.top);
     expect(tr.bottom).toBeLessThanOrEqual(box.bottom);
     expect(tr.right).toBeLessThanOrEqual(box.right);
-    // The middle tick reads -2.0e+3, the widest of the three.
-    const mid = texts.find(
-      (t) => t.textContent === "-2.0e+3",
-    ) as SVGTextElement;
-    expect(mid.getBoundingClientRect().right + 2).toBeLessThanOrEqual(tr.left);
+    // Every tick label of the colour bar, -3000 to -1000, ends left of it.
+    const ticks = texts.filter((t) => /^-\d+$/.test(t.textContent ?? ""));
+    expect(ticks.map((t) => t.textContent)).toContain("-2000");
+    for (const t of ticks) {
+      expect(t.getBoundingClientRect().right + 2).toBeLessThanOrEqual(tr.left);
+    }
   });
 
   it("labels the middle of a symmetric colour range 0", () => {
@@ -363,9 +364,10 @@ describe("clustermap colours in a browser", () => {
       }),
     );
     // The 0 cell takes the cream middle of the ramp, and the scale runs
-    // from -3 to 3.
+    // from -3 to 3, labelled at -2, 0 and 2.
     expect(cellPixel(el, 0.25, 0.25)).toEqual([244, 238, 224]);
-    expect(svgTexts(el)).toContain("-3");
+    expect(svgTexts(el)).toContain("-2");
+    expect(svgTexts(el)).toContain("2");
   });
 
   it("draws z-scores with rdbu unless a colormap is given", () => {
@@ -510,5 +512,171 @@ describe("clustermap colours in a browser", () => {
     // In the data, the outer 5% at each end of the range hold 10% of the
     // cells; pooled to their means, fewer pixels reach those ends.
     expect(ends / n).toBeLessThan(0.1);
+  });
+});
+
+describe("clustermap colour bar labels", () => {
+  /** The colour bar's tick labels, top first, with the y of each. */
+  function barLabels(el: HTMLElement): { text: string; y: number }[] {
+    return (
+      Array.from(
+        el.querySelectorAll('svg text[text-anchor="start"]'),
+      ) as SVGTextElement[]
+    )
+      .filter((t) => /^-?\d/.test(t.textContent ?? ""))
+      .map((t) => ({
+        text: t.textContent ?? "",
+        y: Number(t.getAttribute("y")),
+      }))
+      .sort((a, b) => a.y - b.y);
+  }
+
+  it("labels round values in one format, each at its value", () => {
+    // In R: clustermap(matrix(c(0.004, 3, 100, 1532, 7, 0.5, 22, 900, 1, 2,
+    // 3, 4), 4, 3)), here row by row. Before the fix the bar read its raw
+    // ends and middle in mixed formats: "1.5e+3", "766" and "4.0e-3".
+    const el = container(600, 480);
+    instances.push(
+      createClustermap(el, {
+        data: {
+          columns: {
+            values: [0.004, 7, 1, 3, 0.5, 2, 100, 22, 3, 1532, 900, 4],
+          },
+          meta: { nrows: 4, ncols: 3 },
+        },
+      }),
+    );
+    const bar = barLabels(el);
+    expect(bar.map((b) => b.text)).toEqual(["1500", "1000", "500"]);
+    // Equal steps in value are equal steps along the bar.
+    const [a, b, c] = bar.map((l) => l.y) as [number, number, number];
+    expect(b - a).toBeCloseTo(c - b, 6);
+  });
+
+  it("labels z-scores on round values about 0", () => {
+    // Rows with one or two high values, whose z-scores reach 2.66. Before
+    // the fix the bar read "2.66", "0" and "-2.66".
+    const values: number[] = [];
+    for (let r = 0; r < 4; r += 1) {
+      const row = new Array(10).fill(0);
+      row[r] = 2;
+      row[r + 1] = 1;
+      values.push(...row);
+    }
+    const el = container(600, 480);
+    instances.push(
+      createClustermap(el, {
+        data: { columns: { values }, meta: { nrows: 4, ncols: 10 } },
+        options: { zScore: true },
+      }),
+    );
+    expect(barLabels(el).map((b) => b.text)).toEqual([
+      "2",
+      "1",
+      "0",
+      "-1",
+      "-2",
+    ]);
+  });
+});
+
+describe("clustermap colour bar in a small widget", () => {
+  /** A 6 x 4 matrix of evenly spread values from `lo` to `hi`. */
+  const spread = (lo: number, hi: number) =>
+    Array.from({ length: 24 }, (_, i) => lo + (i / 23) * (hi - lo));
+  const make = (
+    el: HTMLElement,
+    values: number[],
+    fontSize: number,
+  ): PlotomicsInstance<unknown> =>
+    createClustermap(el, {
+      data: { columns: { values }, meta: { nrows: 6, ncols: 4 } },
+      options: { theme: { fontSize } },
+    });
+  const tickLabels = (el: HTMLElement) =>
+    (
+      Array.from(
+        el.querySelectorAll('svg text[text-anchor="start"]'),
+      ) as SVGTextElement[]
+    ).filter((t) => /^-?\d/.test(t.textContent ?? ""));
+  const titleBox = (el: HTMLElement) =>
+    (
+      Array.from(el.querySelectorAll("svg text")).find(
+        (t) => t.textContent === "value",
+      ) as SVGTextElement
+    ).getBoundingClientRect();
+
+  it("keeps the heatmap and short exact labels for tiny values", () => {
+    // Values of about 1e-15. Before the fix the labels were 17 characters
+    // long, the colour bar gutter took the width, and at 300 x 300 px,
+    // fontSize 20, the heatmap was 1 px wide.
+    const values = spread(-3e-15, 6.2e-15);
+    const small = container(300, 300);
+    instances.push(make(small, values, 20));
+    // The gutter takes at most its share in any font, and its labels end
+    // left of the title.
+    const canvas = small.querySelector("canvas") as HTMLCanvasElement;
+    expect(canvas.clientWidth).toBeGreaterThanOrEqual(60);
+    const title = titleBox(small);
+    for (const t of tickLabels(small)) {
+      expect(t.getBoundingClientRect().right + 2).toBeLessThanOrEqual(
+        title.left,
+      );
+    }
+    // With room for them, the labels are whole, in one power of ten.
+    const wide = container(400, 300);
+    instances.push(make(wide, values, 20));
+    expect(tickLabels(wide).map((t) => t.textContent)).toEqual([
+      "-2e-15",
+      "0",
+      "2e-15",
+      "4e-15",
+      "6e-15",
+    ]);
+  });
+
+  it("cuts labels too long for its largest share, and keeps the heatmap", () => {
+    // A narrow range far from 0 has long labels in any form.
+    const el = container(300, 300);
+    instances.push(make(el, spread(1000, 1000.0002), 20));
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    expect(canvas.clientWidth).toBeGreaterThanOrEqual(60);
+    const title = titleBox(el);
+    const box = el.getBoundingClientRect();
+    expect(title.right).toBeLessThanOrEqual(box.right);
+    for (const t of tickLabels(el)) {
+      expect(t.textContent?.endsWith("\u2026")).toBe(true);
+      expect(t.getBoundingClientRect().right + 2).toBeLessThanOrEqual(
+        title.left,
+      );
+    }
+  });
+
+  it("keeps two labels on a short bar", () => {
+    // 300 x 150 px, fontSize 16, values 850 to 1.2e6. Before the fix the
+    // bar showed "500k" alone.
+    const el = container(300, 150);
+    instances.push(make(el, spread(850, 1.2e6), 16));
+    expect(tickLabels(el).map((t) => t.textContent)).toEqual(["0.5M", "1.0M"]);
+  });
+
+  it("keeps the bottom label and the NA key inside a short widget", () => {
+    // 300 x 120 px, fontSize 12, values 0 to 1. Before the fix the bar
+    // kept its 40 px floor and its bottom label was cut at the last row.
+    for (const values of [
+      spread(0, 1),
+      spread(0, 1).map((v, i) => (i === 5 ? Number.NaN : v)),
+    ]) {
+      const el = container(300, 120);
+      instances.push(make(el, values, 12));
+      const box = el.getBoundingClientRect();
+      for (const t of Array.from(el.querySelectorAll("svg text, svg rect"))) {
+        const r = t.getBoundingClientRect();
+        expect(r.bottom, t.textContent || t.tagName).toBeLessThanOrEqual(
+          box.bottom,
+        );
+      }
+      expect(tickLabels(el).length).toBeGreaterThanOrEqual(1);
+    }
   });
 });
