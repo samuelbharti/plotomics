@@ -61,6 +61,7 @@ import {
   isFlatRange,
 } from "../core/index.js";
 import { setCanvasColour } from "../core/paint.js";
+import { uniqueId } from "../core/dom.js";
 
 export type SpatialColorMode = "auto" | "categorical" | "continuous";
 
@@ -588,7 +589,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
    * Load the tissue image. A cross-origin image is first asked for with CORS,
    * so drawing it keeps the canvas exportable; a server that does not send
    * CORS headers refuses that, and the image is then loaded plainly, which
-   * still draws but blocks export.
+   * still draws, but the exports leave it out.
    */
   function load(url: string, cors: boolean) {
     const im = new Image();
@@ -664,8 +665,13 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     if (ctx) ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   }
 
-  function render() {
-    const ctx = canvas.getContext("2d");
+  /**
+   * Draw the image, the spots and the legend. `target` is the canvas drawn on,
+   * and `withImage` false leaves the tissue image out, with the neutral panel
+   * in its place, as while it loads.
+   */
+  function render(target = canvas, withImage = true) {
+    const ctx = target.getContext("2d");
     if (!ctx || !width || !height) return;
     const x = xs();
     const col = colorCol();
@@ -714,7 +720,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     // Tissue underlay. While the image is still loading, a neutral panel keeps
     // the spots from floating on the page background.
     if (opts.showImage) {
-      if (image) {
+      if (image && withImage) {
         ctx.globalAlpha = opts.imageOpacity;
         ctx.drawImage(image, fit.offsetX, fit.offsetY, dw, dh);
         ctx.globalAlpha = 1;
@@ -947,7 +953,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       // right, each centred on its place by a short tick.
       const { barH, lo, hi } = layout;
       const y0 = BAR_TOP;
-      const id = `plotomics-spatial-grad-${gradSeq++}`;
+      const id = uniqueId("plotomics-spatial-grad");
       const defs = document.createElementNS(SVG_NS, "defs");
       const grad = document.createElementNS(SVG_NS, "linearGradient");
       grad.setAttribute("id", id);
@@ -1056,6 +1062,30 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     render();
   }
 
+  /**
+   * The canvas to export. A tissue image from another origin without CORS
+   * headers taints the canvas, and the browser then refuses to read it back,
+   * so the spots are drawn again on a canvas of their own without the image.
+   */
+  function exportCanvas(): HTMLCanvasElement {
+    try {
+      canvas.getContext("2d")?.getImageData(0, 0, 1, 1);
+      return canvas;
+    } catch (err) {
+      if ((err as { name?: string } | null)?.name !== "SecurityError") {
+        return canvas;
+      }
+      console.warn(TAINTED);
+      const copy = document.createElement("canvas");
+      copy.width = canvas.width;
+      copy.height = canvas.height;
+      const ratio = canvas.width / Math.max(1, width);
+      copy.getContext("2d")?.setTransform(ratio, 0, 0, ratio, 0, 0);
+      render(copy, false);
+      return copy;
+    }
+  }
+
   const instance: PlotomicsInstance<SpatialOptions> = {
     setData(next) {
       data = next;
@@ -1073,43 +1103,30 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       doResize(w, h);
     },
     exportSVG() {
+      const source = exportCanvas();
       const out = svg.cloneNode(true) as SVGSVGElement;
-      let href = "";
-      try {
-        href = canvas.toDataURL("image/png");
-      } catch {
-        // A cross-origin image without CORS headers taints the canvas.
-        console.warn(TAINTED);
-      }
-      if (href) {
-        const img = document.createElementNS(SVG_NS, "image");
-        img.setAttribute("x", "0");
-        img.setAttribute("y", "0");
-        img.setAttribute("width", String(width));
-        img.setAttribute("height", String(height));
-        img.setAttribute("href", href);
-        out.insertBefore(img, out.firstChild);
-      }
+      const img = document.createElementNS(SVG_NS, "image");
+      img.setAttribute("x", "0");
+      img.setAttribute("y", "0");
+      img.setAttribute("width", String(width));
+      img.setAttribute("height", String(height));
+      img.setAttribute("href", source.toDataURL("image/png"));
+      out.insertBefore(img, out.firstChild);
       return serializeSVG(
         padSVG(out, width, height, plot.padding, theme.background),
       );
     },
     async exportPNG(scale = 2) {
-      try {
-        // The canvas with the legend over it.
-        return await compositePNG({
-          width,
-          height,
-          scale,
-          padding: plot.padding,
-          background: theme.background,
-          layers: [{ canvas, x: 0, y: 0, width, height }],
-          overlay: svg,
-        });
-      } catch {
-        console.warn(TAINTED);
-        return null;
-      }
+      // The canvas with the legend over it.
+      return compositePNG({
+        width,
+        height,
+        scale,
+        padding: plot.padding,
+        background: theme.background,
+        layers: [{ canvas: exportCanvas(), x: 0, y: 0, width, height }],
+        overlay: svg,
+      });
     },
     destroy() {
       releaseContainer(el);
@@ -1124,14 +1141,12 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
   return instance;
 };
 
-let gradSeq = 0;
-
 /** Colour of a spot whose colour value is missing. */
 const MISSING_COLOR = "#BDBDBD";
 const TAINTED =
   "plotomics spatial: the tissue image comes from another origin without " +
-  "CORS headers, so the browser blocks exporting the canvas; the export " +
-  "leaves out the image and spots.";
+  "CORS headers, so the browser blocks exporting it; the export shows the " +
+  "spots and legend without the image.";
 
 // ---- small utilities ----
 function esc(s: string): string {
