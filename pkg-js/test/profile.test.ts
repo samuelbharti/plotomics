@@ -68,6 +68,17 @@ describe("profile value axis", () => {
     expect(a.step).toBe(2);
   });
 
+  it("adds no step for the noise of float32 values", () => {
+    // Python sends -0.3 as -0.30000001192092896. Before the fix the axis
+    // reached down to -0.35 for it, and up to 0.35 for 0.3.
+    const signed = valueTicks(Math.fround(-0.3), Math.fround(0.1), 300, {
+      minGapPx: 16,
+    });
+    expect(signed.bottom).toBe(-0.3);
+    expect(signed.top).toBe(0.1);
+    expect(valueTicks(0, Math.fround(0.3), 300).top).toBe(0.3);
+  });
+
   it("ends at 0 when every value is negative", () => {
     const a = valueTicks(-7, 0, 200, { minGapPx: 16 });
     expect(a.top).toBe(0);

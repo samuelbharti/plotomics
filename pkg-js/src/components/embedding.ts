@@ -39,7 +39,7 @@ import {
   serializeSVG,
   compositePNG,
   fitDomainTicks,
-  formatTick,
+  formatTicks,
   OKABE_ITO,
   ramp,
   sampleRamp,
@@ -997,7 +997,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       maxCount: 4,
       minGapPx: 1.6 * fs,
     });
-    const labels = ticks.map((v) => formatTick(v, step));
+    const labels = formatTicks(ticks, step);
     // A flat domain has one tick and no step.
     const flat = !(step > 0);
     // The box is as wide as the bar and its longest label.

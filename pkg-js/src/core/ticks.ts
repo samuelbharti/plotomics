@@ -6,6 +6,27 @@
  */
 import { tickStep } from "d3-array";
 
+/**
+ * How far from a whole number `x` may be for {@link snapRatio} to snap it:
+ * one part in a million of `x`, and never more than a thousandth, so a
+ * ratio far from 0, such as 150000123 over a step of 100, is never moved by
+ * a sizeable part of a step.
+ */
+function snapTolerance(x: number): number {
+  return Math.min(1e-6 * Math.max(1, Math.abs(x)), 1e-3);
+}
+
+/**
+ * `x` as the whole number it is within {@link snapTolerance} of, else `x`.
+ * A ratio of a value to a step is snapped before it is rounded up or down,
+ * so float32 noise, such as 0.3 sent from Python as 0.30000001192092896,
+ * neither adds a step nor drops a tick.
+ */
+export function snapRatio(x: number): number {
+  const r = Math.round(x);
+  return Math.abs(x - r) <= snapTolerance(x) ? r : x;
+}
+
 /** Decimals that print every multiple of `step` exactly. */
 export function stepDecimals(step: number): number {
   if (!(step > 0) || !Number.isFinite(step)) return 0;
@@ -35,7 +56,7 @@ export function zeroTicks(
   if (!(step > 0) || !Number.isFinite(max / step) || max / step > 1000) {
     return none;
   }
-  const n = Math.max(1, Math.ceil(max / step - 1e-9));
+  const n = Math.max(1, Math.ceil(snapRatio(max / step)));
   const d = stepDecimals(step);
   const ticks = Array.from({ length: n + 1 }, (_, i) =>
     Number((i * step).toFixed(d)),
@@ -43,21 +64,27 @@ export function zeroTicks(
   return { ticks, top: ticks[n] as number, step };
 }
 
+/** The unit a tick label prints in: none, thousands or millions. */
+export type TickUnit = "" | "k" | "M";
+
 /**
  * A tick label with the decimals its step needs. `percent` prints a fraction
  * as a percentage. Large values print as thousands ("k") or millions ("M")
  * when the step is a whole number of them, so the label stays exact. A value
  * of a million or more prints in millions whenever the step is a whole
- * number of ten thousands, so "1.5M" never reads "1500k". A step
+ * number of ten thousands, so "1.5M" never reads "1500k". `unit` sets the
+ * unit instead; {@link formatTicks} gives every tick of an axis the same
+ * one. A step
  * of 0 marks the one tick of a flat range, which has no step: it prints the
  * value itself, every digit of its whole part and up to six significant
  * digits in all, in exponent form below 1e-6, so a small value never reads
- * as 0 and a large one is never rounded.
+ * as 0 and a large one is never rounded. A value that is not a finite
+ * number prints "NA".
  */
 export function formatTick(
   value: number,
   step: number,
-  opts: { percent?: boolean } = {},
+  opts: { percent?: boolean; unit?: TickUnit } = {},
 ): string {
   if (!(step > 0)) {
     const v = opts.percent ? value * 100 : value;
@@ -69,20 +96,55 @@ export function formatTick(
     const text = String(Number(v.toPrecision(digits)));
     return opts.percent ? `${text}%` : text;
   }
+  if (typeof value !== "number" || !Number.isFinite(value)) return "NA";
   if (opts.percent) {
     return `${(value * 100).toFixed(stepDecimals(step * 100))}%`;
   }
-  if (
-    value !== 0 &&
-    (step >= 1e6 || Math.abs(value) >= 1e6) &&
-    step % 1e4 === 0
-  ) {
-    return `${(value / 1e6).toFixed(stepDecimals(step / 1e6))}M`;
+  let unit = opts.unit;
+  if (unit === undefined) {
+    unit =
+      (step >= 1e6 || Math.abs(value) >= 1e6) && step % 1e4 === 0
+        ? "M"
+        : step >= 1e3 && step % 100 === 0
+          ? "k"
+          : "";
   }
-  if (value !== 0 && step >= 1e3 && step % 100 === 0) {
-    return `${(value / 1e3).toFixed(stepDecimals(step / 1e3))}k`;
+  if (value === 0 || unit === "") return value.toFixed(stepDecimals(step));
+  const scale = unit === "M" ? 1e6 : 1e3;
+  return `${(value / scale).toFixed(stepDecimals(step / scale))}${unit}`;
+}
+
+/**
+ * The unit for the labels of ticks on multiples of `step` whose largest
+ * size is `maxAbs`: millions when that tick or the step reaches a million
+ * and the step is a whole number of thousands, thousands when the step is
+ * a whole number of hundreds from a thousand up, and none otherwise. Every
+ * label in it stays exact, with at most three decimals.
+ */
+export function tickUnit(maxAbs: number, step: number): TickUnit {
+  if (!(step > 0)) return "";
+  if ((step >= 1e6 || maxAbs >= 1e6) && step % 1e3 === 0) return "M";
+  if (step >= 1e3 && step % 100 === 0) return "k";
+  return "";
+}
+
+/**
+ * The labels of the ticks of one axis or colour bar, on multiples of
+ * `step`, all in the unit the largest needs (see {@link tickUnit}), so an
+ * axis reads "0.8M, 1.0M", never "800k, 1.0M". `percent` is as for
+ * {@link formatTick}.
+ */
+export function formatTicks(
+  ticks: readonly number[],
+  step: number,
+  opts: { percent?: boolean } = {},
+): string[] {
+  let maxAbs = 0;
+  for (const v of ticks) {
+    if (Number.isFinite(v)) maxAbs = Math.max(maxAbs, Math.abs(v));
   }
-  return value.toFixed(stepDecimals(step));
+  const unit = tickUnit(maxAbs, step);
+  return ticks.map((v) => formatTick(v, step, { ...opts, unit }));
 }
 
 /**
@@ -132,21 +194,26 @@ export function domainTicks(
     if (!(step > 0) || !Number.isFinite(step) || (hi - lo) / step > 1000) {
       break;
     }
-    const first = Math.ceil(lo / step - 1e-9);
-    const last = Math.floor(hi / step + 1e-9);
+    const first = Math.ceil(snapRatio(lo / step));
+    const last = Math.floor(snapRatio(hi / step));
     // Past 2 ** 53 an index no longer counts by ones.
     if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last)) break;
     if (last > first) {
       const d = stepDecimals(step);
+      // A tick may pass an end by no more than the snap allows, so a colour
+      // bar never labels a value outside its range.
+      const below = lo - snapTolerance(lo / step) * step;
+      const above = hi + snapTolerance(hi / step) * step;
       const ticks: number[] = [];
       // At most about 1000 ticks, by the check above.
       for (let j = 0; j <= last - first; j += 1) {
         // toFixed drops the float noise of the product, such as
         // 0.30000000000000004.
         const v = Number(((first + j) * step).toFixed(d));
+        if (v < below || v > above) continue;
         if (v !== ticks[ticks.length - 1]) ticks.push(v);
       }
-      return ticks.length > 1 ? { ticks, step } : flat;
+      if (ticks.length > 1) return { ticks, step };
     }
     step = finerStep(step);
   }
