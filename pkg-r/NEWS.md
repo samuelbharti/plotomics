@@ -26,7 +26,7 @@
   does.
 * `theme = list(padding = )` puts room around every plot: one number for all
   four sides, or `top`, `right`, `bottom` and `left`, 10 px by default. Axes,
-  labels and legends stay inside it, and exports keep it.
+  labels and legends stay inside it.
 * Gridlines sit under the data in every plot. A `theme$grid` of "none", a
   transparent colour or an R colour name such as "grey90" draws no grid.
 * Axes and colour bars label round values in one unit per axis, and keep
@@ -35,10 +35,10 @@
   height, never narrower than four times the label size; `violin_aspect = NULL`
   turns the cap off.
 * `bioheatmap()` and `clustermap()` draw z-scores with `rdbu` when `colormap` is
-  `NULL`, the new default, and mirror a lone positive `vmax` or negative `vmin`
-  about 0 with a diverging colormap. With more rows or columns than pixels they
-  draw the mean of the cells under each pixel, so an outlier row no longer
-  vanishes. `bioheatmap()` gains `legend_title`.
+  `NULL`, the new default, and `bioheatmap()` mirrors a lone positive `vmax` or
+  negative `vmin` about 0 with a diverging colormap. With more rows or columns
+  than pixels both draw the mean of the cells under each pixel, so an outlier
+  row no longer vanishes. `bioheatmap()` gains `legend_title`.
 * `network()` labels nodes from the starting zoom (`label_threshold = 4`) and
   draws a legend of its node groups, which `show_legend = FALSE` turns off.
 * `spatial()` takes its default spot diameter from the spacing of the spots and
@@ -48,10 +48,13 @@
   `treemap()`, `bioheatmap()`, `clustermap()` and `hic()` accept `ltc` and
   `ltcdiv`.
 * `lollipop()`: round count ticks with gridlines, a domain palette of its own
-  (`theme$categorical` colours the classes only), readable domain names, and a
-  tooltip worded by `y_label`.
+  (`theme$categorical` colours the classes only), domain names dark or light by
+  their fill and cut with an ellipsis when long, and a tooltip worded by
+  `y_label`.
 * `bioprofile(as_fraction = TRUE)` stops on negative values, and `as_fraction`
-  must be one `TRUE` or `FALSE`.
+  must be one `TRUE` or `FALSE`. Values that are not finite are left out of the
+  total, the tooltip reads "no value" for an `NA`, where hovering it threw, and
+  negative bars go down from a zero line.
 * `km()` takes `censor`, a data frame of censoring ticks, as its last argument.
 * `oncoplot()` and `lollipop()` break ties by name in code point order, whatever
   the locale, so the colours match Python's.

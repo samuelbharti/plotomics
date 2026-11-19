@@ -16,9 +16,9 @@ be behind the tag.
 
 ### Added
 
-- The R package is on CRAN, published 2026-09-04 as 0.1.0. That release holds
-  the R package as this section describes it: `bioprofile()` from 0.2.0, and no
-  `igv()` or `gosling()`.
+- The R package is on CRAN, published 2026-09-04 as 0.1.0: the R package of
+  0.2.0, with `bioprofile()` and without `igv()` and `gosling()`. The other
+  entries in this section are new since then.
 - `citation("plotomics")` returns the Zenodo DOI (R only).
 - Every Shiny binding help page in the R package has an example, and so does
   `oncoplot_memo_sort()`.
@@ -58,9 +58,9 @@ be behind the tag.
   nothing. Layouts measure their labels, end long ones with an ellipsis, and
   thin or shrink dense ones, so text stays inside the widget. (#112)
 - Past 8 categories the default palette changes from Okabe-Ito to scanpy's
-  20-colour cluster palette, so the 9th group no longer takes the colour of
-  the 1st. KM, lollipop classes, oncoplot, profile and violin now take their
-  colours from `theme$categorical`; they used Okabe-Ito whatever the theme said. A
+  20-colour cluster palette, so the 9th group no longer takes the colour of the
+  1st. KM, lollipop classes, oncoplot, profile and violin now take their colours
+  from `theme$categorical`; they used Okabe-Ito whatever the theme said. A
   palette set in the theme is used as given. (#113)
 - In R, each plot has its own default height, the one its Shiny `*Output()`
   and its Python class use: clustermap, dot plot, oncoplot, spatial and violin
@@ -93,17 +93,18 @@ be behind the tag.
   alone, so no two tick labels overlap; the KM survival ticks fit the panel the
   same way. (#101, #202, #207, #208, #211)
 - The embedding, network and spatial legends sit in a gutter right of the plot
-  and no longer cover the data; a legend that cannot fit is left out. (#117,
+  and no longer cover the data. The embedding legend cuts long names and extra
+  rows to fit; a network or spatial legend that cannot fit is left out. (#117,
   #118, #120, #202, #205)
 - Heatmap and clustermap draw z-scores with `rdbu` when no colormap is given, so
   `colormap` defaults to `NULL` in R and `None` in Python. With a diverging
-  colormap, a positive `vmax` or a negative `vmin` given alone is mirrored about
-  0. (#123, #201)
+  colormap, a positive `vmax` or a negative `vmin` given alone to the heatmap is
+  mirrored about 0. (#123, #201)
 - With more rows or columns than pixels, heatmap and clustermap draw the mean of
   the cells under each pixel; they sampled one row in several, so an outlier row
   could vanish. Zoom and pan draw from textures already built and pool the view
-  once it rests. Past the GPU texture limit, a view that rests shows every row.
-  (#133, #201, #209)
+  once it rests. Past the GPU texture limit, a resting view zoomed in until each
+  row has a pixel shows every row. (#133, #201, #209)
 - Violins are at most 0.8 times as wide as their row is tall and never narrower
   than four times the label size; they came out flat and wide. (#204)
 - Network node labels show from the starting zoom: the default `label_threshold`
@@ -114,10 +115,15 @@ be behind the tag.
 - The lollipop count axis has round ticks with gridlines, decimal steps for
   frequencies, and a tooltip worded by `y_label`. Domains take a muted palette
   of their own, and `theme$categorical` colours the variant classes only;
-  `domain_colors` still sets the domain colours. (#207, #208)
+  `domain_colors` still sets the domain colours. Domain names are dark or light
+  by their fill, and a long name ends in an ellipsis. Without `meta.labelIndex`,
+  the JavaScript lollipop labels the 12 most recurrent variants (`labelTopN`);
+  it labelled none. Python `label_top_n` takes `math.inf`, as R takes `Inf`.
+  (#203, #207, #208)
 - Profile `as_fraction` must be one `TRUE` or `FALSE`, and stops when a value is
-  negative. Values that are not finite are left out of the total, and negative
-  bars go down from a zero line. (#167, #206)
+  negative. Values that are not finite are left out of the total, the tooltip
+  reads "no value" for a missing value, where an `NA` from R threw on hover, and
+  negative bars go down from a zero line. (#167, #206)
 - Oncoplot and lollipop classes, genes, samples and annotation levels break ties
   by name in code point order in R and Python, so the colours no longer depend
   on the locale R runs in. (#203)
@@ -183,11 +189,13 @@ be behind the tag.
 - Python sends missing names, groups and labels as missing in every plot, as R
   does, and a polars LazyFrame stops with a message to call `.collect()`. (#195,
   #203)
-- The clustermap paints its cells in the chosen colormap; only `rdbu` worked, so
-  `ltc` and `ltcdiv` cells did not match the colour bar. (#133, #201)
+- The clustermap paints its cells in the chosen colormap; only `viridis` and
+  `rdbu` drew right, so `ltc` and `ltcdiv` cells did not match the colour bar.
+  (#133, #201)
 - Hover lines up with the plot inside an element with a CSS border; ten plots
   read the pointer off by the border width. (#211)
 - Every R Shiny example in the help runs as written. (#109, #200)
+- Python `IGV(genome=None)` loads no genome; it loaded hg38. (#122, #203)
 
 ## [0.2.0] - 2026-08-14
 

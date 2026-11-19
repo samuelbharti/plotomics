@@ -40,9 +40,9 @@ class Gosling(PlotomicsWidget):
         widgets take (IGV takes no theme). Gosling draws its own tracks, so
         no plotomics theme field applies: ``background``, ``foreground``,
         ``muted``, ``grid``, ``axis``, ``fontFamily``, ``fontSize``,
-        ``categorical`` and ``padding`` are not read. Set colours and fonts in the Gosling theme
-        or in the spec; the widget keeps the default padding of 10 px around
-        Gosling.
+        ``categorical`` and ``padding`` are not read. Set colours and fonts
+        in the Gosling theme or in the spec; the widget keeps the default
+        padding of 10 px around Gosling.
     height:
         Initial widget height in CSS pixels.
 

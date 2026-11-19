@@ -3,7 +3,7 @@ bibentry(
   title    = "plotomics: High-Performance Bioinformatics Visualizations",
   author   = person("Samuel", "Bharti"),
   year     = "2026",
-  note     = "R package version 0.1.0",
+  note     = sprintf("R package version %s", meta$Version),
   url      = "https://github.com/samuelbharti/plotomics",
   doi      = "10.5281/zenodo.21926306"
 )
