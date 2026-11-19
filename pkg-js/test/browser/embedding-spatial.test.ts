@@ -901,3 +901,113 @@ describe("embedding colour bar far from 0", () => {
     }
   });
 });
+
+describe("spatial export of a tissue image from another origin", () => {
+  /** A PNG on this test server, under a host name of another origin. */
+  async function crossOriginPNG(): Promise<string | null> {
+    const { default: path } = await import("../../../assets/favicon.png?url");
+    for (const host of ["127.0.0.1", "[::1]", "localhost"]) {
+      if (host === location.hostname) continue;
+      const url = `${location.protocol}//${host}:${location.port}${path}`;
+      const loads = await new Promise<boolean>((resolve) => {
+        const im = new Image();
+        im.onload = () => resolve(true);
+        im.onerror = () => resolve(false);
+        im.src = url;
+      });
+      if (loads) return url;
+    }
+    return null;
+  }
+
+  /** Pixels of a PNG (a Blob or a data URL) within 2 of `rgb`. */
+  async function pixelsOf(png: Blob | string, rgb: number[]) {
+    const blob =
+      typeof png === "string" ? await (await fetch(png)).blob() : png;
+    const bitmap = await createImageBitmap(blob);
+    const c = document.createElement("canvas");
+    c.width = bitmap.width;
+    c.height = bitmap.height;
+    const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+    ctx.drawImage(bitmap, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let count = 0;
+    for (let k = 0; k < d.length; k += 4) {
+      if (rgb.every((v, i) => Math.abs((d[k + i] as number) - v) <= 2)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  it("exports the spots and legend without the image", async () => {
+    const url = await crossOriginPNG();
+    expect(url, "another host name for the test server").not.toBeNull();
+    // The test server answers CORS requests from its other host names, so
+    // the image is kept from asking: it then loads as from a server that
+    // sends no CORS headers, and taints the canvas.
+    const proto = HTMLImageElement.prototype;
+    const crossOrigin = Object.getOwnPropertyDescriptor(
+      proto,
+      "crossOrigin",
+    ) as PropertyDescriptor;
+    Object.defineProperty(proto, "crossOrigin", {
+      configurable: true,
+      get: () => null,
+      set: () => {},
+    });
+    const warn = console.warn;
+    const warned: string[] = [];
+    console.warn = (message: unknown) => {
+      warned.push(String(message));
+    };
+    try {
+      const el = container(400, 300);
+      const plot = createSpatial(el, {
+        data: {
+          columns: { x: [50], y: [50], color: ["a"] },
+          meta: {
+            image: url as string,
+            imgWidth: 100,
+            imgHeight: 100,
+            spotDiameter: 30,
+            colors: ["#ff00ff"],
+          },
+        },
+        options: { spotOpacity: 1 },
+      });
+      instances.push(plot);
+      const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+      const tainted = () => {
+        try {
+          canvas.getContext("2d")?.getImageData(0, 0, 1, 1);
+          return false;
+        } catch {
+          return true;
+        }
+      };
+      await expect.poll(tainted, poll).toBe(true);
+
+      // The PNG export was null.
+      const png = await plot.exportPNG?.(1);
+      expect(png).toBeInstanceOf(Blob);
+      expect(await pixelsOf(png as Blob, [255, 0, 255])).toBeGreaterThan(500);
+      expect(svgTexts(el)).toContain("a");
+
+      // The SVG export left out the spots as well as the image.
+      const svg = plot.exportSVG?.() ?? "";
+      const href = /<image[^>]* href="(data:image\/png[^"]+)"/.exec(svg)?.[1];
+      expect(href).toBeTruthy();
+      expect(await pixelsOf(href as string, [255, 0, 255])).toBeGreaterThan(
+        500,
+      );
+
+      const said = warned.join("\n");
+      expect(said).toContain("without the image");
+      expect(said).not.toContain("leaves out the image and spots");
+    } finally {
+      Object.defineProperty(proto, "crossOrigin", crossOrigin);
+      console.warn = warn;
+    }
+  });
+});
