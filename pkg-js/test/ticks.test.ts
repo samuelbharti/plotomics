@@ -64,6 +64,20 @@ describe("round axis ticks", () => {
     ]);
   });
 
+  it("prints a million and more in M, whatever the step", () => {
+    const t = zeroTicks(1.8e6, 4);
+    expect(t.ticks.map((v) => formatTick(v, t.step))).toEqual([
+      "0",
+      "500k",
+      "1.0M",
+      "1.5M",
+      "2.0M",
+    ]);
+    expect(formatTick(1.05e6, 5e4)).toBe("1.05M");
+    expect(formatTick(3e6, 1e6)).toBe("3M");
+    expect(formatTick(950000, 50000)).toBe("950k");
+  });
+
   it("puts whole-number ticks from 1 to the length", () => {
     expect(rangeTicks(10)).toEqual([1, 2, 4, 6, 8, 10]);
     expect(rangeTicks(3)).toEqual([1, 2, 3]);
@@ -83,6 +97,23 @@ describe("ticks for tiny values, whole counts and short axes", () => {
   it("keeps whole-number steps for counts", () => {
     expect(zeroTicks(1, 4, { integer: true }).ticks).toEqual([0, 1]);
     expect(zeroTicks(2, 4, { integer: true }).ticks).toEqual([0, 1, 2]);
+  });
+
+  it("keeps 0 and the round top when even the coarsest step crowds", () => {
+    // A top count of 3 takes a step of 2 at its coarsest, three labels in
+    // all, where an axis 19 px long with 20 px between labels holds two.
+    expect(fitZeroTicks(3, 19, { integer: true, minGapPx: 20 })).toEqual({
+      ticks: [0, 4],
+      top: 4,
+      step: 4,
+    });
+    expect(fitZeroTicks(23, 30, { integer: true, minGapPx: 25 }).ticks).toEqual(
+      [0, 40],
+    );
+    // The coarsest step is kept when its labels fit.
+    expect(fitZeroTicks(3, 40, { integer: true, minGapPx: 20 }).ticks).toEqual([
+      0, 2, 4,
+    ]);
   });
 
   it("uses fewer ticks on a short axis", () => {
