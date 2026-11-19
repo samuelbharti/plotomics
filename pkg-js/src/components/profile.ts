@@ -8,17 +8,20 @@
  * underneath it without a legend. It generalises to any ordered categorical
  * profile that groups into runs, which is why it is not called "sbs96".
  *
- * Bars are canvas-drawn and the header, axis and labels are an SVG overlay. At
- * 96 bars canvas is not strictly required, but keeping the data layer on canvas
- * means a caller can hand it a few thousand bins (a copy-number profile, a
- * binned coverage track) without the component falling over.
+ * Bars, and the gridlines under them, are canvas-drawn; the header, axis and
+ * labels are an SVG overlay. At 96 bars canvas is not strictly required, but
+ * keeping the data layer on canvas means a caller can hand it a few thousand
+ * bins (a copy-number profile, a binned coverage track) without the component
+ * falling over.
  *
  * Groups must arrive as contiguous runs, which is what makes the header blocks
  * meaningful. The component does not sort: reordering the bars is the caller's
  * decision, and for SBS96 the canonical order is part of the convention.
  *
  * ## Data contract
- * - `columns.value`  `number[]`  bar height (required)
+ * - `columns.value`  `number[]`  bar height (required); a negative value
+ *   draws down from the zero line, and a value that is not finite (null from
+ *   R, NaN or Infinity from Python) draws no bar
  * - `columns.group`  `string[]`  group per bar; contiguous runs become blocks
  * - `columns.label`  `string[]`  per-bar tick label, e.g. the trinucleotide
  * - `meta.groups`       `string[]`  group order; defaults to order of appearance
@@ -41,6 +44,7 @@ import {
   zeroTicks,
   fitZeroTicks,
   formatTick,
+  stepDecimals,
   defaultTheme,
   type TextSizes,
   textSizes,
@@ -48,6 +52,8 @@ import {
   fitText,
   categoricalColors,
 } from "../core/index.js";
+import { setCanvasColour } from "../core/paint.js";
+import { tickStep } from "d3-array";
 
 export interface ProfileOptions {
   /** Fraction of each slot the bar occupies, in (0, 1]. */
@@ -56,7 +62,11 @@ export interface ProfileOptions {
   showHeader: boolean;
   /** Draw the per-bar tick labels under the axis. */
   showBarLabels: boolean;
-  /** Show values as a share of the total rather than raw counts. */
+  /**
+   * Show each value as a share of the total, in place of the raw count.
+   * Shares need values of 0 or more with a total above 0; otherwise the
+   * raw values are drawn, on a plain number axis.
+   */
   asFraction: boolean;
   yLabel: string;
   theme: Partial<PlotomicsTheme>;
@@ -153,6 +163,128 @@ export function finiteMax(values: ArrayLike<number>): number {
     if (Number.isFinite(v) && v > m) m = v;
   }
   return m;
+}
+
+/** The smallest finite value, or 0 when none is below 0. */
+export function finiteMin(values: ArrayLike<number>): number {
+  let m = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i] as number;
+    if (Number.isFinite(v) && v < m) m = v;
+  }
+  return m;
+}
+
+/**
+ * The sum of the finite values. A value that is not finite (null from R, NaN
+ * or Infinity from Python) draws no bar, so it adds nothing to the total.
+ */
+export function finiteTotal(values: ArrayLike<number>): number {
+  let total = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i] as number;
+    if (Number.isFinite(v)) total += v;
+  }
+  return total;
+}
+
+/**
+ * Whether the values have shares of their total: no finite value is below 0
+ * and the finite values add up to more than 0. Shares of a total with mixed
+ * signs, or of a total of 0, are not defined.
+ */
+export function sharesDefined(values: ArrayLike<number>): boolean {
+  let total = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i] as number;
+    if (!Number.isFinite(v)) continue;
+    if (v < 0) return false;
+    total += v;
+  }
+  return total > 0;
+}
+
+/**
+ * The height of each bar: its value, or with `asFraction` its share of the
+ * finite total, so the bars and the percent axis agree. Shares need what
+ * {@link sharesDefined} checks; without it the bars keep their values, and
+ * the axis labels them as plain numbers. A value that is not finite gives
+ * NaN, which draws no bar.
+ */
+export function barHeights(
+  values: ArrayLike<number>,
+  asFraction: boolean,
+): number[] {
+  const total = finiteTotal(values);
+  const denom = asFraction && sharesDefined(values) ? total : 1;
+  const out = new Array<number>(values.length);
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i] as number;
+    out[i] = Number.isFinite(v) ? v / denom : Number.NaN;
+  }
+  return out;
+}
+
+/** The ticks of the value axis, from `bottom` to `top`. */
+export interface ValueAxis {
+  ticks: number[];
+  /** The lowest tick: 0, or below 0 when a value is negative. */
+  bottom: number;
+  /** The highest tick: 0, or above 0 when a value is positive. */
+  top: number;
+  step: number;
+}
+
+/**
+ * Round ticks for a value axis `lengthPx` long, from a round bottom at or
+ * below both 0 and `min` to a round top at or above both 0 and `max`, so the
+ * zero line is a tick and a negative bar stays inside the plot. It takes as
+ * many intervals, up to `maxCount`, as leave at least `minGapPx` between
+ * neighbouring labels. With no value below 0 these are the ticks of
+ * `fitZeroTicks`.
+ */
+export function valueTicks(
+  min: number,
+  max: number,
+  lengthPx: number,
+  opts: { maxCount?: number; minGapPx?: number } = {},
+): ValueAxis {
+  const lo = Number.isFinite(min) ? Math.min(0, min) : 0;
+  if (!(lo < 0)) return { ...fitZeroTicks(max, lengthPx, opts), bottom: 0 };
+  const hi = Number.isFinite(max) ? Math.max(0, max) : 0;
+  const minGap = opts.minGapPx ?? 16;
+  let axis = signedTicks(lo, hi, 1);
+  for (let count = opts.maxCount ?? 5; count >= 1; count -= 1) {
+    axis = signedTicks(lo, hi, count);
+    if (lengthPx / Math.max(1, axis.ticks.length - 1) >= minGap) return axis;
+  }
+  return axis;
+}
+
+/**
+ * The multiples of a 1, 2 or 5 step from a round bottom at or below `lo`,
+ * which is below 0, to a round top at or above `hi`, which is 0 or more.
+ */
+function signedTicks(lo: number, hi: number, count: number): ValueAxis {
+  const step = tickStep(lo, hi, count);
+  if (!(step > 0) || !Number.isFinite(step) || (hi - lo) / step > 1000) {
+    // No round step fits: the ends and 0, each printed as it is.
+    const ticks = hi > 0 ? [lo, 0, hi] : [lo, 0];
+    return { ticks, bottom: lo, top: hi, step: 0 };
+  }
+  const below = Math.ceil(-lo / step - 1e-9);
+  const above = Math.max(0, Math.ceil(hi / step - 1e-9));
+  const d = stepDecimals(step);
+  const ticks: number[] = [];
+  for (let i = -below; i <= above; i += 1) {
+    ticks.push(Number((i * step).toFixed(d)));
+  }
+  return {
+    ticks,
+    bottom: ticks[0] as number,
+    top: ticks[ticks.length - 1] as number,
+    step,
+  };
 }
 
 export interface ProfileLayout {
@@ -271,18 +403,15 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     }
     return w;
   }
+  // Whether the axis shows shares: asFraction, with shares defined for the
+  // values. Set by each render.
+  let percent = false;
   /** The label of the y tick at `val`. */
   function tickText(val: number, step: number): string {
-    return formatTick(val, step, { percent: opts.asFraction });
+    return formatTick(val, step, { percent });
   }
   function plotted(): number[] {
-    const v = values();
-    const out = new Array<number>(v.length);
-    let total = 0;
-    for (let i = 0; i < v.length; i += 1) total += v[i] as number;
-    const denom = opts.asFraction && total > 0 ? total : 1;
-    for (let i = 0; i < v.length; i += 1) out[i] = (v[i] as number) / denom;
-    return out;
+    return barHeights(values(), opts.asFraction);
   }
 
   // ---- pointer ----
@@ -305,11 +434,17 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     }
     const lab = barLabels()[i] ?? String(i);
     const g = groupCol()[i] ?? "";
-    let total = 0;
-    for (let k = 0; k < v.length; k += 1) total += v[k] as number;
-    const pct = total > 0 ? (100 * (v[i] as number)) / total : 0;
+    // The share is of the finite total, as the bars and the axis use. With
+    // a negative value, or a total of 0, shares are not defined.
+    const value = v[i] as number;
+    const share = sharesDefined(v)
+      ? ` (${((100 * value) / finiteTotal(v)).toFixed(1)}%)`
+      : "";
+    const body = Number.isFinite(value)
+      ? `${fmtInt(value)}${share}`
+      : "no value";
     tooltip.show(
-      `<b>${esc(lab)}</b> ${esc(g)}<br/>${fmtInt(v[i] as number)} (${pct.toFixed(1)}%)`,
+      `<b>${esc(lab)}</b> ${esc(g)}<br/>${body}`,
       lastPointer.x,
       lastPointer.y,
     );
@@ -336,6 +471,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
   function render() {
     const ctx = canvas.getContext("2d");
     if (!ctx || !width || !height) return;
+    percent = opts.asFraction && sharesDefined(values());
     const v = plotted();
     const frame = (tickWidth: number) =>
       layoutProfile(
@@ -348,15 +484,16 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
         sizes,
         tickWidth,
       );
-    // As many round ticks as the plot height holds without crowding. The
-    // height does not depend on the left gutter, so the gutter can then grow
-    // to fit the tick labels without changing the ticks.
+    // As many round ticks as the plot height holds without crowding, from
+    // the lowest value or 0 to the highest or 0. The height does not depend
+    // on the left gutter, so the gutter can then grow to fit the tick labels
+    // without changing the ticks.
     layout = frame(0);
-    const axis = v.length
-      ? fitZeroTicks(finiteMax(v), layout.plotH, {
+    const axis: ValueAxis = v.length
+      ? valueTicks(finiteMin(v), finiteMax(v), layout.plotH, {
           minGapPx: sizes.label + 5,
         })
-      : zeroTicks(1, 4);
+      : { ...zeroTicks(1, 4), bottom: 0 };
     let tickWidth = 0;
     for (const val of axis.ticks) {
       tickWidth = Math.max(
@@ -368,26 +505,41 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, width, height);
+
+    // Gridlines first, so the bars are drawn over them. A grid colour that
+    // paints nothing, such as "none", draws no line.
+    if (setCanvasColour(ctx, "strokeStyle", theme.grid, el)) {
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const val of axis.ticks) {
+        // On a half pixel, so the 1 px line fills one row of pixels.
+        const y = Math.round(tickY(val, axis)) + 0.5;
+        ctx.moveTo(layout.left, y);
+        ctx.lineTo(width - layout.right, y);
+      }
+      ctx.stroke();
+    }
     if (!v.length) {
       renderOverlay(axis);
       return;
     }
 
-    const max = axis.top;
     const gcol = groupCol();
     const glist = groups();
     const gcols = groupColors();
     const bw = Math.max(1, layout.slot * opts.barWidth);
 
-    // Bars.
+    // Bars, up from the zero line, or down from it for a negative value.
+    const zero = tickY(0, axis);
     for (let i = 0; i < v.length; i += 1) {
+      const y = tickY(v[i] as number, axis);
+      if (!Number.isFinite(y)) continue;
       // A missing group (null) is a group of its own, as in R's unique(), so
       // its bars take the colour of its block in the banner.
       const gi = glist.indexOf(gcol[i] as string);
       ctx.fillStyle = gi >= 0 ? (gcols[gi] as string) : theme.foreground;
-      const h = ((v[i] as number) / max) * layout.plotH;
       const x = layout.left + i * layout.slot + (layout.slot - bw) / 2;
-      ctx.fillRect(x, layout.baseline - h, bw, h);
+      ctx.fillRect(x, Math.min(y, zero), bw, Math.abs(zero - y));
     }
 
     // Group banner.
@@ -409,7 +561,13 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     renderOverlay(axis);
   }
 
-  function renderOverlay(axis: { ticks: number[]; top: number; step: number }) {
+  /** y of the value `val` on the value axis. */
+  function tickY(val: number, axis: { bottom: number; top: number }): number {
+    const span = axis.top - axis.bottom || 1;
+    return layout.baseline - ((val - axis.bottom) / span) * layout.plotH;
+  }
+
+  function renderOverlay(axis: ValueAxis) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const gcol = groupCol();
@@ -417,12 +575,10 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     const gcols = groupColors();
     const tx = profileText(sizes);
 
-    // y gridlines and ticks, on round steps, each label stating its value.
+    // y tick labels, on round steps, each stating its value; the gridlines
+    // are on the canvas, under the bars.
     for (const val of axis.ticks) {
-      const y = layout.baseline - (val / axis.top) * layout.plotH;
-      svg.appendChild(
-        line(layout.left, y, width - layout.right, y, theme.grid),
-      );
+      const y = tickY(val, axis);
       svg.appendChild(
         text(
           layout.left - 8,
@@ -542,23 +698,6 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     t.setAttribute("transform", `rotate(-90 ${x} ${y})`);
     return t;
   }
-  function line(
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number,
-    stroke: string,
-  ) {
-    const l = document.createElementNS(SVG_NS, "line");
-    l.setAttribute("x1", String(x1));
-    l.setAttribute("y1", String(y1));
-    l.setAttribute("x2", String(x2));
-    l.setAttribute("y2", String(y2));
-    l.setAttribute("stroke", stroke);
-    l.setAttribute("stroke-width", "1");
-    return l;
-  }
-
   function doResize(w: number, h: number) {
     width = w;
     height = h;
@@ -633,6 +772,8 @@ function readableOn(hex: string): string {
   return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#233038" : "#FFFFFF";
 }
 function fmtInt(v: number): string {
+  // -0, from a tiny negative value that float32 rounds, reads 0.
+  if (v === 0) return "0";
   return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2);
 }
 

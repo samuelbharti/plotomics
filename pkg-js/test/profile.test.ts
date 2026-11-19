@@ -3,7 +3,13 @@ import {
   groupRuns,
   layoutProfile,
   finiteMax,
+  finiteMin,
+  finiteTotal,
+  barHeights,
+  sharesDefined,
+  valueTicks,
 } from "../src/components/profile.js";
+import { fitZeroTicks } from "../src/core/ticks.js";
 import { textSizes } from "../src/core/theme.js";
 
 describe("profile group runs", () => {
@@ -41,6 +47,105 @@ describe("profile axis maximum", () => {
     expect(finiteMax([0, 3, 7])).toBe(7);
     expect(finiteMax([Number.NaN, 2])).toBe(2);
     expect(finiteMax([])).toBe(0);
+  });
+
+  it("takes the smallest finite value, or 0", () => {
+    expect(finiteMin([5, -3, 2])).toBe(-3);
+    expect(finiteMin([Number.NEGATIVE_INFINITY, -1, Number.NaN])).toBe(-1);
+    expect(finiteMin([2, 7])).toBe(0);
+    expect(finiteMin([])).toBe(0);
+  });
+});
+
+describe("profile value axis", () => {
+  it("reaches below 0 for a negative value, with 0 as a tick", () => {
+    // Before the fix the axis started at 0, and a negative bar ran down
+    // through the bar labels and off the canvas.
+    const a = valueTicks(-3, 5, 200, { minGapPx: 16 });
+    expect(a.ticks).toEqual([-4, -2, 0, 2, 4, 6]);
+    expect(a.bottom).toBe(-4);
+    expect(a.top).toBe(6);
+    expect(a.step).toBe(2);
+  });
+
+  it("ends at 0 when every value is negative", () => {
+    const a = valueTicks(-7, 0, 200, { minGapPx: 16 });
+    expect(a.top).toBe(0);
+    expect(a.bottom).toBeLessThanOrEqual(-7);
+    expect(a.ticks).toContain(0);
+  });
+
+  it("is the axis from 0 when no value is negative", () => {
+    for (const [max, px] of [
+      [10, 300],
+      [0.625, 120],
+      [124, 40],
+    ] as const) {
+      const a = valueTicks(0, max, px, { minGapPx: 16 });
+      expect(a).toEqual({
+        ...fitZeroTicks(max, px, { minGapPx: 16 }),
+        bottom: 0,
+      });
+    }
+  });
+
+  it("leaves the label gap on a short axis", () => {
+    const a = valueTicks(-30, 120, 60, { minGapPx: 16 });
+    expect(60 / (a.ticks.length - 1)).toBeGreaterThanOrEqual(16);
+    expect(a.bottom).toBeLessThanOrEqual(-30);
+    expect(a.top).toBeGreaterThanOrEqual(120);
+    expect(a.ticks).toContain(0);
+  });
+});
+
+describe("profile shares with values that are not finite", () => {
+  // R sends NA, NaN and Inf as null; Python sends NaN and Infinity as they
+  // are. None of them draws a bar, so none counts in the total.
+  const R = [3, null, 5] as unknown as number[];
+  const PY = Float32Array.from([3, Number.NaN, 5]);
+  const PY_INF = [3, Number.POSITIVE_INFINITY, 5];
+
+  it("sums the finite values only", () => {
+    expect(finiteTotal(PY)).toBe(8);
+    expect(finiteTotal(R)).toBe(8);
+    expect(finiteTotal(PY_INF)).toBe(8);
+    expect(finiteTotal([])).toBe(0);
+  });
+
+  it("gives each bar its share of the finite total", () => {
+    // Before the fix a NaN made the total NaN, so the bars kept their raw
+    // values (3 and 5) under a percent axis that read up to 500%.
+    for (const values of [PY, R, PY_INF]) {
+      const h = barHeights(values, true);
+      expect(h[0]).toBeCloseTo(0.375, 10);
+      expect(h[1]).toBeNaN();
+      expect(h[2]).toBeCloseTo(0.625, 10);
+    }
+  });
+
+  it("keeps raw values without asFraction, and no bar for a missing one", () => {
+    const h = barHeights(R, false);
+    expect(h[0]).toBe(3);
+    expect(h[1]).toBeNaN();
+    expect(h[2]).toBe(5);
+  });
+
+  it("keeps raw values, for a plain number axis, when shares are not defined", () => {
+    // Shares of a total with mixed signs, or of a total of 0, are not
+    // defined. Before the fix [3, -1] drew 150% and -50%.
+    for (const values of [
+      [0, Number.NaN, 0],
+      [2, -2, 1, -1],
+      [3, -1],
+      [5, -3, 2],
+    ]) {
+      expect(sharesDefined(values)).toBe(false);
+      expect(barHeights(values, true)).toEqual(
+        values.map((v) => (Number.isFinite(v) ? v : Number.NaN)),
+      );
+    }
+    expect(sharesDefined([3, Number.NaN, 5])).toBe(true);
+    expect(sharesDefined([0, 2])).toBe(true);
   });
 });
 
