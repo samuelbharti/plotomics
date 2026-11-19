@@ -92,18 +92,35 @@ class Spatial(PlotomicsWidget):
         keeping the default of 10.
         Its ``categorical`` entry is an ordered palette, a list of colours
         that go to the categories in order; colours are not matched by name.
+        A colour given as a CSS custom property, such as
+        ``"background": "var(--bg)"``, takes the value the page gives it when
+        the plot draws. After the page changes the property, what the plot
+        drew on a canvas keeps the old colour until it draws again: resize
+        the widget or display it again.
     height:
         Initial widget height in CSS pixels.
 
     Examples
     --------
+    The image here is a drawn stand-in, built as a data URI so the example
+    needs no file. A real slide passes the path or URL of its image.
+
     >>> import pandas as pd
+    >>> from urllib.parse import quote
+    >>> svg = (
+    ...     "<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'>"
+    ...     "<rect width='300' height='300' fill='#F4ECF0'/>"
+    ...     "<ellipse cx='150' cy='130' rx='115' ry='95' fill='#D9A9C4'/>"
+    ...     "</svg>"
+    ... )
+    >>> tissue = "data:image/svg+xml," + quote(svg, safe="")
     >>> df = pd.DataFrame({
     ...     "x": [100, 150, 200], "y": [120, 160, 90],
     ...     "color": ["Cluster 1", "Cluster 2", "Cluster 1"],
     ... })
-    >>> Spatial(df, image="tissue.png", img_width=600, img_height=600,
-    ...         spot_diameter=8)  # doctest: +SKIP
+    >>> w = Spatial(df, image=tissue, img_width=300, img_height=300,
+    ...             spot_diameter=8)
+    >>> w  # doctest: +SKIP
     """
 
     _esm = STATIC / "spatial.js"

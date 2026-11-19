@@ -51,7 +51,7 @@ import {
   compositePNG,
   categoricalColors,
 } from "../core/index.js";
-import { setCanvasColour } from "../core/paint.js";
+import { plainColour, setCanvasColour } from "../core/paint.js";
 
 export interface ViolinOptions {
   /** Fraction of a cell's width the widest violin fills, in (0, 1].
@@ -441,8 +441,10 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
         : Number.isFinite(m)
           ? `<br/>median ${m.toFixed(2)}`
           : "<br/>no data";
+    // R sends a missing name as null, and Python now does too; it reads
+    // "NA", as in the dot plot and the legend keys.
     tooltip.show(
-      `<b>${esc(f[row] as string)}</b> in ${esc(g[col] as string)}${medTxt}`,
+      `<b>${esc(f[row] ?? "NA")}</b> in ${esc(g[col] ?? "NA")}${medTxt}`,
       lastPointer.x,
       lastPointer.y,
     );
@@ -482,8 +484,12 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     });
 
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = theme.background;
-    ctx.fillRect(0, 0, width, height);
+    // var() and currentColor read inside the element, as a canvas cannot.
+    const background = plainColour(theme.background, el);
+    if (background) {
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, width, height);
+    }
     if (!f.length || !g.length || !gr.length) {
       renderOverlay();
       return;
@@ -558,13 +564,14 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
         const i = idx[c] as number;
         if (
           opts.showMedian &&
+          background &&
           med &&
           i >= 0 &&
           i < med.length &&
           Number.isFinite(med[i] as number)
         ) {
           const my = toY(med[i] as number);
-          ctx.strokeStyle = theme.background;
+          ctx.strokeStyle = background;
           ctx.lineWidth = 1.5;
           ctx.beginPath();
           ctx.moveTo(cx - halfW * 0.35, my);
@@ -742,7 +749,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -753,6 +760,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [{ canvas, x: 0, y: 0, width, height }],
         overlay: svg,
       });

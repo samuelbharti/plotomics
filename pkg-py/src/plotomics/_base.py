@@ -324,17 +324,27 @@ class PlotomicsWidget(anywidget.AnyWidget):
 
     # JSON side-channel: string columns + non-columnar metadata.
     data = traitlets.Dict({"columns": {}, "meta": {}}).tag(sync=True)
+    """Text columns and metadata, sent to the browser as JSON."""
     # Binary numeric columns + their schema.
     buffer = traitlets.Bytes(b"").tag(sync=True)
+    """Numeric columns, packed into one binary buffer."""
     schema = traitlets.Dict({"columns": []}).tag(sync=True)
+    """Name, type, length and byte offset of each column in the buffer."""
     # Component options (camelCase keys, matching the TS options interface).
     options = traitlets.Dict({}).tag(sync=True)
+    """Options of the plot, with the camelCase keys of the JavaScript."""
     _height = traitlets.Int(480).tag(sync=True)
     # JS -> Python: the latest selection from the component. Its shape depends on
     # the component: a list of point indices for a lasso selection (Embedding),
     # or a single clicked node id (a string) or None for a click selection
     # (Network). Observe it with ``widget.observe(fn, names="selected")``.
     selected = traitlets.Any(default_value=[]).tag(sync=True)
+    """The latest selection in the browser.
+
+    A list of point indices for a lasso selection in an Embedding, or the id
+    of the clicked node (a string), or None, in a Network. Observe it with
+    ``widget.observe(fn, names="selected")``.
+    """
     # Whether ``options["theme"]`` is a plotomics theme, whose padding is
     # checked. Gosling takes a Gosling theme there.
     _plotomics_theme = True

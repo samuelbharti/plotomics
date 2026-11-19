@@ -54,6 +54,8 @@ import {
   afterQuiet,
   categoricalColors,
 } from "../core/index.js";
+import { scatterBackground } from "../core/paint.js";
+import { uniqueId } from "../core/dom.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
@@ -457,11 +459,6 @@ type LegendState =
   | { mode: "continuous"; domain: [number, number] }
   | null;
 
-// Monotonic per-page counter so multiple embeddings get distinct SVG element
-// ids. A shared id would make every colorbar's `url(#…)` resolve to the first
-// instance's gradient in document order (silent legend/point mismatch).
-let embeddingSeq = 0;
-
 export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   el,
   initial,
@@ -493,7 +490,10 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   let drawn: Int32Array = new Int32Array(0);
   // Whether some drawn point has no colour value (drawn grey, keyed "NA").
   let missingColor = false;
-  const uid = `plotomics-embedding-${embeddingSeq++}`;
+  // One id per instance for the SVG elements, distinct across widgets that
+  // load the module again each (as anywidget does). A shared id would make
+  // every colorbar's `url(#…)` resolve to the first instance's gradient.
+  const uid = uniqueId("plotomics-embedding");
 
   const xScale = scaleLinear().domain(xDomain);
   const yScale = scaleLinear().domain(yDomain);
@@ -535,7 +535,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     pointSize: opts.pointSize,
     pointScaleMode: opts.pointScaleMode,
     opacity: opts.opacity,
-    backgroundColor: theme.background,
+    backgroundColor: scatterBackground(theme, el),
     mouseMode: opts.mouseMode,
     // Extra lasso affordances even in panZoom mode: click the handle that
     // appears, or press-and-hold then drag (touch-friendly).
@@ -1225,7 +1225,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         opts.padding !== prev.padding ||
         (areaChanged && isStartView(scatterplot));
       scatterplot.set({
-        backgroundColor: theme.background,
+        backgroundColor: scatterBackground(theme, el),
         mouseMode: opts.mouseMode,
         // pointSize and opacity were previously only honoured at construction,
         // so setOptions({pointSize}) silently did nothing and a size control
@@ -1264,7 +1264,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         out.insertBefore(node.cloneNode(true), out.firstChild);
       }
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -1277,6 +1277,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [
           { canvas, x: m.left, y: m.top, width: innerW(), height: innerH() },
         ],

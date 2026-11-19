@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createKm } from "../../src/components/km.js";
-import type { PlotomicsInstance } from "../../src/core/index.js";
+import type { PlotomicsData, PlotomicsInstance } from "../../src/core/index.js";
 import { PLOTS } from "./plots.js";
 
 function container(width = 600, height = 400) {
@@ -553,5 +553,465 @@ describe("km survival ticks on a short panel", () => {
       }
       expect(runs, `${height} px`).toBe(labels.length);
     }
+  });
+});
+
+/** Eight strata, some with long names, as in a table with two variables. */
+const EIGHT_LONG = [
+  "other",
+  "Stage I adenocarcinoma, never smoker",
+  "Stage II squamous, former smoker",
+  "Stage III",
+  "Stage IIIB",
+  "Stage IV metastatic disease with brain involvement",
+  "T4N2M0",
+  "unknown",
+];
+
+/**
+ * A km plot of `names`, each falling from 100% at its own pace, with
+ * censoring ticks, a confidence band, a log-rank p and a risk table on
+ * `riskTimes`.
+ */
+function strataData(
+  names: readonly string[],
+  riskTimes: number[] = [0, 200, 400, 600, 800, 1000],
+): PlotomicsData {
+  const time: number[] = [];
+  const surv: number[] = [];
+  const lower: number[] = [];
+  const upper: number[] = [];
+  const group: string[] = [];
+  const riskCounts: number[] = [];
+  for (let g = 0; g < names.length; g += 1) {
+    const name = names[g] as string;
+    for (let k = 0; k <= 10; k += 1) {
+      const s = Math.max(0.02, 1 - k * (0.06 + 0.012 * g));
+      time.push(k * 100);
+      surv.push(s);
+      lower.push(Math.max(0, s - 0.1));
+      upper.push(Math.min(1, s + 0.1));
+      group.push(name);
+    }
+    for (let j = 0; j < riskTimes.length; j += 1) {
+      riskCounts.push(Math.max(0, 140 - 7 * g - j * 6));
+    }
+  }
+  return {
+    columns: { time, surv, lower, upper, group },
+    meta: {
+      groups: [...names],
+      riskTimes,
+      riskCounts,
+      censorTime: [150, 550],
+      censorSurv: [0.9, 0.6],
+      censorGroup: [names[0] as string, names[0] as string],
+      pLabel: "log-rank p = 0.003",
+    },
+  };
+}
+
+/** The SVG texts of a plot. */
+function svgTexts(el: HTMLElement): SVGTextElement[] {
+  return Array.from(el.querySelectorAll("svg text")) as SVGTextElement[];
+}
+
+/** The curve panel, from the time axis line and the "100%" label. */
+function panel(el: HTMLElement) {
+  const axis = Array.from(el.querySelectorAll("svg line")).find(
+    (l) =>
+      l.getAttribute("y1") === l.getAttribute("y2") &&
+      Number(l.getAttribute("x2")) - Number(l.getAttribute("x1")) > 50,
+  ) as SVGLineElement;
+  const top = svgTexts(el).find((t) => t.textContent === "100%");
+  const size = Number(top?.getAttribute("font-size"));
+  return {
+    x0: Number(axis.getAttribute("x1")),
+    x1: Number(axis.getAttribute("x2")),
+    y0: Number(top?.getAttribute("y")) - 0.35 * size,
+    y1: Number(axis.getAttribute("y1")),
+  };
+}
+
+/** The box of an SVG element, in the coordinates of the plot's layers. */
+function boxIn(el: HTMLElement, node: Element) {
+  const svg = el.querySelector("svg") as SVGSVGElement;
+  const s = svg.getBoundingClientRect();
+  const r = node.getBoundingClientRect();
+  return {
+    x0: r.left - s.left,
+    x1: r.right - s.left,
+    y0: r.top - s.top,
+    y1: r.bottom - s.top,
+  };
+}
+
+describe("km y ticks when y does not start at 0", () => {
+  it("labels round percentages, each on its gridline", () => {
+    // The lowest estimate is 25%, so the axis starts at 15%. Before the fix
+    // the ticks sat at 15, 36.25, 57.5, 78.75 and 100% and read 15, 36, 58,
+    // 79 and 100%.
+    const el = container(800, 520);
+    const km = createKm(el, {
+      data: {
+        columns: {
+          time: [0, 10, 20, 30, 0, 10, 20, 30],
+          surv: [1, 0.8, 0.5, 0.25, 1, 0.9, 0.7, 0.6],
+          group: ["a", "a", "a", "a", "b", "b", "b", "b"],
+        },
+      },
+      options: { yFromZero: false },
+    });
+    instances.push(km);
+    const labels = Array.from(
+      el.querySelectorAll('svg text[text-anchor="end"]'),
+    ).filter((t) => /%$/.test(t.textContent ?? "")) as SVGTextElement[];
+    expect(labels.map((t) => t.textContent)).toEqual([
+      "20%",
+      "40%",
+      "60%",
+      "80%",
+      "100%",
+    ]);
+    // Each label is centred on its gridline, which the canvas draws at
+    // time 25, where no curve crosses one.
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+    const ratio = canvas.width / canvas.clientWidth;
+    const x = Math.round(tickX(el, "25") * ratio);
+    for (const t of labels) {
+      const y = Number(t.getAttribute("y")) - 0.35 * 11;
+      const [r, g, b] = ctx.getImageData(x, Math.round(y * ratio), 1, 1).data;
+      expect([r, g, b], t.textContent ?? "").toEqual([0xe5, 0xe7, 0xeb]);
+    }
+  });
+});
+
+describe("km risk table at short heights", () => {
+  it("keeps every text inside the plot box, leaving the table out when it cannot fit", () => {
+    // Before the fix the panel kept 40 px and the rows ran past the bottom
+    // edge: below 160 px with 2 strata, 180 px with 4 and 240 px with 8.
+    const cases: [string[], number[]][] = [
+      [
+        ["1", "2"],
+        [140, 150],
+      ],
+      [
+        ["0", "1", "2", "3"],
+        [160, 170],
+      ],
+      [EIGHT_LONG, [200, 220, 230]],
+    ];
+    for (const [names, heights] of cases) {
+      for (const h of heights) {
+        const el = container(800, h);
+        instances.push(createKm(el, { data: strataData(names) }));
+        const box = (
+          el.querySelector("canvas") as HTMLCanvasElement
+        ).getBoundingClientRect();
+        const outside = svgTexts(el)
+          .filter((t) => {
+            const r = t.getBoundingClientRect();
+            return (
+              r.top < box.top - 0.5 ||
+              r.bottom > box.bottom + 0.5 ||
+              r.left < box.left - 0.5 ||
+              r.right > box.right + 0.5
+            );
+          })
+          .map((t) => t.textContent);
+        expect(outside, `${names.length} strata, ${h} px`).toEqual([]);
+      }
+    }
+  });
+});
+
+describe("km time labels on a narrow axis", () => {
+  it("thins the time labels and the counts under them so none run together", () => {
+    // risk_times = seq(0, 1000, 50) at 400 px. Before the fix all 21 labels
+    // and counts were drawn, as "0 50100150..." and "138128114102...".
+    const times = Array.from({ length: 21 }, (_, i) => i * 50);
+    const el = container(400, 520);
+    instances.push(createKm(el, { data: strataData(["1", "2"], times) }));
+    const numbers = (size: number) =>
+      svgTexts(el).filter(
+        (t) =>
+          t.getAttribute("text-anchor") === "middle" &&
+          /^\d+$/.test(t.textContent ?? "") &&
+          Number(t.getAttribute("font-size")) === size,
+      );
+    const labels = numbers(11);
+    const counts = numbers(9);
+    expect(labels[0]?.textContent).toBe("0");
+    expect(labels.length).toBeGreaterThan(3);
+    expect(labels.length).toBeLessThan(21);
+    /** Texts of one row whose letters come within 2 px of the next. */
+    const crowded = (row: SVGTextElement[]) => {
+      const spans = row
+        .map((t) => {
+          const x = Number(t.getAttribute("x"));
+          const w = t.getComputedTextLength();
+          return { s: t.textContent, x0: x - w / 2, x1: x + w / 2 };
+        })
+        .sort((a, b) => a.x0 - b.x0);
+      const out: string[] = [];
+      for (let i = 1; i < spans.length; i += 1) {
+        const [a, b] = [spans[i - 1], spans[i]];
+        if (a && b && b.x0 - a.x1 < 2) out.push(`${a.s}/${b.s}`);
+      }
+      return out;
+    };
+    expect(crowded(labels)).toEqual([]);
+    const rows = new Map<string, SVGTextElement[]>();
+    for (const c of counts) {
+      const y = c.getAttribute("y") ?? "";
+      rows.set(y, [...(rows.get(y) ?? []), c]);
+    }
+    expect(rows.size).toBe(2);
+    const xs = labels.map((t) => t.getAttribute("x"));
+    for (const row of rows.values()) {
+      expect(crowded(row)).toEqual([]);
+      // A count under each time label, centred on it.
+      expect(row.map((t) => t.getAttribute("x"))).toEqual(xs);
+    }
+  });
+});
+
+describe("km legend", () => {
+  it("keeps the legend off the curve panel with many long strata names", () => {
+    // Before the fix the legend sat in the top-right corner of the panel
+    // and, with eight strata at 400 px, covered the curves.
+    for (const [w, h] of [
+      [400, 520],
+      [800, 520],
+      [400, 300],
+    ] as const) {
+      const el = container(w, h);
+      instances.push(createKm(el, { data: strataData(EIGHT_LONG) }));
+      const p = panel(el);
+      const covering = Array.from(el.querySelectorAll("svg text, svg rect"))
+        .filter((n) => !(n.textContent ?? "").startsWith("log-rank"))
+        .filter((n) => {
+          const b = boxIn(el, n);
+          return (
+            b.x0 < p.x1 - 1 &&
+            b.x1 > p.x0 + 1 &&
+            b.y0 < p.y1 - 1 &&
+            b.y1 > p.y0 + 1
+          );
+        })
+        .map((n) => n.textContent || n.getAttribute("fill"));
+      expect(covering, `${w} x ${h} px`).toEqual([]);
+      // Every stratum is in the legend, or counted in its "+N more" note.
+      const legend = svgTexts(el).filter(
+        (t) => Number(t.getAttribute("y")) < p.y0,
+      );
+      const note = legend.find((t) => /^\+\d+ more$/.test(t.textContent ?? ""));
+      const more = note ? Number(note.textContent?.slice(1, -5)) : 0;
+      expect(legend.length - (note ? 1 : 0) + more, `${w} x ${h} px`).toBe(8);
+      if (h === 300) expect(more).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("km at the smallest heights", () => {
+  it("draws no text outside the plot box at any height", () => {
+    // Before the fix the panel kept 40 px at any height, so in an element
+    // shorter than about 115 px the time labels and the x title ran past
+    // the bottom of the plot box, and below 75 px the survival labels too.
+    const single: PlotomicsData = {
+      columns: { time: [0, 300, 700, 1000], surv: [1, 0.8, 0.5, 0.3] },
+      meta: { pLabel: "log-rank p = 0.003" },
+    };
+    const plots: [string, PlotomicsData][] = [
+      ["one curve", single],
+      ["2 strata", strataData(["1", "2"])],
+      ["8 strata", strataData(EIGHT_LONG)],
+    ];
+    const outside: string[] = [];
+    let drawn = 0;
+    for (const fontSize of [12, 16]) {
+      for (const [name, data] of plots) {
+        // From an element with no room inside its padding upwards.
+        for (let h = 20; h <= 200; h += 2) {
+          const el = container(600, h);
+          const km = createKm(el, { data, options: { theme: { fontSize } } });
+          const box = (
+            el.querySelector("canvas") as HTMLCanvasElement
+          ).getBoundingClientRect();
+          for (const t of svgTexts(el)) {
+            if (!t.textContent) continue;
+            drawn += 1;
+            const r = t.getBoundingClientRect();
+            if (
+              r.top < box.top - 0.5 ||
+              r.bottom > box.bottom + 0.5 ||
+              r.left < box.left - 0.5 ||
+              r.right > box.right + 0.5
+            ) {
+              outside.push(`${name}, ${fontSize}, ${h} px: "${t.textContent}"`);
+            }
+          }
+          km.destroy();
+          el.remove();
+        }
+      }
+    }
+    expect(drawn).toBeGreaterThan(1000);
+    expect(outside.slice(0, 12), `${outside.length} texts outside`).toEqual([]);
+  });
+
+  it("drops the x title, then the time labels, before the panel shrinks", () => {
+    const el = container(600, 105);
+    instances.push(
+      createKm(el, {
+        data: { columns: { time: [0, 10], surv: [1, 0.5] } },
+      }),
+    );
+    const shown = svgTexts(el).map((t) => t.textContent);
+    // 85 px inside the padding: room for the time labels, not the title.
+    expect(shown).not.toContain("time");
+    expect(shown).toContain("10");
+    expect(shown).toContain("100%");
+  });
+});
+
+/** The numbers drawn centred at `size` px: time labels or risk counts. */
+function numberTexts(el: HTMLElement, size: number): SVGTextElement[] {
+  return svgTexts(el).filter(
+    (t) =>
+      t.getAttribute("text-anchor") === "middle" &&
+      /^\d+$/.test(t.textContent ?? "") &&
+      Number(t.getAttribute("font-size")) === size,
+  );
+}
+
+/** The rows of the risk table, top first, each sorted left to right. */
+function countRows(el: HTMLElement, size = 9): SVGTextElement[][] {
+  const rows = new Map<number, SVGTextElement[]>();
+  for (const t of numberTexts(el, size)) {
+    const y = Number(t.getAttribute("y"));
+    rows.set(y, [...(rows.get(y) ?? []), t]);
+  }
+  const x = (t: SVGTextElement) => Number(t.getAttribute("x"));
+  return [...rows.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, row]) => row.sort((a, b) => x(a) - x(b)));
+}
+
+describe("km time labels from risk times in any order", () => {
+  const cases: [number[], string[]][] = [
+    [
+      [0, 7, 30, 90, 180, 365, 730],
+      ["0", "30", "90", "180", "365", "730"],
+    ],
+    [
+      [1000, 750, 500, 250, 0],
+      ["0", "250", "500", "750", "1000"],
+    ],
+    [
+      [0, 500, 250, 1000, 750],
+      ["0", "250", "500", "750", "1000"],
+    ],
+    [
+      [0, 250, 250, 500, 1000],
+      ["0", "250", "500", "1000"],
+    ],
+  ];
+  for (const [given, shown] of cases) {
+    it(`labels the times that clear their neighbours from ${given.join(", ")}`, () => {
+      // Before the fix one stride in the given order kept 0, 30, 180 and
+      // 730 of the first; 1000 alone of the second; 0, 250 and 750 of the
+      // third; and dropped 500 from the fourth.
+      const el = container(900, 520);
+      instances.push(createKm(el, { data: strataData(["1", "2"], given) }));
+      const x = (t: SVGTextElement) => Number(t.getAttribute("x"));
+      const labels = numberTexts(el, 11).sort((a, b) => x(a) - x(b));
+      expect(labels.map((t) => t.textContent)).toEqual(shown);
+      // Under each label, the counts given for its time, at its first place
+      // in the risk times: strataData counts 140 - 7 g - 6 j.
+      const rows = countRows(el);
+      expect(rows.length).toBe(2);
+      for (let g = 0; g < rows.length; g += 1) {
+        const row = rows[g] as SVGTextElement[];
+        expect(row.map(x)).toEqual(labels.map(x));
+        expect(row.map((t) => t.textContent)).toEqual(
+          shown.map((s) => String(140 - 7 * g - 6 * given.indexOf(Number(s)))),
+        );
+      }
+    });
+  }
+
+  it("thins an even grid to a round one", () => {
+    // seq(0, 1000, 50) at 300 px, where the labels need three steps. The
+    // pass one by one kept 0, 150, 300 and so on.
+    const times = Array.from({ length: 21 }, (_, i) => i * 50);
+    const el = container(300, 520);
+    instances.push(createKm(el, { data: strataData(["1", "2"], times) }));
+    const x = (t: SVGTextElement) => Number(t.getAttribute("x"));
+    const labels = numberTexts(el, 11).sort((a, b) => x(a) - x(b));
+    expect(labels.map((t) => t.textContent)).toEqual([
+      "0",
+      "200",
+      "400",
+      "600",
+      "800",
+      "1000",
+    ]);
+    const rows = countRows(el);
+    expect(rows.length).toBe(2);
+    for (const row of rows) expect(row.map(x)).toEqual(labels.map(x));
+  });
+});
+
+describe("km risk table before the legend", () => {
+  it("keeps the table and leaves the legend out of a short plot", () => {
+    // Two strata with risk times 0 to 1000 by 50, at 800 x 160 px. Before
+    // the fix the legend took its row first and the table was left out,
+    // although the table fits with no legend.
+    const times = Array.from({ length: 21 }, (_, i) => i * 50);
+    const el = container(800, 160);
+    instances.push(createKm(el, { data: strataData(["1", "2"], times) }));
+    expect(countRows(el).length).toBe(2);
+    expect(el.querySelectorAll("svg rect").length).toBe(0);
+  });
+
+  it("keeps a table of seven strata at a large font size", () => {
+    // Strata of sex and ph.ecog at 600 x 300 px with fontSize 20. Before
+    // the fix the legend showed six entries and the table was left out.
+    const names = [
+      "sex=1, ph.ecog=0",
+      "sex=1, ph.ecog=1",
+      "sex=1, ph.ecog=2",
+      "sex=1, ph.ecog=3",
+      "sex=2, ph.ecog=0",
+      "sex=2, ph.ecog=1",
+      "sex=2, ph.ecog=2",
+    ];
+    const el = container(600, 300);
+    instances.push(
+      createKm(el, {
+        data: strataData(names),
+        options: { theme: { fontSize: 20 } },
+      }),
+    );
+    expect(countRows(el, 15).length).toBe(7);
+  });
+
+  it("leaves the panel two thirds of the height it has with no legend", () => {
+    // Eight long strata at 800 x 300 px. Before the fix the legend took
+    // three rows and left the panel 53 px of the 102 it has without them.
+    const panelHeight = (showLegend: boolean) => {
+      const el = container(800, 300);
+      instances.push(
+        createKm(el, { data: strataData(EIGHT_LONG), options: { showLegend } }),
+      );
+      const p = panel(el);
+      return p.y1 - p.y0;
+    };
+    const alone = panelHeight(false);
+    const shared = panelHeight(true);
+    expect(shared).toBeLessThan(alone);
+    expect(shared).toBeGreaterThanOrEqual((2 / 3) * alone - 0.5);
   });
 });

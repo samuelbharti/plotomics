@@ -73,12 +73,17 @@ class Network(PlotomicsWidget):
         keeping the default of 10.
         Its ``categorical`` entry is an ordered palette, a list of colours
         that go to the node groups in order; colours are not matched by name.
+        A colour given as a CSS custom property, such as
+        ``"background": "var(--bg)"``, takes the value the page gives it when
+        the plot draws. After the page changes the property, what the plot
+        drew on a canvas keeps the old colour until it draws again: resize
+        the widget or display it again.
     height:
         Initial widget height in CSS pixels.
 
     Notes
     -----
-    Clicking a node sets the ``selected`` trait to the clicked node id (a
+    Clicking a node sets ``widget.selected`` to the clicked node id (a
     string); clicking the empty canvas sets it to ``None``. Observe it with
     ``widget.observe(fn, names="selected")``.
 

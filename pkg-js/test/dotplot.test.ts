@@ -1,11 +1,35 @@
 import { describe, expect, it } from "vitest";
 import {
+  dotMaxRadius,
   dotRadius,
   layoutDotplot,
   uniqueInOrder,
   valueExtent,
 } from "../src/components/dotplot.js";
 import { textSizes } from "../src/core/theme.js";
+
+describe("dotMaxRadius", () => {
+  it("takes the option when the cells have room for it", () => {
+    expect(dotMaxRadius(9, 40, 30)).toBe(9);
+  });
+
+  it("shrinks the dots to fit their cells", () => {
+    expect(dotMaxRadius(9, 40, 12)).toBe(5);
+    expect(dotMaxRadius(9, 8, 30)).toBe(3);
+  });
+
+  it("keeps a 1 px radius in cells too small for a dot", () => {
+    // Before the fix the radius went to 0 or below, and no dot was drawn.
+    expect(dotMaxRadius(9, 22, 1.6)).toBe(1);
+    expect(dotMaxRadius(9, 2, 2)).toBe(1);
+    expect(dotMaxRadius(9, 0, 0)).toBe(1);
+  });
+
+  it("never goes below 0, or above a smaller option", () => {
+    expect(dotMaxRadius(0.5, 2, 2)).toBe(0.5);
+    expect(dotMaxRadius(-3, 40, 30)).toBe(0);
+  });
+});
 
 describe("dotplot helpers", () => {
   it("scales dot AREA, not radius, with the percentage", () => {

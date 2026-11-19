@@ -66,6 +66,11 @@ class Treemap(PlotomicsWidget):
         Its ``categorical`` entry is an ordered palette, a list of colours
         that go to the top-level branches in order; colours are not matched by
         name.
+        A colour given as a CSS custom property, such as
+        ``"background": "var(--bg)"``, takes the value the page gives it when
+        the plot draws. After the page changes the property, what the plot
+        drew on a canvas keeps the old colour until it draws again: resize
+        the widget or display it again.
     height:
         Initial widget height in CSS pixels.
 

@@ -29,7 +29,9 @@ class Heatmap(PlotomicsWidget):
     shows the mean of the cells under it, so a lone outlier row still shows,
     fainter the more rows share its pixel. A matrix with more rows or columns
     than the GPU's texture limit is averaged in blocks of two or more rows (or
-    columns) to fit it, so zoomed in, the rows of a block share their mean.
+    columns) to fit it. Zoomed in until each row and column in view has a
+    pixel of its own, the view shows every row and column once it stops
+    moving.
 
     In R this plot is ``bioheatmap()``, with the alias
     ``heatmap_plotomics()``. A function named ``heatmap()`` would mask
@@ -72,6 +74,11 @@ class Heatmap(PlotomicsWidget):
         and the plot: one number for every side, or a dict with any of the
         keys ``top``, ``right``, ``bottom`` and ``left``, a side left out
         keeping the default of 10.
+        A colour given as a CSS custom property, such as
+        ``"background": "var(--bg)"``, takes the value the page gives it when
+        the plot draws. After the page changes the property, what the plot
+        drew on a canvas keeps the old colour until it draws again: resize
+        the widget or display it again.
     height:
         Initial widget height in CSS pixels.
 

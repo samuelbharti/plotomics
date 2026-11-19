@@ -35,7 +35,8 @@ Suggests:
     survival
 VignetteBuilder: knitr
 Config/testthat/edition: 3
-URL: https://github.com/samuelbharti/plotomics,
+URL: https://www.samuelbharti.com/plotomics/r/,
+    https://github.com/samuelbharti/plotomics,
     https://doi.org/10.5281/zenodo.21926306
 BugReports: https://github.com/samuelbharti/plotomics/issues
 RoxygenNote: 8.0.0

@@ -65,7 +65,12 @@ and the plot: one number for every side, or numbers named \code{top},
 \code{right}, \code{bottom} and \code{left} in a list or vector, a side left out
 keeping the default of 10.
 Its \code{categorical} entry is an ordered palette: the colours go to the groups
-in order, and names on the colours are not matched to them.}
+in order, and names on the colours are not matched to them.
+A colour given as a CSS custom property, such as
+\code{background = "var(--bg)"}, takes the value the page gives it when the
+plot draws. After the page changes the property, what the plot drew on
+a canvas keeps the old colour until it draws again: resize the widget
+or render it again.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 

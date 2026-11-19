@@ -54,6 +54,7 @@ import {
 } from "../core/index.js";
 import { releaseRegl } from "../core/gl.js";
 import { uniqueId } from "../core/dom.js";
+import { colourBytes } from "../core/paint.js";
 import createREGL from "regl";
 import type { Regl, Texture2D, DrawCommand } from "regl";
 
@@ -1010,6 +1011,17 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   }
 
   /**
+   * The theme background as a WebGL clear colour, premultiplied by its alpha
+   * as the canvas expects. Clear for a background that paints nothing.
+   */
+  function clearColour(): [number, number, number, number] {
+    const rgba = colourBytes(theme.background, el);
+    if (!rgba) return [0, 0, 0, 0];
+    const a = rgba[3] / 255;
+    return [(rgba[0] / 255) * a, (rgba[1] / 255) * a, (rgba[2] / 255) * a, a];
+  }
+
+  /**
    * Draw the matrix and the overlay. `moving` is set while a wheel or a drag
    * moves the view, which then draws from textures already built.
    */
@@ -1020,7 +1032,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       if (regl && !reglBroken) {
         try {
           regl.poll();
-          regl.clear({ color: [1, 1, 1, 1], depth: 1 });
+          regl.clear({ color: clearColour(), depth: 1 });
         } catch {
           // The overlay still says what happened.
         }
@@ -1030,7 +1042,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     }
     try {
       regl.poll();
-      regl.clear({ color: [1, 1, 1, 1], depth: 1 });
+      regl.clear({ color: clearColour(), depth: 1 });
       const view = viewTexture(moving);
       drawTex = view.tex;
       drawScale = view.scale;
@@ -1434,7 +1446,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         out.insertBefore(img, out.firstChild);
       }
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -1447,6 +1459,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [
           {
             canvas,

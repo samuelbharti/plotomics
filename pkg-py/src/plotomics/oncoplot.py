@@ -91,7 +91,7 @@ class Oncoplot(PlotomicsWidget):
         or class.
     genes, samples:
         Explicit row / column order. Defaults to the memo-sorted order of the
-        genes and samples present in ``data``. Given ``genes`` keep their order
+        genes and samples present in the data. Given ``genes`` keep their order
         and the samples are sorted by it. The frequency bars divide by the
         number of samples shown, so pass ``samples`` to count unaltered
         samples of the cohort too.
@@ -143,6 +143,11 @@ class Oncoplot(PlotomicsWidget):
         Its ``categorical`` entry is an ordered palette, a list of colours
         that go to the alteration classes in order; colours are not matched by
         name.
+        A colour given as a CSS custom property, such as
+        ``"background": "var(--bg)"``, takes the value the page gives it when
+        the plot draws. After the page changes the property, what the plot
+        drew on a canvas keeps the old colour until it draws again: resize
+        the widget or display it again.
     height:
         Initial widget height in CSS pixels.
 
