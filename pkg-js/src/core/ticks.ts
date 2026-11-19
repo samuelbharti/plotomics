@@ -46,13 +46,21 @@ export function zeroTicks(
 /**
  * A tick label with the decimals its step needs. `percent` prints a fraction
  * as a percentage. Large values print as thousands ("k") or millions ("M")
- * when the step is a whole number of them, so the label stays exact.
+ * when the step is a whole number of them, so the label stays exact. A step
+ * of 0 marks the one tick of a flat range, which has no step: it prints the
+ * value itself to six significant digits, in exponent form below 1e-6, so a
+ * small value never reads as 0.
  */
 export function formatTick(
   value: number,
   step: number,
   opts: { percent?: boolean } = {},
 ): string {
+  if (!(step > 0)) {
+    const v = opts.percent ? value * 100 : value;
+    const text = Number.isFinite(v) ? String(Number(v.toPrecision(6))) : "NA";
+    return opts.percent ? `${text}%` : text;
+  }
   if (opts.percent) {
     return `${(value * 100).toFixed(stepDecimals(step * 100))}%`;
   }
@@ -79,8 +87,10 @@ function finerStep(step: number): number {
  * the values of a colour bar: the multiples of a 1, 2 or 5 step, for about
  * `count` intervals over the range. When that step leaves fewer than two
  * ticks inside the range, a finer step is taken, so a range with any width
- * gets at least two. A range with no width gets one tick, at its value.
- * Print each tick with `formatTick(value, step)`.
+ * gets at least two. A range with no width, or one too narrow for a round
+ * step to separate its values (0.3 to 0.1 + 0.2, say), is flat: it gets one
+ * tick, at its middle, and a step of 0. Print each tick with
+ * `formatTick(value, step)`.
  */
 export function domainTicks(
   lo: number,
@@ -91,12 +101,11 @@ export function domainTicks(
     return { ticks: [], step: 1 };
   }
   if (lo > hi) [lo, hi] = [hi, lo];
-  if (lo === hi) {
-    return {
-      ticks: [lo],
-      step: 10 ** -Math.min(6, stepDecimals(Math.abs(lo))),
-    };
-  }
+  // Halves first, so the middle of the widest range does not overflow.
+  const flat = { ticks: [lo / 2 + hi / 2], step: 0 };
+  // Below a width of 1e-12 of the values, a round step sits within a few
+  // thousand units of the last digit, and its labels would repeat.
+  if (hi - lo <= 1e-12 * Math.max(Math.abs(lo), Math.abs(hi))) return flat;
   let step = tickStep(lo, hi, Math.max(1, count));
   // Two finer steps always reach two ticks; the rest is margin.
   for (let k = 0; k < 4; k += 1) {
@@ -105,19 +114,25 @@ export function domainTicks(
     }
     const first = Math.ceil(lo / step - 1e-9);
     const last = Math.floor(hi / step + 1e-9);
+    // Past 2 ** 53 an index no longer counts by ones.
+    if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last)) break;
     if (last > first) {
       const d = stepDecimals(step);
       const ticks: number[] = [];
-      for (let i = first; i <= last; i += 1) {
-        // toFixed drops the float noise of i * step, such as
+      // At most about 1000 ticks, by the check above.
+      for (let j = 0; j <= last - first; j += 1) {
+        // toFixed drops the float noise of the product, such as
         // 0.30000000000000004.
-        ticks.push(Number((i * step).toFixed(d)));
+        const v = Number(((first + j) * step).toFixed(d));
+        if (v !== ticks[ticks.length - 1]) ticks.push(v);
       }
-      return { ticks, step };
+      return ticks.length > 1 ? { ticks, step } : flat;
     }
     step = finerStep(step);
   }
-  return { ticks: [], step: 1 };
+  return Number.isFinite(flat.ticks[0] as number)
+    ? flat
+    : { ticks: [], step: 1 };
 }
 
 /**
@@ -139,7 +154,8 @@ export function fitDomainTicks(
   let t = domainTicks(lo, hi, 1);
   for (let count = opts.maxCount ?? 5; count >= 1; count -= 1) {
     t = domainTicks(lo, hi, count);
-    if (gap(t.step) >= minGap) return t;
+    // A flat range has one tick and no step.
+    if (!(t.step > 0) || gap(t.step) >= minGap) return t;
   }
   const g = gap(t.step);
   const k = g > 0 ? Math.ceil(minGap / g - 1e-9) : t.ticks.length;

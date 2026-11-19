@@ -163,3 +163,45 @@ describe("round ticks inside a range that need not start at 0", () => {
     expect(tiny.ticks).toEqual([0]);
   });
 });
+
+describe("ranges too narrow or too small for round steps", () => {
+  const labels = (t: { ticks: number[]; step: number }) =>
+    t.ticks.map((v) => formatTick(v, t.step));
+
+  it("gives one tick to a range too narrow for a round step, and returns", () => {
+    // Before the fix these never returned: the tick index passed 2 ** 53,
+    // where adding 1 no longer changes it, and the loop filled memory.
+    const cases: [number, number, string][] = [
+      [0.3, 0.1 + 0.2, "0.3"],
+      [8, 8.000000000000002, "8"],
+      [1, 1 + 2 * Number.EPSILON, "1"],
+      [0.15, (0.1 + 0.2) / 2, "0.15"],
+    ];
+    for (const [lo, hi, label] of cases) {
+      expect(labels(domainTicks(lo, hi, 4))).toEqual([label]);
+      expect(labels(domainTicks(hi, lo, 1))).toEqual([label]);
+      expect(
+        labels(fitDomainTicks(lo, hi, 120, { maxCount: 4, minGapPx: 18 })),
+      ).toEqual([label]);
+    }
+  });
+
+  it("never repeats a label on a range a few units of the last digit wide", () => {
+    // Before the fix such a range read "1.0000000000000009" twice.
+    for (const k of [4, 8, 16, 64, 1024]) {
+      expect(labels(domainTicks(1, 1 + k * Number.EPSILON))).toEqual(["1"]);
+    }
+    const wider = labels(domainTicks(1, 1 + 1e-11));
+    expect(wider.length).toBeGreaterThan(1);
+    expect(new Set(wider).size).toBe(wider.length);
+  });
+
+  it("prints the value of a small flat range, not zero", () => {
+    // Before the fix these read "0.000000" and "-0.000000".
+    expect(labels(domainTicks(1e-7, 1e-7))).toEqual(["1e-7"]);
+    expect(labels(domainTicks(-3e-8, -3e-8))).toEqual(["-3e-8"]);
+    expect(labels(domainTicks(123.456, 123.456))).toEqual(["123.456"]);
+    expect(labels(domainTicks(1 / 3, 1 / 3))).toEqual(["0.333333"]);
+    expect(labels(domainTicks(0, 0))).toEqual(["0"]);
+  });
+});

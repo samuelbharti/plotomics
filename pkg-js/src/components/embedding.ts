@@ -1044,7 +1044,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     // Each label is centred on its value along the bar, by a short tick.
     const [lo, hi] = domain;
     L.ticks.forEach((v, i) => {
-      const y = y0 + (hi > lo ? (hi - v) / (hi - lo) : 0.5) * cbH;
+      const y = y0 + (hi !== lo ? (hi - v) / (hi - lo) : 0.5) * cbH;
       svg.appendChild(line(x0 + cbW, y, x0 + cbW + 3, y, theme.axis, 1));
       svg.appendChild(
         text(

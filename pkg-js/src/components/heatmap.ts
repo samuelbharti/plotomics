@@ -809,7 +809,9 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     const [lo, hi] = domain;
     const bar = colorbarTicks();
     bar.ticks.forEach((v, i) => {
-      const y = cbY + (hi > lo ? (hi - v) / (hi - lo) : 0.5) * cbH;
+      // The top of the bar is hi, also when a reversed domain puts it
+      // below lo.
+      const y = cbY + (hi !== lo ? (hi - v) / (hi - lo) : 0.5) * cbH;
       svg.appendChild(
         rect(cbX + COLORBAR_W, y - 0.5, 3, 1, theme.axis, "none", 0),
       );

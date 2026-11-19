@@ -504,7 +504,8 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
         ctx.stroke();
         continue;
       }
-      const t = hi > lo ? (v - lo) / (hi - lo) : 0.5;
+      // A reversed domain (hi below lo) runs the ramp the other way.
+      const t = hi !== lo ? (v - lo) / (hi - lo) : 0.5;
       ctx.fillStyle = paint(Math.max(0, Math.min(1, t)));
       ctx.fill();
     }
@@ -596,7 +597,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     // bar, by a short tick.
     const bar = barTicks(barH);
     bar.ticks.forEach((v, i) => {
-      const y = barTop + (hi > lo ? (hi - v) / (hi - lo) : 0.5) * barH;
+      const y = barTop + (hi !== lo ? (hi - v) / (hi - lo) : 0.5) * barH;
       svg.appendChild(line(lx + 10, y, lx + 13, y, theme.muted));
       svg.appendChild(
         text(

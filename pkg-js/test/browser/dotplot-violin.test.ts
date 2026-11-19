@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { createDotplot } from "../../src/components/dotplot.js";
 import { createViolin } from "../../src/components/violin.js";
-import type { PlotomicsInstance } from "../../src/core/index.js";
+import { type PlotomicsInstance, ramp } from "../../src/core/index.js";
 
 function container(width = 600, height = 400) {
   const el = document.createElement("div");
@@ -213,6 +213,67 @@ describe("dotplot colour bar", () => {
       Number(a.getAttribute("y")) - 3,
     );
     expect(tip).toContain("mean expression 1.00");
+  });
+
+  it("draws values too close for a round step, with one label", {
+    timeout: 10_000,
+  }, () => {
+    // Before the fix the tick loop for 0.3 to 0.1 + 0.2 never ended, and
+    // the tab hung.
+    const el = container();
+    instances.push(
+      createDotplot(el, {
+        data: {
+          columns: {
+            gene: ["A", "B"],
+            cluster: ["x", "x"],
+            pct: [50, 80],
+            value: [0.3, 0.1 + 0.2],
+          },
+        },
+      }),
+    );
+    expect(barLabels(el).map((t) => t.textContent)).toEqual(["0.3"]);
+  });
+
+  it("follows a reversed domain with the labels and the dots", () => {
+    // Before the fix every label sat at the middle of the bar and every
+    // dot took the middle colour.
+    const el = container();
+    instances.push(
+      createDotplot(el, {
+        data: four([1, 2, 3, 5]),
+        options: { valueDomain: [5, 1] },
+      }),
+    );
+    const at = (s: string) =>
+      Number(
+        barLabels(el)
+          .find((t) => t.textContent === s)
+          ?.getAttribute("y"),
+      );
+    // The top of the bar is the high end of the domain, here 1.
+    expect(at("1")).toBeLessThan(at("3"));
+    expect(at("3")).toBeLessThan(at("5"));
+    expect(at("3")).toBeCloseTo((at("1") + at("5")) / 2, 6);
+    // Gene A in x has the value 1, gene B in y the value 5. Look 4 px above
+    // each centre, off the gridline.
+    const labels = Array.from(
+      (el.querySelector("svg") as SVGSVGElement).querySelectorAll("text"),
+    );
+    const place = (s: string) =>
+      labels.find((t) => t.textContent === s) as SVGTextElement;
+    const dot = (gene: string, group: string) =>
+      pixel(
+        el,
+        Number(place(group).getAttribute("x")),
+        Number(place(gene).getAttribute("y")) - 0.35 * 11 - 4,
+      );
+    const rgb = (hex: string) =>
+      [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+    const paint = ramp("viridis");
+    expect(far(dot("A", "x"), rgb(paint(1)))).toBeLessThan(4);
+    expect(far(dot("B", "y"), rgb(paint(0)))).toBeLessThan(4);
   });
 });
 

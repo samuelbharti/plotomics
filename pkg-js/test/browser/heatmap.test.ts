@@ -235,6 +235,46 @@ describe("heatmap colour bar", () => {
     expect(y("4")).toBeLessThan(y("0"));
   });
 
+  it("draws a colour range too narrow for a round step, with one label", {
+    timeout: 10_000,
+  }, () => {
+    // Before the fix the tick loop for 0.3 to 0.1 + 0.2 never ended, and
+    // the tab hung.
+    const el = container();
+    instances.push(
+      createHeatmap(el, { data, options: { vmin: 0.3, vmax: 0.1 + 0.2 } }),
+    );
+    expect(ticks(el).map((t) => t.textContent)).toEqual(["0.3"]);
+  });
+
+  // Values 0 to 6, with clamps that reverse the colour domain.
+  const zeroToSix = {
+    columns: { values: [0, 1, 2, 3, 4, 5, 6, 3] },
+    meta: { nrows: 2, ncols: 4 },
+  };
+  for (const [what, options, top, bottom] of [
+    ["vmin 5 and vmax 1", { vmin: 5, vmax: 1 }, 1, 5],
+    ["only vmin 7, above the data", { vmin: 7 }, 6, 7],
+    ["only vmax -1, below the data", { vmax: -1 }, -1, 0],
+  ] as const) {
+    it(`places each label at its value on a reversed domain: ${what}`, () => {
+      // Before the fix every label sat at the middle of the bar.
+      const el = container();
+      instances.push(createHeatmap(el, { data: zeroToSix, options }));
+      const placed = ticks(el)
+        .map((t) => ({
+          v: Number(t.textContent),
+          y: Number(t.getAttribute("y")),
+        }))
+        .sort((a, b) => a.y - b.y);
+      expect(placed.length).toBeGreaterThan(1);
+      expect(new Set(placed.map((p) => p.y)).size).toBe(placed.length);
+      // The top of the bar is vmax, the bottom vmin.
+      expect(placed[0]?.v).toBe(top);
+      expect(placed[placed.length - 1]?.v).toBe(bottom);
+    });
+  }
+
   it("titles the bar with legendTitle, and by the default otherwise", () => {
     const el = container();
     const plot = createHeatmap(el, { data });
