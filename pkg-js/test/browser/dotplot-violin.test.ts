@@ -160,6 +160,18 @@ async function screenPNG(el: HTMLElement): Promise<Blob> {
 const far = (a: number[], b: number[]) =>
   Math.max(...a.map((v, i) => Math.abs(v - (b[i] as number))));
 
+/**
+ * Where the plot box sits in the element: the layers, and every coordinate
+ * they draw at, start inside the theme padding.
+ */
+function boxOffset(el: HTMLElement): { x: number; y: number } {
+  const box = (
+    el.querySelector("svg") as SVGSVGElement
+  ).getBoundingClientRect();
+  const e = el.getBoundingClientRect();
+  return { x: box.left - e.left, y: box.top - e.top };
+}
+
 describe("dotplot colour bar", () => {
   const four = (value: number[]) => ({
     columns: {
@@ -371,13 +383,14 @@ describe("dotplot gridlines", () => {
   async function gridUnderDot(el: HTMLElement, png: Blob) {
     const { cx, cy } = centreA(el);
     const fill = pixel(el, cx, cy - 5);
+    const o = boxOffset(el);
     const across = [];
     for (let dy = -2; dy <= 2; dy += 1) {
-      across.push(far(await pngPixel(png, 400, cx, cy + dy), fill));
+      across.push(far(await pngPixel(png, 400, cx + o.x, cy + dy + o.y), fill));
     }
     let beside = 255;
     for (let dy = -2; dy <= 2; dy += 1) {
-      const p = await pngPixel(png, 400, cx + 30, cy + dy);
+      const p = await pngPixel(png, 400, cx + 30 + o.x, cy + dy + o.y);
       beside = Math.min(beside, far(p, [0xe5, 0xe7, 0xeb]));
     }
     return { across: Math.max(...across), beside };
@@ -528,6 +541,66 @@ describe("violin value axis and missing medians", () => {
       createViolin(el, { data, options: { showValueAxis: false } }),
     );
     expect(svgTexts(el)).not.toContain("10");
+  });
+});
+
+describe("violin row separators", () => {
+  const data = {
+    columns: {
+      feature: ["CD3E", "CD3E", "MS4A1", "MS4A1"],
+      group: ["T", "B", "T", "B"],
+    },
+    meta: {
+      grid: [0, 1, 2],
+      density: [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0],
+    },
+  };
+  const GRID = [0xe5, 0xe7, 0xeb];
+
+  /**
+   * The line between the two rows, in the plot's own coordinates: its y,
+   * and an x between the two violins, where nothing else is drawn.
+   */
+  function between(el: HTMLElement) {
+    const texts = Array.from(
+      (el.querySelector("svg") as SVGSVGElement).querySelectorAll("text"),
+    );
+    const at = (s: string, a: string) =>
+      Number(texts.find((t) => t.textContent === s)?.getAttribute(a));
+    // A row label's baseline is 0.35 of the 11 px label size below the
+    // middle of its row; the group labels sit under the middle of their
+    // column.
+    const y = (at("CD3E", "y") + at("MS4A1", "y")) / 2 - 0.35 * 11;
+    return { x: (at("T", "x") + at("B", "x")) / 2, y: Math.round(y) + 0.5 };
+  }
+
+  it("draws them on the canvas under the violins, on screen and in both exports", async () => {
+    // Before the fix they were SVG lines over the canvas, where they could
+    // cross the tips of the violins.
+    const el = container(600, 400);
+    const plot = createViolin(el, { data, options: { showValueAxis: false } });
+    instances.push(plot);
+    const isGrid = (n: Element) => n.getAttribute("stroke") === "#e5e7eb";
+    const overlay = el.querySelector("svg") as SVGSVGElement;
+    expect(Array.from(overlay.querySelectorAll("line")).filter(isGrid)).toEqual(
+      [],
+    );
+    const doc = new DOMParser().parseFromString(
+      plot.exportSVG?.() ?? "",
+      "image/svg+xml",
+    );
+    const nodes = Array.from(doc.documentElement.children);
+    const image = nodes.findIndex((n) => n.localName === "image");
+    expect(image).toBeGreaterThanOrEqual(0);
+    expect(nodes.slice(image + 1).filter(isGrid)).toEqual([]);
+
+    const { x, y } = between(el);
+    expect(far(pixel(el, x, y), GRID)).toBeLessThan(12);
+    const o = boxOffset(el);
+    for (const png of [await screenPNG(el), await plot.exportPNG?.(1)]) {
+      const p = await pngPixel(png as Blob, 600, x + o.x, y + o.y);
+      expect(far(p, GRID)).toBeLessThan(12);
+    }
   });
 });
 

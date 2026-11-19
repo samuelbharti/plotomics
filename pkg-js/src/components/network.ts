@@ -33,6 +33,7 @@ import {
   resolveTheme,
   textSizes,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   releaseContainer,
@@ -200,7 +201,21 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   el.style.background = theme.background;
   const host = document.createElement("div");
   host.style.cssText = "position:absolute;inset:0;";
-  el.appendChild(host);
+  // Sigma draws in `host`, inside the plot box: the element less the theme
+  // padding. `boxW` is the width of the box.
+  const plot = createPlotBox(el);
+  plot.box.appendChild(host);
+  let outerW = 0;
+  let outerH = 0;
+  let boxW = 0;
+  function fitBox(w = outerW, h = outerH) {
+    outerW = w;
+    outerH = h;
+    const box = plot.fit(w, h, theme);
+    boxW = box.width;
+    host.style.width = `${box.width}px`;
+    host.style.height = `${box.height}px`;
+  }
   const tooltip: Tooltip = createTooltip(el, theme);
 
   let graph: Graph = new Graph();
@@ -356,8 +371,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   // Initial render.
   {
     const m = measure(el);
-    host.style.width = `${m.width}px`;
-    host.style.height = `${m.height}px`;
+    fitBox(m.width, m.height);
     applyData();
   }
 
@@ -370,11 +384,11 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       el.style.background = theme.background;
+      fitBox();
       applyData();
     },
     resize(w, h) {
-      host.style.width = `${w}px`;
-      host.style.height = `${h}px`;
+      fitBox(w, h);
       renderer?.resize();
       renderer?.refresh();
     },
@@ -406,7 +420,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       tooltip.destroy();
       renderer?.kill();
       renderer = null;
-      host.remove();
+      plot.remove();
     },
   };
 
@@ -439,14 +453,19 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       .map((k) => canvases[k])
       .filter((c): c is HTMLCanvasElement => !!c);
     if (layers.length === 0) return null;
+    // The theme padding goes around the layers, at their pixel ratio.
+    const pad = plot.padding;
+    const k = layers[0]!.width / Math.max(1, boxW);
     const out = document.createElement("canvas");
-    out.width = layers[0]!.width;
-    out.height = layers[0]!.height;
+    out.width = Math.round(layers[0]!.width + (pad.left + pad.right) * k);
+    out.height = Math.round(layers[0]!.height + (pad.top + pad.bottom) * k);
     const ctx = out.getContext("2d");
     if (!ctx) return null;
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, out.width, out.height);
-    for (const c of layers) ctx.drawImage(c, 0, 0);
+    for (const c of layers) {
+      ctx.drawImage(c, Math.round(pad.left * k), Math.round(pad.top * k));
+    }
     return out;
   }
 

@@ -79,7 +79,11 @@ Set both to \code{0} for a solid block, which is what you want once a cohort is
 wide enough that the gaps eat more pixels than the cells.}
 
 \item{theme}{Optional named list of theme overrides merged over the
-component defaults in the browser.}
+component defaults in the browser.
+Its \code{padding} entry is the space in px between the edge of the widget
+and the plot: one number for every side, or numbers named \code{top},
+\code{right}, \code{bottom} and \code{left} in a list or vector, a side left out
+keeping the default of 10.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 

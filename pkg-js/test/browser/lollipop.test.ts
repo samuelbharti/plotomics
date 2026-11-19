@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createLollipop } from "../../src/components/lollipop.js";
-import type { PlotomicsInstance } from "../../src/core/index.js";
+import {
+  DEFAULT_PADDING,
+  type PlotomicsInstance,
+} from "../../src/core/index.js";
+
+/** Width of the plot box of a 900 px widget: less the theme padding. */
+const BOX_W = 900 - 2 * DEFAULT_PADDING;
 
 function container(width = 900, height = 440) {
   const el = document.createElement("div");
@@ -9,8 +15,9 @@ function container(width = 900, height = 440) {
   return el;
 }
 
+/** Hover at (x, y) of the plot, which starts inside the theme padding. */
 function hoverAt(el: HTMLElement, x: number, y: number): string {
-  const r = el.getBoundingClientRect();
+  const r = (el.querySelector("svg") as SVGSVGElement).getBoundingClientRect();
   el.dispatchEvent(
     new MouseEvent("mousemove", {
       clientX: r.left + x,
@@ -172,7 +179,7 @@ describe("lollipop in a browser", () => {
       }),
     );
     // x of residue 248 and y of counts 1 and 2 (the stem holds both).
-    const x = 52 + ((248 - 1) / (393 - 1)) * (900 - 52 - 16);
+    const x = 52 + ((248 - 1) / (393 - 1)) * (BOX_W - 52 - 16);
     const zero = svgTexts(el).find(
       (t) => t.textContent === "0",
     ) as SVGTextElement;
@@ -254,7 +261,7 @@ describe("lollipop in a browser", () => {
         },
       }),
     );
-    const x = 52 + ((248 - 1) / (393 - 1)) * (900 - 52 - 16);
+    const x = 52 + ((248 - 1) / (393 - 1)) * (BOX_W - 52 - 16);
     let blue = 0;
     for (let y = 200; y < 420; y += 1) {
       if (!isBlue(pixel(el, x, y))) continue;
@@ -284,7 +291,7 @@ describe("lollipop in a browser", () => {
         },
       }),
     );
-    const x = 52 + ((248 - 1) / (393 - 1)) * (900 - 52 - 16);
+    const x = 52 + ((248 - 1) / (393 - 1)) * (BOX_W - 52 - 16);
     let red = 0;
     for (let y = 0; y < 440; y += 1) if (isRed(pixel(el, x, y))) red += 1;
     expect(red).toBeGreaterThan(0);
@@ -306,6 +313,8 @@ describe("lollipop in a browser", () => {
           },
           meta: { length: 100, classes },
         },
+        // No theme padding, so the plot itself is 250 x 200 px.
+        options: { theme: { padding: 0 } },
       }),
     );
     const texts = svgTexts(el);

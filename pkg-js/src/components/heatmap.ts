@@ -33,6 +33,7 @@ import {
   textSizes,
   textWidth,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   releaseContainer,
@@ -45,6 +46,7 @@ import {
   evenBlocks,
   poolBlocks,
   serializeSVG,
+  padSVG,
   compositePNG,
   fitDomainTicks,
   formatTick,
@@ -458,8 +460,18 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   svg.style.cssText =
     "position:absolute;inset:0;pointer-events:none;overflow:visible;";
-  el.appendChild(canvas);
-  el.appendChild(svg);
+  // The size of the element, and the plot box inside its padding: `width`
+  // and `height` are the box, which every layer and coordinate is in.
+  const plot = createPlotBox(el);
+  let outerW = 0;
+  let outerH = 0;
+  /** Fit the plot box to an element `w` x `h` px and take its size. */
+  function fitBox(w = outerW, h = outerH) {
+    outerW = w;
+    outerH = h;
+    ({ width, height } = plot.fit(w, h, theme));
+  }
+  plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
   // --- regl setup ---------------------------------------------------------
@@ -1235,8 +1247,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   el.addEventListener("mouseleave", onLeave);
 
   function doResize(w: number, h: number) {
-    width = w;
-    height = h;
+    fitBox(w, h);
     // The margins take at most a share of the widget.
     fitMargins();
     layoutCanvas();
@@ -1273,6 +1284,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         uploadMatrix();
       }
       // The text size and the colour bar's values set the margins.
+      fitBox();
       fitMargins();
       layoutCanvas();
       render();
@@ -1294,7 +1306,9 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         img.setAttribute("href", canvas.toDataURL("image/png"));
         out.insertBefore(img, out.firstChild);
       }
-      return serializeSVG(out);
+      return serializeSVG(
+        padSVG(out, width, height, plot.padding, theme.background),
+      );
     },
     async exportPNG(scale = 2) {
       if (!regl || reglBroken) return null;
@@ -1304,6 +1318,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         width,
         height,
         scale,
+        padding: plot.padding,
         background: theme.background,
         layers: [
           {
@@ -1330,8 +1345,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       valueTex?.destroy();
       lutTex?.destroy();
       releaseRegl(regl);
-      canvas.remove();
-      svg.remove();
+      plot.remove();
     },
   };
 

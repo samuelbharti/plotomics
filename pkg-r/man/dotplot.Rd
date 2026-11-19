@@ -47,7 +47,11 @@ data range. Set it when comparing two dot plots side by side.}
 
 \item{show_grid, show_legend}{Toggle the gridlines and the legends.}
 
-\item{theme}{Optional named list of theme overrides.}
+\item{theme}{Optional named list of theme overrides.
+Its \code{padding} entry is the space in px between the edge of the widget
+and the plot: one number for every side, or numbers named \code{top},
+\code{right}, \code{bottom} and \code{left} in a list or vector, a side left out
+keeping the default of 10.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 

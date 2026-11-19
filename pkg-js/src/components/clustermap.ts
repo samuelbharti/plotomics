@@ -43,11 +43,13 @@ import {
   matrixRamp,
   poolMean,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   releaseContainer,
   dpr,
   serializeSVG,
+  padSVG,
   compositePNG,
 } from "../core/index.js";
 import {
@@ -122,6 +124,11 @@ const COLORBAR_W = 78; // px on the right for the colour bar, at the least
 const MAX_LABEL_SHARE = 0.3; // a label gutter takes at most this share
 const MIN_HEAT = 60; // a label gutter stays only if the heatmap keeps this
 const PAD = 12;
+/**
+ * Room left of the row dendrogram and above the column dendrogram. The
+ * theme padding around the plot gives the rest: 12 px with the default.
+ */
+const EDGE = 2;
 const DEFAULT_SIZES = textSizes(defaultTheme);
 /** Fill for a missing cell, and its colour bar swatch. */
 const MISSING_RGB: [number, number, number] = [0xcc, 0xcc, 0xcc];
@@ -191,8 +198,8 @@ export function computeLayout(
           ),
         )
       : PAD;
-  const x = PAD + rowDendroW;
-  const y = PAD + colDendroH;
+  const x = EDGE + rowDendroW;
+  const y = EDGE + colDendroH;
   const w = Math.max(1, width - x - labelW - colorbarW);
   const h = Math.max(1, height - y - labelH);
   return {
@@ -262,8 +269,18 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   svg.style.cssText =
     "position:absolute;inset:0;pointer-events:none;overflow:visible;";
-  el.appendChild(canvas);
-  el.appendChild(svg);
+  // The size of the element, and the plot box inside its padding: `width`
+  // and `height` are the box, which every layer and coordinate is in.
+  const plot = createPlotBox(el);
+  let outerW = 0;
+  let outerH = 0;
+  /** Fit the plot box to an element `w` x `h` px and take its size. */
+  function fitBox(w = outerW, h = outerH) {
+    outerW = w;
+    outerH = h;
+    ({ width, height } = plot.fit(w, h, theme));
+  }
+  plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
   // Whether each axis has a label gutter in the current layout.
@@ -680,7 +697,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
 
     if (orientation === "top") {
       const leafToPx = (slot: number) => heat.x + (slot + 0.5) * (heat.w / d.n);
-      const bandTop = PAD;
+      const bandTop = EDGE;
       const bandBottom = heat.y - 2;
       const bandH = Math.max(1, bandBottom - bandTop);
       const hToPx = (h: number) => bandBottom - (h / maxH) * bandH;
@@ -699,7 +716,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       }
     } else {
       const leafToPx = (slot: number) => heat.y + (slot + 0.5) * (heat.h / d.n);
-      const bandLeft = PAD;
+      const bandLeft = EDGE;
       const bandRight = heat.x - 2;
       const bandW = Math.max(1, bandRight - bandLeft);
       const hToPx = (h: number) => bandRight - (h / maxH) * bandW;
@@ -855,9 +872,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
     if (nrows === 0 || ncols === 0) return;
-    const rectEl = el.getBoundingClientRect();
-    const px = e.clientX - rectEl.left;
-    const py = e.clientY - rectEl.top;
+    const { x: px, y: py } = plot.pointer(e.clientX, e.clientY);
     const { heat } = layout;
     if (
       px < heat.x ||
@@ -950,16 +965,14 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
   }
 
   function doResize(w: number, h: number) {
-    width = w;
-    height = h;
+    fitBox(w, h);
     relayout();
   }
 
   // Initial sizing.
   {
     const m = measure(el);
-    width = m.width;
-    height = m.height;
+    fitBox(m.width, m.height);
     if (data.columns.values) applyData();
     else relayout();
   }
@@ -974,6 +987,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       sizes = textSizes(theme);
+      fitBox();
       // R and Python send every option on each update, so compare values:
       // clustering again costs seconds on a large matrix.
       const recluster =
@@ -1008,9 +1022,9 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
         img.setAttribute("image-rendering", "pixelated");
         out.insertBefore(img, out.firstChild);
       }
-      out.setAttribute("width", String(width));
-      out.setAttribute("height", String(height));
-      return serializeSVG(out);
+      return serializeSVG(
+        padSVG(out, width, height, plot.padding, theme.background),
+      );
     },
     async exportPNG(scale = 2) {
       // The cells come from one pixel per cell, or per pooled block when
@@ -1022,6 +1036,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
         width,
         height,
         scale,
+        padding: plot.padding,
         background: theme.background,
         layers:
           nrows > 0 && ncols > 0
@@ -1043,8 +1058,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();
-      canvas.remove();
-      svg.remove();
+      plot.remove();
     },
   };
 

@@ -50,7 +50,11 @@ class Treemap(PlotomicsWidget):
         Minimum tile side (px) before a label is drawn, at the default font
         size. It grows with ``theme["fontSize"]``.
     theme:
-        Optional theme overrides forwarded to the JS renderer.
+        Optional theme overrides forwarded to the JS renderer. Its
+        ``padding`` entry is the space in px between the edge of the widget
+        and the plot: one number for every side, or a dict with any of the
+        keys ``top``, ``right``, ``bottom`` and ``left``, a side left out
+        keeping the default of 10.
     height:
         Initial widget height in CSS pixels.
 

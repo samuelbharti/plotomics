@@ -21,6 +21,9 @@ export {
   type TextSizes,
   textSizes,
   PALETTE_20,
+  type PlotPadding,
+  DEFAULT_PADDING,
+  themePadding,
 } from "./theme.js";
 
 export {
@@ -61,12 +64,15 @@ export {
   canvasToSVGImage,
   compositePNG,
   downloadBlob,
+  padSVG,
 } from "./export.js";
 
 export {
   type Tooltip,
+  type PlotBox,
   clearElement,
   createTooltip,
+  createPlotBox,
   measure,
   autoResize,
   releaseContainer,

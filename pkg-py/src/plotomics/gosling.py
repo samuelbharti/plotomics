@@ -63,6 +63,8 @@ class Gosling(PlotomicsWidget):
     """
 
     _esm = STATIC / "gosling.js"
+    # ``theme`` is a Gosling theme, not a plotomics one.
+    _plotomics_theme = False
 
     def __init__(
         self,

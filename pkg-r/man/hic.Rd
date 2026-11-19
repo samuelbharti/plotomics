@@ -59,7 +59,11 @@ observed/expected log2 ratios), values below it take the lowest color.}
 
 \item{theme}{Optional named list of theme overrides (colors, fonts, ...)
 merged over the component defaults in the browser. \code{NULL} uses the default
-theme.}
+theme.
+Its \code{padding} entry is the space in px between the edge of the widget
+and the plot: one number for every side, or numbers named \code{top},
+\code{right}, \code{bottom} and \code{left} in a list or vector, a side left out
+keeping the default of 10.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 

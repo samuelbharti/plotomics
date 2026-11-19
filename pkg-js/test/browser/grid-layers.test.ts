@@ -254,6 +254,13 @@ describe("KM gridlines", () => {
     const plot = createKm(el, { data, options: { showLegend: false } });
     instances.push(plot);
     const x = xAt(el, 20);
+    // The plot box, and the canvas in it, sit inside the theme padding,
+    // which the screen and the PNG show around them.
+    const box = (
+      el.querySelector("canvas") as HTMLCanvasElement
+    ).getBoundingClientRect();
+    const e = el.getBoundingClientRect();
+    const [ox, oy] = [box.left - e.left, box.top - e.top];
     for (const png of [await screenPNG(el), await plot.exportPNG?.(1)]) {
       // Nothing is drawn over the canvas on and next to the gridlines: the
       // widget shows the canvas pixel, where the band and the curve are
@@ -262,17 +269,17 @@ describe("KM gridlines", () => {
       for (const value of ["25%", "50%", "75%"]) {
         const row = Math.round(label(el, value).y);
         for (let dy = -1; dy <= 1; dy += 1) {
-          const shown = await pngPixel(png as Blob, W, x, row + dy);
+          const shown = await pngPixel(png as Blob, W, x + ox, row + dy + oy);
           over = Math.max(over, far(shown, pixel(el, x, row + dy)));
         }
       }
       expect(over).toBeLessThanOrEqual(2);
       // The curve covers the 50% gridline.
       const row = Math.round(label(el, "50%").y);
-      const curve = await pngPixel(png as Blob, W, x, row);
+      const curve = await pngPixel(png as Blob, W, x + ox, row + oy);
       expect(far(curve, GRID)).toBeGreaterThan(60);
       // Where no mark is, the gridline shows.
-      const open = await pngPixel(png as Blob, W, xAt(el, 5), row);
+      const open = await pngPixel(png as Blob, W, xAt(el, 5) + ox, row + oy);
       expect(far(open, GRID)).toBeLessThan(12);
     }
   });

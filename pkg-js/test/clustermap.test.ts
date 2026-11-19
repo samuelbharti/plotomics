@@ -386,7 +386,7 @@ describe("clustermap layout from its labels", () => {
     const l = computeLayout(800, 560, flags, 60, 50);
     expect(l.colorbarX).toBeGreaterThanOrEqual(l.heat.x + l.heat.w + l.labelW);
     expect(l.colorbarX + 12).toBeLessThanOrEqual(800);
-    // 60 px dendrogram, 12 px padding, 60 px column labels.
-    expect(l.heat.h).toBe(560 - 12 - 60 - 60);
+    // 60 px dendrogram, 2 px at the top edge, 60 px column labels.
+    expect(l.heat.h).toBe(560 - 2 - 60 - 60);
   });
 });

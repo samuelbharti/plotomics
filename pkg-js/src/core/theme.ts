@@ -13,7 +13,28 @@ export interface PlotomicsTheme {
    * A palette set here is used as given, its colours repeating past its end.
    */
   categorical: string[];
+  /**
+   * Space in px between the edge of the plot's element and everything the
+   * plot draws: axes, tick labels, titles, legends and colour bars. A number
+   * sets all four sides, and an object `{ top, right, bottom, left }` sets
+   * each side, a side left out taking the default of
+   * {@link DEFAULT_PADDING} px. The space takes the theme background, and
+   * the PNG and SVG exports keep it. A value that is not a finite number of
+   * 0 or more counts as the default. See {@link themePadding}.
+   */
+  padding?: number | Partial<PlotPadding>;
 }
+
+/** Space in px on each side of a plot. */
+export interface PlotPadding {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/** The padding of the default theme, in px on each side. */
+export const DEFAULT_PADDING = 10;
 
 /** Okabe-Ito colour-blind safe palette, 8 colours. */
 export const OKABE_ITO = [
@@ -64,6 +85,7 @@ export const defaultTheme: PlotomicsTheme = {
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif",
   fontSize: 12,
   categorical: OKABE_ITO,
+  padding: DEFAULT_PADDING,
 };
 
 export const darkTheme: PlotomicsTheme = {
@@ -107,6 +129,35 @@ export function textSizes(theme: Pick<PlotomicsTheme, "fontSize">): TextSizes {
     title: round(14 * k),
     small: round(9 * k),
   };
+}
+
+/**
+ * The padding of a theme as four sides in px. A number sets every side and
+ * an object each side it names. A side that is missing, or not a finite
+ * number of 0 or more (negative, NaN, Infinity, a string), takes
+ * {@link DEFAULT_PADDING}, and so does every side for any other value.
+ */
+export function themePadding(
+  theme: Pick<PlotomicsTheme, "padding">,
+): PlotPadding {
+  const d = DEFAULT_PADDING;
+  const valid = (v: unknown): v is number =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0;
+  const p: unknown = theme.padding;
+  if (valid(p)) return { top: p, right: p, bottom: p, left: p };
+  if (p !== null && typeof p === "object" && !Array.isArray(p)) {
+    const side = (key: keyof PlotPadding) => {
+      const v = (p as Record<string, unknown>)[key];
+      return valid(v) ? v : d;
+    };
+    return {
+      top: side("top"),
+      right: side("right"),
+      bottom: side("bottom"),
+      left: side("left"),
+    };
+  }
+  return { top: d, right: d, bottom: d, left: d };
 }
 
 /** Merge a partial theme onto a base (defaults to {@link defaultTheme}). */

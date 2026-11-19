@@ -137,6 +137,8 @@ describe("ticks on short or narrow plots", () => {
           },
           meta: { title: "Sample 1" },
         },
+        // No theme padding, so the plot itself is 150 px high.
+        options: { theme: { padding: 0 } },
       }),
     );
     expect(minGap(el)).toBeGreaterThanOrEqual(12);

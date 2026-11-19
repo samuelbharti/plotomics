@@ -21,12 +21,14 @@ import {
   resolveTheme,
   textSizes,
   createTooltip,
+  createPlotBox,
   type Tooltip,
   measure,
   releaseContainer,
   textWidth,
   dpr,
   serializeSVG,
+  padSVG,
   compositePNG,
   toNdc,
   baseDomains,
@@ -300,7 +302,10 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   let margin = axisMargins(sizes);
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
-  // Layout state
+  // Layout state: the size of the element, and of the plot box inside its
+  // padding, which every layer and coordinate below is in.
+  let outerW = 0;
+  let outerH = 0;
   let width = 0;
   let height = 0;
   // The visible range, which follows pan/zoom and drives the axes.
@@ -332,9 +337,8 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     layer.style.cssText =
       "position:absolute;inset:0;pointer-events:none;overflow:visible;";
   }
-  el.appendChild(under);
-  el.appendChild(canvas);
-  el.appendChild(svg);
+  const plot = createPlotBox(el);
+  plot.box.append(under, canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
 
   // GPU scatter. It draws points in [-1, 1], and keeps the d3 scales in sync
@@ -724,8 +728,9 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   }
 
   function doResize(w: number, h: number) {
-    width = w;
-    height = h;
+    outerW = w;
+    outerH = h;
+    ({ width, height } = plot.fit(w, h, theme));
     layoutCanvas();
     void resizeView(scatterplot, innerW(), innerH());
     renderOverlay();
@@ -748,17 +753,21 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       theme = resolveTheme(opts.theme);
       el.style.backgroundColor = theme.background;
       const prev = margin;
+      const [prevW, prevH] = [width, height];
       sizes = textSizes(theme);
       margin = axisMargins(sizes);
+      ({ width, height } = plot.fit(outerW, outerH, theme));
       if (
         margin.top !== prev.top ||
         margin.right !== prev.right ||
         margin.bottom !== prev.bottom ||
-        margin.left !== prev.left
+        margin.left !== prev.left ||
+        width !== prevW ||
+        height !== prevH
       ) {
-        // A new text size changes the plot area, which refits while the
-        // view is untouched, as a resize does.
-        doResize(width, height);
+        // A new text size or padding changes the plot area, which refits
+        // while the view is untouched, as a resize does.
+        doResize(outerW, outerH);
         applyData(isStartView(scatterplot));
         return;
       }
@@ -767,7 +776,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       applyData(false);
     },
     resize(w, h) {
-      if (w === width && h === height) return;
+      if (w === outerW && h === outerH) return;
       doResize(w, h);
       refitAfterResize();
     },
@@ -785,7 +794,9 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       for (const node of Array.from(under.childNodes).reverse()) {
         out.insertBefore(node.cloneNode(true), out.firstChild);
       }
-      return serializeSVG(out);
+      return serializeSVG(
+        padSVG(out, width, height, plot.padding, theme.background),
+      );
     },
     async exportPNG(scale = 2) {
       // The points at their place, over the gridlines and under the axes
@@ -794,6 +805,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         width,
         height,
         scale,
+        padding: plot.padding,
         background: theme.background,
         layers: [
           {
@@ -816,9 +828,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       el.removeEventListener("mousemove", onMove);
       tooltip.destroy();
       scatterplot.destroy();
-      under.remove();
-      canvas.remove();
-      svg.remove();
+      plot.remove();
       el.style.backgroundColor = priorBackground;
     },
   };

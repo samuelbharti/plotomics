@@ -25,7 +25,7 @@ import type {
   PlotomicsFactory,
   PlotomicsInstance,
 } from "../core/index.js";
-import { canvasToPNG } from "../core/index.js";
+import { canvasToPNG, themePadding } from "../core/index.js";
 import { GoslingComponent } from "gosling.js";
 import { createElement, createRef } from "react";
 import { type Root, createRoot } from "react-dom/client";
@@ -71,7 +71,12 @@ export const createGosling: PlotomicsFactory<GoslingOptions> = (
 
   el.style.position = el.style.position || "relative";
   const host = document.createElement("div");
-  host.style.cssText = "position:relative;width:100%;height:100%;";
+  // The host keeps the padding of the default theme inside its own box,
+  // around the space Gosling pads with its own `padding` option.
+  const pad = themePadding({});
+  host.style.cssText =
+    "position:relative;box-sizing:border-box;width:100%;height:100%;" +
+    `padding:${pad.top}px ${pad.right}px ${pad.bottom}px ${pad.left}px;`;
   el.appendChild(host);
 
   let root: Root | null = null;

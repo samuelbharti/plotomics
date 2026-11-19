@@ -19,6 +19,7 @@ import {
   type PlotomicsFactory,
   type PlotomicsInstance,
   clearElement,
+  themePadding,
 } from "../core/index.js";
 // Import the runtime value from the ESM build explicitly: the package's `main`
 // field points at a UMD bundle (`module.exports = factory()`) with no `default`
@@ -55,7 +56,12 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
 
   el.style.position = el.style.position || "relative";
   const host = document.createElement("div");
-  host.style.cssText = "width:100%;height:100%;";
+  // igv.js draws to the edges of its container, so the host keeps the
+  // padding of the default theme inside its own box.
+  const pad = themePadding({});
+  host.style.cssText =
+    "box-sizing:border-box;width:100%;height:100%;" +
+    `padding:${pad.top}px ${pad.right}px ${pad.bottom}px ${pad.left}px;`;
   el.appendChild(host);
 
   let browser: Browser | null = null;

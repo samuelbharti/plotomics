@@ -292,8 +292,11 @@ describe("embedding gridlines", () => {
     ) as SVGTextElement;
     const canvas = el.querySelector("canvas") as HTMLCanvasElement;
     const plot = boxIn(el, canvas);
+    // In the element: the label's x is in the plot box, which sits inside
+    // the theme padding.
+    const svg = boxIn(el, el.querySelector("svg") as SVGSVGElement);
     return {
-      x: Number(label.getAttribute("x")),
+      x: Number(label.getAttribute("x")) + svg.left,
       y: Math.round((plot.top + plot.bottom) / 2),
     };
   }
@@ -414,7 +417,9 @@ describe("embedding legend gutter", () => {
     const narrow = parts(el).plot.right;
     expect(narrow).toBeLessThan(450);
     plot.setOptions({ showLegend: false });
-    await expect.poll(() => parts(el).plot.right, poll).toBe(490);
+    // The plot area runs to 1 px from the right edge of the plot box,
+    // which is the default theme padding of 10 px in from the widget's.
+    await expect.poll(() => parts(el).plot.right, poll).toBe(489);
   });
 
   it("cuts a long category name to keep the plot area", async () => {

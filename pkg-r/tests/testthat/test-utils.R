@@ -48,6 +48,44 @@ test_that("one-element labels, ids and palettes stay arrays", {
   expect_match(json, '"categorical":["#123456"]', fixed = TRUE)
 })
 
+test_that("the theme padding goes to the browser as a number or an object", {
+  df <- data.frame(x = 1:2, y = 1:2)
+  json <- rendered_json(volcano(df, theme = list(padding = 16)))
+  expect_match(json, '"padding":16', fixed = TRUE)
+  json <- rendered_json(volcano(df, theme = list(
+    padding = list(top = 4, right = 16, bottom = 4, left = 16)
+  )))
+  expect_match(
+    json, '"padding":{"top":4,"right":16,"bottom":4,"left":16}',
+    fixed = TRUE
+  )
+  # A named vector, which jsonlite would send as an array, is an object too.
+  json <- rendered_json(volcano(df, theme = list(padding = c(top = 4, left = 30))))
+  expect_match(json, '"padding":{"top":4,"left":30}', fixed = TRUE)
+  json <- rendered_json(bioheatmap(matrix(1:4, 2), theme = list(
+    padding = c(left = 30L), fontSize = 14
+  )))
+  expect_match(json, '"padding":{"left":30}', fixed = TRUE)
+  json <- rendered_json(volcano(df, theme = list(fontSize = 14)))
+  expect_no_match(json, "padding", fixed = TRUE)
+})
+
+test_that("a bad theme padding is an error, the one Python raises", {
+  df <- data.frame(x = 1:2, y = 1:2)
+  msg <- paste0(
+    "`theme$padding` must be a number of 0 or more, or a named list of ",
+    "them with names from top, right, bottom and left."
+  )
+  bad <- list(
+    -1, NA, NaN, Inf, "16", c(4, 16), TRUE, factor(3), list(),
+    list(top = -1), c(top = NaN), list(top = "4"), list(middle = 4),
+    c(top = 1, top = 2), list(4, 5)
+  )
+  for (b in bad) {
+    expect_error(volcano(df, theme = list(padding = b)), msg, fixed = TRUE)
+  }
+})
+
 test_that("scalars in meta and options stay scalars", {
   m <- matrix(5, 1, 1)
   json <- rendered_json(bioheatmap(m, colormap = "viridis"))
