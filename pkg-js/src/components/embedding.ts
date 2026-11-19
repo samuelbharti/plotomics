@@ -4,12 +4,14 @@
  *
  * A specialization of the Volcano reference component: points render on the GPU
  * via regl-scatterplot (hundreds of thousands to millions of cells at 60fps)
- * while a crisp SVG overlay carries the legend and an optional axis frame. The
- * `color` column may be categorical (string cluster/cell-type labels → discrete
- * legend) or continuous (numeric → sequential colormap + colorbar). Lasso
- * selection is enabled and the selected indices are exposed via the `onSelect`
- * option and the returned instance's `selectedIndices`. Mirrors the volcano
- * structure: exported pure helpers plus a factory returning a PlotomicsInstance.
+ * while a crisp SVG overlay carries the legend, in a gutter right of the
+ * points, and an optional axis frame, whose gridlines sit in an SVG under the
+ * points. The `color` column may be categorical (string cluster/cell-type
+ * labels → discrete legend) or continuous (numeric → sequential colormap +
+ * colorbar). Lasso selection is enabled and the selected indices are exposed
+ * via the `onSelect` option and the returned instance's `selectedIndices`.
+ * Mirrors the volcano structure: exported pure helpers plus a factory
+ * returning a PlotomicsInstance.
  *
  * ## Data contract
  * - `columns.x`, `columns.y`  `number[]`             embedding coordinates (required)
@@ -31,9 +33,12 @@ import {
   type Tooltip,
   measure,
   textWidth,
+  fitText,
   dpr,
   serializeSVG,
   compositePNG,
+  fitDomainTicks,
+  formatTick,
   OKABE_ITO,
   ramp,
   sampleRamp,
@@ -70,7 +75,8 @@ export interface EmbeddingOptions {
   /** How to interpret the `color` column. `"auto"` detects from its type
    * (strings ⇒ categorical, numbers ⇒ continuous). */
   colorMode: EmbeddingColorMode;
-  /** Sequential ramp used for continuous coloring. */
+  /** Ramp used for continuous coloring: `"viridis"`, `"rdbu"`, `"ltc"` or
+   * `"ltcdiv"`. */
   colormap: RampName;
   /** Explicit category order for categorical coloring. Categories are assigned
    * palette entries by their position here, and every one of them gets a legend
@@ -133,6 +139,10 @@ export interface EmbeddingInstance extends PlotomicsInstance<EmbeddingOptions> {
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const BARE_MARGIN = { top: 10, right: 10, bottom: 10, left: 10 };
+/** Room between the plot area and the legend in the gutter right of it. */
+const LEGEND_GAP = 8;
+/** The largest share of the widget's width the categorical legend takes. */
+const MAX_LEGEND_SHARE = 0.4;
 /** Gradient swatches sampled from the ramp for continuous coloring. */
 const CONTINUOUS_STEPS = 256;
 /** Cap on discrete legend rows before collapsing into a "+N more" line. */
@@ -482,13 +492,20 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   const xScale = scaleLinear().domain(xDomain);
   const yScale = scaleLinear().domain(yDomain);
 
-  // DOM: a canvas (GPU points) inset by margins, plus a full-size SVG overlay.
+  // DOM: a canvas (GPU points) inset by margins, between two full-size SVGs.
+  // The one under it holds the gridlines, which show through the canvas
+  // because regl-scatterplot leaves it transparent where there is no point.
+  // The one over it holds the axes, the labels and the legend.
   el.style.position = el.style.position || "relative";
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;display:block;";
+  const under = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText =
-    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  for (const layer of [under, svg]) {
+    layer.style.cssText =
+      "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  }
+  el.appendChild(under);
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -560,7 +577,13 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   }
 
   // ---- pixel mapping (overlay) ----
-  const margin = () => (opts.showAxes ? axisMargin : BARE_MARGIN);
+  // Width of the gutter right of the plot area that holds the legend, with
+  // the gap before it; 0 with no legend.
+  let gutter = 0;
+  const margin = () => {
+    const m = opts.showAxes ? axisMargin : BARE_MARGIN;
+    return gutter > 0 ? { ...m, right: m.right + gutter } : m;
+  };
   const innerW = () => Math.max(1, width - margin().left - margin().right);
   const innerH = () => Math.max(1, height - margin().top - margin().bottom);
   const pxX = (v: number) =>
@@ -578,8 +601,10 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     canvas.style.height = `${innerH()}px`;
     canvas.width = Math.round(innerW() * ratio);
     canvas.height = Math.round(innerH() * ratio);
-    svg.setAttribute("width", String(width));
-    svg.setAttribute("height", String(height));
+    for (const layer of [under, svg]) {
+      layer.setAttribute("width", String(width));
+      layer.setAttribute("height", String(height));
+    }
   }
 
   /** One colour per category index, from the theme palette. */
@@ -605,27 +630,13 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       void scatterplot.clear?.();
       legend = null;
       missingColor = false;
+      await updateGutter();
+      if (destroyed) return;
       renderOverlay();
       return;
     }
     const x = pickNumbers(xAll, drawn);
     const y = pickNumbers(yAll, drawn);
-    const fitW = innerW();
-    const fitH = innerH();
-    if (fit) {
-      xDomain = paddedExtent(x, opts.padding);
-      yDomain = paddedExtent(y, opts.padding);
-      if (opts.aspect === "equal") {
-        [xDomain, yDomain] = equalAspectDomains(xDomain, yDomain, fitW, fitH);
-      }
-      // One unit is the same number of pixels on both axes of the
-      // scatterplot, so domains that "equal" has matched to the plot area's
-      // shape keep equal data units per pixel through every pan and zoom.
-      [baseX, baseY] = baseDomains(xDomain, yDomain, fitW, fitH);
-    }
-    const [xBase, yBase] = [baseX, baseY];
-    const px = toNdc(x, xBase);
-    const py = toNdc(y, yBase);
 
     const color = cols.color;
     const mode =
@@ -679,10 +690,31 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       pointColor = [theme.categorical[0] ?? OKABE_ITO[0] ?? "#0072B2"];
       z = new Float32Array(x.length);
     }
+    // The legend's width sets the gutter beside the plot area. A new width
+    // resizes the plot area, and the data fits it again unless the view was
+    // panned or zoomed, as after a resize of the widget.
+    const refit = ((await updateGutter()) && isStartView(scatterplot)) || fit;
+    if (destroyed) return;
+    const fitW = innerW();
+    const fitH = innerH();
+    if (refit) {
+      xDomain = paddedExtent(x, opts.padding);
+      yDomain = paddedExtent(y, opts.padding);
+      if (opts.aspect === "equal") {
+        [xDomain, yDomain] = equalAspectDomains(xDomain, yDomain, fitW, fitH);
+      }
+      // One unit is the same number of pixels on both axes of the
+      // scatterplot, so domains that "equal" has matched to the plot area's
+      // shape keep equal data units per pixel through every pan and zoom.
+      [baseX, baseY] = baseDomains(xDomain, yDomain, fitW, fitH);
+    }
+    const [xBase, yBase] = [baseX, baseY];
+    const px = toNdc(x, xBase);
+    const py = toNdc(y, yBase);
     renderOverlay();
     // The fit and the draw happen in the same render, so the scales and the
     // points come from the same data.
-    if (fit) {
+    if (refit) {
       await fitView(scatterplot, xScale, yScale, xBase, yBase);
       if (destroyed) return;
     }
@@ -698,7 +730,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     // A resize that arrived while this fit ran used the old size for the
     // base ranges. Fit again at the new one, unless the view has moved.
     if (
-      fit &&
+      refit &&
       !destroyed &&
       (innerW() !== fitW || innerH() !== fitH) &&
       isStartView(scatterplot)
@@ -709,7 +741,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
 
   // ---- overlay rendering (optional axes + legend) ----
   function renderOverlay() {
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    for (const layer of [under, svg]) {
+      while (layer.firstChild) layer.removeChild(layer.firstChild);
+    }
     if (!width || !height) return;
     if (opts.showAxes) renderAxes();
     if (opts.showLegend && legend) renderLegend();
@@ -721,10 +755,11 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     const gridColor = theme.grid;
     // Baseline offset that centres a tick label on its tick.
     const mid = Math.round(sizes.label * 0.35);
+    // Gridlines go in the SVG under the canvas, so no line crosses a point.
     for (const t of niceTicks(xDomain)) {
       const x = pxX(t);
       if (x < m.left - 1 || x > width - m.right + 1) continue;
-      svg.appendChild(line(x, m.top, x, height - m.bottom, gridColor, 1));
+      under.appendChild(line(x, m.top, x, height - m.bottom, gridColor, 1));
       svg.appendChild(
         text(
           x,
@@ -738,7 +773,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     for (const t of niceTicks(yDomain)) {
       const y = pxY(t);
       if (y < m.top - 1 || y > height - m.bottom + 1) continue;
-      svg.appendChild(line(m.left, y, width - m.right, y, gridColor, 1));
+      under.appendChild(line(m.left, y, width - m.right, y, gridColor, 1));
       svg.appendChild(text(m.left - 8, y + mid, fmt(t), axisColor, "end"));
     }
     svg.appendChild(
@@ -793,7 +828,35 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     }
   }
 
-  function renderCategoricalLegend(
+  /**
+   * Width of the gutter right of the plot area that holds the legend: the
+   * legend's box and the gap before it, or 0 when no legend is drawn.
+   */
+  function legendGutter(): number {
+    if (!opts.showLegend || !legend || !width || !height) return 0;
+    const box =
+      legend.mode === "categorical"
+        ? categoricalLayout(legend.categories, legend.palette, legend.missing)
+            .boxW
+        : colorbarLayout(legend.domain).boxW;
+    return LEGEND_GAP + box;
+  }
+
+  /**
+   * Size the gutter for the current legend. A new width resizes the plot
+   * area, as a resize of the widget does. Resolves to whether it changed.
+   */
+  async function updateGutter(): Promise<boolean> {
+    const next = legendGutter();
+    if (next === gutter) return false;
+    gutter = next;
+    layoutCanvas();
+    await resizeView(scatterplot, innerW(), innerH());
+    return true;
+  }
+
+  /** The rows of the categorical legend and the size of its box. */
+  function categoricalLayout(
     allCategories: string[],
     allPalette: string[],
     missing: number,
@@ -837,26 +900,56 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       labels.push(tail.label);
       palette = [...palette.slice(0, shown), MISSING_COLOR];
     }
-    const longest = labels.reduce(
+    // The box takes at most a share of the widget's width, so a long
+    // category name is cut to fit.
+    const maxText = Math.max(
+      2 * sizes.label,
+      Math.floor(width * MAX_LEGEND_SHARE) - LEGEND_GAP - pad * 2 - swatch - 6,
+    );
+    const cut = labels.map((s) =>
+      fitText(s, maxText, sizes.label, theme.fontFamily),
+    );
+    const longest = cut.reduce(
       (mx, s) => Math.max(mx, textWidth(s, sizes.label, theme.fontFamily)),
       0,
     );
-    const boxW = pad * 2 + swatch + 6 + Math.ceil(longest);
-    const boxH = pad * 2 + labels.length * rowH;
-    const x0 = Math.max(m.left + 4, width - m.right - boxW - 6);
-    svg.appendChild(legendBg(x0, y0, boxW, boxH));
-    for (let r = 0; r < labels.length; r += 1) {
-      const cy = y0 + pad + r * rowH;
-      const isOverflow = overflow > 0 && r === shown;
+    return {
+      labels: cut,
+      palette,
+      tail,
+      overflow,
+      shown,
+      rowH,
+      swatch,
+      pad,
+      y0,
+      boxW: pad * 2 + swatch + 6 + Math.ceil(longest),
+      boxH: pad * 2 + cut.length * rowH,
+    };
+  }
+
+  function renderCategoricalLegend(
+    allCategories: string[],
+    allPalette: string[],
+    missing: number,
+  ) {
+    const L = categoricalLayout(allCategories, allPalette, missing);
+    // In the gutter, right of the plot area, so it covers no point.
+    const x0 = width - margin().right + LEGEND_GAP;
+    svg.appendChild(legendBg(x0, L.y0, L.boxW, L.boxH));
+    for (let r = 0; r < L.labels.length; r += 1) {
+      const cy = L.y0 + L.pad + r * L.rowH;
+      const isOverflow = L.overflow > 0 && r === L.shown;
       if (!isOverflow) {
         svg.appendChild(
           rect(
-            x0 + pad,
+            x0 + L.pad,
             cy + 2,
-            swatch,
-            swatch,
-            (tail && r === labels.length - 1 ? tail.colour : palette[r]) ??
-              theme.muted,
+            L.swatch,
+            L.swatch,
+            (L.tail && r === L.labels.length - 1
+              ? L.tail.colour
+              : L.palette[r]) ?? theme.muted,
             "none",
             0,
           ),
@@ -864,9 +957,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       }
       svg.appendChild(
         text(
-          x0 + pad + swatch + 6,
-          cy + swatch,
-          labels[r] ?? "",
+          x0 + L.pad + L.swatch + 6,
+          cy + L.swatch,
+          L.labels[r] ?? "",
           isOverflow ? theme.muted : theme.foreground,
           "start",
           sizes.label,
@@ -875,7 +968,11 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     }
   }
 
-  function renderColorbar(domain: [number, number]) {
+  /**
+   * The colour bar's size and its labels: round values inside the domain,
+   * as many as its height holds a line and a half of text from each other.
+   */
+  function colorbarLayout(domain: [number, number]) {
     const m = margin();
     const fs = sizes.label;
     const cbW = 12;
@@ -888,21 +985,43 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     const naRow = missingColor ? 2 + Math.round(fs + 7) : 0;
     // The bar is 80 to 160 px tall, and shorter when the plot is too short
     // to hold it, its padding and the NA row above the bottom of the plot.
-    // Two label sizes hold its top and bottom values.
     const room = height - m.bottom - 4 - y0 - pad - naRow;
     const cbH = Math.max(
       Math.round(fs * 2),
       Math.min(Math.min(160, Math.max(80, innerH() - 40)), room),
     );
-    const mean = (domain[0] + domain[1]) / 2;
-    const values = [fmt(domain[1]), fmt(mean), fmt(domain[0])];
+    const { ticks, step } = fitDomainTicks(domain[0], domain[1], cbH, {
+      maxCount: 4,
+      minGapPx: 1.6 * fs,
+    });
+    const labels = ticks.map((v) => formatTick(v, step));
+    // A flat domain has one tick and no step.
+    const flat = !(step > 0);
     // The box is as wide as the bar and its longest label.
-    const labelW = [...values, missingColor ? MISSING_LABEL : ""].reduce(
+    const labelW = [...labels, missingColor ? MISSING_LABEL : ""].reduce(
       (mx, s) => Math.max(mx, textWidth(s, fs, theme.fontFamily)),
       0,
     );
-    const boxW = 6 + cbW + 5 + Math.ceil(labelW) + 6;
-    const x0 = width - m.right - boxW + 6;
+    return {
+      fs,
+      cbW,
+      pad,
+      mid,
+      y0,
+      cbH,
+      ticks,
+      labels,
+      flat,
+      boxW: 6 + cbW + 5 + Math.ceil(labelW) + 6,
+    };
+  }
+
+  function renderColorbar(domain: [number, number]) {
+    const L = colorbarLayout(domain);
+    const { fs, cbW, pad, mid, y0, cbH } = L;
+    // The box starts in the gutter, right of the plot area, and the bar
+    // 6 px inside the box.
+    const x0 = width - margin().right + LEGEND_GAP + 6;
     const fn = ramp(opts.colormap);
     const gradId = `${uid}-cb`;
     const defs = document.createElementNS(SVG_NS, "defs");
@@ -923,45 +1042,28 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     defs.appendChild(grad);
     svg.appendChild(defs);
 
-    svg.appendChild(legendBg(x0 - 6, y0 - pad, boxW, cbH + pad * 2));
+    svg.appendChild(legendBg(x0 - 6, y0 - pad, L.boxW, cbH + pad * 2));
     svg.appendChild(rect(x0, y0, cbW, cbH, `url(#${gradId})`, theme.axis, 1));
-    svg.appendChild(
-      text(
-        x0 + cbW + 5,
-        y0 + mid,
-        values[0] ?? "",
-        theme.foreground,
-        "start",
-        fs,
-      ),
-    );
-    // The middle value only when the bar leaves it room clear of the ends.
-    if (cbH >= fs * 4) {
+    // Each label is centred on its value along the bar, by a short tick.
+    const [lo, hi] = domain;
+    L.ticks.forEach((v, i) => {
+      const y = y0 + (L.flat ? 0.5 : (hi - v) / (hi - lo)) * cbH;
+      svg.appendChild(line(x0 + cbW, y, x0 + cbW + 3, y, theme.axis, 1));
       svg.appendChild(
         text(
           x0 + cbW + 5,
-          y0 + cbH / 2 + mid,
-          values[1] ?? "",
+          y + mid,
+          L.labels[i] ?? "",
           theme.foreground,
           "start",
           fs,
         ),
       );
-    }
-    svg.appendChild(
-      text(
-        x0 + cbW + 5,
-        y0 + cbH,
-        values[2] ?? "",
-        theme.foreground,
-        "start",
-        fs,
-      ),
-    );
+    });
     // A grey swatch for points with no value, when there are any.
     if (missingColor) {
       const sy = y0 + cbH + pad + 6;
-      svg.appendChild(legendBg(x0 - 6, sy - 4, boxW, Math.round(fs + 7)));
+      svg.appendChild(legendBg(x0 - 6, sy - 4, L.boxW, Math.round(fs + 7)));
       svg.appendChild(rect(x0, sy, cbW, 10, MISSING_COLOR, theme.axis, 1));
       svg.appendChild(
         text(
@@ -1041,6 +1143,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   function doResize(w: number, h: number) {
     width = w;
     height = h;
+    // The legend's rows, and so its width, follow the height.
+    gutter = legendGutter();
     layoutCanvas();
     void resizeView(scatterplot, innerW(), innerH());
     renderOverlay();
@@ -1075,6 +1179,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       theme = resolveTheme(opts.theme);
       sizes = textSizes(theme);
       axisMargin = axisMargins(sizes);
+      // The legend gutter follows showLegend and the text size.
+      gutter = legendGutter();
       // aspect and padding decide the fitted range, so a change to either
       // refits. showAxes and the text size change the plot area's size,
       // which refits while the view is untouched, as a resize does. The
@@ -1124,10 +1230,15 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       img.setAttribute("height", String(innerH()));
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
+      // The gridlines go under the points, as on screen.
+      for (const node of Array.from(under.childNodes).reverse()) {
+        out.insertBefore(node.cloneNode(true), out.firstChild);
+      }
       return serializeSVG(out);
     },
     async exportPNG(scale = 2) {
-      // The points at their place, with the axes and legend over them.
+      // The points at their place, over the gridlines and under the axes
+      // and legend.
       const m = margin();
       return compositePNG({
         width,
@@ -1137,6 +1248,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         layers: [
           { canvas, x: m.left, y: m.top, width: innerW(), height: innerH() },
         ],
+        underlay: under,
         overlay: svg,
       });
     },
@@ -1147,6 +1259,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       el.removeEventListener("mousemove", onMove);
       tooltip.destroy();
       scatterplot.destroy();
+      under.remove();
       canvas.remove();
       svg.remove();
     },

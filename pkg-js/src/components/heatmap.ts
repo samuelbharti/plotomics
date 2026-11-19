@@ -35,6 +35,9 @@ import {
   ramp,
   serializeSVG,
   compositePNG,
+  fitDomainTicks,
+  formatTick,
+  isFlatRange,
 } from "../core/index.js";
 import { releaseRegl } from "../core/gl.js";
 import { uniqueId } from "../core/dom.js";
@@ -52,6 +55,8 @@ export interface HeatmapOptions {
   vmax: number | null;
   /** Draw the colorbar legend on the SVG overlay. */
   showColorbar: boolean;
+  /** Colour bar title. `null` gives "value", or "z-score" with `zScore` on. */
+  legendTitle: string | null;
   theme: Partial<PlotomicsTheme>;
 }
 
@@ -61,6 +66,7 @@ export const defaultHeatmapOptions: HeatmapOptions = {
   vmin: null,
   vmax: null,
   showColorbar: true,
+  legendTitle: null,
   theme: {},
 };
 
@@ -246,10 +252,13 @@ export function colorDomain(
     if (lo == null) lo = dmin;
     if (hi == null) hi = dmax;
   }
-  if (lo === hi) {
-    // Degenerate domain: widen so the shader division is well-defined.
-    lo -= 0.5;
-    hi += 0.5;
+  if (isFlatRange(lo, hi)) {
+    // Degenerate domain, or one whose ends differ only in their last digits
+    // (0.3 and 0.1 + 0.2): widen around its middle, so the shader division is
+    // well-defined and the cells take the middle of the ramp.
+    const mid = lo / 2 + hi / 2;
+    lo = mid - 0.5;
+    hi = mid + 0.5;
   }
   return [lo, hi];
 }
@@ -460,28 +469,50 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     longestCache.set(labels, { font, w });
     return w;
   }
-  const colorbarTitle = () => (opts.zScore ? "z-score" : "value");
-  /** The colour bar's values: high end, middle, low end. */
-  const colorbarValues = (): [number, number, number] => [
-    domain[1],
-    (domain[0] + domain[1]) / 2,
-    domain[0],
-  ];
-  /** The colour bar's tick labels: high end, middle, low end. */
-  function colorbarTicks(): string[] {
-    return colorbarValues().map(fmt);
+  const colorbarTitle = () =>
+    opts.legendTitle ?? (opts.zScore ? "z-score" : "value");
+  /**
+   * From the top of the colour bar up to the baseline of its title: room
+   * for the top half of a label centred on the top of the bar.
+   */
+  const colorbarTitleGap = () => 0.9 * sizes.label + 4;
+  /**
+   * Top and height of the colour bar beside a plot that starts at `y0` and
+   * is `h` tall. They do not depend on the right margin, so that margin can
+   * be sized from the bar's labels. The title stands over the bar, so the
+   * bar starts low enough for it, and the bar is at least three labels tall.
+   */
+  function colorbarBox(
+    y0 = margin.top,
+    h = innerH(),
+  ): { cbY: number; cbH: number } {
+    const { label, axisTitle } = sizes;
+    const minY = Math.ceil(1.1 * axisTitle + colorbarTitleGap());
+    const cbH = Math.max(3 * label, Math.min(220, y0 + h - Math.max(y0, minY)));
+    const cbY = Math.max(minY, y0 + (h - cbH) / 2);
+    return { cbY, cbH };
   }
   /**
-   * `v` as text that fits `maxW` px: as the colour bar writes it, else to
-   * three significant digits or whole, and cut only when none fits.
+   * The colour bar's ticks: round values inside the colour domain, as many
+   * as the bar holds a line and a half of text from each other.
    */
-  function fitValue(v: number, maxW: number): string {
-    const forms = [fmt(v)];
-    if (Number.isFinite(v) && Math.abs(v) >= 1) {
-      forms.push(String(Number(v.toPrecision(3))), String(Math.round(v)));
-    }
-    for (const s of forms) if (labelWidth(s) <= maxW) return s;
-    return fitLabel(forms[forms.length - 1] as string, maxW);
+  function colorbarTicks(): {
+    ticks: number[];
+    labels: string[];
+    flat: boolean;
+  } {
+    const { ticks, step } = fitDomainTicks(
+      domain[0],
+      domain[1],
+      colorbarBox().cbH,
+      { maxCount: 4, minGapPx: 1.6 * sizes.label },
+    );
+    return {
+      ticks,
+      labels: ticks.map((v) => formatTick(v, step)),
+      // A flat domain has one tick and no step.
+      flat: !(step > 0),
+    };
   }
   /**
    * Size the left and bottom margins from the longest labels, and the right
@@ -506,7 +537,9 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     margin.right = Math.min(capW, MIN_RIGHT_MARGIN);
     if (!opts.showColorbar) return;
     let tickW = anyMissing ? labelWidth("NA") : 0;
-    for (const t of colorbarTicks()) tickW = Math.max(tickW, labelWidth(t));
+    for (const t of colorbarTicks().labels) {
+      tickW = Math.max(tickW, labelWidth(t));
+    }
     const titleW = labelWidth(colorbarTitle(), sizes.axisTitle);
     margin.right = Math.min(
       capW,
@@ -514,6 +547,8 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
         MIN_RIGHT_MARGIN,
         Math.ceil(24 + COLORBAR_W + 5 + tickW + 4),
         Math.ceil(24 + COLORBAR_W / 2 + titleW / 2 + 4),
+        // A title wider than that starts 4 px right of the matrix.
+        Math.ceil(4 + titleW + 4),
       ),
     );
   }
@@ -756,12 +791,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   function renderColorbar(x0: number, y0: number, h: number) {
     const { label, axisTitle } = sizes;
     const cbX = x0 + innerW() + 24;
-    // The title stands over the bar, so the bar starts low enough for it.
-    // The bar is tall enough that its three labels do not touch.
-    const titleGap = 0.4 * label + 6;
-    const minY = Math.ceil(1.1 * axisTitle + titleGap);
-    const cbH = Math.max(3 * label, Math.min(220, y0 + h - Math.max(y0, minY)));
-    const cbY = Math.max(minY, y0 + (h - cbH) / 2);
+    const { cbY, cbH } = colorbarBox(y0, h);
     const fn = ramp(opts.colormap);
     const defs = document.createElementNS(SVG_NS, "defs");
     const grad = document.createElementNS(SVG_NS, "linearGradient");
@@ -785,44 +815,56 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       rect(cbX, cbY, COLORBAR_W, cbH, `url(#${gradId})`, theme.axis, 1),
     );
 
-    // The labels and the title are cut to the widget.
+    // Round values inside the colour domain, each centred on its place
+    // along the bar, by a short tick. The labels and the title are cut to
+    // the widget.
     const tx = cbX + COLORBAR_W + 5;
-    const [hiTick, midTick, loTick] = colorbarValues().map((v) =>
-      fitValue(v, width - 2 - tx),
-    ) as [string, string, string];
-    svg.appendChild(
-      text(tx, cbY + 0.4 * label, hiTick, theme.foreground, "start", label),
-    );
-    svg.appendChild(
-      text(
-        tx,
-        cbY + cbH / 2 + 0.3 * label,
-        midTick,
-        theme.foreground,
-        "start",
-        label,
-      ),
-    );
-    svg.appendChild(
-      text(tx, cbY + cbH, loTick, theme.foreground, "start", label),
-    );
-    svg.appendChild(
-      text(
-        cbX + COLORBAR_W / 2,
-        cbY - titleGap,
-        fitLabel(
-          colorbarTitle(),
-          2 * (width - 2 - cbX - COLORBAR_W / 2),
-          axisTitle,
+    const [lo, hi] = domain;
+    const bar = colorbarTicks();
+    bar.ticks.forEach((v, i) => {
+      // The top of the bar is hi, also when a reversed domain puts it
+      // below lo. The one tick of a flat domain sits in the middle.
+      const y = cbY + (bar.flat ? 0.5 : (hi - v) / (hi - lo)) * cbH;
+      svg.appendChild(
+        rect(cbX + COLORBAR_W, y - 0.5, 3, 1, theme.axis, "none", 0),
+      );
+      svg.appendChild(
+        text(
+          tx,
+          y + 0.35 * label,
+          fitLabel(bar.labels[i] ?? "", width - 2 - tx),
+          theme.foreground,
+          "start",
+          label,
         ),
+      );
+    });
+    // The title is centred over the bar. A longer one moves right, so it
+    // does not run over the matrix, and is cut to the widget.
+    const plotRight = x0 + innerW();
+    const title = fitLabel(colorbarTitle(), width - 6 - plotRight, axisTitle);
+    const half = labelWidth(title, axisTitle) / 2;
+    const titleX = Math.min(
+      Math.max(cbX + COLORBAR_W / 2, plotRight + 4 + half),
+      width - 2 - half,
+    );
+    svg.appendChild(
+      text(
+        titleX,
+        cbY - colorbarTitleGap(),
+        title,
         theme.muted,
         "middle",
         axisTitle,
       ),
     );
-    // A grey swatch for missing cells, when the matrix has any.
+    // A grey swatch for missing cells, when the matrix has any, below a
+    // label centred on the bottom of the bar.
     if (anyMissing) {
-      const sy = Math.min(cbY + cbH + 14, height - Math.ceil(6 + 0.7 * label));
+      const sy = Math.min(
+        cbY + cbH + Math.round(0.6 * label) + 8,
+        height - Math.ceil(6 + 0.7 * label),
+      );
       svg.appendChild(
         rect(cbX, sy, COLORBAR_W, 10, MISSING_COLOR, theme.axis, 1),
       );
