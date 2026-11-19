@@ -93,8 +93,13 @@ const MIN_RIGHT_MARGIN = 84;
 const MAX_MARGIN_SHARE = 0.35;
 /** Fill for a missing cell, and its colour bar swatch. */
 const MISSING_COLOR = "#CCCCCC";
-/** Pooled textures kept for reuse as the view pans and zooms. */
-const MAX_POOLED = 6;
+/**
+ * Pooled textures kept for reuse as the view pans and zooms, besides the
+ * base texture; the one for the whole matrix is kept among them.
+ */
+const MAX_POOLED = 4;
+/** How long the view rests after a wheel step or a drag before pooling. */
+const SETTLE_MS = 120;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested without a GPU; see test/heatmap.test.ts)
@@ -189,7 +194,10 @@ export function toFloat32(values: ArrayLike<number | null>): Float32Array {
  * the view changes, so a pooled texture can be kept and used again.
  */
 export function pooledSize(view: number, px: number, ratio = 1.1): number {
-  let m = Math.max(1, Math.floor(px));
+  let m = Math.floor(px);
+  if (!(m >= 1)) return 1;
+  // A view of no rows (or not a number) has nothing to fit: a texel a pixel.
+  if (!(view > 0)) return m;
   for (;;) {
     const next = Math.max(m + 1, Math.floor(m * ratio));
     if (next * view > px + 1e-9) return m;
@@ -399,7 +407,9 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   let baseScale: [number, number] = [1, 1];
   // Copies of the matrix pooled for views with more cells than pixels, by
   // their plans, the one drawn last at the end; a few are kept.
-  const pooled = new Map<string, Texture2D>();
+  const pooled = new Map<string, PooledTexture>();
+  // Pending pooling for the view once a wheel or a drag lets it rest.
+  let settleTimer: ReturnType<typeof setTimeout> | null = null;
   // The texture the next draw reads, and its scale.
   let drawTex: Texture2D | null = null;
   let drawScale: [number, number] = [1, 1];
@@ -696,15 +706,26 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   }
 
   /**
-   * The texture for the current view, and its scale: the base texture while
-   * each row and column in view has a device pixel or more, else the matrix
-   * pooled to about a texel a pixel (see {@link axisPlan}), so that no row
-   * or column falls between the pixels. The few pooled copies drawn last
-   * are kept until the matrix or its colours change, so a pan or a zoom
-   * back reuses them.
+   * The texture for the current view: the base texture while each row and
+   * column in view has a device pixel or more, else the matrix pooled to
+   * about a texel a pixel (see {@link axisPlan}), so that no row or column
+   * falls between the pixels.
+   *
+   * Pooling reads the whole matrix, tens of milliseconds for ten million
+   * cells, and each wheel step asks for a new size. So while a wheel or a
+   * drag `moving` the view, a texture already built stands in (see
+   * {@link standIn}), and the view's own texture is pooled once the view
+   * rests for SETTLE_MS. A few pooled copies are kept, the one for the
+   * whole matrix always among them, until the matrix or its colours change,
+   * so a pan or a zoom back draws without pooling.
    */
-  function viewTexture(): { tex: Texture2D; scale: [number, number] } {
-    const base = { tex: valueTex as Texture2D, scale: baseScale };
+  function viewTexture(moving: boolean): PooledTexture {
+    const base: PooledTexture = {
+      tex: valueTex as Texture2D,
+      rows: basePlans?.[0] ?? basePlan(shape.nrows, Number.POSITIVE_INFINITY),
+      cols: basePlans?.[1] ?? basePlan(shape.ncols, Number.POSITIVE_INFINITY),
+      scale: baseScale,
+    };
     if (!regl || !basePlans) return base;
     const rows = axisPlan(shape.nrows, viewH, canvas.height, maxTex);
     const cols = axisPlan(shape.ncols, viewW, canvas.width, maxTex);
@@ -712,24 +733,66 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       return base;
     }
     const key = `${rows.key}x${cols.key}`;
-    let tex = pooled.get(key);
-    if (tex) pooled.delete(key);
-    else {
-      tex = regl.texture(
-        textureOptions(levelsFor(rows, cols), rows.count, cols.count),
-      );
+    let hit = pooled.get(key);
+    if (hit) pooled.delete(key);
+    else if (moving) {
+      settleLater();
+      return standIn(base);
+    } else {
+      hit = {
+        tex: regl.texture(
+          textureOptions(levelsFor(rows, cols), rows.count, cols.count),
+        ),
+        rows,
+        cols,
+        scale: [cols.scale, rows.scale],
+      };
     }
-    pooled.set(key, tex);
+    pooled.set(key, hit);
+    // Drop the copies drawn longest ago, but not the one for the whole
+    // matrix, which a zoom out always comes back to.
+    const whole = `${axisPlan(shape.nrows, 1, canvas.height, maxTex).key}x${
+      axisPlan(shape.ncols, 1, canvas.width, maxTex).key
+    }`;
     for (const [oldKey, old] of pooled) {
       if (pooled.size <= MAX_POOLED) break;
-      old.destroy();
+      if (oldKey === whole || oldKey === key) continue;
+      old.tex.destroy();
       pooled.delete(oldKey);
     }
-    return { tex, scale: [cols.scale, rows.scale] };
+    return hit;
+  }
+
+  /**
+   * The texture to draw while the view moves: of those already built, the
+   * finest whose rows and columns in view each still have a pixel, so no
+   * row falls between the pixels; the coarsest when none of them does.
+   */
+  function standIn(base: PooledTexture): PooledTexture {
+    const fits = (t: PooledTexture) =>
+      t.rows.count * viewH <= canvas.height + 1e-9 &&
+      t.cols.count * viewW <= canvas.width + 1e-9;
+    const cells = (t: PooledTexture) => t.rows.count * t.cols.count;
+    let best: PooledTexture | null = null;
+    let coarsest = base;
+    for (const t of [base, ...pooled.values()]) {
+      if (fits(t) && (!best || cells(t) > cells(best))) best = t;
+      if (cells(t) < cells(coarsest)) coarsest = t;
+    }
+    return best ?? coarsest;
+  }
+
+  /** Pool the view's own texture once the view has rested. */
+  function settleLater() {
+    if (settleTimer !== null) clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => {
+      settleTimer = null;
+      render();
+    }, SETTLE_MS);
   }
 
   function dropPooled() {
-    for (const tex of pooled.values()) tex.destroy();
+    for (const p of pooled.values()) p.tex.destroy();
     pooled.clear();
   }
 
@@ -747,7 +810,11 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     });
   }
 
-  function render() {
+  /**
+   * Draw the matrix and the overlay. `moving` is set while a wheel or a drag
+   * moves the view, which then draws from textures already built.
+   */
+  function render(moving = false) {
     if (!regl || reglBroken || !draw || !valueTex) {
       // Nothing to draw on the GPU (no data, a refused matrix, or no WebGL):
       // clear what an earlier matrix left, then draw the overlay only.
@@ -765,7 +832,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     try {
       regl.poll();
       regl.clear({ color: [1, 1, 1, 1], depth: 1 });
-      const view = viewTexture();
+      const view = viewTexture(moving);
       drawTex = view.tex;
       drawScale = view.scale;
       draw();
@@ -1037,7 +1104,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     viewW = newW;
     viewH = newH;
     clampView();
-    render();
+    render(true);
   };
 
   const onDown = (e: MouseEvent) => {
@@ -1061,7 +1128,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       viewX = dragStart.viewX - du;
       viewY = dragStart.viewY - dv;
       clampView();
-      render();
+      render(true);
       tooltip.hide();
       return;
     }
@@ -1188,6 +1255,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();
+      if (settleTimer !== null) clearTimeout(settleTimer);
       dropPooled();
       valueTex?.destroy();
       lutTex?.destroy();
@@ -1201,6 +1269,13 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
 };
 
 // ---- small utilities ------------------------------------------------------
+/** A texture of the matrix, the plans it was pooled by, and its scale. */
+interface PooledTexture {
+  tex: Texture2D;
+  rows: AxisPlan;
+  cols: AxisPlan;
+  scale: [number, number];
+}
 /** Texture options for an `nrows` x `ncols` matrix of levels. */
 function textureOptions(data: Uint8Array, nrows: number, ncols: number) {
   return {

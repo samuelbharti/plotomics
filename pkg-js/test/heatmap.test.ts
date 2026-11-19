@@ -176,6 +176,14 @@ describe("heatmap helpers", () => {
     }
   });
 
+  it("pools to the pixel count for a view of no rows", () => {
+    // These ran forever before.
+    expect(pooledSize(0, 424)).toBe(424);
+    expect(pooledSize(-1, 424)).toBe(424);
+    expect(pooledSize(Number.NaN, 424)).toBe(424);
+    expect(pooledSize(0.5, Number.NaN)).toBe(1);
+  });
+
   it("plans a texel a row while the rows fit the pixels, else one a pixel", () => {
     expect(axisPlan(424, 1, 424, 8192)).toEqual({
       key: "r",

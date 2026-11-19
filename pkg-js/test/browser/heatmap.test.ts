@@ -1,6 +1,15 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildRampLUT, createHeatmap } from "../../src/components/heatmap.js";
 import type { PlotomicsInstance } from "../../src/core/index.js";
+import { poolBlocks } from "../../src/core/pool.js";
+
+// Count the poolings; the real pooling still runs.
+vi.mock("../../src/core/pool.js", { spy: true });
+
+/** Wait for the view to rest after a wheel or a drag. */
+function rest(): Promise<void> {
+  return new Promise((done) => setTimeout(done, 300));
+}
 
 function container(width = 600, height = 480) {
   const el = document.createElement("div");
@@ -306,7 +315,7 @@ describe("heatmap in a browser", () => {
     expect(svgTexts(el)).toHaveLength(0);
   });
 
-  it("keeps lone outlier rows when rows outnumber the plot's pixels", () => {
+  it("keeps lone outlier rows when rows outnumber the plot's pixels", async () => {
     // 5000 rows in about 420 px: about 12 rows to a pixel.
     const nrows = 5000;
     const ncols = 4;
@@ -324,6 +333,7 @@ describe("heatmap in a browser", () => {
     expect(colourRuns(el, 0.5, lit)).toBe(outliers.length);
     // Zoomed in on the middle, fewer rows share a pixel; all still show.
     zoom(el, Math.exp(-0.5));
+    await rest();
     expect(colourRuns(el, 0.5, lit)).toBe(outliers.length);
   });
 
@@ -343,7 +353,7 @@ describe("heatmap in a browser", () => {
     expect(colourRuns(el, 0.5, lit)).toBe(rows.length);
   });
 
-  it("keeps lone outlier rows zoomed in to about 1.5 rows a pixel", () => {
+  it("keeps lone outlier rows zoomed in to about 1.5 rows a pixel", async () => {
     const nrows = 5000;
     const rows = [2401, 2451, 2501, 2551];
     const el = container();
@@ -357,6 +367,7 @@ describe("heatmap in a browser", () => {
     );
     const h = (el.querySelector("canvas") as HTMLCanvasElement).height;
     zoom(el, (1.5 * h) / nrows);
+    await rest();
     expect(colourRuns(el, 0.5, lit)).toBe(rows.length);
   });
 
@@ -375,7 +386,7 @@ describe("heatmap in a browser", () => {
     expect(colourRuns(el, 0.5, lit)).toBe(1);
   });
 
-  it("keeps an outlier row past the texture limit at every zoom", () => {
+  it("keeps an outlier row past the texture limit at every zoom", async () => {
     const probe = document
       .createElement("canvas")
       .getContext("webgl") as WebGLRenderingContext;
@@ -398,9 +409,12 @@ describe("heatmap in a browser", () => {
     // Zoom in on the middle, step by step, down to a row or two in view.
     for (let i = 0; i < 6; i += 1) {
       zoom(el, Math.exp(-1.5));
+      // While the view moves and once it rests.
+      seen.push(colourRuns(el, 0.5, lit));
+      await rest();
       seen.push(colourRuns(el, 0.5, lit));
     }
-    expect(seen).toEqual([1, 1, 1, 1, 1, 1, 1]);
+    expect(seen).toEqual(Array(13).fill(1));
   });
 
   it("keeps alternating rows distinct when rows are 1 to 2 times the pixels", () => {
@@ -445,7 +459,7 @@ describe("heatmap in a browser", () => {
     expect(top).toBeGreaterThanOrEqual(1 + Math.round(254 / 12));
   });
 
-  it("draws a row past the texture limit where the tooltip names it", () => {
+  it("draws a row past the texture limit where the tooltip names it", async () => {
     const maxTex = textureLimit();
     // Rows pool two by two to fit the limit; this row is alone in an even
     // split of the rows, whose texels would sit up to a row away from it.
@@ -470,30 +484,34 @@ describe("heatmap in a browser", () => {
       }),
     );
     zoomOnRow(el, row, 8);
+    await rest();
     const colours = columnColours(el);
-    // The texel holding the row covers it and its partner in the block of
-    // two, and nothing else. The edges of a texel in a texture this tall
-    // may land a few pixels off in the browser's renderer, so an eighth of
-    // a row is allowed there.
-    const block = [row - (row % 2), row - (row % 2) + 1];
-    let rowPixels = 0;
-    let rowUnlit = 0;
-    let litElsewhere = 0;
-    colours.forEach((c, y) => {
+    // The pixels of each row in view, as the tooltip names them.
+    const spans = new Map<number, number[]>();
+    colours.forEach((_, y) => {
       const at = rowAt(el, y);
-      const on = lit(c.split(",").map(Number));
-      if (at === row) {
-        rowPixels += 1;
-        if (!on) rowUnlit += 1;
-      }
-      if (on && !block.includes(at)) litElsewhere += 1;
+      spans.set(at, [...(spans.get(at) ?? []), y]);
     });
-    expect(rowPixels).toBeGreaterThan(20);
-    expect(rowUnlit).toBeLessThanOrEqual(rowPixels / 8);
-    expect(litElsewhere).toBeLessThanOrEqual(rowPixels / 8);
+    // The texel holding the row covers it and its partner in the block of
+    // two, and nothing else: the centre pixel of each row whole in view is
+    // lit exactly when the row is in that block. The edges of a texel in a
+    // texture this tall can land a few pixels off in the browser's
+    // renderer, with or without pooling, so they are not checked.
+    const block = [row - (row % 2), row - (row % 2) + 1];
+    let checked = 0;
+    for (const [at, ys] of spans) {
+      if (ys.includes(0) || ys.includes(colours.length - 1)) continue;
+      const centre = colours[ys[Math.floor(ys.length / 2)] as number] as string;
+      expect(lit(centre.split(",").map(Number)), `row ${at}`).toBe(
+        block.includes(at),
+      );
+      checked += 1;
+    }
+    expect(spans.get(row)?.length ?? 0).toBeGreaterThan(20);
+    expect(checked).toBeGreaterThanOrEqual(5);
   });
 
-  it("never draws a row past the texture limit as its neighbour", () => {
+  it("never draws a row past the texture limit as its neighbour", async () => {
     const maxTex = textureLimit();
     const nrows = maxTex + 100;
     // Rows 0, 1, 0, 1, ...: each block of two holds a 0 and a 1.
@@ -506,6 +524,7 @@ describe("heatmap in a browser", () => {
       }),
     );
     zoomOnRow(el, Math.floor((nrows * 3) / 4), 8);
+    await rest();
     const colours = columnColours(el);
     // The colour of the other value, at either end of the ramp.
     const lut = buildRampLUT("viridis");
@@ -518,6 +537,38 @@ describe("heatmap in a browser", () => {
       if (c === end(1 - (rowAt(el, y) % 2))) wrong += 1;
     });
     expect(wrong).toBe(0);
+  });
+
+  it("pools no texture while the wheel turns, and the view once it rests", async () => {
+    // Rows 1, 0, 1, 0, ...
+    const nrows = 5000;
+    const ncols = 20;
+    const values = new Float32Array(nrows * ncols);
+    for (let r = 0; r < nrows; r += 2)
+      values.fill(1, r * ncols, (r + 1) * ncols);
+    const el = container();
+    instances.push(
+      createHeatmap(el, {
+        data: { columns: { values }, meta: { nrows, ncols } },
+      }),
+    );
+    const h = (el.querySelector("canvas") as HTMLCanvasElement).height;
+    const pools = vi.mocked(poolBlocks);
+    pools.mockClear();
+    // Twenty wheel steps in, each to a new pooled size, as fast as a wheel
+    // sends them: each step draws from a texture already built.
+    for (let i = 0; i < 20; i += 1) zoom(el, Math.exp(-0.1));
+    expect(pools).not.toHaveBeenCalled();
+    // Once the view rests, its own texture is pooled, once, and draws the
+    // rows at about a texel a pixel.
+    await rest();
+    expect(pools).toHaveBeenCalledTimes(1);
+    expect(changes(columnColours(el))).toBeGreaterThan(0.5 * h);
+    // Back out to the whole matrix, whose texture is kept.
+    pools.mockClear();
+    for (let i = 0; i < 20; i += 1) zoom(el, Math.exp(0.1));
+    await rest();
+    expect(pools).not.toHaveBeenCalled();
   });
 
   it("draws noise as its average, not pushed to the ends of the ramp", () => {
