@@ -6,6 +6,7 @@ import { createHic } from "../../src/components/hic.js";
 import { createVolcano } from "../../src/components/volcano.js";
 import {
   type PlotomicsInstance,
+  type PlotomicsTheme,
   compositePNG,
   darkTheme,
   padSVG,
@@ -167,6 +168,28 @@ describe("the background of a regl-scatterplot", () => {
       }
     });
   }
+
+  it("styles the lasso for the page under a background that paints nothing", async () => {
+    // Before, such a background reached regl-scatterplot as [0, 0, 0, 0],
+    // which it reads as a dark plot: a white lasso on a white page.
+    const lasso = async (theme: Partial<PlotomicsTheme>) => {
+      const before = new Set(handles());
+      const el = container(W, 400);
+      instances.push(createEmbedding(el, { data: points, options: { theme } }));
+      await settled("embedding");
+      return handles()
+        .filter((d) => !before.has(d))
+        .map((d) => d.style.border)
+        .join(" | ");
+    };
+    const light = await lasso({ background: "#ffffff" });
+    const dark = await lasso({ ...darkTheme });
+    expect(light).not.toBe(dark);
+    for (const background of ["transparent", "none"]) {
+      expect(await lasso({ background }), background).toBe(light);
+      expect(await lasso({ ...darkTheme, background }), background).toBe(dark);
+    }
+  });
 });
 
 describe("the background of a WebGL matrix", () => {

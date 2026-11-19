@@ -40,10 +40,11 @@ export function tipStart(at: number, size: number, room: number): number {
  * Where a tooltip `w` x `h` px goes in a widget `roomW` x `roomH` px, for
  * the pointer at (`x`, `y`): along each side as {@link tipStart} places it.
  * That covers the pointer only when the tooltip fits on neither side of it
- * along either axis. It then moves off the pointer along one axis, to the
- * side where it runs least past the edge of the widget (below, above,
- * right or left, in that order on a tie), and stays inside the widget along
- * the other.
+ * along either axis. It then moves below or above the pointer, whichever
+ * runs less past the widget (below on a tie), and stays inside the widget
+ * across. A move to the right or the left would run past the widget there
+ * too, and past the right of the page it would give the page a horizontal
+ * scroll.
  */
 export function tipPosition(
   x: number,
@@ -59,17 +60,7 @@ export function tipPosition(
   if (!covers) return { left, top };
   const below = y + TIP_OFFSET;
   const above = y - TIP_OFFSET - h;
-  const right = x + TIP_OFFSET;
-  const leftOf = x - TIP_OFFSET - w;
-  const sides = [
-    { past: below + h - roomH, at: { left, top: below } },
-    { past: -above, at: { left, top: above } },
-    { past: right + w - roomW, at: { left: right, top } },
-    { past: -leftOf, at: { left: leftOf, top } },
-  ];
-  let best = sides[0] as (typeof sides)[number];
-  for (const s of sides) if (s.past < best.past) best = s;
-  return best.at;
+  return { left, top: -above < below + h - roomH ? above : below };
 }
 
 /**

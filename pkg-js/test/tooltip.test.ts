@@ -69,6 +69,16 @@ describe("tipPosition", () => {
     }
   });
 
+  it("moves below or above, never sideways past the widget", () => {
+    // A 600 x 140 widget, pointer at its centre, a 320 x 92 tooltip: right
+    // runs 32 px past the widget and below 34. Before, it went right, which
+    // can give the page a horizontal scroll.
+    expect(tipPosition(300, 70, 320, 92, 600, 140)).toEqual({
+      left: 280,
+      top: 82,
+    });
+  });
+
   it("leaves the widget on the side where it runs past the least", () => {
     // Pointer near the top: below runs 34 px past, above 74.
     expect(tipPosition(80, 30, 160, 92, 160, 100).top).toBe(42);

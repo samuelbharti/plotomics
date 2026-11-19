@@ -170,6 +170,27 @@ describe("a tooltip placed near an edge", () => {
     tip.destroy();
   });
 
+  it("does not run past the right of a short widget at the page edge", () => {
+    // A tooltip too wide and too tall for either side of the pointer used to
+    // move right when that ran past the widget the least, and grew the page
+    // a horizontal scroll.
+    const el = document.createElement("div");
+    el.style.cssText =
+      "position:absolute;right:0;top:40px;width:600px;height:140px;";
+    document.body.appendChild(el);
+    const pageWidth = document.documentElement.scrollWidth;
+    const tip = createTooltip(el, defaultTheme);
+    const box = el.getBoundingClientRect();
+    const html = `<b>${"HALLMARK_OXIDATIVE_PHOSPHORYLATION interferon response ".repeat(4)}</b><br/>value 1.25`;
+    tip.show(html, box.left + 300, box.top + 70);
+    const r = tipOf(el).getBoundingClientRect();
+    expect(r.width).toBeGreaterThan(288);
+    expect(r.height).toBeGreaterThan(100);
+    expect(r.right).toBeLessThanOrEqual(box.right + 0.5);
+    expect(document.documentElement.scrollWidth).toBe(pageWidth);
+    tip.destroy();
+  });
+
   it("does not sit on the pointer in a small widget", () => {
     // Before the fix a long text in a widget it fits in neither way was
     // clamped inside along both sides, over the pointer.

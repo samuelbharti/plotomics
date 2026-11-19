@@ -130,18 +130,41 @@ export function colourBytes(
 }
 
 /**
- * `colour` as red, green, blue and alpha, each from 0 to 1, with var() and
- * currentColor read inside `el`: a form regl-scatterplot reads for any
- * colour, where it reads only hex in a string. [0, 0, 0, 0] for a colour
- * that paints nothing, and outside a browser.
+ * Relative luminance of a colour given as bytes, from 0 for black to 1 for
+ * white (WCAG 2).
  */
-export function unitColour(
-  colour: string | null | undefined,
+export function luminance(rgb: readonly number[]): number {
+  const lin = (v: number) => {
+    const c = v / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return (
+    0.2126 * lin(rgb[0] ?? 0) +
+    0.7152 * lin(rgb[1] ?? 0) +
+    0.0722 * lin(rgb[2] ?? 0)
+  );
+}
+
+/**
+ * The theme background for regl-scatterplot: red, green, blue and alpha,
+ * each from 0 to 1, a form it reads for any colour, where it reads only hex
+ * in a string. var() and currentColor are read inside `el`.
+ * regl-scatterplot styles its lasso for a light or a dark plot from this
+ * colour. A background that paints nothing, such as "transparent", shows
+ * the page, so it gives white when the theme foreground is dark, as on a
+ * light page, and black when the foreground is light.
+ */
+export function scatterBackground(
+  theme: { background: string; foreground: string },
   el?: Element,
 ): [number, number, number, number] {
-  const rgba = colourBytes(colour, el);
-  if (!rgba) return [0, 0, 0, 0];
-  return [rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255];
+  const rgba = colourBytes(theme.background, el);
+  if (rgba) {
+    return [rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255];
+  }
+  const fg = colourBytes(theme.foreground, el);
+  // White and black read equally well on a luminance of about 0.18.
+  return fg && luminance(fg) >= 0.18 ? [0, 0, 0, 1] : [1, 1, 1, 1];
 }
 
 /** Bytes from {@link colourBytes} as a hex colour, or rgba() with an alpha. */

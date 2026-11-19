@@ -147,8 +147,10 @@ lollipop <- function(variants,
   if (!is.null(class_colors)) meta$classColors <- I(as.character(class_colors))
 
   if (!is.null(domains)) {
-    # A list has names but no rows, and would stop later in seq_len().
-    if (!is.data.frame(domains)) {
+    # Any table with rows: a data frame, a tibble or a Bioconductor
+    # DataFrame. A plain list has names but no rows, and would stop later in
+    # seq_len().
+    if (is.null(nrow(domains))) {
       stop("`domains` must be a data frame with columns `name`, `start` ",
            "and `end`, one row per domain.", call. = FALSE)
     }
@@ -169,7 +171,7 @@ lollipop <- function(variants,
     }
   }
   if (!is.null(ptms)) {
-    if (!is.data.frame(ptms)) {
+    if (is.null(nrow(ptms))) {
       stop("`ptms` must be a data frame with columns `position` and `type`, ",
            "one row per site.", call. = FALSE)
     }

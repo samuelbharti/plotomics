@@ -75,6 +75,33 @@ test_that("a list in place of a data frame says what to pass", {
   )
 })
 
+# Domains and PTMs built by `make`, a data frame constructor, as JSON.
+expect_tables_from <- function(make) {
+  w <- lollipop(variants_fixture(), length = 393,
+                domains = make(name = c("K", NA), start = c(1, 30),
+                               end = c(3, 60)),
+                ptms = make(position = 15, type = "Phospho"))
+  json <- as.character(htmlwidgets:::toJSON(w$preRenderHook(w)$x))
+  expect_match(
+    json,
+    '"domains":[{"name":"K","start":1,"end":3},{"name":null,"start":30,"end":60}]',
+    fixed = TRUE
+  )
+  expect_match(json, '"ptms":[{"position":15,"type":"Phospho"}]', fixed = TRUE)
+}
+
+test_that("domains and PTMs may come as a Bioconductor DataFrame", {
+  # S4Vectors is optional and not in Suggests, so it is fetched by name.
+  # It was refused by an is.data.frame() check, where main took it.
+  skip_if_not_installed("S4Vectors")
+  expect_tables_from(getExportedValue("S4Vectors", "DataFrame"))
+})
+
+test_that("domains and PTMs may come as a tibble", {
+  skip_if_not_installed("tibble")
+  expect_tables_from(getExportedValue("tibble", "tibble"))
+})
+
 test_that("a domain with an NA name crosses as null, as Python sends None", {
   # The browser draws no name for null.
   w <- lollipop(variants_fixture(), length = 393,

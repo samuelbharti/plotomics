@@ -54,7 +54,7 @@ import {
   afterQuiet,
   categoricalColors,
 } from "../core/index.js";
-import { unitColour } from "../core/paint.js";
+import { scatterBackground } from "../core/paint.js";
 import { uniqueId } from "../core/dom.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
@@ -535,7 +535,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     pointSize: opts.pointSize,
     pointScaleMode: opts.pointScaleMode,
     opacity: opts.opacity,
-    backgroundColor: unitColour(theme.background, el),
+    backgroundColor: scatterBackground(theme, el),
     mouseMode: opts.mouseMode,
     // Extra lasso affordances even in panZoom mode: click the handle that
     // appears, or press-and-hold then drag (touch-friendly).
@@ -1225,7 +1225,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         opts.padding !== prev.padding ||
         (areaChanged && isStartView(scatterplot));
       scatterplot.set({
-        backgroundColor: unitColour(theme.background, el),
+        backgroundColor: scatterBackground(theme, el),
         mouseMode: opts.mouseMode,
         // pointSize and opacity were previously only honoured at construction,
         // so setOptions({pointSize}) silently did nothing and a size control
