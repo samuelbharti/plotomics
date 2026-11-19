@@ -70,3 +70,11 @@ test_that("bioheatmap() forwards a theme override", {
   expect_equal(w$x$options$theme$fontFamily, "serif")
   expect_null(bioheatmap(m)$x$options$theme)
 })
+
+test_that("bioheatmap() carries the colour bar title", {
+  m <- matrix(1:4, nrow = 2)
+  w <- bioheatmap(m, legend_title = "log2 expression")
+  expect_equal(w$x$options$legendTitle, "log2 expression")
+  # NULL drops the key, and the browser shows "value" or "z-score".
+  expect_null(bioheatmap(m)$x$options$legendTitle)
+})

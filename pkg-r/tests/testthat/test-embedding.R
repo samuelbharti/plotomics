@@ -111,3 +111,11 @@ test_that("embedding() carries the point scale mode", {
                "constant")
   expect_error(embedding(d, point_scale_mode = "log"), "should be one of")
 })
+
+test_that("embedding() takes every ramp the browser draws", {
+  df <- data.frame(x = 1:3, y = 1:3, color = c(0.1, 0.5, 0.9))
+  for (cm in c("viridis", "rdbu", "ltc", "ltcdiv")) {
+    expect_equal(embedding(df, colormap = cm)$x$options$colormap, cm)
+  }
+  expect_error(embedding(df, colormap = "magma"))
+})

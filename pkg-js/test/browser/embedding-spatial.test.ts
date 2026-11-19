@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { page } from "vitest/browser";
 import { createEmbedding } from "../../src/components/embedding.js";
 import { createSpatial } from "../../src/components/spatial.js";
-import type { PlotomicsInstance } from "../../src/core/index.js";
+import { type PlotomicsInstance, ramp } from "../../src/core/index.js";
+import { canvasPNG, drawnPixels } from "./helpers.js";
 
 function container(width = 500, height = 400) {
   const el = document.createElement("div");
@@ -210,6 +212,273 @@ describe("embedding legend and selection on re-render", () => {
     // A Shiny re-render: the same points, as a new object.
     plot.setData(pts());
     expect(plot.selectedIndices).toEqual(before);
+  });
+});
+
+/** RGB of a PNG at a point given in CSS px of a widget `cssWidth` wide. */
+async function pngPixel(
+  png: Blob,
+  cssWidth: number,
+  x: number,
+  y: number,
+): Promise<number[]> {
+  const bitmap = await createImageBitmap(png);
+  const k = bitmap.width / cssWidth;
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  const d = ctx.getImageData(Math.floor(x * k), Math.floor(y * k), 1, 1).data;
+  return [d[0] as number, d[1] as number, d[2] as number];
+}
+
+/** The widget as the screen shows it, as a PNG. */
+async function screenPNG(el: HTMLElement): Promise<Blob> {
+  const shot = await page.screenshot({ element: el, save: false });
+  const bytes = Uint8Array.from(atob(shot), (c) => c.charCodeAt(0));
+  return new Blob([bytes], { type: "image/png" });
+}
+
+const far = (a: number[], b: number[]) =>
+  Math.max(...a.map((v, i) => Math.abs(v - (b[i] as number))));
+
+/** A box of an element, relative to the widget. */
+function boxIn(el: HTMLElement, node: Element) {
+  const e = el.getBoundingClientRect();
+  const r = node.getBoundingClientRect();
+  return {
+    left: r.left - e.left,
+    right: r.right - e.left,
+    top: r.top - e.top,
+    bottom: r.bottom - e.top,
+  };
+}
+
+describe("embedding gridlines", () => {
+  // A dense block of large points over x from 0 to 5, and two points at
+  // x = 10 that stretch the axis: gridlines at 2 and 4 run through the
+  // block, the one at 8 through empty space.
+  function blockData() {
+    const x: number[] = [];
+    const y: number[] = [];
+    for (let i = 0; i <= 50; i += 1) {
+      for (let j = 0; j <= 80; j += 1) {
+        x.push((i / 50) * 5);
+        y.push((j / 80) * 10);
+      }
+    }
+    x.push(10, 10);
+    y.push(0, 10);
+    return { columns: { x, y } };
+  }
+
+  async function ready(el: HTMLElement) {
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(10_000);
+    await new Promise((r) => setTimeout(r, 300));
+  }
+
+  /** x of the gridline at a tick value, and the middle of the plot area. */
+  function gridAt(el: HTMLElement, value: string) {
+    const label = Array.from(el.querySelectorAll("svg text")).find(
+      (t) =>
+        t.textContent === value && t.getAttribute("text-anchor") === "middle",
+    ) as SVGTextElement;
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const plot = boxIn(el, canvas);
+    return {
+      x: Number(label.getAttribute("x")),
+      y: Math.round((plot.top + plot.bottom) / 2),
+    };
+  }
+
+  /**
+   * How far the pixels on the gridline at 2, inside the block of points,
+   * are from the points beside it; and how far the pixel on the gridline at
+   * 8, in empty space, is from the grid colour.
+   */
+  async function gridOf(el: HTMLElement, png: Blob) {
+    const inside = gridAt(el, "2");
+    const point = await pngPixel(png, 500, inside.x + 3, inside.y);
+    let across = 0;
+    for (const dx of [-1, 0, 1]) {
+      const p = await pngPixel(png, 500, inside.x + dx, inside.y);
+      across = Math.max(across, far(p, point));
+    }
+    const empty = gridAt(el, "8");
+    let grid = 255;
+    for (const dx of [-1, 0, 1]) {
+      const p = await pngPixel(png, 500, empty.x + dx, empty.y);
+      grid = Math.min(grid, far(p, [0xe5, 0xe7, 0xeb]));
+    }
+    return { across, grid, point };
+  }
+
+  const options = {
+    showAxes: true,
+    showLegend: false,
+    pointSize: 10,
+    pointScaleMode: "constant" as const,
+    opacity: 1,
+    padding: 0,
+  };
+
+  it("draws the gridlines under the points, on screen and in the PNG", async () => {
+    // Before the fix the gridlines were SVG lines over the canvas, so a
+    // pale line crossed every point under it.
+    const el = container(500, 400);
+    const plot = createEmbedding(el, { data: blockData(), options });
+    instances.push(plot);
+    await ready(el);
+    for (const png of [await screenPNG(el), await plot.exportPNG?.(1)]) {
+      const g = await gridOf(el, png as Blob);
+      // The block of points is drawn, not the white page.
+      expect(far(g.point, [255, 255, 255])).toBeGreaterThan(60);
+      expect(g.across).toBeLessThan(12);
+      expect(g.grid).toBeLessThan(12);
+    }
+  });
+
+  it("keeps the gridlines under the points in the SVG export", async () => {
+    const el = container(500, 400);
+    const plot = createEmbedding(el, { data: blockData(), options });
+    instances.push(plot);
+    await ready(el);
+    const doc = new DOMParser().parseFromString(
+      plot.exportSVG?.() ?? "",
+      "image/svg+xml",
+    );
+    const nodes = Array.from(doc.documentElement.children);
+    const image = nodes.findIndex((n) => n.localName === "image");
+    const isGrid = (n: Element) => n.getAttribute("stroke") === "#e5e7eb";
+    expect(image).toBeGreaterThan(0);
+    expect(nodes.slice(0, image).filter(isGrid).length).toBeGreaterThan(4);
+    expect(nodes.slice(image + 1).filter(isGrid)).toEqual([]);
+  });
+});
+
+describe("embedding legend gutter", () => {
+  const n = 400;
+  const xs = Array.from({ length: n }, (_, i) => (i * 37) % 101);
+  const ys = Array.from({ length: n }, (_, i) => (i * 53) % 97);
+  const clusters = xs.map((_, i) => `cluster ${(i % 6) + 1}`);
+
+  /** The plot area and the legend box, relative to the widget. */
+  function parts(el: HTMLElement) {
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const box = el.querySelector('svg rect[rx="4"]');
+    return {
+      plot: boxIn(el, canvas),
+      legend: box ? boxIn(el, box) : null,
+    };
+  }
+
+  for (const [kind, color] of [
+    ["categorical legend", clusters],
+    ["colour bar", xs.map((v) => v / 10)],
+  ] as const) {
+    it(`keeps the ${kind} right of the points, inside the widget`, async () => {
+      // Before the fix the legend sat inside the plot area, over points.
+      const el = container(500, 400);
+      instances.push(
+        createEmbedding(el, {
+          data: { columns: { x: xs, y: ys, color: color as string[] } },
+        }),
+      );
+      await expect
+        .poll(() => {
+          const p = parts(el);
+          return p.legend !== null && p.plot.right <= p.legend.left;
+        }, poll)
+        .toBe(true);
+      const p = parts(el);
+      expect(p.legend?.right).toBeLessThanOrEqual(500);
+      // The plot keeps most of the widget.
+      expect(p.plot.right - p.plot.left).toBeGreaterThan(300);
+    });
+  }
+
+  it("gives the gutter back when the legend is turned off", async () => {
+    const el = container(500, 400);
+    const plot = createEmbedding(el, {
+      data: { columns: { x: xs, y: ys, color: clusters } },
+    });
+    instances.push(plot);
+    await expect.poll(() => parts(el).legend !== null, poll).toBe(true);
+    const narrow = parts(el).plot.right;
+    expect(narrow).toBeLessThan(450);
+    plot.setOptions({ showLegend: false });
+    await expect.poll(() => parts(el).plot.right, poll).toBe(490);
+  });
+
+  it("cuts a long category name to keep the plot area", async () => {
+    const el = container(500, 400);
+    const long = "a cell type whose name runs on and on past any gutter";
+    instances.push(
+      createEmbedding(el, {
+        data: {
+          columns: {
+            x: xs,
+            y: ys,
+            color: xs.map((_, i) => (i % 2 ? long : "B cells")),
+          },
+        },
+      }),
+    );
+    await expect.poll(() => parts(el).legend !== null, poll).toBe(true);
+    const p = parts(el);
+    expect(p.plot.right).toBeLessThanOrEqual(p.legend?.left ?? 0);
+    expect(p.plot.right - p.plot.left).toBeGreaterThan(250);
+    expect(svgTexts(el).some((t) => t.endsWith("\u2026"))).toBe(true);
+  });
+});
+
+describe("embedding colour bar labels", () => {
+  it("labels round values inside the range, each at its value", async () => {
+    // Before the fix the bar read the raw ends and middle, such as
+    // "10.01", "5.01" and "2.7e-3".
+    const el = container(500, 400);
+    const values = Array.from({ length: 50 }, (_, i) =>
+      i === 0 ? 0.0027 : i === 49 ? 10.01 : (i / 49) * 10,
+    );
+    instances.push(
+      createEmbedding(el, {
+        data: {
+          columns: {
+            x: values.map((_, i) => i % 7),
+            y: values.map((_, i) => Math.floor(i / 7)),
+            color: values,
+          },
+        },
+        options: { colormap: "ltc" },
+      }),
+    );
+    const bar = () =>
+      (Array.from(el.querySelectorAll("svg text")) as SVGTextElement[]).filter(
+        (t) => t.getAttribute("text-anchor") === "start",
+      );
+    await expect
+      .poll(() => bar().map((t) => t.textContent), poll)
+      .toEqual(["2", "4", "6", "8", "10"]);
+    const y = (s: string) =>
+      Number(
+        bar()
+          .find((t) => t.textContent === s)
+          ?.getAttribute("y"),
+      );
+    expect(y("6")).toBeCloseTo((y("4") + y("8")) / 2, 6);
+    // The bar is drawn from the ramp asked for.
+    const stops = Array.from(el.querySelectorAll("stop")).map((s) =>
+      s.getAttribute("stop-color"),
+    );
+    expect(stops[0]).toBe(ramp("ltc")(0));
+    expect(stops[stops.length - 1]).toBe(ramp("ltc")(1));
   });
 });
 
