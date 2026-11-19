@@ -30,6 +30,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseFallbackHeight,
   textWidth,
   dpr,
   serializeSVG,
@@ -1141,6 +1142,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       });
     },
     destroy() {
+      releaseFallbackHeight(el);
       destroyed = true;
       loop.stop();
       refitAfterResize.cancel();

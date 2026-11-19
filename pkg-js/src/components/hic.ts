@@ -31,6 +31,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseFallbackHeight,
   dpr,
   serializeSVG,
   compositePNG,
@@ -1218,6 +1219,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       });
     },
     destroy() {
+      releaseFallbackHeight(el);
       canvas.removeEventListener("mousedown", onDown);
       window.removeEventListener("mouseup", onUp);
       el.removeEventListener("mousemove", onMove);

@@ -39,6 +39,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseFallbackHeight,
   textWidth,
   dpr,
   serializeSVG,
@@ -670,6 +671,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       }
     },
     destroy() {
+      releaseFallbackHeight(el);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();

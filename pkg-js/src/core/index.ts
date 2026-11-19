@@ -59,6 +59,7 @@ export {
   createTooltip,
   measure,
   autoResize,
+  releaseFallbackHeight,
   textWidth,
   fitText,
   dpr,

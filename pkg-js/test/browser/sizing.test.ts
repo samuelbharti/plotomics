@@ -259,3 +259,161 @@ describe("autoResize", () => {
     expect(el.hasAttribute(FALLBACK)).toBe(false);
   });
 });
+
+/** A heatmap, destroyed after the test. */
+function heat(el: HTMLElement) {
+  const plot = createHeatmap(el, { data: heatmapData });
+  instances.push(plot);
+  return plot;
+}
+
+/** The heights of two elements. */
+const el2 = (a: Element, b: Element) => [height(a), height(b)];
+
+/** Whether `after` starts at or below the bottom of `el`. */
+const below = (el: Element, after: Element) =>
+  after.getBoundingClientRect().top >= el.getBoundingClientRect().bottom;
+
+describe("an element drawn before it is added to the page", () => {
+  it("takes the fallback height without autoResize", async () => {
+    const el = document.createElement("div");
+    heat(el);
+    const after = paragraph();
+    document.body.append(el, after);
+    await frames();
+    expect(height(el)).toBe(480);
+    expect(svgHeight(el)).toBe(480);
+    expect(below(el, after)).toBe(true);
+  });
+
+  it("drops the fallback in a grid row, without autoResize", async () => {
+    const el = document.createElement("div");
+    heat(el);
+    const grid = document.createElement("div");
+    grid.style.cssText =
+      "display:grid;grid-template-rows:300px 100px;width:600px;";
+    const next = document.createElement("div");
+    grid.append(el, next);
+    document.body.appendChild(grid);
+    await frames();
+    expect(height(el)).toBe(300);
+    expect(el.hasAttribute(FALLBACK)).toBe(false);
+  });
+
+  it("lets a page rule of the lowest specificity win", async () => {
+    // A type selector, and a rule of zero specificity: both below an
+    // attribute selector such as [data-plotomics-fallback].
+    addStyle("section { height: 200px; } :where(.zero) { height: 210px; }");
+    const a = document.createElement("section");
+    heat(a);
+    const b = document.createElement("div");
+    b.className = "zero";
+    heat(b);
+    document.body.append(a, b);
+    // At once, by the cascade alone, before anything runs on the element.
+    expect(el2(a, b)).toEqual([200, 210]);
+    await frames();
+    expect(el2(a, b)).toEqual([200, 210]);
+  });
+
+  it("lets a height in a cascade layer win, as Tailwind writes them", async () => {
+    addStyle("@layer utilities { .h-64 { height: 256px; } }");
+    const el = document.createElement("div");
+    el.className = "h-64";
+    heat(el);
+    document.body.appendChild(el);
+    expect(height(el)).toBe(256);
+    await frames();
+    expect(height(el)).toBe(256);
+  });
+
+  it("takes the fallback height inside a shadow root, without autoResize", async () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = host.attachShadow({ mode: "open" });
+    const el = document.createElement("div");
+    heat(el);
+    const after = paragraph();
+    root.append(el, after);
+    await frames();
+    expect(height(el)).toBe(480);
+    expect(svgHeight(el)).toBe(480);
+    expect(below(el, after)).toBe(true);
+  });
+});
+
+describe("an element with padding and no CSS height", () => {
+  // The plot fills the content box: 480 px, with 8 px of padding above and
+  // below it.
+  it("is drawn at the fallback content height in the page", () => {
+    const el = document.createElement("div");
+    el.style.padding = "8px";
+    const after = paragraph();
+    document.body.append(el, after);
+    heat(el);
+    expect(el.clientHeight).toBe(496);
+    expect(svgHeight(el)).toBe(480);
+    expect(below(el, after)).toBe(true);
+  });
+
+  it("keeps the fallback when drawn before it is added, with autoResize", async () => {
+    const el = document.createElement("div");
+    el.style.padding = "8px";
+    const plot = heat(el);
+    const after = paragraph();
+    document.body.append(el, after);
+    stops.push(autoResize(el, plot));
+    await frames(6);
+    expect(el.clientHeight).toBe(496);
+    expect(svgHeight(el)).toBe(480);
+    expect(el.hasAttribute(FALLBACK)).toBe(true);
+    expect(below(el, after)).toBe(true);
+  });
+
+  it("gets the fallback from autoResize when shown from a hidden tab", async () => {
+    const tab = document.createElement("div");
+    tab.style.display = "none";
+    const el = document.createElement("div");
+    el.style.padding = "8px";
+    const after = paragraph();
+    tab.append(el, after);
+    document.body.appendChild(tab);
+    const plot = heat(el);
+    stops.push(autoResize(el, plot));
+    tab.style.display = "";
+    await frames(6);
+    expect(el.clientHeight).toBe(496);
+    expect(svgHeight(el)).toBe(480);
+    expect(below(el, after)).toBe(true);
+  });
+});
+
+describe("the fallback height", () => {
+  it("works in a page whose CSP blocks inline style elements", async () => {
+    const frame = document.createElement("iframe");
+    frame.style.cssText = "width:800px;height:700px;";
+    frame.srcdoc =
+      "<!doctype html><html><head>" +
+      `<meta http-equiv="Content-Security-Policy" content="style-src 'self'">` +
+      '</head><body><div id="p"></div><p id="q">below</p></body></html>';
+    document.body.appendChild(frame);
+    await new Promise((r) => frame.addEventListener("load", r, { once: true }));
+    const doc = frame.contentDocument as Document;
+    const el = doc.getElementById("p") as HTMLElement;
+    heat(el);
+    await frames();
+    expect(height(el)).toBe(480);
+    expect(below(el, doc.getElementById("q") as HTMLElement)).toBe(true);
+  });
+
+  it("is removed when the plot is destroyed", () => {
+    const el = document.createElement("div");
+    el.style.width = "600px";
+    document.body.appendChild(el);
+    const plot = createHeatmap(el, { data: heatmapData });
+    expect(height(el)).toBe(480);
+    plot.destroy();
+    expect(el.hasAttribute(FALLBACK)).toBe(false);
+    expect(height(el)).toBe(0);
+  });
+});

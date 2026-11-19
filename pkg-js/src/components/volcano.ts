@@ -20,6 +20,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseFallbackHeight,
   textWidth,
   dpr,
   serializeSVG,
@@ -787,6 +788,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       });
     },
     destroy() {
+      releaseFallbackHeight(el);
       destroyed = true;
       loop.stop();
       refitAfterResize.cancel();

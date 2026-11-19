@@ -191,3 +191,11 @@ def test_lollipop_keeps_a_missing_class_given_in_classes_as_r_does():
     w = Lollipop(d, length=100, classes=["Missense", None])
     assert w.data["columns"]["class"] == ["Missense", None]
     assert w.data["meta"]["classes"] == ["Missense", None]
+
+
+def test_lollipop_labels_none_for_label_top_n_minus_inf():
+    import math
+
+    # R gives an empty list, as for 0.
+    w = Lollipop(make_data(), length=393, label_top_n=-math.inf)
+    assert w.data["meta"]["labelIndex"] == []

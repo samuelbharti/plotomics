@@ -40,6 +40,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseFallbackHeight,
   dpr,
   serializeSVG,
   compositePNG,
@@ -940,6 +941,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       });
     },
     destroy() {
+      releaseFallbackHeight(el);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();

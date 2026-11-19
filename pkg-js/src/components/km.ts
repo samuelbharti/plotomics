@@ -41,6 +41,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseFallbackHeight,
   dpr,
   serializeSVG,
   compositePNG,
@@ -977,6 +978,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       });
     },
     destroy() {
+      releaseFallbackHeight(el);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();

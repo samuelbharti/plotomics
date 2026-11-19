@@ -49,6 +49,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseFallbackHeight,
   dpr,
   serializeSVG,
   compositePNG,
@@ -1126,6 +1127,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       });
     },
     destroy() {
+      releaseFallbackHeight(el);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();

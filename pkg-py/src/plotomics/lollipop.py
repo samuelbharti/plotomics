@@ -202,8 +202,9 @@ class Lollipop(PlotomicsWidget):
         # pick on its own. With label_top_n = 0 the list is sent empty: the
         # browser labels the top 12 when it gets no list at all.
         if lab is not None:
-            # min() takes math.inf down to the number of variants.
-            n_top = max(0, int(min(label_top_n, count.size)))
+            # min() takes math.inf down to the number of variants, and max()
+            # takes -math.inf up to none, before int() sees either.
+            n_top = int(max(0, min(label_top_n, count.size)))
             top = np.argsort(-count, kind="stable")[:n_top]
             meta["labelIndex"] = sorted(int(i) for i in top)
 

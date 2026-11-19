@@ -43,6 +43,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseFallbackHeight,
   dpr,
   serializeSVG,
   compositePNG,
@@ -673,6 +674,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
       });
     },
     destroy() {
+      releaseFallbackHeight(el);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();
