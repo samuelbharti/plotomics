@@ -144,8 +144,10 @@ be behind the tag.
   the pointer. (#214)
 - The clustermap, spatial and treemap colour bars and the volcano and embedding
   axes label round, exact values in one unit; very small or very narrow ranges
-  use one exponent form for the whole bar or axis. The volcano and embedding
-  margins widen to fit long labels deep in a zoom. (#218)
+  use one exponent form for the whole bar or axis. A bar with little room takes
+  a coarser step or shorter end labels, and leaves its labels out before it
+  would show two equal ones. The volcano and embedding margins widen to fit long
+  labels deep in a zoom. (#218, #219)
 - R `km()` labels strata without the variable names ("1, FALSE" where survfit
   writes "sex=1, I(age > 65)=FALSE"), and keeps survfit's names when they cannot
   be cut safely. A Cox model fit with several `newdata` rows draws one curve per
