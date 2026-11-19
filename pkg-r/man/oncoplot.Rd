@@ -32,7 +32,9 @@ oncoplot(
 \arguments{
 \item{alterations}{A data frame of altered pairs with columns \code{gene},
 \code{sample} and \code{class}. Unaltered pairs are simply absent; the full grid is
-reconstructed from \code{genes} and \code{samples}.}
+reconstructed from \code{genes} and \code{samples}. A row with a missing gene or
+sample is left out before anything is counted, so it adds no sample
+column, gene row or class.}
 
 \item{genes}{Character vector of genes, top row first. Defaults to the genes
 present in \code{alterations}, the gene altered in the most samples first.}
@@ -46,10 +48,9 @@ to count unaltered samples of the cohort too.}
 legend order and the colour assignment. Defaults to the classes present,
 most frequent first, equal counts by name in code point order, as in
 Python. A missing class (\code{NA}) stops with an error, unless \code{classes}
-holds \code{NA} too: then it is a class of its own, sent as null. A row with a
-missing gene or sample is left out. A gene and sample with two or more
-different classes is drawn as \code{"Multi-hit"}, in dark grey, which is added
-to the classes when it occurs.}
+holds \code{NA} too: then it is a class of its own, sent as null. A gene and
+sample with two or more different classes is drawn as \code{"Multi-hit"}, in
+dark grey, which is added to the classes when it occurs.}
 
 \item{class_colors}{Character vector of hex colours, one per entry of
 \code{classes}. \code{NULL} uses the component's categorical palette.}
@@ -61,7 +62,11 @@ Defaults to the number of altered genes per sample.}
 with \code{name} (character scalar), \code{values} and an optional \code{colors}.
 \code{values} is a vector named by sample id, matched to the columns by name.
 An unnamed vector is read in the order of \code{samples}, so it needs
-\code{samples} to be given.}
+\code{samples} to be given. The levels of a strip, in legend order, are the
+levels of a factor, unused ones included, and otherwise the distinct
+values in code point order, as in Python. Named \code{colors} go to the level
+of the same name, whatever their order, and every level needs one.
+Unnamed \code{colors} go to the levels in that order.}
 
 \item{show_burden, show_frequency, show_annotations, show_legend}{Toggle the
 surrounding panels.}
@@ -83,7 +88,10 @@ component defaults in the browser.
 Its \code{padding} entry is the space in px between the edge of the widget
 and the plot: one number for every side, or numbers named \code{top},
 \code{right}, \code{bottom} and \code{left} in a list or vector, a side left out
-keeping the default of 10.}
+keeping the default of 10.
+Its \code{categorical} entry is an ordered palette: the colours go to the
+alteration classes in order, and names on the colours are not matched to
+them.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 

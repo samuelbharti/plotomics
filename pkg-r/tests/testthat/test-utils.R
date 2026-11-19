@@ -98,12 +98,42 @@ test_that("the hook leaves the payload users inspect unchanged", {
   expect_false(inherits(w$x$data$columns$x, "AsIs"))
 })
 
+test_that("a named palette goes to the browser as its colours in order", {
+  df <- data.frame(x = 1:3, y = 1:3, color = c("T", "B", "NK"))
+  pal <- c(T = "#ff0000", B = "#0000ff", NK = "#00aa00")
+  # Before the fix it went as an object, which the browser does not read as
+  # a palette, so the plot drew its default colours.
+  json <- rendered_json(embedding(df, theme = list(categorical = pal)))
+  expect_match(json, '"categorical":["#ff0000","#0000ff","#00aa00"]',
+               fixed = TRUE)
+  json <- rendered_json(embedding(df, theme = list(categorical = as.list(pal))))
+  expect_match(json, '"categorical":["#ff0000","#0000ff","#00aa00"]',
+               fixed = TRUE)
+  json <- rendered_json(embedding(df, theme = list(categorical = c(T = "#ff0000"))))
+  expect_match(json, '"categorical":["#ff0000"]', fixed = TRUE)
+  # Other theme entries lose their names too, and stay scalars.
+  json <- rendered_json(volcano(df, theme = list(
+    background = c(bg = "#000000"), fontSize = c(size = 14),
+    padding = c(top = 4)
+  )))
+  expect_match(json, '"background":"#000000"', fixed = TRUE)
+  expect_match(json, '"fontSize":14', fixed = TRUE)
+  expect_match(json, '"padding":{"top":4}', fixed = TRUE)
+  # htmlwidgets serialises with keep_vec_names, which warns about a named
+  # vector; nothing named is left for it to warn about.
+  w <- embedding(df, theme = list(categorical = pal))
+  expect_silent(htmlwidgets:::toJSON(w$preRenderHook(w)$x))
+})
+
 test_that("a theme given as a named vector still renders", {
   w <- volcano(
     data.frame(x = 1:3, y = 1:3),
     theme = c(background = "#000000", foreground = "#ffffff")
   )
   expect_no_error(w$preRenderHook(w))
+  json <- rendered_json(w)
+  expect_match(json, '"theme":{"background":"#000000","foreground":"#ffffff"}',
+               fixed = TRUE)
 })
 
 test_that("each plot has one default height, as in Shiny and Python", {

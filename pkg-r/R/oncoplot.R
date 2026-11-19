@@ -15,7 +15,9 @@
 #'
 #' @param alterations A data frame of altered pairs with columns `gene`,
 #'   `sample` and `class`. Unaltered pairs are simply absent; the full grid is
-#'   reconstructed from `genes` and `samples`.
+#'   reconstructed from `genes` and `samples`. A row with a missing gene or
+#'   sample is left out before anything is counted, so it adds no sample
+#'   column, gene row or class.
 #' @param genes Character vector of genes, top row first. Defaults to the genes
 #'   present in `alterations`, the gene altered in the most samples first.
 #' @param samples Character vector of samples, left column first. Defaults to
@@ -26,10 +28,9 @@
 #'   legend order and the colour assignment. Defaults to the classes present,
 #'   most frequent first, equal counts by name in code point order, as in
 #'   Python. A missing class (`NA`) stops with an error, unless `classes`
-#'   holds `NA` too: then it is a class of its own, sent as null. A row with a
-#'   missing gene or sample is left out. A gene and sample with two or more
-#'   different classes is drawn as `"Multi-hit"`, in dark grey, which is added
-#'   to the classes when it occurs.
+#'   holds `NA` too: then it is a class of its own, sent as null. A gene and
+#'   sample with two or more different classes is drawn as `"Multi-hit"`, in
+#'   dark grey, which is added to the classes when it occurs.
 #' @param class_colors Character vector of hex colours, one per entry of
 #'   `classes`. `NULL` uses the component's categorical palette.
 #' @param burden Numeric vector, one value per sample, for the top barplot.
@@ -38,7 +39,11 @@
 #'   with `name` (character scalar), `values` and an optional `colors`.
 #'   `values` is a vector named by sample id, matched to the columns by name.
 #'   An unnamed vector is read in the order of `samples`, so it needs
-#'   `samples` to be given.
+#'   `samples` to be given. The levels of a strip, in legend order, are the
+#'   levels of a factor, unused ones included, and otherwise the distinct
+#'   values in code point order, as in Python. Named `colors` go to the level
+#'   of the same name, whatever their order, and every level needs one.
+#'   Unnamed `colors` go to the levels in that order.
 #' @param show_burden,show_frequency,show_annotations,show_legend Toggle the
 #'   surrounding panels.
 #' @param empty_color Fill for a gene x sample cell with no alteration.
@@ -55,6 +60,9 @@
 #'   and the plot: one number for every side, or numbers named `top`,
 #'   `right`, `bottom` and `left` in a list or vector, a side left out
 #'   keeping the default of 10.
+#'   Its `categorical` entry is an ordered palette: the colours go to the
+#'   alteration classes in order, and names on the colours are not matched to
+#'   them.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.
@@ -102,6 +110,13 @@ oncoplot <- function(alterations,
   alt_gene <- as.character(alterations$gene)
   alt_sample <- as.character(alterations$sample)
   alt_class <- as.character(alterations$class)
+  # A row with no gene or no sample names no cell. It is left out before
+  # anything is counted, so it adds no column, row, class or Multi-hit.
+  named <- !is.na(alt_gene) & !is.na(alt_sample)
+  alt_gene <- alt_gene[named]
+  alt_sample <- alt_sample[named]
+  alt_class <- alt_class[named]
+  bv_require_nonempty(length(alt_gene), "alterations")
 
   if (is.null(classes)) {
     classes <- bv_by_frequency(alt_class)
@@ -119,12 +134,9 @@ oncoplot <- function(alterations,
   }
 
   # A gene and sample with two or more different classes is one cell, drawn
-  # as "Multi-hit"; otherwise the last row would win without a word. A row
-  # with no gene or no sample names no cell, so it makes no Multi-hit.
+  # as "Multi-hit"; otherwise the last row would win without a word.
   pair <- paste(alt_gene, alt_sample, sep = "\r")
-  has_cell <- !is.na(alt_gene) & !is.na(alt_sample)
-  n_class <- tapply(alt_class[has_cell], pair[has_cell],
-                    function(x) length(unique(x)))
+  n_class <- tapply(alt_class, pair, function(x) length(unique(x)))
   multi <- names(n_class)[n_class > 1L]
   if (length(multi) > 0L) {
     if (!MULTI_HIT %in% classes) {
@@ -135,7 +147,10 @@ oncoplot <- function(alterations,
   }
 
   samples_given <- !is.null(samples)
-  ord <- oncoplot_memo_sort(alterations, genes = genes, samples = samples)
+  ord <- oncoplot_memo_sort(
+    data.frame(gene = alt_gene, sample = alt_sample, stringsAsFactors = FALSE),
+    genes = genes, samples = samples
+  )
   genes <- ord$genes
   samples <- ord$samples
   nrows <- length(genes)
@@ -209,9 +224,14 @@ oncoplot <- function(alterations,
           "annotation '%s' must have one value per sample.", a$name
         ), call. = FALSE)
       }
-      values <- as.character(unname(values))
-      # Levels in code point order, as Python sorts them.
-      f <- factor(values, levels = bv_sort_text(values))
+      # A factor states the level order, as a pandas Categorical does in
+      # Python. Other values take code point order, as Python sorts them.
+      levs <- if (is.factor(values)) {
+        levels(values)
+      } else {
+        bv_sort_text(as.character(values))
+      }
+      f <- factor(as.character(unname(values)), levels = levs)
       out <- list(
         name = as.character(a$name)[1],
         # I() keeps a single level, or a single sample, from unboxing to a
@@ -219,7 +239,9 @@ oncoplot <- function(alterations,
         levels = I(levels(f)),
         codes = I(ifelse(is.na(f), -1L, as.integer(f) - 1L))
       )
-      if (!is.null(a$colors)) out$colors <- I(as.character(a$colors))
+      if (!is.null(a$colors)) {
+        out$colors <- I(bv_level_colors(a$colors, levels(f), out$name))
+      }
       out
     })
   }
@@ -278,6 +300,10 @@ oncoplot <- function(alterations,
 oncoplot_memo_sort <- function(alterations, genes = NULL, samples = NULL) {
   g <- as.character(alterations$gene)
   s <- as.character(alterations$sample)
+  # A row with no gene or no sample counts for neither, as in oncoplot().
+  named <- !is.na(g) & !is.na(s)
+  g <- g[named]
+  s <- s[named]
 
   if (is.null(genes)) {
     # Rank genes by the number of samples they are altered in, not by rows:
@@ -303,6 +329,33 @@ oncoplot_memo_sort <- function(alterations, genes = NULL, samples = NULL) {
     samples <- as.character(samples)
   }
   list(genes = genes, samples = samples)
+}
+
+#' Annotation colours in the order of the levels
+#'
+#' The browser gives level i the colour i. Named colours are put in level
+#' order by name, so a named vector in any order colours the right levels;
+#' each level needs one. Unnamed colours are taken in the order given.
+#'
+#' @param colors The `colors` of one annotation: a vector or a list.
+#' @param levels The levels of the annotation, in legend order.
+#' @param name The annotation name, for the error message.
+#' @return A character vector of colours.
+#' @noRd
+bv_level_colors <- function(colors, levels, name) {
+  nms <- names(colors)
+  colors <- as.character(unlist(colors, use.names = FALSE))
+  if (is.null(nms)) {
+    return(colors)
+  }
+  missing <- setdiff(levels, nms)
+  if (length(missing) > 0L) {
+    stop(sprintf(
+      "annotation '%s' has no colour for level(s): %s", name,
+      paste(utils::head(missing, 5), collapse = ", ")
+    ), call. = FALSE)
+  }
+  colors[match(levels, nms)]
 }
 
 #' Shiny bindings for oncoplot

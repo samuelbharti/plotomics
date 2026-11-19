@@ -13,7 +13,13 @@
 #'
 #' @param data Either a `survival::survfit` object, or a data frame with numeric
 #'   `time` and `surv` columns and optional `lower`, `upper` and `group`
-#'   columns. Within a stratum, rows must be in ascending time order.
+#'   columns. Within a stratum, rows must be in ascending time order. A row
+#'   with a missing `time` or `surv` (`NA` or `NaN`) is left out with a
+#'   warning, so the step before it runs on to the next row. A `survfit`
+#'   stratum is named by its levels alone: `"sex=1, ph.ecog=0"` becomes
+#'   `"1, 0"`. A `survfit` of a Cox model with several `newdata` rows draws
+#'   one curve per row, named by the row names of `newdata` (`"1"`, `"2"`,
+#'   ... unless set).
 #' @param groups Character vector fixing the stratum order and colour
 #'   assignment. Defaults to order of appearance.
 #' @param group_colors One hex colour per stratum. `NULL` uses the component's
@@ -36,6 +42,8 @@
 #'   and the plot: one number for every side, or numbers named `top`,
 #'   `right`, `bottom` and `left` in a list or vector, a side left out
 #'   keeping the default of 10.
+#'   Its `categorical` entry is an ordered palette: the colours go to the strata
+#'   in order, and names on the colours are not matched to them.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @param censor Optional data frame of censoring ticks, with numeric `time`
@@ -88,8 +96,21 @@ km <- function(data,
   bv_require_nonempty(nrow(data), "data")
 
   time <- bv_require_numeric(data$time, "time")
-  bv_check_finite(time, "time")
   surv <- bv_require_numeric(data$surv, "surv")
+  # A row with no time or no estimate has no place on the curve. Drawn, it
+  # would join its neighbours with a slope; left out, the step before it runs
+  # on to the next row. Python leaves it out with the same warning.
+  gone <- is.na(time) | is.na(surv)
+  if (any(gone)) {
+    warning(sprintf(
+      "Left out %d row(s) with a missing `time` or `surv`.", sum(gone)
+    ), call. = FALSE)
+    data <- as.data.frame(data)[!gone, , drop = FALSE]
+    time <- time[!gone]
+    surv <- surv[!gone]
+    bv_require_nonempty(nrow(data), "data")
+  }
+  bv_check_finite(time, "time")
   bv_check_finite(surv, "surv")
   if (any(surv < 0 | surv > 1)) {
     stop("`surv` must be a probability in [0, 1].", call. = FALSE)
@@ -199,25 +220,52 @@ km <- function(data,
 #' @return A list with `curves`, `censor`, `risk_times` and `risk_counts`.
 #' @noRd
 bv_tidy_survfit <- function(fit, risk_times = NULL) {
+  if (is.null(fit$surv)) {
+    stop("`data` is a survfit object without survival estimates (`surv`).",
+         call. = FALSE)
+  }
   n <- length(fit$time)
   # A fit with no `strata` is a single unstratified curve.
-  group <- if (is.null(fit$strata)) {
+  stratum <- if (is.null(fit$strata)) {
     rep("all", n)
   } else {
-    # Strata names arrive as "subtype=LumA"; the variable name is noise here.
-    labs <- sub("^[^=]*=", "", names(fit$strata))
-    rep(labs, times = as.integer(fit$strata))
+    rep(bv_strata_labels(names(fit$strata)), times = as.integer(fit$strata))
+  }
+  # A Cox model predicted for several `newdata` rows holds one column of
+  # estimates per row, all at the same times. Each column is a curve of its
+  # own, named by its row of `newdata`.
+  surv <- as.matrix(fit$surv)
+  k <- ncol(surv)
+  curve <- colnames(surv)
+  if (is.null(curve)) curve <- as.character(seq_len(k))
+  group <- if (k == 1L) {
+    stratum
+  } else if (is.null(fit$strata)) {
+    rep(curve, each = n)
+  } else {
+    paste(rep(stratum, times = k), rep(curve, each = n), sep = ", ")
   }
   levs <- unique(group)
+  # Every curve's values one after the other: a matrix column by column, and
+  # a vector all curves share (the times, the counts) once for each curve.
+  per_curve <- function(v) {
+    if (is.null(v)) return(NULL)
+    v <- as.matrix(v)
+    if (ncol(v) == k) as.numeric(v) else rep(as.numeric(v[, 1L]), times = k)
+  }
+  time <- rep(as.numeric(fit$time), times = k)
+  surv <- as.numeric(surv)
+  n_risk <- per_curve(fit$n.risk)
+  n_censor <- per_curve(fit$n.censor)
 
   curves <- data.frame(
-    time = as.numeric(fit$time),
-    surv = as.numeric(fit$surv),
+    time = time,
+    surv = surv,
     group = factor(group, levels = levs),
     stringsAsFactors = FALSE
   )
-  if (!is.null(fit$lower)) curves$lower <- as.numeric(fit$lower)
-  if (!is.null(fit$upper)) curves$upper <- as.numeric(fit$upper)
+  if (!is.null(fit$lower)) curves$lower <- per_curve(fit$lower)
+  if (!is.null(fit$upper)) curves$upper <- per_curve(fit$upper)
 
   # Every curve starts at 1 before the first event; survfit does not store that
   # row, and without it the step begins partway down.
@@ -232,11 +280,11 @@ bv_tidy_survfit <- function(fit, risk_times = NULL) {
   curves <- rbind(starts, curves)
   curves <- curves[order(curves$group, curves$time), , drop = FALSE]
 
-  censor <- if (!is.null(fit$n.censor)) {
-    keep <- fit$n.censor > 0
+  censor <- if (!is.null(n_censor)) {
+    keep <- n_censor > 0
     data.frame(
-      time = as.numeric(fit$time[keep]),
-      surv = as.numeric(fit$surv[keep]),
+      time = time[keep],
+      surv = surv[keep],
       group = group[keep],
       stringsAsFactors = FALSE
     )
@@ -254,8 +302,8 @@ bv_tidy_survfit <- function(fit, risk_times = NULL) {
   # risk at grid time t is the one attached to the first step at or after t.
   counts <- vapply(levs, function(g) {
     idx <- which(group == g)
-    tt <- fit$time[idx]
-    nr <- fit$n.risk[idx]
+    tt <- time[idx]
+    nr <- n_risk[idx]
     vapply(risk_times, function(t) {
       j <- which(tt >= t)
       if (length(j) == 0L) 0L else as.integer(nr[j[1]])
@@ -268,6 +316,22 @@ bv_tidy_survfit <- function(fit, risk_times = NULL) {
 
   list(curves = curves, censor = censor,
        risk_times = risk_times, risk_counts = risk_counts)
+}
+
+#' Stratum names without their variable names
+#'
+#' survfit names a stratum after each variable and its level, as in
+#' `"sex=1, I(age > 65)=FALSE"`, padded with spaces to a common width. Only
+#' the levels are kept, so that one reads `"1, FALSE"`. A variable name may
+#' hold `==`, `<=`, `>=` or `!=`, as `I(age >= 65)` does; the `=` that ends
+#' the name is the first one that is not part of such an operator.
+#'
+#' @param x Stratum names, `names(fit$strata)`.
+#' @return The levels of each name, joined by ", ".
+#' @noRd
+bv_strata_labels <- function(x) {
+  name <- "(^|, )(?:[^=]|(?<=[<>!])=|==)*?(?<![<>!=])=(?!=)"
+  trimws(gsub(name, "\\1", x, perl = TRUE))
 }
 
 #' Shiny bindings for km

@@ -9,7 +9,8 @@
 #'   (`-log10` p-value). An optional `label` column supplies gene names for
 #'   tooltips and top-hit labels. A `y` of `Inf` (p = 0) is drawn just above
 #'   the highest finite value and counts as significant. Rows with `NA` or
-#'   `NaN` in `x` or `y` are not drawn.
+#'   `NaN` in `x` or `y`, or a `y` of `-Inf`, are not drawn, with a warning
+#'   that counts them; Python gives the same warning.
 #' @param fc_threshold Absolute log2 fold-change cutoff for calling a hit.
 #' @param p_threshold P-value cutoff (applied on the `-log10` scale).
 #' @param point_size Point radius in pixels.
@@ -20,6 +21,8 @@
 #' @param x_label,y_label Axis titles.
 #' @param show_threshold_lines Draw the fold-change / p-value threshold guides.
 #' @param label_top_n Number of top up- and down-regulated genes to label.
+#'   `Inf` labels every up- and down-regulated gene, as in [lollipop()]; `0`
+#'   labels none.
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
 #'   merged over the component defaults in the browser. `NULL` uses the default
 #'   theme.
@@ -65,9 +68,21 @@ volcano <- function(data,
   bv_check_finite(x, "x")
   y <- bv_require_numeric(data$y, "y")
   # -log10(0) is Inf (p = 0). Those genes are kept and drawn at the top. JSON
-  # has no Inf, so their rows go in `meta`; only NA and NaN are warned about.
+  # has no Inf, so their rows go in `meta`. The warning counts only the rows
+  # the browser leaves out, with the words Python uses.
   y_inf <- which(is.infinite(y) & y > 0)
-  bv_check_finite(y[!(is.infinite(y) & y > 0)], "y")
+  y_gone <- sum(is.na(y) | (is.infinite(y) & y < 0))
+  if (y_gone > 0L) {
+    warning(sprintf(paste0(
+      "`y` has %d value(s) that are missing (NA or NaN) or -Inf; those rows ",
+      "are not drawn."
+    ), y_gone), call. = FALSE)
+  }
+  # JSON has no Inf either, so Inf labels are asked for as one per gene.
+  if (is.numeric(label_top_n) && length(label_top_n) == 1L &&
+      is.infinite(label_top_n)) {
+    label_top_n <- if (label_top_n > 0) nrow(data) else 0L
+  }
 
   columns <- list(x = x, y = y)
   if (!is.null(data$label)) {

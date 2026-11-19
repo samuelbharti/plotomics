@@ -11,6 +11,9 @@ export interface PlotomicsTheme {
    * Categorical palette. The default is Okabe-Ito (colour-blind safe, 8
    * colours); past 8 categories the components switch to {@link PALETTE_20}.
    * A palette set here is used as given, its colours repeating past its end.
+   * It is an ordered list: the first colour goes to the first group, category
+   * or class in the plot's order, the second to the second, and so on. Colours
+   * are never matched to groups by name.
    */
   categorical: string[];
   /**

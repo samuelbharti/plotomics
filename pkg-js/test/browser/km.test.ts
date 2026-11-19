@@ -343,6 +343,121 @@ describe("km in a browser", () => {
   });
 });
 
+describe("km rows with a missing time or survival", () => {
+  /** Whether the canvas has curve ink within 2 px of (x, y). */
+  function inkNear(el: HTMLElement, x: number, y: number): boolean {
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+    const ratio = canvas.width / canvas.clientWidth;
+    for (let dy = -2; dy <= 2; dy += 1) {
+      const [r, g, b] = ctx.getImageData(
+        Math.round(x * ratio),
+        Math.round((y + dy) * ratio),
+        1,
+        1,
+      ).data;
+      const white = r === 255 && g === 255 && b === 255;
+      const grid = r === 0xe5 && g === 0xe7 && b === 0xeb;
+      if (!white && !grid) return true;
+    }
+    return false;
+  }
+
+  /** y at survival `v`, from the 50% and 75% tick positions. */
+  function survY(el: HTMLElement, v: number): number {
+    const y50 = tickY(el, "50%");
+    const y75 = tickY(el, "75%");
+    return y50 + ((v - 0.5) / 0.25) * (y75 - y50);
+  }
+
+  /** x at time `t`, from the 0 and 12 tick positions. */
+  function timeX(el: HTMLElement, t: number): number {
+    const x0 = tickX(el, "0");
+    return x0 + ((tickX(el, "12") - x0) * t) / 12;
+  }
+
+  const riskTimes = [0, 2, 4, 6, 8, 10, 12];
+
+  for (const [what, missing] of [
+    ["NaN", Number.NaN],
+    ["null, as R sends NA", null],
+  ] as const) {
+    it(`holds the step across a survival of ${what}`, () => {
+      const el = container();
+      const km = createKm(el, {
+        data: {
+          columns: {
+            time: [0, 4, 8, 12],
+            surv: [1, 0.8, missing, 0.4] as unknown as number[],
+          },
+          meta: { riskTimes },
+        },
+        options: { showCI: false },
+      });
+      instances.push(km);
+      // The curve holds 80% from 4 to 12, then steps down to 40%. Before
+      // the fix NaN drew a slope through 60% at 10, and null dropped the
+      // curve to 0% at 8.
+      expect(inkNear(el, timeX(el, 10), survY(el, 0.8))).toBe(true);
+      expect(inkNear(el, timeX(el, 10), survY(el, 0.6))).toBe(false);
+      expect(inkNear(el, timeX(el, 10), survY(el, 0))).toBe(false);
+      expect(inkNear(el, timeX(el, 12), survY(el, 0.6))).toBe(true);
+    });
+  }
+
+  for (const [what, missing] of [
+    ["NaN", Number.NaN],
+    ["null, as R sends NA", null],
+  ] as const) {
+    it(`leaves a gap in the band where a bound is ${what}`, () => {
+      const el = container();
+      const km = createKm(el, {
+        data: {
+          columns: {
+            time: [0, 4, 8, 12],
+            surv: [1, 0.8, 0.6, 0.4],
+            lower: [1, 0.7, missing, 0.3] as unknown as number[],
+            upper: [1, 0.9, 0.75, 0.5],
+          },
+          meta: { riskTimes },
+        },
+      });
+      instances.push(km);
+      // From 4 to 8 the band spans 70% to 90%.
+      expect(inkNear(el, timeX(el, 6), survY(el, 0.85))).toBe(true);
+      // From 8 to 12 the lower bound is missing: no band, and the curve
+      // holds 60%. Before the fix null pulled the band down to 0 there, and
+      // NaN drew it across the gap, through 70% at 10.
+      expect(inkNear(el, timeX(el, 10), survY(el, 0.6))).toBe(true);
+      expect(inkNear(el, timeX(el, 10), survY(el, 0.7))).toBe(false);
+      expect(inkNear(el, timeX(el, 10), survY(el, 0.2))).toBe(false);
+    });
+  }
+
+  it("leaves out a row with no time, and hovers at the step before it", () => {
+    const el = container();
+    const km = createKm(el, {
+      data: {
+        columns: {
+          time: [0, 4, null, 12, 0, 6] as unknown as number[],
+          surv: [1, 0.8, 0.6, 0.4, 1, 0.9],
+          group: ["T", "T", "T", "T", "C", "C"],
+        },
+        meta: { riskTimes },
+      },
+      options: { showCI: false },
+    });
+    instances.push(km);
+    // Before the fix the row with no time sorted to 0, so T read 60% from
+    // the start and ran back and forth.
+    expect(inkNear(el, timeX(el, 10), survY(el, 0.8))).toBe(true);
+    expect(inkNear(el, timeX(el, 2), survY(el, 0.6))).toBe(false);
+    const tip = hoverAt(el, timeX(el, 5), survY(el, 0.5));
+    expect(tip).toContain("T 80%");
+    expect(tip).toContain("C 100%");
+  });
+});
+
 describe("km survival ticks on a short panel", () => {
   // The km of the padding tests: three strata and a risk table, which
   // leave a panel 40 px high in a widget of 200 or 160 px at a 16 px font.

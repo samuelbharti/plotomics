@@ -84,6 +84,8 @@ class Violin(PlotomicsWidget):
         and the plot: one number for every side, or a dict with any of the
         keys ``top``, ``right``, ``bottom`` and ``left``, a side left out
         keeping the default of 10.
+        Its ``categorical`` entry is an ordered palette, a list of colours
+        that go to the groups in order; colours are not matched by name.
     height:
         Initial widget height in CSS pixels.
     """

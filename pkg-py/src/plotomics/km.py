@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import numpy as np
@@ -36,7 +37,10 @@ class Km(PlotomicsWidget):
     data:
         A pandas ``DataFrame`` or mapping of arrays with numeric ``time`` and
         ``surv`` columns and optional ``lower``, ``upper`` and ``group``
-        columns. Within a stratum, rows must be in ascending time order.
+        columns. Within a stratum, rows must be in ascending time order. A
+        row with a missing ``time`` or ``surv`` (None or NaN) is left out
+        with a warning, as in R, so the step before it runs on to the next
+        row.
     groups:
         Fixes the stratum order and colour assignment. Defaults to order of
         appearance, or to a pandas Categorical's categories.
@@ -68,6 +72,8 @@ class Km(PlotomicsWidget):
         and the plot: one number for every side, or a dict with any of the
         keys ``top``, ``right``, ``bottom`` and ``left``, a side left out
         keeping the default of 10.
+        Its ``categorical`` entry is an ordered palette, a list of colours
+        that go to the strata in order; colours are not matched by name.
     height:
         Initial widget height in CSS pixels.
 
@@ -115,20 +121,43 @@ class Km(PlotomicsWidget):
         surv = _to_float32(s, "surv")
         if time.size == 0:
             raise ValueError("`data` must contain at least one row.")
-        if np.any(surv < 0) or np.any(surv > 1):
-            raise ValueError("`surv` must be a probability in [0, 1].")
 
         numeric: dict[str, Any] = {"time": time, "surv": surv}
         for name in ("lower", "upper"):
             col = _column(data, name)
             if col is not None:
                 numeric[name] = _to_float32(col, name)
-        buffer, schema = pack_columns(numeric)
-
-        json_columns: dict[str, list] = {}
         grp_col = _column(data, "group")
         # A missing group crosses as null (no curve), never as a group "nan".
         grp = _text_or_none(grp_col) if grp_col is not None else None
+
+        # A row with no time or no estimate has no place on the curve. Drawn,
+        # it would join its neighbours with a slope; left out, the step
+        # before it runs on to the next row. R leaves it out with the same
+        # warning. Columns of another length are left to pack_columns, which
+        # names them.
+        if time.size == surv.size:
+            keep = ~(np.isnan(time) | np.isnan(surv))
+            if not keep.all():
+                warnings.warn(
+                    f"Left out {int(keep.size - keep.sum())} row(s) with a "
+                    "missing `time` or `surv`.",
+                    stacklevel=2,
+                )
+                if not keep.any():
+                    raise ValueError("`data` must contain at least one row.")
+                numeric = {
+                    k: v[keep] if v.size == keep.size else v
+                    for k, v in numeric.items()
+                }
+                if grp is not None and len(grp) == keep.size:
+                    grp = [g for g, k in zip(grp, keep) if k]
+        surv = numeric["surv"]
+        if np.any(surv < 0) or np.any(surv > 1):
+            raise ValueError("`surv` must be a probability in [0, 1].")
+        buffer, schema = pack_columns(numeric)
+
+        json_columns: dict[str, list] = {}
         if grp is not None:
             json_columns["group"] = grp
 

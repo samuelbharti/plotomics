@@ -207,3 +207,99 @@ test_that("km() matches censor columns by their exact names", {
     "`censor` must be a data frame with `time` and `surv`"
   )
 })
+
+test_that("km() draws one curve per newdata row of a Cox model", {
+  skip_if_not_installed("survival")
+  lung <- survival::lung
+  model <- survival::coxph(survival::Surv(time, status) ~ age, data = lung)
+  fit <- survival::survfit(model, newdata = data.frame(age = c(50, 70)))
+  w <- km(fit)
+  cols <- w$x$data$columns
+  meta <- w$x$data$meta
+  # Before the fix the two columns of estimates were read as one curve.
+  expect_equal(as.character(meta$groups), c("1", "2"))
+  for (j in 1:2) {
+    rows <- cols$group == as.character(j)
+    expect_equal(cols$time[rows], c(0, fit$time))
+    expect_equal(cols$surv[rows], c(1, unname(fit$surv[, j])))
+    expect_equal(cols$lower[rows], c(1, unname(fit$lower[, j])))
+    expect_equal(cols$upper[rows], c(1, unname(fit$upper[, j])))
+  }
+  # Each curve has the at-risk counts of the data, so both rows are the same.
+  n_times <- length(meta$riskTimes)
+  counts <- matrix(as.integer(meta$riskCounts), nrow = 2, byrow = TRUE)
+  expect_equal(ncol(counts), n_times)
+  expect_equal(counts[1, ], counts[2, ])
+  expect_equal(counts[1, 1], nrow(lung))
+  # A censoring tick for each curve at each censored time.
+  expect_length(meta$censorTime, 2L * sum(fit$n.censor > 0))
+
+  # Row names of newdata name the curves.
+  nd <- data.frame(age = c(50, 70), row.names = c("age 50", "age 70"))
+  w <- km(survival::survfit(model, newdata = nd))
+  expect_equal(as.character(w$x$data$meta$groups), c("age 50", "age 70"))
+
+  # A stratified model gives a curve per stratum and newdata row.
+  strat <- survival::coxph(
+    survival::Surv(time, status) ~ age + survival::strata(sex), data = lung
+  )
+  w <- km(survival::survfit(strat, newdata = nd))
+  expect_equal(
+    as.character(w$x$data$meta$groups),
+    c("1, age 50", "2, age 50", "1, age 70", "2, age 70")
+  )
+})
+
+test_that("km() names a stratum of two variables by its levels alone", {
+  skip_if_not_installed("survival")
+  d <- data.frame(
+    t = c(5, 8, 12, 20, 3, 9, 14, 25),
+    e = c(1, 0, 1, 1, 1, 1, 0, 1),
+    sex = rep(c(1, 2), each = 4),
+    age = rep(c(60, 70), times = 4)
+  )
+  fit <- survival::survfit(survival::Surv(t, e) ~ sex + I(age > 65), data = d)
+  # survfit names them "sex=1, I(age > 65)=FALSE", padded with spaces.
+  expect_equal(
+    as.character(km(fit)$x$data$meta$groups),
+    c("1, FALSE", "1, TRUE", "2, FALSE", "2, TRUE")
+  )
+  # An operator with "=" in a variable name stays part of the name.
+  expect_equal(
+    bv_strata_labels(c(
+      "I(age >= 65)=TRUE, ph.ecog=1", "I(x == 1)=FALSE", "I(x != 2)=TRUE",
+      "g=a, b", "subtype=LumA"
+    )),
+    c("TRUE, 1", "FALSE", "TRUE", "a, b", "LumA")
+  )
+})
+
+test_that("km() leaves out a row with a missing time or surv, as Python does", {
+  df <- data.frame(
+    time = c(0, 5, 9, 12, 0, 7, 15),
+    surv = c(1, 0.9, NaN, 0.7, 1, 0.8, 0.5),
+    lower = c(1, 0.8, 0.7, 0.6, 1, 0.7, 0.4),
+    group = c("t", "t", "t", "t", "c", "c", "c")
+  )
+  df$time[6] <- NA
+  # Before the fix this stopped with "missing value where TRUE/FALSE needed".
+  warned <- testthat::capture_warnings(w <- km(df))
+  expect_equal(warned, "Left out 2 row(s) with a missing `time` or `surv`.")
+  cols <- w$x$data$columns
+  expect_equal(cols$time, c(0, 5, 12, 0, 15))
+  expect_equal(cols$surv, c(1, 0.9, 0.7, 1, 0.5))
+  expect_equal(cols$lower, c(1, 0.8, 0.6, 1, 0.4))
+  expect_equal(cols$group, c("t", "t", "t", "c", "c"))
+  expect_equal(as.character(w$x$data$meta$groups), c("t", "c"))
+
+  # NA in surv is left out the same way.
+  warned <- testthat::capture_warnings(
+    km(data.frame(time = c(0, 5, 9), surv = c(1, NA, 0.5)))
+  )
+  expect_equal(warned, "Left out 1 row(s) with a missing `time` or `surv`.")
+  # Nothing left to draw is an error.
+  expect_error(
+    suppressWarnings(km(data.frame(time = c(0, NA), surv = c(NaN, 1)))),
+    "`data` has no rows/cells"
+  )
+})

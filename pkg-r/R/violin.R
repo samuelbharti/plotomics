@@ -43,6 +43,8 @@
 #'   and the plot: one number for every side, or numbers named `top`,
 #'   `right`, `bottom` and `left` in a list or vector, a side left out
 #'   keeping the default of 10.
+#'   Its `categorical` entry is an ordered palette: the colours go to the groups
+#'   in order, and names on the colours are not matched to them.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.

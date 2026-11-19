@@ -63,7 +63,9 @@ place of the raw count. Every finite value must then be 0 or more.}
 Its \code{padding} entry is the space in px between the edge of the widget
 and the plot: one number for every side, or numbers named \code{top},
 \code{right}, \code{bottom} and \code{left} in a list or vector, a side left out
-keeping the default of 10.}
+keeping the default of 10.
+Its \code{categorical} entry is an ordered palette: the colours go to the groups
+in order, and names on the colours are not matched to them.}
 
 \item{width, height}{Widget dimensions (any valid CSS size).}
 

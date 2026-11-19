@@ -74,7 +74,8 @@ plotomics_widget <- function(name, columns, meta = list(), options = list(),
 #' data column is an array to the JavaScript, and so are the `meta` and
 #' `options` entries named by the component, and `theme$categorical`. This
 #' marks each of them with [I()] just before the widget is serialised, so the
-#' payload a test or a user inspects stays as it was built.
+#' payload a test or a user inspects stays as it was built. The theme is
+#' shaped by `bv_theme_json()`.
 #'
 #' @param widget The widget passed to the `preRenderHook`.
 #' @param array_meta,array_options Names of the `meta` and `options` entries to
@@ -92,12 +93,45 @@ bv_keep_arrays <- function(widget, array_meta = character(),
   for (k in intersect(array_options, names(x$options))) {
     x$options[[k]] <- bv_as_array(x$options[[k]])
   }
-  theme <- x$options$theme
-  if (is.list(theme) && !is.null(theme$categorical)) {
-    x$options$theme$categorical <- bv_as_array(theme$categorical)
+  if (!is.null(x$options$theme)) {
+    x$options$theme <- bv_theme_json(x$options$theme)
   }
   widget$x <- x
   widget
+}
+
+#' Shape a theme for the browser
+#'
+#' jsonlite sends a named vector as a JSON object, which the JavaScript does
+#' not read as a colour, a number or a palette. A palette in
+#' `theme$categorical` with names, such as `c(T = "#ff0000", B = "#0000ff")`,
+#' would reach the browser as an object, and the plot would fall back to its
+#' default palette without a word. So the palette is sent as its colours in
+#' the order given, as an array, and every other entry loses its names too.
+#' `theme$padding` keeps its shape, set by `bv_theme_padding()`. A theme
+#' given as a named vector becomes a list of its entries.
+#'
+#' @param theme The `theme` option.
+#' @return The theme, ready to serialise.
+#' @keywords internal
+#' @noRd
+bv_theme_json <- function(theme) {
+  if (is.atomic(theme) && !is.null(names(theme))) {
+    theme <- as.list(theme)
+  }
+  if (!is.list(theme)) {
+    return(theme)
+  }
+  for (k in setdiff(names(theme), c("", "padding"))) {
+    v <- theme[[k]]
+    if (k == "categorical") {
+      if (is.list(v)) v <- unlist(v, use.names = FALSE)
+      theme[[k]] <- bv_as_array(unname(v))
+    } else if (is.atomic(v) && !is.null(names(v))) {
+      theme[[k]] <- unname(v)
+    }
+  }
+  theme
 }
 
 #' Check the theme padding and shape it for the browser
