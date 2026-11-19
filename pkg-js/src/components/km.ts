@@ -61,9 +61,19 @@ export interface KmOptions {
   showCI: boolean;
   /** Mark censoring times with a tick on the curve. */
   showCensors: boolean;
-  /** Draw the number-at-risk table beneath the axis. */
+  /**
+   * Draw the number-at-risk table beneath the axis. The table comes
+   * before the legend: in a short plot the legend gives up its rows
+   * first. A plot too short for a row per stratum under the panel leaves
+   * the table out.
+   */
   showRiskTable: boolean;
-  /** Draw the stratum legend. */
+  /**
+   * Draw the stratum legend, in a band above the panel. It takes the
+   * height the risk table and the curves leave it: the strata past the
+   * rows that fit are counted in a "+N more" note, and a plot with no
+   * room for one row draws no legend.
+   */
   showLegend: boolean;
   /** Start the y axis at zero (the honest default) rather than at the lowest
    * point of the lowest curve. Zooming y exaggerates separation, so this is
@@ -95,6 +105,26 @@ const MIN_LEFT = 58;
 const MAX_LEFT_SHARE = 0.35;
 /** Length of a censoring tick, in pixels either side of the curve. */
 const CENSOR_TICK = 4;
+/** Least height of the curve panel, in px. */
+const MIN_PANEL = 40;
+/** Largest share of the height that the legend above the panel takes. */
+const LEGEND_SHARE = 0.2;
+/** Least share of its height with no legend that the panel keeps. */
+const LEGEND_KEEP = 2 / 3;
+/** Side of a legend swatch, and the space from it to its name, in px. */
+const SWATCH = 8;
+const SWATCH_GAP = 4;
+/** Space between two legend entries on a row, in px. */
+const LEGEND_GAP = 12;
+/**
+ * Least width of a legend entry cut short to make room for the "+N more"
+ * note: the swatch and a few letters.
+ */
+const MIN_ENTRY = SWATCH + SWATCH_GAP + 24;
+/** Least space between two time labels, or two risk-table counts, in px. */
+const COLUMN_GAP = 6;
+/** Steps of the survival ticks, in whole percentages, finest first. */
+const SURVIVAL_STEPS = [1, 2, 5, 10, 20, 25, 50];
 /**
  * Room a line of text takes above and below its baseline, as a share of its
  * size. This covers the font box of the common system fonts.
@@ -120,6 +150,9 @@ function kmText(s: TextSizes) {
   const title = tick + Math.ceil(DESCENT * s.label + ASCENT * s.axisTitle) + 1;
   const heading = title + Math.ceil((DESCENT + ASCENT) * s.axisTitle) + 1;
   const rowH = Math.round(s.label + 5);
+  /** Gap from the axis to the middle of a row under the text line at `y`. */
+  const firstRow = (y: number) =>
+    y + Math.ceil(DESCENT * s.axisTitle) + 2 + rowH / 2;
   return {
     /** x of the rotated y title, far enough right for its letters. */
     titleX: Math.ceil(1.1 * s.axisTitle),
@@ -128,14 +161,22 @@ function kmText(s: TextSizes) {
     heading,
     /** Room under the axis for the tick labels and the x title alone. */
     axisOnly: Math.ceil(title + DESCENT * s.axisTitle) + 1,
+    /** Room under the axis for the tick labels alone. */
+    ticksOnly: Math.ceil(tick + DESCENT * s.label) + 1,
+    /** Room under the axis for the lower half of the label at the floor. */
+    floorLabel: Math.ceil((0.35 + DESCENT) * s.label),
     /** Gap from the axis to the middle of the first risk-table row. */
-    gap: heading + Math.ceil(DESCENT * s.axisTitle) + 2 + rowH / 2,
+    gap: firstRow(heading),
+    /** The same gap for a table without its heading. */
+    gapBare: firstRow(title),
     /** Height of one risk-table row. */
     rowH,
     /** Smallest row: one name tall, with a pixel to spare. */
     minRowH: Math.ceil(s.label) + 1,
     /** Space between a stratum name and the column of counts at time 0. */
     labelGap: 2 * s.small,
+    /** Distance between the baselines of two legend rows. */
+    legendStep: Math.round(s.label + 4),
   };
 }
 
@@ -154,14 +195,41 @@ export interface KmLayout {
   /** y of the middle of the first risk-table row. */
   riskTop: number;
   riskRowH: number;
+  /**
+   * Whether the number-at-risk table is drawn: it is asked for, it has
+   * counts, and the element has room under the panel for a row per stratum.
+   */
+  table: boolean;
+  /** Whether the "number at risk" heading is drawn over the table. */
+  tableHeading: boolean;
+  /**
+   * The legend entries in the band above the panel: the index of the
+   * stratum each shows, or -1 for the "+N more" note, the x of its left
+   * edge, the baseline of its text and the width it may take.
+   */
+  legend: { index: number; x: number; y: number; width: number }[];
+  /** Strata the legend leaves out, counted in its "+N more" note. */
+  legendMore: number;
+  /** Whether the time labels are drawn under the axis. */
+  xTicks: boolean;
+  /** Whether the x title is drawn under the time labels. */
+  xTitle: boolean;
 }
 
 /**
- * Frame the curve panel, leaving room under the axis for one risk-table row per
- * stratum. The panel shrinks to fit the table rather than the table overflowing
- * the element, so a five-stratum plot in a short container still shows both.
- * The left gutter grows with the longest stratum name, up to a share of the
- * width; longer names are shortened when drawn.
+ * Frame the curve panel, with the number-at-risk table, one row per
+ * stratum, under the axis and the legend in a band above the panel.
+ * Nothing goes past the element. The table comes first: its rows tighten
+ * to fit, then it drops its heading, and when even that does not fit under
+ * a panel MIN_PANEL px high the table is left out. Without a table the x
+ * title goes first, then the time labels, and only then does the panel
+ * shrink. The legend comes last and takes its height from the panel alone:
+ * at most LEGEND_SHARE of the element, while the panel keeps MIN_PANEL px
+ * and LEGEND_KEEP of the height it has with no legend. The strata past the
+ * rows that fit go into a "+N more" note, and with no room for one row
+ * there is no legend. The left gutter grows with the longest stratum name
+ * in the table, up to a share of the width; longer names are shortened
+ * when drawn.
  */
 export function layoutKm(
   width: number,
@@ -178,9 +246,13 @@ export function layoutKm(
   tickWidth = 0,
   /** Width in px of the widest text centred on the last time tick. */
   endWidth = 0,
+  /** Width in px of each legend entry, swatch and name; none for no legend. */
+  legendWidths: readonly number[] = [],
+  /** Width in px of the widest "+N more" note the legend may need. */
+  moreWidth = 0,
 ): KmLayout {
   const t = kmText(sizes);
-  const showTable = opts.showRiskTable && nGroups > 0 && hasCounts;
+  const wantTable = opts.showRiskTable && nGroups > 0 && hasCounts;
   // The y tick labels sit between the rotated y title and the panel.
   const minLeft = Math.max(
     MIN_LEFT,
@@ -188,7 +260,7 @@ export function layoutKm(
   );
   // The stratum names sit left of the counts at time 0, so the gutter grows
   // to fit the longest one.
-  const left = showTable
+  const tableLeft = wantTable
     ? Math.max(
         minLeft,
         Math.min(
@@ -200,30 +272,94 @@ export function layoutKm(
   // The last tick label is centred on the right edge of the panel.
   const right = Math.max(16, Math.ceil(endWidth / 2) + 2);
   // Room above the panel for the top half of the "100%" tick label.
-  const top = Math.max(14, Math.ceil((ASCENT - 0.35) * sizes.label) + 2);
-  // Room for the axis labels alone when there is no table.
-  const riskH = showTable ? t.gap + nGroups * t.rowH : t.axisOnly;
-  // Never let the table starve the curves: the panel keeps half the element
-  // and the table rows tighten to fit below it. When even the tightest rows
-  // do not fit, the panel gives up the room they need.
-  const tightest = showTable ? t.gap + nGroups * t.minRowH : riskH;
-  const axisY = Math.max(
-    top + 40,
-    height - riskH,
-    Math.min(height * 0.5, height - tightest),
+  const topGap = Math.max(14, Math.ceil((ASCENT - 0.35) * sizes.label) + 2);
+
+  // The table and the axis labels come first, laid out with no legend. The
+  // table takes a row per stratum, at the least row height, under a panel
+  // of the least height: with its heading, else without it, else the table
+  // is left out. Without a table, the room under that panel holds the time
+  // labels and the x title, else the labels alone, else neither.
+  const room = height - topGap - MIN_PANEL;
+  const tableHeading = wantTable && room >= t.gap + nGroups * t.minRowH;
+  const table =
+    tableHeading || (wantTable && room >= t.gapBare + nGroups * t.minRowH);
+  const left = table ? tableLeft : minLeft;
+  const gap = tableHeading ? t.gap : t.gapBare;
+  const xTitle = table || room >= t.axisOnly;
+  const xTicks = xTitle || room >= t.ticksOnly;
+  const riskH = table
+    ? gap + nGroups * t.rowH
+    : xTitle
+      ? t.axisOnly
+      : xTicks
+        ? t.ticksOnly
+        : t.floorLabel;
+  // The panel keeps half the element when the tightest rows fit under that,
+  // and the rows open up to their full height as the room allows. Without
+  // a table the panel takes the height the axis leaves: below the least
+  // height only when the axis has no labels left to drop.
+  const tightest = table ? gap + nGroups * t.minRowH : riskH;
+  const axisY = table
+    ? Math.max(
+        topGap + MIN_PANEL,
+        height - riskH,
+        Math.min(height * 0.5, height - tightest),
+      )
+    : height - riskH;
+
+  // The legend band over the panel: the first baseline sits a font box
+  // below the top, and the band ends 4 px above the "100%" label.
+  const band = (rows: number) =>
+    rows > 0
+      ? Math.ceil(ASCENT * sizes.label) +
+        (rows - 1) * t.legendStep +
+        Math.ceil(DESCENT * sizes.label) +
+        4
+      : 0;
+  // The band takes its height from the panel alone, so the table and the
+  // axis stay as they are: the panel keeps its least height and a share of
+  // the height it has with no legend, and the band takes at most a share of
+  // the element.
+  const alone = axisY - topGap;
+  const most = Math.min(
+    alone - Math.max(MIN_PANEL, LEGEND_KEEP * alone),
+    LEGEND_SHARE * height,
   );
-  const avail = height - axisY - t.gap;
-  const riskRowH = showTable
+  let maxRows = 0;
+  while (maxRows < legendWidths.length && band(maxRows + 1) <= most) {
+    maxRows += 1;
+  }
+  const legend = flowLegend(
+    legendWidths,
+    width - left - right,
+    maxRows,
+    moreWidth,
+  );
+  const top = topGap + band(legend.rows);
+  const avail = height - axisY - gap;
+  const riskRowH = table
     ? Math.min(t.rowH, Math.max(t.minRowH, avail / nGroups))
     : t.rowH;
+  const first = Math.ceil(ASCENT * sizes.label);
   return {
     left,
     right,
     top,
     axisY,
     plotH: Math.max(1, axisY - top),
-    riskTop: axisY + t.gap,
+    riskTop: axisY + gap,
     riskRowH,
+    table,
+    tableHeading,
+    legend: legend.entries.map((e) => ({
+      index: e.index,
+      x: left + e.x,
+      y: first + e.row * t.legendStep,
+      width: e.width,
+    })),
+    legendMore: legend.more,
+    xTicks,
+    xTitle,
   };
 }
 
@@ -309,6 +445,14 @@ export function formatTime(v: number): string {
 }
 
 /**
+ * The label of a time tick, with `decimals` decimals: those every tick
+ * of the axis needs (see tickDecimals).
+ */
+function timeLabel(t: number, decimals: number): string {
+  return t.toFixed(decimals);
+}
+
+/**
  * Decimals that show every value of `ticks` in full, so uneven risk times such
  * as 1, 2.5 and 5 print as "1.0", "2.5" and "5.0" and not "1", "3", "5".
  */
@@ -326,23 +470,42 @@ export function tickDecimals(ticks: readonly number[]): number {
 
 /**
  * The survival ticks from the axis floor `lo` to 1 (100%) on an axis
- * `lengthPx` long, for labels `labelPx` in size: four steps, as 0, 25, 50,
- * 75 and 100% from a floor of 0, or two, when their labels keep `labelPx`
- * + 5 px from each other; the floor and 1 alone when those keep `labelPx`
- * + 2 px; 1 alone on a shorter axis, and none on an axis with no length.
+ * `lengthPx` long, for labels `labelPx` in size. The ticks are the
+ * multiples of a round step in whole percentages (1, 2, 5, 10, 20, 25 or
+ * 50) from the floor up: the finest step that gives four steps or fewer,
+ * as 0, 25, 50, 75 and 100% from a floor of 0 or 20, 40, 60, 80 and 100%
+ * from a floor of 15%, and a coarser one when those labels come closer than
+ * `labelPx` + 5 px. On an axis too short for two such ticks, the floor and
+ * 1 alone when those keep `labelPx` + 2 px; 1 alone on a shorter axis, and
+ * none on an axis with no length.
  */
 export function survivalTicks(
   lo: number,
   lengthPx: number,
   labelPx: number,
 ): number[] {
-  for (const n of [4, 2]) {
-    if (lengthPx / n >= labelPx + 5) {
-      return Array.from({ length: n + 1 }, (_, k) => lo + (k / n) * (1 - lo));
-    }
+  const span = 1 - lo;
+  for (const step of SURVIVAL_STEPS) {
+    // The first multiple at or above the floor. The floor may carry float
+    // noise, such as 0.15000000000000002, which must not skip a tick.
+    const first = Math.max(0, Math.ceil((lo * 100) / step - 1e-9));
+    const last = 100 / step;
+    const steps = last - first;
+    if (steps > 4 || steps < 1) continue;
+    if (((step / 100) * lengthPx) / span < labelPx + 5) continue;
+    return Array.from(
+      { length: steps + 1 },
+      (_, k) => ((first + k) * step) / 100,
+    );
   }
   if (lengthPx >= labelPx + 2) return [lo, 1];
   return lengthPx > 0 ? [1] : [];
+}
+
+/** A survival tick as a percentage, with the decimals that print it exactly. */
+export function survivalLabel(v: number): string {
+  const pct = v * 100;
+  return `${pct.toFixed(tickDecimals([pct]))}%`;
 }
 
 /** Round `max` up to a readable axis bound and produce evenly spaced ticks. */
@@ -356,6 +519,136 @@ export function timeTicks(max: number, target = 6): number[] {
   for (let t = 0; t <= max + step * 0.001; t += step)
     out.push(Number(t.toFixed(6)));
   return out;
+}
+
+/**
+ * Lay legend entries `widths` px wide out in rows `room` px wide, in order,
+ * with LEGEND_GAP px between two entries on a row. An entry starts a new
+ * row when it does not fit on the current one, and an entry wider than the
+ * room is cut to it. When the entries need more than `maxRows` rows, the
+ * last row ends with a "+N more" note `moreWidth` px wide, and N counts the
+ * entries with no place before it; a lone entry on that row is cut short
+ * to make room for the note. A legend that cannot show one entry and the
+ * note shows nothing.
+ */
+export function flowLegend(
+  widths: readonly number[],
+  room: number,
+  maxRows: number,
+  moreWidth: number,
+): {
+  /** Each entry shown: its index, or -1 for the note, x, row and width. */
+  entries: { index: number; x: number; row: number; width: number }[];
+  rows: number;
+  more: number;
+} {
+  type Slot = { index: number; x: number; row: number; width: number };
+  const none = { entries: [], rows: 0, more: 0 };
+  if (widths.length === 0 || maxRows < 1 || !(room > 0)) return none;
+  const entries: Slot[] = [];
+  let x = 0;
+  let row = 0;
+  for (let i = 0; i < widths.length; i += 1) {
+    const w = Math.min(widths[i] as number, room);
+    if (x > 0 && x + w > room) {
+      row += 1;
+      x = 0;
+    }
+    entries.push({ index: i, x, row, width: w });
+    x += w + LEGEND_GAP;
+  }
+  if (row < maxRows) return { entries, rows: row + 1, more: 0 };
+
+  const lastRow = maxRows - 1;
+  const kept = entries.filter((e) => e.row <= lastRow);
+  const note = Math.min(moreWidth, room);
+  let noteX = 0;
+  for (;;) {
+    const e = kept[kept.length - 1];
+    if (!e) return none;
+    // Every entry of the last row has given way: the note starts it.
+    if (e.row < lastRow) break;
+    const end = e.x + e.width + LEGEND_GAP;
+    if (end + note <= room) {
+      noteX = end;
+      break;
+    }
+    const cut = room - LEGEND_GAP - note;
+    if (e.x === 0 && cut >= MIN_ENTRY) {
+      e.width = cut;
+      noteX = cut + LEGEND_GAP;
+      break;
+    }
+    kept.pop();
+  }
+  const more = widths.length - kept.length;
+  kept.push({ index: -1, x: noteX, row: lastRow, width: note });
+  return { entries: kept, rows: maxRows, more };
+}
+
+/**
+ * The columns that keep their labels, by index. A column is a time label
+ * and the risk-table counts under it, centred at `xs`, in rising order, and
+ * `widths` px wide; a column keeps its label when it keeps `gapPx` from the
+ * next one kept.
+ *
+ * Evenly spaced columns keep every k-th from the first, with k the least of
+ * 1, 2, 4 and 5 times a power of ten that keeps them clear, so a round grid
+ * stays round: 0, 50, 100, ... thins to 0, 200, 400, ... and never to 0,
+ * 150, 300, .... Other columns are kept one by one: the first, and each
+ * next one that clears the last one kept. When that pass drops the last
+ * column, kept columns before it, other than the first, give way to it
+ * where that makes room.
+ */
+export function thinColumns(
+  xs: readonly number[],
+  widths: readonly number[],
+  gapPx = COLUMN_GAP,
+): number[] {
+  const n = xs.length;
+  if (n === 0) return [];
+  const clear = (a: number, b: number) =>
+    (xs[b] as number) - (xs[a] as number) >=
+    ((widths[a] ?? 0) + (widths[b] ?? 0)) / 2 + gapPx;
+
+  const step = n > 1 ? (xs[1] as number) - (xs[0] as number) : 0;
+  let even = true;
+  for (let i = 1; i + 1 < n && even; i += 1) {
+    const d = (xs[i + 1] as number) - (xs[i] as number);
+    even = Math.abs(d - step) <= 1e-6 * Math.max(1, Math.abs(step));
+  }
+  if (even) {
+    for (let power = 1; power < n; power *= 10) {
+      for (const f of [1, 2, 4, 5]) {
+        const k = f * power;
+        if (k >= n) continue;
+        let ok = true;
+        for (let i = 0; i + k < n && ok; i += k) ok = clear(i, i + k);
+        if (ok) {
+          return Array.from(
+            { length: Math.floor((n - 1) / k) + 1 },
+            (_, i) => i * k,
+          );
+        }
+      }
+    }
+    return [0];
+  }
+
+  const kept = [0];
+  for (let i = 1; i < n; i += 1) {
+    if (clear(kept[kept.length - 1] as number, i)) kept.push(i);
+  }
+  const last = n - 1;
+  if (kept[kept.length - 1] !== last) {
+    let k = kept.length;
+    while (k > 1 && !clear(kept[k - 1] as number, last)) k -= 1;
+    if (clear(kept[k - 1] as number, last)) {
+      kept.length = k;
+      kept.push(last);
+    }
+  }
+  return kept;
 }
 
 // ---------------------------------------------------------------------------
@@ -484,11 +777,16 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   function fit(s: string, maxW: number, size = sizes.label): string {
     return fitText(s, maxW, size, theme.fontFamily);
   }
-  /** The time ticks inside the axis, and the decimals their labels need. */
+  /**
+   * The time ticks inside the axis, in rising order and each once, and the
+   * decimals their labels need. Risk times may come in any order and with
+   * repeats.
+   */
   function timeAxis(tmax: number): { ticks: number[]; decimals: number } {
-    const all =
-      (data.meta?.riskTimes as number[] | undefined) ?? timeTicks(tmax);
-    const ticks = all.filter((t) => t <= tmax);
+    const given = data.meta?.riskTimes as ArrayLike<number> | undefined;
+    const all = given ? Array.from(given) : timeTicks(tmax);
+    const inside = all.filter((t) => Number.isFinite(t) && t <= tmax);
+    const ticks = [...new Set(inside)].sort((a, b) => a - b);
     // Every tick gets the decimals the most precise one needs, so 12.5 reads
     // "12.5" and not "13".
     return { ticks, decimals: tickDecimals(ticks) };
@@ -499,10 +797,9 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
    */
   function endWidth(tmax: number): number {
     const { ticks, decimals } = timeAxis(tmax);
-    let last = Number.NEGATIVE_INFINITY;
-    for (const t of ticks) if (t > last) last = t;
-    if (!Number.isFinite(last)) return 0;
-    let w = labelWidth(last.toFixed(decimals));
+    const last = ticks[ticks.length - 1];
+    if (last === undefined) return 0;
+    let w = labelWidth(timeLabel(last, decimals));
     const counts = data.meta?.riskCounts as number[] | undefined;
     const riskTimes = data.meta?.riskTimes as number[] | undefined;
     if (opts.showRiskTable && counts && riskTimes) {
@@ -517,6 +814,31 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       }
     }
     return w;
+  }
+  /**
+   * The time ticks that keep their labels (see thinColumns). Each column is
+   * a label and the counts of `table` under it, from the first risk time
+   * equal to the tick.
+   */
+  function keptTimes(
+    ticks: number[],
+    decimals: number,
+    tmax: number,
+    table: { counts: number[]; riskTimes: number[] } | null,
+  ): number[] {
+    const n = groups().length;
+    const widths = ticks.map((t) => {
+      let w = labelWidth(timeLabel(t, decimals));
+      const j = table ? table.riskTimes.indexOf(t) : -1;
+      for (let g = 0; table && j >= 0 && g < n; g += 1) {
+        const c = table.counts[g * table.riskTimes.length + j];
+        if (c === undefined) continue;
+        w = Math.max(w, textWidth(String(c), sizes.small, theme.fontFamily));
+      }
+      return w;
+    });
+    const xs = ticks.map((t) => sx(t, tmax));
+    return thinColumns(xs, widths).map((i) => ticks[i] as number);
   }
   function hasRiskCounts(): boolean {
     return Boolean(data.meta?.riskCounts && data.meta?.riskTimes);
@@ -607,6 +929,8 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     const ctx = canvas.getContext("2d");
     if (!ctx || !width || !height) return;
     const gl = groups();
+    // The legend names the strata when there is more than one.
+    const legend = opts.showLegend && gl.length > 1;
     layout = layoutKm(
       width,
       height,
@@ -617,6 +941,8 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       sizes,
       labelWidth("100%"),
       endWidth(maxTime()),
+      legend ? gl.map((g) => SWATCH + SWATCH_GAP + labelWidth(g)) : [],
+      legend ? labelWidth(`+${gl.length - 1} more`) : 0,
     );
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
@@ -746,10 +1072,17 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
 
   /**
    * The values of the y ticks and their gridlines, from the axis floor to
-   * 100%, as many as the panel keeps clear (see survivalTicks).
+   * 100%, as many as the panel keeps clear (see survivalTicks). A label
+   * whose font box would leave the plot box, in a plot only a few labels
+   * high, is left out with its gridline.
    */
   function gridValues(lo: number): number[] {
-    return survivalTicks(lo, layout.plotH, sizes.label);
+    const above = (ASCENT - 0.35) * sizes.label;
+    const below = (0.35 + DESCENT) * sizes.label;
+    return survivalTicks(lo, layout.plotH, sizes.label).filter((v) => {
+      const y = sy(v, lo);
+      return y - above >= 0 && y + below <= height;
+    });
   }
 
   function renderOverlay() {
@@ -769,7 +1102,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
         text(
           layout.left - 8,
           y + midline(sizes.label),
-          `${Math.round(v * 100)}%`,
+          survivalLabel(v),
           theme.muted,
           "end",
           sizes.label,
@@ -797,14 +1130,21 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       ),
     );
     const { ticks, decimals } = timeAxis(tmax);
-    for (const t of ticks) {
+    const counts = data.meta?.riskCounts as number[] | undefined;
+    const riskTimes = data.meta?.riskTimes as number[] | undefined;
+    const table =
+      layout.table && counts && riskTimes ? { counts, riskTimes } : null;
+    // The times whose labels, and columns of counts, stay clear of their
+    // neighbours.
+    const kept = layout.xTicks ? keptTimes(ticks, decimals, tmax, table) : [];
+    for (const t of kept) {
       const x = sx(t, tmax);
       svg.appendChild(line(x, layout.axisY, x, layout.axisY + 4, theme.axis));
       svg.appendChild(
         text(
           x,
           layout.axisY + tx.tick,
-          t.toFixed(decimals),
+          timeLabel(t, decimals),
           theme.muted,
           "middle",
           sizes.label,
@@ -812,35 +1152,39 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       );
     }
     const titleCx = (layout.left + width - layout.right) / 2;
-    svg.appendChild(
-      text(
-        titleCx,
-        layout.axisY + tx.title,
-        fit(
-          opts.xLabel,
-          2 * Math.min(titleCx, width - titleCx) - 4,
-          sizes.axisTitle,
-        ),
-        theme.muted,
-        "middle",
-        sizes.axisTitle,
-      ),
-    );
-
-    // Number at risk, one row per stratum on the same time grid as the ticks.
-    const counts = data.meta?.riskCounts as number[] | undefined;
-    const riskTimes = data.meta?.riskTimes as number[] | undefined;
-    if (opts.showRiskTable && counts && riskTimes) {
+    if (layout.xTitle) {
       svg.appendChild(
         text(
-          layout.left,
-          layout.axisY + tx.heading,
-          "number at risk",
-          theme.foreground,
-          "start",
+          titleCx,
+          layout.axisY + tx.title,
+          fit(
+            opts.xLabel,
+            2 * Math.min(titleCx, width - titleCx) - 4,
+            sizes.axisTitle,
+          ),
+          theme.muted,
+          "middle",
           sizes.axisTitle,
         ),
       );
+    }
+
+    // Number at risk, one row per stratum, with a count under each time
+    // label kept.
+    if (table) {
+      if (layout.tableHeading) {
+        svg.appendChild(
+          text(
+            layout.left,
+            layout.axisY + tx.heading,
+            "number at risk",
+            theme.foreground,
+            "start",
+            sizes.axisTitle,
+          ),
+        );
+      }
+      const nTimes = table.riskTimes.length;
       for (let g = 0; g < gl.length; g += 1) {
         const y = layout.riskTop + g * layout.riskRowH;
         // The names end short of the counts at time 0, which are centred on
@@ -855,10 +1199,11 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
             sizes.label,
           ),
         );
-        for (let j = 0; j < riskTimes.length; j += 1) {
-          const t = riskTimes[j] as number;
-          if (t > tmax) continue;
-          const n = counts[g * riskTimes.length + j];
+        // A risk time given twice shows the counts of its first column.
+        for (const t of kept) {
+          const j = table.riskTimes.indexOf(t);
+          if (j < 0) continue;
+          const n = table.counts[g * nTimes + j];
           if (n === undefined) continue;
           svg.appendChild(
             text(
@@ -874,52 +1219,49 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       }
     }
 
-    // Legend, top-right of the panel: survival curves fall left to right, so
-    // the top-right corner is the one reliably empty. Strata past the rows
-    // the panel holds go on to more columns, leftwards, and the names are
-    // cut to share the width of the panel.
-    const pLabel = data.meta?.pLabel as string | undefined;
-    if (opts.showLegend && gl.length > 1) {
-      const step = Math.round(sizes.label + 4);
-      const first = layout.top + sizes.label - 1;
-      // The last row stays above the axis, and above the log-rank result.
-      const last = pLabel
-        ? layout.axisY - 10 - Math.ceil(ASCENT * sizes.label) - 2
-        : layout.axisY - 6;
-      const fits = Math.max(1, Math.floor((last - first) / step) + 1);
-      const nCols = Math.ceil(gl.length / fits);
-      const rows = Math.ceil(gl.length / nCols);
-      // Each column is a name, a 4 px gap and an 8 px swatch, and 12 px
-      // separate the columns.
-      const room = width - layout.right - 10 - (layout.left + 4);
-      const names = gl.map((g) => fit(g, (room + 12) / nCols - 24));
-      let x = width - layout.right - 10;
-      for (let c = nCols - 1; c >= 0; c -= 1) {
-        let colW = 0;
-        for (let r = 0; r < rows; r += 1) {
-          const g = c * rows + r;
-          if (g >= gl.length) break;
-          const y = first + r * step;
-          const sw = document.createElementNS(SVG_NS, "rect");
-          sw.setAttribute("x", String(x - 8));
-          sw.setAttribute("y", String(y - midline(sizes.label) - 4));
-          sw.setAttribute("width", "8");
-          sw.setAttribute("height", "8");
-          sw.setAttribute("fill", cols[g] ?? theme.foreground);
-          svg.appendChild(sw);
-          const name = names[g] ?? "";
-          svg.appendChild(
-            text(x - 12, y, name, theme.foreground, "end", sizes.label),
-          );
-          colW = Math.max(colW, labelWidth(name));
-        }
-        x -= colW + 24;
+    // Legend, in the band above the panel, where it covers no curve. The
+    // strata past the rows it holds are counted in a "+N more" note.
+    for (const e of layout.legend) {
+      if (e.index < 0) {
+        svg.appendChild(
+          text(
+            e.x,
+            e.y,
+            fit(`+${layout.legendMore} more`, e.width),
+            theme.muted,
+            "start",
+            sizes.label,
+          ),
+        );
+        continue;
       }
+      const sw = document.createElementNS(SVG_NS, "rect");
+      sw.setAttribute("x", String(e.x));
+      sw.setAttribute("y", String(e.y - midline(sizes.label) - SWATCH / 2));
+      sw.setAttribute("width", String(SWATCH));
+      sw.setAttribute("height", String(SWATCH));
+      sw.setAttribute("fill", cols[e.index] ?? theme.foreground);
+      svg.appendChild(sw);
+      svg.appendChild(
+        text(
+          e.x + SWATCH + SWATCH_GAP,
+          e.y,
+          fit(gl[e.index] ?? "", e.width - SWATCH - SWATCH_GAP),
+          theme.foreground,
+          "start",
+          sizes.label,
+        ),
+      );
     }
 
+    const pLabel = data.meta?.pLabel as string | undefined;
+
     // The log-rank result, bottom-left of the panel where the curves have
-    // already fallen away.
-    if (pLabel) {
+    // already fallen away, when the panel is tall enough to hold it.
+    if (
+      pLabel &&
+      layout.axisY - 10 - Math.ceil(ASCENT * sizes.label) >= layout.top
+    ) {
       svg.appendChild(
         text(
           layout.left + 10,

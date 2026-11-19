@@ -17,10 +17,11 @@ function snapTolerance(x: number): number {
 }
 
 /**
- * `x` as the whole number it is within {@link snapTolerance} of, else `x`.
- * A ratio of a value to a step is snapped before it is rounded up or down,
- * so float32 noise, such as 0.3 sent from Python as 0.30000001192092896,
- * neither adds a step nor drops a tick.
+ * `x` as the whole number it is close to, else `x`. Close means within one
+ * part in a million of `x`, and never more than a thousandth. A ratio of a
+ * value to a step is snapped before it is rounded up or down, so float32
+ * noise, such as 0.3 sent from Python as 0.30000001192092896, neither adds a
+ * step nor drops a tick.
  */
 export function snapRatio(x: number): number {
   const r = Math.round(x);
