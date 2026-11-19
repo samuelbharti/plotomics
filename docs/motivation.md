@@ -69,8 +69,9 @@ survival fit has options that change the curve. Those decisions belong with the
 analysis, in the language where the data lives, where they are visible and
 reviewable. Burying them in a renderer means two renderings of the same data can
 legitimately disagree. Where the precomputation is fiddly, R helpers do it in
-the open: `violin_density()`, `upset_intersections()` and
-`oncoplot_memo_sort()`.
+the open, and Python has the same helpers: `violin_density()`,
+`upset_intersections()` and the oncoplot order (`oncoplot_memo_sort()` in R,
+`memo_sort()` in Python).
 
 **It is not a grammar of graphics.** The components are a fixed, opinionated set,
 not composable primitives. You cannot build an arbitrary chart out of them. If
@@ -96,7 +97,7 @@ documented, and its defaults encode more accumulated taste.
 | Volcano | `EnhancedVolcano`, plain `ggplot2` | Comparable output at gene-panel size; plotomics stays interactive at 20k+ points and exports vector overlays. |
 | Oncoprint | `maftools`, `comut` | `maftools` also does the upstream MAF handling and analysis. plotomics only draws, but draws cohort-scale grids on one canvas. |
 | Survival curves | `survival` + `survminer`, `lifelines` | Those fit the model. plotomics draws the curve you fitted, and gives the same curve in R and Python. |
-| Set intersections | `UpSetR`, `UpSetPlot` | Similar figure. plotomics computes exclusive intersections in R via `upset_intersections()` so the columns sum to the union. |
+| Set intersections | `UpSetR`, `UpSetPlot` | Similar figure. plotomics computes exclusive intersections in R and Python via `upset_intersections()` so the columns sum to the union. |
 | Violin, dot plot | `Seurat`, `scanpy` plotting | Those are integrated with their own object models, which is a real advantage. plotomics takes plain data frames and works from either language. |
 | Embeddings | `Seurat`/`scanpy`, `cellxgene`, `Vitessce` | `cellxgene` and `Vitessce` are full browsers with far more functionality. plotomics is an embeddable widget. |
 | Generic interactive charts | `plotly`, `bokeh`, `altair`/Vega | Vastly more general. `plotly.js` reaches similar scatter scale through its `scattergl` trace; the differences are transport and prebuilt domain figures, not raw capability. See below. |

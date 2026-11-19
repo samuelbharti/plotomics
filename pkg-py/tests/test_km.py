@@ -182,3 +182,9 @@ def test_km_reads_a_polars_categorical_by_its_own_values():
     enum = pl.Enum(["control", "treated"])
     d = d.with_columns(pl.col("group").cast(pl.String).cast(enum))
     assert Km(d).data["meta"]["groups"] == ["control", "treated"]
+
+
+def test_km_stops_on_censor_without_time_and_surv():
+    d = {"time": [0.0, 5.0], "surv": [1.0, 0.8]}
+    with pytest.raises(ValueError, match="`censor` must provide"):
+        Km(d, censor={"time": [3.0]})

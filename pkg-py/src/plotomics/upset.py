@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
 
-from ._base import STATIC, PlotomicsWidget, _column, _to_float32, pack_columns
+from ._base import (
+    STATIC,
+    PlotomicsWidget,
+    _column,
+    _reject_lazy,
+    _to_float32,
+    pack_columns,
+)
 
 
 class Upset(PlotomicsWidget):
@@ -132,3 +140,109 @@ class Upset(PlotomicsWidget):
             _height=height,
             **kwargs,
         )
+
+
+def upset_intersections(m: Any, max_n: int | None = None) -> dict[str, Any]:
+    """Exclusive set intersections from a membership table.
+
+    Counts the elements that belong to exactly each combination of sets seen
+    in ``m``, as R's ``upset_intersections()`` does, in the same order: the
+    largest intersection first, and equal sizes by their membership read as
+    0/1 text, so ``"01"`` (only the second set) comes before ``"10"``.
+    Elements in no set are left out, since they have no column to sit in.
+
+    Parameters
+    ----------
+    m:
+        A pandas ``DataFrame`` or mapping of arrays: one row per element and
+        one boolean or 0/1 column per set, named by the set. A missing value
+        counts as not in the set.
+    max_n:
+        Keep only the ``max_n`` largest intersections. ``None`` keeps all.
+
+    Returns
+    -------
+    dict
+        ``size`` (integer array), ``membership`` (boolean array shaped
+        (intersections, sets)), ``sets`` (the set names), ``set_sizes``
+        (elements per set) and ``total`` (number of elements), ready for
+        :class:`Upset`.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> m = pd.DataFrame({"A": [True, True, False], "B": [True, False, True]})
+    >>> r = upset_intersections(m)
+    >>> r["size"].tolist(), r["membership"].tolist()
+    ([1, 1, 1], [[False, True], [True, False], [True, True]])
+    >>> Upset({"size": r["size"]}, sets=r["sets"],  # doctest: +SKIP
+    ...       membership=r["membership"], set_sizes=r["set_sizes"],
+    ...       total=r["total"])
+    """
+    if isinstance(m, np.ndarray):
+        raise ValueError(
+            "`m` must have column names naming the sets: pass a pandas "
+            "DataFrame or a dict of columns, not a plain numpy array."
+        )
+    _reject_lazy(m)
+    names = getattr(m, "column_names", None)
+    if names is None:
+        names = m.keys() if isinstance(m, Mapping) else getattr(m, "columns", None)
+    names = list(names) if names is not None else []
+    if not names:
+        raise ValueError("`m` must have column names naming the sets.")
+
+    cols = [_in_set(m[name], str(name)) for name in names]
+    sizes = {c.size for c in cols}
+    if len(sizes) > 1:
+        raise ValueError("every column of `m` must have the same length.")
+    mat = np.column_stack(cols)
+    sets = [str(name) for name in names]
+    total = int(mat.shape[0])
+    set_sizes = mat.sum(axis=0).astype(np.int64)
+
+    hit = mat[mat.any(axis=1)]
+    if hit.shape[0] == 0:
+        return {
+            "size": np.zeros(0, dtype=np.int64),
+            "membership": np.zeros((0, len(sets)), dtype=bool),
+            "sets": sets,
+            "set_sizes": set_sizes,
+            "total": total,
+        }
+    # Distinct rows in 0/1 text order (False before True), then the largest
+    # first; the stable sort keeps that text order for equal sizes, as R's
+    # sort(table(keys), decreasing = TRUE) does.
+    patterns, counts = np.unique(hit, axis=0, return_counts=True)
+    order = np.argsort(-counts, kind="stable")
+    if max_n is not None:
+        order = order[:max_n]
+    return {
+        "size": counts[order].astype(np.int64),
+        "membership": patterns[order].astype(bool),
+        "sets": sets,
+        "set_sizes": set_sizes,
+        "total": total,
+    }
+
+
+def _in_set(values: Any, name: str) -> np.ndarray:
+    """A membership column as booleans; a missing value is not in the set.
+
+    As R's ``as.logical`` on a number: zero is FALSE, any other number TRUE.
+    """
+    to_numpy = getattr(values, "to_numpy", None)
+    try:
+        if to_numpy is not None and hasattr(values, "dtype"):
+            try:
+                num = np.asarray(to_numpy(dtype=np.float64, na_value=np.nan))
+            except TypeError:
+                num = np.asarray(to_numpy(), dtype=np.float64)
+        else:
+            num = np.asarray(values, dtype=np.float64)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"column '{name}' of `m` must be logical or 0/1."
+        ) from None
+    num = num.reshape(-1)
+    return np.where(np.isnan(num), False, num != 0)

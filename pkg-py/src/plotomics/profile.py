@@ -10,6 +10,8 @@ from ._base import (
     STATIC,
     PlotomicsWidget,
     _column,
+    _na_text,
+    _not_in,
     _text_or_none,
     _to_float32,
     pack_columns,
@@ -39,7 +41,8 @@ class Profile(PlotomicsWidget):
         become the header blocks) and ``label`` (per-bar tick label) columns.
     groups:
         Fixes the group order and colour assignment. Defaults to order of
-        appearance.
+        appearance. A missing group (None or NaN) crosses as null and, as in
+        R, is a group of its own, drawn as an unnamed block.
     group_colors:
         One hex colour per group. ``None`` uses the categorical palette.
     title:
@@ -121,7 +124,7 @@ class Profile(PlotomicsWidget):
 
         json_columns: dict[str, list] = {}
         grp_col = _column(data, "group")
-        grp = [str(v) for v in grp_col] if grp_col is not None else None
+        grp = _text_or_none(grp_col) if grp_col is not None else None
         if grp is not None:
             json_columns["group"] = grp
         lab_col = _column(data, "label")
@@ -136,11 +139,11 @@ class Profile(PlotomicsWidget):
                     seen.append(g)
             groups = seen
         if groups is not None:
-            groups = [str(g) for g in groups]
-            unknown = sorted(set(grp or []) - set(groups))
+            groups = _text_or_none(groups)
+            unknown = _not_in(grp or [], groups)
             if unknown:
                 raise ValueError(
-                    "group(s) not present in `groups`: " + ", ".join(unknown)
+                    "group(s) not present in `groups`: " + _na_text(unknown)
                 )
             meta["groups"] = groups
             if group_colors is not None:

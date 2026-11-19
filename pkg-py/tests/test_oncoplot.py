@@ -263,3 +263,60 @@ def test_multi_hit_without_given_colours_sends_no_colours():
     # The browser draws Multi-hit in dark grey when no colours are sent.
     assert w.data["meta"]["classes"][-1] == "Multi-hit"
     assert "classColors" not in w.data["meta"]
+
+
+def test_oncoplot_breaks_ties_as_r_does():
+    # Every class appears twice, and four genes are altered in one sample
+    # each. R's oncoplot() gives the same order for this table.
+    alt = {
+        "gene": ["TP53", "tp53", "KRAS", "KRAS", "_X", "EGFR"],
+        "sample": ["b", "B", "a", "_s", "a", "c"],
+        "class": ["missense", "Missense", "missense", "Missense", "_amp",
+                  "_amp"],
+    }
+    sex = {"b": "f", "B": "F", "a": "_x", "_s": "f", "c": None}
+    meta = Oncoplot(alt, annotations=[{"name": "sex", "values": sex}]).data[
+        "meta"
+    ]
+    assert meta["classes"] == ["Missense", "_amp", "missense"]
+    assert meta["genes"] == ["KRAS", "EGFR", "TP53", "_X", "tp53"]
+    assert meta["samples"] == ["a", "_s", "c", "b", "B"]
+    assert meta["annotations"][0]["levels"] == ["F", "_x", "f"]
+    assert meta["annotations"][0]["codes"] == [1, 2, -1, 2, 0]
+
+
+def test_oncoplot_leaves_out_a_row_with_no_gene_or_sample_as_r_does():
+    na = {
+        "gene": ["A", None, "B", "C", "C", "A"],
+        "sample": ["s1", "s2", "s2", float("nan"), "s3", "s4"],
+        "class": ["m", "n", "m", "m", "n", "m"],
+    }
+    w = Oncoplot(na)
+    meta = w.data["meta"]
+    # R: genes A C B, samples s1 s4 s3 s2; no gene or sample named "nan".
+    assert meta["genes"] == ["A", "C", "B"]
+    assert meta["samples"] == ["s1", "s4", "s3", "s2"]
+    codes = np.frombuffer(w.buffer, dtype=np.float32, count=12)
+    assert codes.tolist() == [1, 1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1]
+    # Two classes for a sample with no gene make no Multi-hit.
+    nm = {"gene": ["A", None, None], "sample": ["s1", "s2", "s2"],
+          "class": ["m", "m", "n"]}
+    assert Oncoplot(nm).data["meta"]["classes"] == ["m", "n"]
+
+
+def test_oncoplot_stops_on_a_missing_class_as_r_does():
+    d = make_data()
+    d["class"] = ["Missense", None, "Missense", "Amplification", "Missense"]
+    with pytest.raises(ValueError, match="not present in `classes`: NA"):
+        Oncoplot(d)
+
+
+def test_oncoplot_keeps_a_missing_class_given_in_classes_as_r_does():
+    # R: oncoplot(data.frame(gene = c("A", "B"), sample = c("s1", "s2"),
+    # class = c("m", NA)), classes = c("m", NA)) sends classes ["m", null]
+    # and codes [1, 0, 0, 2].
+    w = Oncoplot({"gene": ["A", "B"], "sample": ["s1", "s2"],
+                  "class": ["m", None]}, classes=["m", None])
+    assert w.data["meta"]["classes"] == ["m", None]
+    codes = np.frombuffer(w.buffer, dtype=np.float32, count=4)
+    assert codes.tolist() == [1, 0, 0, 2]

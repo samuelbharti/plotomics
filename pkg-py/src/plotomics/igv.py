@@ -23,7 +23,10 @@ class IGV(PlotomicsWidget):
     ----------
     genome:
         Genome identifier understood by igv.js (e.g. ``"hg38"``, ``"hg19"``,
-        ``"mm10"``). Used when ``config`` is ``None``.
+        ``"mm10"``). Used when ``config`` is ``None``. ``None`` sends no
+        genome, so igv.js starts with no reference loaded, as ``genome: null``
+        does in JavaScript; pass a ``config`` with a ``reference`` for an
+        assembly igv.js does not know.
     locus:
         Optional initial locus, e.g. ``"chr8:127,736,588-127,739,371"``, or a
         gene symbol.
@@ -69,8 +72,9 @@ class IGV(PlotomicsWidget):
         if config is not None:
             options["config"] = dict(config)
         else:
-            if genome is not None:
-                options["genome"] = genome
+            # None crosses as null, so the browser's "hg38" default does not
+            # take its place.
+            options["genome"] = genome
             if locus is not None:
                 options["locus"] = locus
             if tracks:

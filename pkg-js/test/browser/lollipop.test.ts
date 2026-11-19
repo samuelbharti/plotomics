@@ -89,6 +89,43 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
+describe("lollipop labels without meta.labelIndex", () => {
+  const { labelIndex: _, ...meta } = HOTSPOTS.meta;
+  const drawn = (el: HTMLElement) =>
+    svgTexts(el)
+      .map((t) => t.textContent ?? "")
+      .filter((s) => HOTSPOTS.columns.label.includes(s))
+      .sort();
+
+  it("labels the most recurrent variants, as the wrappers do", () => {
+    const el = container();
+    instances.push(
+      createLollipop(el, {
+        data: { columns: HOTSPOTS.columns, meta },
+        options: { labelTopN: 3 },
+      }),
+    );
+    // Counts 25, 20 and 19.
+    expect(drawn(el)).toEqual(["R175H", "R248Q", "R248W"]);
+  });
+
+  it("labels up to 12 by default, and none for an empty labelIndex", () => {
+    const el = container();
+    instances.push(
+      createLollipop(el, { data: { columns: HOTSPOTS.columns, meta } }),
+    );
+    expect(drawn(el)).toEqual([...HOTSPOTS.columns.label].sort());
+
+    const none = container();
+    instances.push(
+      createLollipop(none, {
+        data: { columns: HOTSPOTS.columns, meta: { ...meta, labelIndex: [] } },
+      }),
+    );
+    expect(drawn(none)).toEqual([]);
+  });
+});
+
 describe("lollipop in a browser", () => {
   it("draws every label clear of the others and of every head", () => {
     const el = container();

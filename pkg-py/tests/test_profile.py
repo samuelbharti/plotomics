@@ -126,3 +126,16 @@ def test_profile_validates_its_input():
         Profile(d, groups=["C>A"])
     with pytest.raises(ValueError, match="one entry per group"):
         Profile(d, groups=["C>A", "C>T"], group_colors=["#f00"])
+
+
+def test_profile_sends_a_missing_group_as_null_as_r_does():
+    # R: bioprofile(data.frame(value = 1:3, group = c("g", NA, "g"))) sends
+    # group ["g", null, "g"] and groups ["g", null].
+    w = Profile({"value": [1, 2, 3], "group": ["g", float("nan"), "g"]})
+    assert w.data["columns"]["group"] == ["g", None, "g"]
+    assert w.data["meta"]["groups"] == ["g", None]
+
+
+def test_profile_names_a_missing_group_left_out_of_groups_as_na():
+    with pytest.raises(ValueError, match="not present in `groups`: NA"):
+        Profile({"value": [1, 2], "group": ["g", None]}, groups=["g"])

@@ -37,6 +37,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseContainer,
   dpr,
   serializeSVG,
   compositePNG,
@@ -533,7 +534,9 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     for (let i = 0; i < v.length; i += 1) {
       const y = tickY(v[i] as number, axis);
       if (!Number.isFinite(y)) continue;
-      const gi = glist.indexOf(gcol[i] ?? "");
+      // A missing group (null) is a group of its own, as in R's unique(), so
+      // its bars take the colour of its block in the banner.
+      const gi = glist.indexOf(gcol[i] as string);
       ctx.fillStyle = gi >= 0 ? (gcols[gi] as string) : theme.foreground;
       const x = layout.left + i * layout.slot + (layout.slot - bw) / 2;
       ctx.fillRect(x, Math.min(y, zero), bw, Math.abs(zero - y));
@@ -610,7 +613,10 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
         const x1 = layout.left + (run.end + 1) * layout.slot;
         const gi = glist.indexOf(run.group);
         const bg = gi >= 0 ? (gcols[gi] as string) : theme.foreground;
-        if (x1 - x0 > textWidth(run.group, sizes.label) + 8) {
+        if (
+          run.group != null &&
+          x1 - x0 > textWidth(run.group, sizes.label) + 8
+        ) {
           svg.appendChild(
             text(
               (x0 + x1) / 2,
@@ -741,6 +747,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
       });
     },
     destroy() {
+      releaseContainer(el);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();
