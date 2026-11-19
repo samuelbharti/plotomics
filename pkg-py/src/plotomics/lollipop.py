@@ -40,6 +40,15 @@ def _rows(table: Any, fields: tuple[str, ...], name: str) -> list[dict[str, Any]
     columns = {f: _column(table, f) for f in fields}
     if any(c is None for c in columns.values()):
         raise ValueError(message)
+    # One row given as a single dict holds a value per field, not a column.
+    if any(
+        isinstance(c, (str, bytes)) or not hasattr(c, "__iter__")
+        for c in columns.values()
+    ):
+        raise ValueError(
+            f"`{name}` must be a list of dicts or a data frame with columns "
+            f"{wanted}, not a single dict; put one row in a list."
+        )
     # A pyarrow value, null included, as the Python value it holds.
     values = {
         f: [v.as_py() if hasattr(v, "as_py") else v for v in c]
@@ -120,6 +129,11 @@ class Lollipop(PlotomicsWidget):
         px between the edge of the widget and the plot: one number for every
         side, or a dict with any of the keys ``top``, ``right``, ``bottom`` and
         ``left``, a side left out keeping the default of 10.
+        A colour given as a CSS custom property, such as
+        ``"background": "var(--bg)"``, takes the value the page gives it when
+        the plot draws. After the page changes the property, what the plot
+        drew on a canvas keeps the old colour until it draws again: resize
+        the widget or display it again.
     height:
         Initial widget height in CSS pixels.
 

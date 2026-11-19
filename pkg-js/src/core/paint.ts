@@ -129,6 +129,21 @@ export function colourBytes(
   return a === 0 ? null : [d[0] as number, d[1] as number, d[2] as number, a];
 }
 
+/**
+ * `colour` as red, green, blue and alpha, each from 0 to 1, with var() and
+ * currentColor read inside `el`: a form regl-scatterplot reads for any
+ * colour, where it reads only hex in a string. [0, 0, 0, 0] for a colour
+ * that paints nothing, and outside a browser.
+ */
+export function unitColour(
+  colour: string | null | undefined,
+  el?: Element,
+): [number, number, number, number] {
+  const rgba = colourBytes(colour, el);
+  if (!rgba) return [0, 0, 0, 0];
+  return [rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255];
+}
+
 /** Bytes from {@link colourBytes} as a hex colour, or rgba() with an alpha. */
 export function bytesToColour(rgba: readonly number[]): string {
   const [r = 0, g = 0, b = 0, a = 255] = rgba;

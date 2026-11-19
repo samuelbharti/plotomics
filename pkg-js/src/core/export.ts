@@ -225,7 +225,7 @@ function resolvePageColours(svg: SVGSVGElement, el: Element): SVGSVGElement {
  * The part `view` of an SVG element as an image `outW` x `outH` px. The
  * vector overlay is drawn at the output size, so its text stays sharp at
  * any scale. With `el`, the colours that depend on the page are read
- * there first (see {@link resolvePageColours}).
+ * there first (see `resolvePageColours`).
  */
 async function svgImage(
   svg: SVGSVGElement,
@@ -267,8 +267,8 @@ async function svgImage(
  * padding too, as in the PNG. `width` and `height` are the size of the
  * content. With `el`, the plot's element, a background given as var() or
  * currentColor is written as the colour it has there, since the file is
- * read away from the page, and so is every other such colour in `svg`
- * (see {@link resolvePageColours}). Returns `svg`.
+ * read away from the page, and so is every other var() and currentColor
+ * colour in `svg`. Returns `svg`.
  */
 export function padSVG(
   svg: SVGSVGElement,

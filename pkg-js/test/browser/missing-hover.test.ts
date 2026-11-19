@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createDotplot } from "../../src/components/dotplot.js";
 import { createLollipop } from "../../src/components/lollipop.js";
+import { createOncoplot } from "../../src/components/oncoplot.js";
 import { createUpset } from "../../src/components/upset.js";
 import { createViolin } from "../../src/components/violin.js";
 import type { PlotomicsInstance } from "../../src/core/index.js";
@@ -147,6 +148,64 @@ describe("an UpSet intersection with a missing size", () => {
       expect(tips).toContain("<b>NA</b><br>B");
       expect(tips).toContain("<b>30</b> (30.0%)<br>A + B");
       expect(tips.join(" ")).not.toContain("NaN");
+    });
+  }
+});
+
+describe("an UpSet set with a missing name", () => {
+  it("names it NA in the tooltips", () => {
+    // Before, the set read "<b></b> (50)", and an intersection of that set
+    // alone read "none".
+    const el = container();
+    instances.push(
+      createUpset(el, {
+        data: {
+          columns: { size: [40, 20, 10] },
+          meta: {
+            sets: ["A", null] as unknown as string[],
+            setSizes: [70, 50],
+            membership: [1, 0, 0, 1, 1, 1],
+          },
+        },
+      }),
+    );
+    const tips = [...scan(el)];
+    expect(errors).toEqual([]);
+    expect(tips).toContain("<b>NA</b> (50)");
+    expect(tips).toContain("<b>20</b><br>NA");
+    expect(tips).toContain("<b>10</b><br>A + NA");
+    expect(tips.join(" ")).not.toContain("none");
+  });
+});
+
+describe("an oncoplot annotation with a missing name or level", () => {
+  const data = (name: string | null, levels: (string | null)[]) => ({
+    columns: { codes: [1, 0, 0, 1] },
+    meta: {
+      nrows: 2,
+      ncols: 2,
+      genes: ["TP53", "KRAS"],
+      samples: ["S1", "S2"],
+      classes: ["Missense_Mutation"],
+      annotations: [{ name, levels, codes: [0, 1] }],
+    },
+  });
+  for (const [what, name, levels, want] of [
+    ["name", null, ["Basal", "LumA"], "S1</b><br>NA: Basal"],
+    ["level", "Subtype", [null, "LumA"], "S1</b><br>Subtype: NA"],
+  ] as const) {
+    it(`names a missing ${what} NA in the tooltip`, () => {
+      // Before, the tooltip threw on null on every mouse move.
+      const el = container(600, 400);
+      instances.push(
+        createOncoplot(el, {
+          data: data(name, [...levels]) as never,
+        }),
+      );
+      const tips = [...scan(el, 60, 80)];
+      expect(errors).toEqual([]);
+      expect(tips.some((t) => t.endsWith(want))).toBe(true);
+      expect(svgTexts(el).join(" ")).not.toContain("null");
     });
   }
 });

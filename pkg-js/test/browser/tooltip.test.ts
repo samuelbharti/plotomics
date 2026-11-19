@@ -104,6 +104,95 @@ describe("createTooltip", () => {
   });
 });
 
+/** Text of 2 to 9 words, some long, from a fixed seed. */
+function phrases(n: number): string[] {
+  const words = [
+    "alpha",
+    "lambda",
+    "gene",
+    "set",
+    "TP53",
+    "HALLMARK_OXIDATIVE_PHOSPHORYLATION",
+    "interferon",
+    "B",
+    "cells",
+    "CD14+",
+    "monocytes",
+    "log2FC",
+    "0.0012",
+    "pathway",
+  ];
+  let s = 7;
+  const next = () => {
+    s = (s * 1103515245 + 12345) % 2147483648;
+    return s / 2147483648;
+  };
+  return Array.from({ length: n }, () => {
+    const k = 2 + Math.floor(next() * 8);
+    const text = Array.from(
+      { length: k },
+      () => words[Math.floor(next() * words.length)],
+    ).join(" ");
+    return next() < 0.5 ? `<b>${text}</b>` : `<b>${text}</b><br/>value 1.25`;
+  });
+}
+
+describe("a tooltip placed near an edge", () => {
+  it("wraps as it was measured, wherever it is placed", () => {
+    // Before the fix a tooltip set against the right edge was up to a
+    // pixel narrower than measured, wrapped one more line, and came down
+    // over the pointer; 44 of 196 strings changed height.
+    const el = container(400, 300);
+    const tip = createTooltip(el, defaultTheme);
+    const box = el.getBoundingClientRect();
+    const node = tipOf(el);
+    const texts = [
+      "<b>alpha lambda lambda gene lambda set</b>",
+      ...phrases(200),
+    ];
+    let changed = 0;
+    for (const html of texts) {
+      tip.show(html, box.left + 20, box.top + 20);
+      const h0 = node.getBoundingClientRect().height;
+      for (const [x, y] of [
+        [box.left + 200, box.bottom - 20],
+        [box.right - 5, box.bottom - 5],
+        [box.right - 60, box.top + 150],
+      ] as const) {
+        tip.show(html, x, y);
+        const r = node.getBoundingClientRect();
+        if (Math.abs(r.height - h0) > 0.5) changed += 1;
+        const over = r.left <= x && x <= r.right && r.top <= y && y <= r.bottom;
+        expect(over, `${html} at ${x - box.left}, ${y - box.top}`).toBe(false);
+      }
+    }
+    expect(changed).toBe(0);
+    tip.destroy();
+  });
+
+  it("does not sit on the pointer in a small widget", () => {
+    // Before the fix a long text in a widget it fits in neither way was
+    // clamped inside along both sides, over the pointer.
+    const html = `<b>${"HALLMARK_OXIDATIVE_PHOSPHORYLATION interferon response ".repeat(3)}</b><br/>value 1.25`;
+    for (const [w, h] of [
+      [160, 100],
+      [300, 120],
+      [200, 150],
+    ] as const) {
+      const el = container(w, h);
+      const tip = createTooltip(el, defaultTheme);
+      const box = el.getBoundingClientRect();
+      const x = box.left + w / 2;
+      const y = box.top + h / 2;
+      tip.show(html, x, y);
+      const r = tipOf(el).getBoundingClientRect();
+      const over = r.left <= x && x <= r.right && r.top <= y && y <= r.bottom;
+      expect(over, `${w} x ${h}`).toBe(false);
+      tip.destroy();
+    }
+  });
+});
+
 describe("a heatmap tooltip with long names", () => {
   it("stays inside the widget, and the page gets no scroll", () => {
     const long = (s: string, i: number) =>

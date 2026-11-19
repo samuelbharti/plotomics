@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
+import { createEmbedding } from "../../src/components/embedding.js";
 import { createHeatmap } from "../../src/components/heatmap.js";
 import { createHic } from "../../src/components/hic.js";
+import { createVolcano } from "../../src/components/volcano.js";
 import {
   type PlotomicsInstance,
   compositePNG,
@@ -111,6 +113,60 @@ describe.each(PLOTS)("$name with a var() background", (plot) => {
       expect(share, where).toBeGreaterThan(want - 0.02);
     }
   });
+});
+
+describe("the background of a regl-scatterplot", () => {
+  // regl-scatterplot reads hex and RGBA only. Before the fix a var()
+  // background reached it as it was: it warned "Only HEX, RGB, and RGBA are
+  // handled", took white, and styled its lasso for a white plot.
+
+  /** The lasso handles regl-scatterplot has added to the page. */
+  const handles = () =>
+    Array.from(document.querySelectorAll("div")).filter(
+      (d) => d.style.borderRadius === "4rem",
+    );
+
+  const points = {
+    columns: {
+      x: [-2, -1, 0, 1, 2],
+      y: [1, 3, 5, 2, 4],
+      label: ["a", "b", "c", "d", "e"],
+    },
+  };
+  const makers = [
+    ["volcano", createVolcano],
+    ["embedding", createEmbedding],
+  ] as const;
+
+  for (const [name, make] of makers) {
+    it(`gives the ${name} the colour the page sets, with no warning`, async () => {
+      const warn = vi.spyOn(console, "warn");
+      try {
+        const styles: string[] = [];
+        for (const background of [BG, "var(--plot-bg)"]) {
+          const before = new Set(handles());
+          const el = container(W, 400);
+          const plot = (make as typeof createVolcano)(el, {
+            data: points,
+            options: { theme: { background } },
+          });
+          instances.push(plot);
+          plot.setOptions({ theme: { background } });
+          await settled(name);
+          const added = handles().filter((d) => !before.has(d));
+          styles.push(added.map((d) => d.style.border).join(" | "));
+        }
+        const unread = warn.mock.calls.filter((c) =>
+          String(c[0]).includes("Only HEX"),
+        );
+        expect(unread).toEqual([]);
+        // The lasso is styled for a dark plot both times.
+        expect(styles[1]).toBe(styles[0]);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  }
 });
 
 describe("the background of a WebGL matrix", () => {

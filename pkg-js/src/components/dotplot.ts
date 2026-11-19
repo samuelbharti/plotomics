@@ -196,7 +196,7 @@ const MIN_DOT_RADIUS = 1;
 /**
  * The radius in px of a dot at 100%: `maxRadius`, made smaller so that dots
  * in neighbouring cells do not overlap, but never below
- * {@link MIN_DOT_RADIUS}, so a plot with many genes or groups still draws
+ * `MIN_DOT_RADIUS`, so a plot with many genes or groups still draws
  * its dots. Never below 0.
  */
 export function dotMaxRadius(

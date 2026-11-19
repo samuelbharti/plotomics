@@ -50,6 +50,11 @@
 #'   of the widget and the plot: one number for every side, or numbers named
 #'   `top`, `right`, `bottom` and `left` in a list or vector, a side left out
 #'   keeping the default of 10.
+#'   A colour given as a CSS custom property, such as
+#'   `background = "var(--bg)"`, takes the value the page gives it when the
+#'   plot draws. After the page changes the property, what the plot drew on
+#'   a canvas keeps the old colour until it draws again: resize the widget
+#'   or render it again.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
 #' @return An `htmlwidget` object.
@@ -142,6 +147,11 @@ lollipop <- function(variants,
   if (!is.null(class_colors)) meta$classColors <- I(as.character(class_colors))
 
   if (!is.null(domains)) {
+    # A list has names but no rows, and would stop later in seq_len().
+    if (!is.data.frame(domains)) {
+      stop("`domains` must be a data frame with columns `name`, `start` ",
+           "and `end`, one row per domain.", call. = FALSE)
+    }
     if (!all(c("name", "start", "end") %in% names(domains))) {
       stop("`domains` must contain columns `name`, `start` and `end`.",
         call. = FALSE
@@ -159,6 +169,10 @@ lollipop <- function(variants,
     }
   }
   if (!is.null(ptms)) {
+    if (!is.data.frame(ptms)) {
+      stop("`ptms` must be a data frame with columns `position` and `type`, ",
+           "one row per site.", call. = FALSE)
+    }
     if (!all(c("position", "type") %in% names(ptms))) {
       stop("`ptms` must contain columns `position` and `type`.", call. = FALSE)
     }

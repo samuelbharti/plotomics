@@ -62,6 +62,19 @@ test_that("a single domain still yields a list, not a bare object", {
   expect_equal(w$x$data$meta$domains[[1]]$name, "only")
 })
 
+test_that("a list in place of a data frame says what to pass", {
+  # A single list used to stop with an error from seq_len().
+  v <- variants_fixture()
+  expect_error(
+    lollipop(v, length = 393, domains = list(name = "Kinase", start = 10, end = 90)),
+    "must be a data frame"
+  )
+  expect_error(
+    lollipop(v, length = 393, ptms = list(position = 15, type = "Phospho")),
+    "must be a data frame"
+  )
+})
+
 test_that("a domain with an NA name crosses as null, as Python sends None", {
   # The browser draws no name for null.
   w <- lollipop(variants_fixture(), length = 393,

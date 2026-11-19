@@ -277,3 +277,19 @@ def test_lollipop_names_the_columns_domains_and_ptms_need():
         Lollipop(make_data(), length=393, domains=[{"name": "a", "start": 1}])
     with pytest.raises(ValueError, match="`ptms` must contain columns `position` and `type`"):
         Lollipop(make_data(), length=393, ptms=pd.DataFrame({"position": [5]}))
+
+
+def test_lollipop_says_how_to_pass_a_single_domain():
+    # A single dict used to fail with "'int' object is not iterable".
+    need = "list of dicts or a data frame"
+    with pytest.raises(ValueError, match=need):
+        Lollipop(make_data(), length=393,
+                 domains={"name": "Kinase", "start": 10, "end": 90})
+    with pytest.raises(ValueError, match=need):
+        Lollipop(make_data(), length=393, ptms={"position": 15, "type": "P"})
+    # A dict of columns is a table, and is read as one.
+    w = Lollipop(make_data(), length=393,
+                 domains={"name": ["Kinase"], "start": [10], "end": [90]})
+    assert w.data["meta"]["domains"] == [
+        {"name": "Kinase", "start": 10.0, "end": 90.0}
+    ]

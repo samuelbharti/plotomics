@@ -96,8 +96,10 @@ export const defaultOncoplotOptions: OncoplotOptions = {
 };
 
 export interface OncoplotAnnotation {
-  name: string;
-  levels: string[];
+  /** The track's name. A missing name, null, reads "NA". */
+  name: string | null;
+  /** The level names, in code order. A missing level, null, reads "NA". */
+  levels: (string | null)[];
   /** 0-based level code per sample; negative or out-of-range renders as blank. */
   codes: ArrayLike<number>;
   colors?: string[];
@@ -465,10 +467,11 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       const palettes = annPalettes();
       annotations().forEach((a, k) => {
         const pal = palettes[k] as string[];
+        // A missing name or level (null) reads "NA".
         groups.push([
-          { label: `${a.name}:`, color: null },
+          { label: `${a.name ?? "NA"}:`, color: null },
           ...a.levels.map((lv, i) => ({
-            label: lv,
+            label: lv ?? "NA",
             color: pal[i % pal.length] as string,
           })),
         ]);
@@ -502,7 +505,9 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       );
     }
     if (opts.showAnnotations) {
-      for (const a of annotations()) w = Math.max(w, labelWidth(a.name));
+      for (const a of annotations()) {
+        w = Math.max(w, labelWidth(a.name ?? "NA"));
+      }
     }
     const tmb = data.columns.tmb as ArrayLike<number> | undefined;
     if (opts.showBurden && tmb) {
@@ -586,11 +591,16 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     const col = Math.floor(cx / layout.cellW);
     if (!a || col < 0 || col >= ncols()) return null;
     const code = a.codes[col] as number;
+    // A missing name or level (null) reads "NA"; it threw here before.
     const value =
       code == null || code < 0 || code >= a.levels.length
         ? "NA"
-        : (a.levels[code] as string);
-    return { name: a.name, sample: samples()[col] ?? `col ${col}`, value };
+        : (a.levels[code] ?? "NA");
+    return {
+      name: a.name ?? "NA",
+      sample: samples()[col] ?? `col ${col}`,
+      value,
+    };
   }
   function onLeave() {
     tooltip.hide();
@@ -816,7 +826,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
           text(
             left - 8,
             y + nameY,
-            fit(a.name, room),
+            fit(a.name ?? "NA", room),
             theme.muted,
             "end",
             sizes.label,

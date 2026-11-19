@@ -292,8 +292,9 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
         typeof n === "number" && Number.isFinite(n)
           ? ` (${n.toLocaleString()})`
           : "";
+      // A missing set name (null) reads "NA", as in the other tooltips.
       tooltip.show(
-        `<b>${esc(names[k] ?? "")}</b>${size}`,
+        `<b>${esc(names[k] ?? "NA")}</b>${size}`,
         lastPointer.x,
         lastPointer.y,
       );
@@ -305,8 +306,8 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       return;
     }
     const inSet = membershipRow(membership(), i, names.length)
-      .map((v, k) => (v ? names[k] : null))
-      .filter(Boolean);
+      .map((v, k) => (v ? (names[k] ?? "NA") : null))
+      .filter((name): name is string => name !== null);
     const total = data.meta?.total as number | undefined;
     // R sends a missing size as null and Python as NaN; it reads "NA".
     const n = s[i] as number | null;
