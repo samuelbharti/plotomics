@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createDotplot } from "../../src/components/dotplot.js";
 import { createViolin } from "../../src/components/violin.js";
-import type { PlotomicsInstance } from "../../src/core/index.js";
+import type { PlotomicsData, PlotomicsInstance } from "../../src/core/index.js";
 
 function container(width = 600, height = 400) {
   const el = document.createElement("div");
@@ -213,5 +213,113 @@ describe("violin value axis and missing medians", () => {
       createViolin(el, { data, options: { showValueAxis: false } }),
     );
     expect(svgTexts(el)).not.toContain("10");
+  });
+});
+
+describe("violin shape", () => {
+  /**
+   * Six features by five groups, as in the violin demo of pkg-js/dev. In
+   * each row one violin peaks at density 1 and the other four at 0.5.
+   */
+  function panel(): PlotomicsData {
+    const feats = ["CD3D", "MS4A1", "LYZ", "COL1A1", "EPCAM", "NKG7"];
+    const groups = ["T cell", "B cell", "Myeloid", "Fibroblast", "Tumour"];
+    const grid = Array.from({ length: 61 }, (_, k) => k / 10);
+    const feature: string[] = [];
+    const group: string[] = [];
+    const density: number[] = [];
+    for (let i = 0; i < feats.length; i += 1) {
+      const centre = 1 + (i % 5);
+      for (let j = 0; j < groups.length; j += 1) {
+        feature.push(feats[i] as string);
+        group.push(groups[j] as string);
+        const peak = j === i % 5 ? 1 : 0.5;
+        for (const v of grid) {
+          density.push(peak * Math.exp(-((v - centre) ** 2) / (2 * 0.5 ** 2)));
+        }
+      }
+    }
+    return { columns: { feature, group }, meta: { grid, density } };
+  }
+
+  /**
+   * The height of each row and the width in px of each violin in it. Each
+   * row's value axis runs from 2 px under the top of the row to 2 px over
+   * its bottom, the band the violins are drawn in; the group labels sit
+   * under the column centres.
+   */
+  function shapes(el: HTMLElement): { rowH: number; widths: number[] }[] {
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+    const ratio = canvas.width / canvas.clientWidth;
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const inked = (x: number, y: number) => {
+      const i = (y * canvas.width + x) * 4;
+      return img[i] !== 255 || img[i + 1] !== 255 || img[i + 2] !== 255;
+    };
+    const svg = el.querySelector("svg") as SVGSVGElement;
+    const at = (n: Element, name: string) => Number(n.getAttribute(name));
+    const axes = Array.from(svg.querySelectorAll("line")).filter(
+      (l) => at(l, "x1") === at(l, "x2"),
+    );
+    const centres = Array.from(svg.querySelectorAll("text"))
+      .filter((t) => (t.getAttribute("transform") ?? "").startsWith("rotate"))
+      .map((t) => at(t, "x"));
+    const cellW = (centres[1] as number) - (centres[0] as number);
+    return axes.map((axis) => {
+      const y0 = Math.floor(at(axis, "y1") * ratio);
+      const y1 = Math.ceil(at(axis, "y2") * ratio);
+      const widths = centres.map((cx) => {
+        const x0 = Math.ceil((cx - cellW / 2) * ratio);
+        const x1 = Math.floor((cx + cellW / 2) * ratio);
+        let lo = Number.POSITIVE_INFINITY;
+        let hi = Number.NEGATIVE_INFINITY;
+        for (let y = y0; y <= y1; y += 1) {
+          for (let x = x0; x < x1; x += 1) {
+            if (!inked(x, y)) continue;
+            lo = Math.min(lo, x);
+            hi = Math.max(hi, x);
+          }
+        }
+        return hi < lo ? 0 : (hi - lo + 1) / ratio;
+      });
+      return { rowH: at(axis, "y2") - at(axis, "y1") + 4, widths };
+    });
+  }
+
+  it.each([
+    [800, 560],
+    [1440, 900],
+  ])(
+    "draws the widest violin 0.8 times as wide as its row is tall, %i x %i px",
+    (width, height) => {
+      // Filling 85% of its column, the widest violin here was 121 px wide
+      // in an 84 px row at 800 x 560, and 229 px wide in a 140 px row at
+      // 1440 x 900.
+      const el = container(width, height);
+      instances.push(createViolin(el, { data: panel() }));
+      const rows = shapes(el);
+      expect(rows).toHaveLength(6);
+      for (const { rowH, widths } of rows) {
+        const widest = Math.max(...widths);
+        // One px of antialiasing on each side.
+        expect(widest).toBeLessThanOrEqual(0.8 * rowH + 2);
+        expect(widest).toBeGreaterThanOrEqual(0.8 * rowH - 2);
+      }
+    },
+  );
+
+  it("keeps one density scale across a row", () => {
+    const el = container(1440, 900);
+    instances.push(createViolin(el, { data: panel() }));
+    for (const { widths } of shapes(el)) {
+      const widest = Math.max(...widths);
+      // Half the density of the widest violin, half its width.
+      const rest = widths.filter((w) => w !== widest);
+      expect(rest).toHaveLength(4);
+      for (const w of rest) {
+        expect(Math.abs(w - widest / 2)).toBeLessThanOrEqual(2);
+      }
+    }
   });
 });

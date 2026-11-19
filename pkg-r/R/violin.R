@@ -23,7 +23,9 @@
 #'   Factor `feature` / `group` columns supply them from their levels.
 #' @param group_colors One hex colour per group. `NULL` uses the categorical
 #'   palette.
-#' @param violin_width Fraction of a cell's width the widest violin fills.
+#' @param violin_width Fraction of a cell's width the widest violin fills, in
+#'   (0, 1]. The widest violin is also at most 0.8 times as wide as its row
+#'   is tall, so in a wide widget it fills less of its cell.
 #' @param scale_per_violin Scale each violin to its own maximum rather than the
 #'   row's. Per-row is the default so groups stay comparable within a feature.
 #' @param show_median,show_feature_labels Toggle the median tick and row labels.

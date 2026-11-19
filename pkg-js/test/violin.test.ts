@@ -4,6 +4,7 @@ import {
   gridForRow,
   layoutViolin,
   maxDensity,
+  violinMaxWidth,
   violinPolygon,
 } from "../src/components/violin.js";
 
@@ -131,6 +132,17 @@ describe("violin helpers", () => {
       showValueAxis: true,
     });
     expect(on.plotW).toBe(off.plotW - (44 - 14));
+  });
+
+  it("caps the widest violin at 0.8 times the row height", () => {
+    // A wide cell: the row height sets the width.
+    expect(violinMaxWidth({ cellW: 260, rowH: 130 }, 0.85)).toBeCloseTo(
+      104,
+      10,
+    );
+    // A narrow cell: violinWidth of the cell, as before.
+    expect(violinMaxWidth({ cellW: 40, rowH: 130 }, 0.85)).toBeCloseTo(34, 10);
+    expect(violinMaxWidth({ cellW: 40, rowH: 130 }, 0.5)).toBeCloseTo(20, 10);
   });
 
   it("stays well-defined with no rows or columns", () => {

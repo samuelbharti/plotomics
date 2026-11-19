@@ -50,7 +50,9 @@ import {
 } from "../core/index.js";
 
 export interface ViolinOptions {
-  /** Fraction of a cell's width the widest violin fills, in (0, 1]. */
+  /** Fraction of a cell's width the widest violin fills, in (0, 1]. The
+   * widest violin is also at most 0.8 times as wide as its row is tall,
+   * so in a wide widget it fills less of its cell. */
   violinWidth: number;
   /** Scale each violin to its own maximum rather than the row's. Per-row is
    * the honest default: within a gene, groups stay comparable. */
@@ -80,6 +82,13 @@ const MIN_LEFT = 50;
 const MAX_LEFT = 150;
 /** The largest share of the widget's width or height that a gutter takes. */
 const MAX_GUTTER_SHARE = 0.35;
+/**
+ * The widest violin is at most this many times as wide as its row is
+ * tall. Stretched across a wide column, a violin flattens into a band.
+ * scanpy sizes its stacked violin figure from fixed cells, and there the
+ * widest violin comes out 0.75 to 0.85 times as wide as its row is tall.
+ */
+const MAX_VIOLIN_ASPECT = 0.8;
 const DEFAULT_SIZES = textSizes(defaultTheme);
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -179,6 +188,18 @@ export function layoutViolin(
  */
 function colLabelRoom(bottom: number, size: number): number {
   return Math.max(0, (bottom - 12) * Math.SQRT2 - 0.3 * size);
+}
+
+/**
+ * Width in px of the widest violin in a row: `violinWidth` of its cell,
+ * and at most 0.8 times the row height. Every violin in the plot is
+ * drawn against this one width, so the widths in a row stay comparable.
+ */
+export function violinMaxWidth(
+  layout: Pick<ViolinLayout, "cellW" | "rowH">,
+  violinWidth: number,
+): number {
+  return Math.min(layout.cellW * violinWidth, layout.rowH * MAX_VIOLIN_ASPECT);
 }
 
 /**
@@ -420,7 +441,7 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     const cols = groupColors();
     const med = medians();
     const grs = grids();
-    const halfW = (layout.cellW * opts.violinWidth) / 2;
+    const halfW = violinMaxWidth(layout, opts.violinWidth) / 2;
 
     for (let r = 0; r < f.length; r += 1) {
       // Collect the row first so every violin in it shares one density scale.
