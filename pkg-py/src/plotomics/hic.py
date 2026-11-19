@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import math
+import numbers
+from collections.abc import Callable
 from typing import Any, Literal
 
 import numpy as np
@@ -34,8 +37,8 @@ class HiC(PlotomicsWidget):
         Number of bins per axis. Required for the sparse form when it cannot be
         inferred from ``max(i, j) + 1``; ignored for a dense matrix.
     bin_size:
-        Genomic bin size in base pairs, used to label axes in bp/kb/Mb. ``None``
-        labels axes by bin index.
+        Genomic bin size in base pairs, a positive number, used to label axes
+        in bp/kb/Mb. ``None`` labels axes by bin index.
     chrom:
         Optional chromosome name shown as the axis title.
     colormap:
@@ -45,16 +48,21 @@ class HiC(PlotomicsWidget):
     transform:
         Intensity transform, ``"log"`` (default) or ``"linear"``.
     vmax:
-        Upper clip of the intensity scale; ``None`` auto-picks a high percentile.
+        Upper clip of the intensity scale: a finite number greater than
+        ``vmin``, and greater than 0 with the log transform. ``None``
+        auto-picks a high percentile.
     vmax_percentile:
-        Percentile (0-1) used for the auto ``vmax`` when ``vmax`` is ``None``.
+        Percentile in (0, 1] used for the auto ``vmax`` when ``vmax`` is
+        ``None``. ``None`` uses the component default.
     vmin:
-        Lower clip of the intensity scale. With the log transform, or when
-        ``vmin`` is 0 or more, values at or below it are drawn as background.
-        With the linear transform and a negative ``vmin`` (for example
-        observed/expected log2 ratios), values below it take the lowest color.
+        Lower clip of the intensity scale, a finite number. ``None`` uses 0.
+        With the log transform, or when ``vmin`` is 0 or more, values at or
+        below it are drawn as background. With the linear transform and a
+        negative ``vmin`` (for example observed/expected log2 ratios), values
+        below it take the lowest color.
     symmetric:
-        Mirror sparse ``i``/``j``/``v`` entries across the diagonal.
+        Mirror sparse ``i``/``j``/``v`` entries across the diagonal: ``True``
+        or ``False``.
     label:
         Axis title (overrides ``chrom`` when set).
     theme:
@@ -100,7 +108,7 @@ class HiC(PlotomicsWidget):
         transform: str = "log",
         vmax: float | None = None,
         vmax_percentile: float | None = None,
-        vmin: float = 0.0,
+        vmin: float | None = 0.0,
         symmetric: bool = True,
         label: str | None = None,
         theme: dict | None = None,
@@ -110,6 +118,27 @@ class HiC(PlotomicsWidget):
         if transform not in ("log", "linear"):
             raise ValueError("`transform` must be 'log' or 'linear'.")
         _check_choice(colormap, "colormap", _COLORMAPS)
+        bin_size = _number(
+            bin_size, "bin_size", "a single positive number", lambda v: v > 0
+        )
+        vmin = _number(vmin, "vmin")
+        vmax = _number(vmax, "vmax")
+        vmax_percentile = _number(
+            vmax_percentile, "vmax_percentile", "in (0, 1]", lambda v: 0 < v <= 1
+        )
+        # A vmax at or below the bottom of the scale leaves every cell
+        # background.
+        if vmax is not None:
+            if vmax <= (0.0 if vmin is None else vmin):
+                raise ValueError("`vmax` must be greater than `vmin`.")
+            if transform == "log" and vmax <= 0:
+                raise ValueError(
+                    "`vmax` must be greater than 0 with the log transform."
+                )
+        if isinstance(symmetric, np.ndarray) and symmetric.ndim == 0:
+            symmetric = symmetric.item()
+        if not isinstance(symmetric, (bool, np.bool_)):
+            raise ValueError("`symmetric` must be a single true or false value.")
 
         columns: dict[str, Any] = {}
 
@@ -163,21 +192,22 @@ class HiC(PlotomicsWidget):
 
         meta: dict[str, Any] = {"n": int(n)}
         if bin_size is not None:
-            meta["binSize"] = float(bin_size)
+            meta["binSize"] = bin_size
         if chrom is not None:
             meta["chrom"] = str(chrom)
 
         options: dict[str, Any] = {
             "colormap": colormap,
             "transform": transform,
-            "vmin": float(vmin),
             "symmetric": bool(symmetric),
         }
+        if vmin is not None:
+            options["vmin"] = vmin
         # `vmax=None` means auto; only send it when the user fixed it.
         if vmax is not None:
-            options["vmax"] = float(vmax)
+            options["vmax"] = vmax
         if vmax_percentile is not None:
-            options["vmaxPercentile"] = float(vmax_percentile)
+            options["vmaxPercentile"] = vmax_percentile
         if label is not None:
             options["label"] = str(label)
         if theme is not None:
@@ -191,6 +221,33 @@ class HiC(PlotomicsWidget):
             _height=height,
             **kwargs,
         )
+
+
+def _number(
+    value: Any,
+    name: str,
+    what: str = "a single finite number",
+    ok: Callable[[float], bool] | None = None,
+) -> float | None:
+    """``value`` as a float, or None when it is None (the argument is unset).
+
+    NaN, an infinite value, text, a bool, a sequence, or a value ``ok``
+    refuses raises ``ValueError("`name` must be what.")``, as R does.
+    """
+    # A 0-d array holds one value, as a NumPy scalar does.
+    if isinstance(value, np.ndarray) and value.ndim == 0:
+        value = value.item()
+    if value is None:
+        return None
+    number = math.nan
+    if isinstance(value, numbers.Real) and not isinstance(value, (bool, np.bool_)):
+        try:
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            number = math.nan
+    if not math.isfinite(number) or (ok is not None and not ok(number)):
+        raise ValueError(f"`{name}` must be {what}.")
+    return number
 
 
 def _numeric(values: Any, name: str, dtype: Any) -> np.ndarray:

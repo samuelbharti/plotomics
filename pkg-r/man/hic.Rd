@@ -31,8 +31,8 @@ from \code{max(i, j) + 1}).}
 \item{n}{Number of bins per axis. Required for the sparse (i/j/v) form;
 ignored for a dense matrix (taken from \code{nrow(mat)}).}
 
-\item{bin_size}{Genomic bin size in base pairs; used to label axes in
-bp/kb/Mb. \code{NULL} labels axes by bin index.}
+\item{bin_size}{Genomic bin size in base pairs, a positive number; used to
+label axes in bp/kb/Mb. \code{NULL} (or \code{NA}) labels axes by bin index.}
 
 \item{chrom}{Optional chromosome name shown as the axis title.}
 
@@ -42,18 +42,21 @@ default) or \code{"ltc"} (an earthy teal to sand to rust ramp), or diverging
 
 \item{transform}{Intensity transform, \code{"log"} (default) or \code{"linear"}.}
 
-\item{vmax}{Upper clip of the intensity scale; \code{NULL} auto-picks a high
-percentile.}
+\item{vmax}{Upper clip of the intensity scale: a finite number greater
+than \code{vmin}, and greater than 0 with the log transform. \code{NULL} (or \code{NA})
+auto-picks a high percentile.}
 
 \item{vmax_percentile}{Percentile in \verb{(0, 1]} used to auto-pick \code{vmax} when
-\code{vmax} is \code{NULL}. \code{NULL} uses the component default.}
+\code{vmax} is \code{NULL}. \code{NULL} (or \code{NA}) uses the component default.}
 
-\item{vmin}{Lower clip of the intensity scale. With the log transform, or
-when \code{vmin} is 0 or more, values at or below it are drawn as background.
-With the linear transform and a negative \code{vmin} (for example
-observed/expected log2 ratios), values below it take the lowest color.}
+\item{vmin}{Lower clip of the intensity scale, a finite number. \code{NULL} (or
+\code{NA}) uses 0. With the log transform, or when \code{vmin} is 0 or more, values
+at or below it are drawn as background. With the linear transform and a
+negative \code{vmin} (for example observed/expected log2 ratios), values below
+it take the lowest color.}
 
-\item{symmetric}{Mirror sparse \code{i}/\code{j}/\code{v} entries across the diagonal.}
+\item{symmetric}{Mirror sparse \code{i}/\code{j}/\code{v} entries across the diagonal:
+\code{TRUE} or \code{FALSE}.}
 
 \item{label}{Axis title (overrides \code{chrom} when set).}
 

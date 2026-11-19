@@ -55,6 +55,7 @@ import {
   categoricalColors,
 } from "../core/index.js";
 import { unitColour } from "../core/paint.js";
+import { uniqueId } from "../core/dom.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
@@ -458,11 +459,6 @@ type LegendState =
   | { mode: "continuous"; domain: [number, number] }
   | null;
 
-// Monotonic per-page counter so multiple embeddings get distinct SVG element
-// ids. A shared id would make every colorbar's `url(#…)` resolve to the first
-// instance's gradient in document order (silent legend/point mismatch).
-let embeddingSeq = 0;
-
 export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   el,
   initial,
@@ -494,7 +490,10 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   let drawn: Int32Array = new Int32Array(0);
   // Whether some drawn point has no colour value (drawn grey, keyed "NA").
   let missingColor = false;
-  const uid = `plotomics-embedding-${embeddingSeq++}`;
+  // One id per instance for the SVG elements, distinct across widgets that
+  // load the module again each (as anywidget does). A shared id would make
+  // every colorbar's `url(#…)` resolve to the first instance's gradient.
+  const uid = uniqueId("plotomics-embedding");
 
   const xScale = scaleLinear().domain(xDomain);
   const yScale = scaleLinear().domain(yDomain);
