@@ -5,6 +5,8 @@ import {
   ltc,
   ltcdiv,
   ramp,
+  isDivergingRamp,
+  matrixRamp,
   rgbToHex,
   categoricalColors,
 } from "../src/core/color.js";
@@ -110,5 +112,22 @@ describe("categoricalColors", () => {
   it("holds 20 distinct colours in PALETTE_20", () => {
     expect(PALETTE_20).toHaveLength(20);
     expect(new Set(PALETTE_20).size).toBe(20);
+  });
+});
+
+describe("ramp roles", () => {
+  it("names rdbu and ltcdiv as the diverging ramps", () => {
+    expect(isDivergingRamp("rdbu")).toBe(true);
+    expect(isDivergingRamp("ltcdiv")).toBe(true);
+    expect(isDivergingRamp("viridis")).toBe(false);
+    expect(isDivergingRamp("ltc")).toBe(false);
+  });
+
+  it("draws z-scores with rdbu only when no colormap is given", () => {
+    expect(matrixRamp(null, true)).toBe("rdbu");
+    expect(matrixRamp(undefined, true)).toBe("rdbu");
+    expect(matrixRamp(null, false)).toBe("viridis");
+    expect(matrixRamp("viridis", true)).toBe("viridis");
+    expect(matrixRamp("ltc", false)).toBe("ltc");
   });
 });

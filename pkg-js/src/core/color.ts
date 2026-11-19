@@ -124,6 +124,23 @@ export function ramp(name: RampName = "viridis"): (t: number) => string {
   return (t: number) => rgbToHex(fn(t));
 }
 
+/** Whether `name` is a diverging ramp, with a neutral colour at its middle. */
+export function isDivergingRamp(name: RampName): boolean {
+  return name === "rdbu" || name === "ltcdiv";
+}
+
+/**
+ * The ramp a matrix plot draws with: `name` when one is given, else the
+ * diverging "rdbu" for row z-scores, which centre on 0, and "viridis"
+ * otherwise.
+ */
+export function matrixRamp(
+  name: RampName | null | undefined,
+  zScore: boolean,
+): RampName {
+  return name ?? (zScore ? "rdbu" : "viridis");
+}
+
 /**
  * Colours for `n` categories, in order. The default palette (Okabe-Ito, also
  * used when `palette` is empty) gives way to {@link PALETTE_20} past 8

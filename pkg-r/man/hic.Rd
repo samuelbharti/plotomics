@@ -9,7 +9,7 @@ hic(
   n = NULL,
   bin_size = NULL,
   chrom = NULL,
-  colormap = c("viridis", "rdbu"),
+  colormap = c("viridis", "rdbu", "ltc", "ltcdiv"),
   transform = c("log", "linear"),
   vmax = NULL,
   vmax_percentile = NULL,
@@ -36,8 +36,9 @@ bp/kb/Mb. \code{NULL} labels axes by bin index.}
 
 \item{chrom}{Optional chromosome name shown as the axis title.}
 
-\item{colormap}{Colormap for intensity: sequential \code{"viridis"} or diverging
-\code{"rdbu"}.}
+\item{colormap}{Colormap for intensity: sequential \code{"viridis"} (the
+default) or \code{"ltc"} (an earthy teal to sand to rust ramp), or diverging
+\code{"rdbu"} or \code{"ltcdiv"} (its counterpart, neutral cream at the midpoint).}
 
 \item{transform}{Intensity transform, \code{"log"} (default) or \code{"linear"}.}
 

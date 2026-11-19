@@ -1,3 +1,5 @@
+import inspect
+
 import numpy as np
 import pytest
 
@@ -37,7 +39,8 @@ def test_clustermap_defaults_match_option_names():
     w = Clustermap(np.random.randn(4, 5))
     assert w.options["metric"] == "euclidean"
     assert w.options["linkage"] == "average"
-    assert w.options["colormap"] == "viridis"
+    # No colormap is sent; the browser picks one from zScore.
+    assert w.options["colormap"] is None
     assert w.options["zScore"] is False
     assert w.options["clusterRows"] is True
     assert w.options["clusterCols"] is True
@@ -157,6 +160,24 @@ def test_clustermap_checks_label_lengths():
         Clustermap(m, row_labels=["a", "b"])
     with pytest.raises(ValueError, match="`col_labels` has 3 entries; expected 2"):
         Clustermap(m, col_labels=["a", "b", "c"])
+
+
+def test_clustermap_leaves_the_colormap_to_the_browser_unless_given():
+    m = np.random.randn(3, 3)
+    # None lets the browser draw z-scores with "rdbu" and other values with
+    # "viridis".
+    sig = inspect.signature(Clustermap.__init__)
+    assert sig.parameters["colormap"].default is None
+    assert Clustermap(m, z_score=True).options["colormap"] is None
+    # A colormap that is given wins over the z-score default.
+    w = Clustermap(m, colormap="viridis", z_score=True)
+    assert w.options["colormap"] == "viridis"
+
+
+@pytest.mark.parametrize("colormap", ["viridis", "rdbu", "ltc", "ltcdiv"])
+def test_clustermap_accepts_every_colormap_the_browser_draws(colormap):
+    w = Clustermap(np.random.randn(3, 3), colormap=colormap)
+    assert w.options["colormap"] == colormap
 
 
 def test_clustermap_sends_a_missing_row_or_column_name_as_null():
