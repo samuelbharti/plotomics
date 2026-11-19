@@ -8,7 +8,7 @@ clustermap(
   mat,
   metric = c("euclidean", "correlation"),
   linkage = c("average", "complete", "ward"),
-  colormap = c("viridis", "rdbu"),
+  colormap = NULL,
   z_score = FALSE,
   cluster_rows = TRUE,
   cluster_cols = TRUE,
@@ -29,7 +29,9 @@ clustermap(
 labels. Values are transported row-major to the browser. A missing cell
 (\code{NA}, \code{NaN} or an infinite value) is drawn grey, and distances between
 rows or columns use the cells both have, scaled up as \code{\link[stats:dist]{stats::dist()}}
-does.}
+does. Where several rows or columns share a pixel, the pixel shows the
+mean of their finite cells, so it is grey only when all of them are
+missing.}
 
 \item{metric}{Distance metric for clustering: \code{"euclidean"} or
 \code{"correlation"} (1 - Pearson correlation).}
@@ -39,7 +41,12 @@ does.}
 compute it, and it assumes the euclidean metric (a warning says so for
 correlation).}
 
-\item{colormap}{Color ramp: \code{"viridis"} (sequential) or \code{"rdbu"} (diverging).}
+\item{colormap}{Color ramp: sequential \code{"viridis"} or \code{"ltc"} (an earthy
+teal to sand to rust ramp), or diverging \code{"rdbu"} or \code{"ltcdiv"} (its
+counterpart, neutral cream at the midpoint), whose range is symmetric
+about zero. \code{NULL} (the default) uses \code{"rdbu"} when \code{z_score} is \code{TRUE},
+so values above and below the row mean get opposite colours, and
+\code{"viridis"} otherwise.}
 
 \item{z_score}{Standardize each row to mean 0 / sd 1 before coloring.}
 
@@ -77,6 +84,9 @@ A hierarchically-clustered expression heatmap (in the spirit of
 layer so large matrices stay smooth, while dendrograms, tick labels and the
 colorbar are crisp vector overlays. Rows and columns are agglomeratively
 clustered and reordered so structure appears as blocks along the diagonal.
+A matrix with more rows or columns than the plot has pixels is pooled for
+drawing: each pixel shows the mean of the cells under it, so a lone
+outlier row still shows, fainter the more rows share its pixel.
 }
 \details{
 Clustering is at least \code{O(n^2)} in the number of rows/columns (it builds a

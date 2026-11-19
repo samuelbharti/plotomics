@@ -49,6 +49,13 @@ test_that("hic() rejects an unknown colormap", {
   expect_error(hic(matrix(1:4, nrow = 2), colormap = "plasma"))
 })
 
+test_that("hic() accepts every colormap the browser draws", {
+  m <- matrix(1:4, nrow = 2)
+  for (cm in c("viridis", "rdbu", "ltc", "ltcdiv")) {
+    expect_equal(hic(m, colormap = cm)$x$options$colormap, cm)
+  }
+})
+
 test_that("hic() rejects out-of-range sparse indices", {
   trip <- list(i = c(0L, 5L), j = c(0L, 1L), v = c(1, 2))
   expect_error(hic(trip, n = 3), "indices must be in \\[0, n\\)")

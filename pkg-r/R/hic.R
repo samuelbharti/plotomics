@@ -16,8 +16,9 @@
 #' @param bin_size Genomic bin size in base pairs; used to label axes in
 #'   bp/kb/Mb. `NULL` labels axes by bin index.
 #' @param chrom Optional chromosome name shown as the axis title.
-#' @param colormap Colormap for intensity: sequential `"viridis"` or diverging
-#'   `"rdbu"`.
+#' @param colormap Colormap for intensity: sequential `"viridis"` (the
+#'   default) or `"ltc"` (an earthy teal to sand to rust ramp), or diverging
+#'   `"rdbu"` or `"ltcdiv"` (its counterpart, neutral cream at the midpoint).
 #' @param transform Intensity transform, `"log"` (default) or `"linear"`.
 #' @param vmax Upper clip of the intensity scale; `NULL` auto-picks a high
 #'   percentile.
@@ -48,7 +49,7 @@ hic <- function(mat,
                 n = NULL,
                 bin_size = NULL,
                 chrom = NULL,
-                colormap = c("viridis", "rdbu"),
+                colormap = c("viridis", "rdbu", "ltc", "ltcdiv"),
                 transform = c("log", "linear"),
                 vmax = NULL,
                 vmax_percentile = NULL,

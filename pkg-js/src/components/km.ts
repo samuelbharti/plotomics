@@ -14,8 +14,8 @@
  * to hand both renderers one set of numbers so the two cannot disagree about
  * where a curve steps.
  *
- * Curves and the confidence band are canvas-drawn; axes, the risk table and the
- * legend are an SVG overlay.
+ * Curves, the confidence band and the gridlines under them are canvas-drawn;
+ * axes, the risk table and the legend are an SVG overlay.
  *
  * ## Data contract
  * - `columns.time`   `number[]`  step time (required, ascending within a group)
@@ -52,6 +52,7 @@ import {
   fitText,
   categoricalColors,
 } from "../core/index.js";
+import { setCanvasColour } from "../core/paint.js";
 
 export interface KmOptions {
   /** Shade the pointwise confidence band when `lower`/`upper` are present. */
@@ -589,6 +590,21 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, width, height);
+    const lo = yMin();
+
+    // y gridlines first, so the bands and the curves are drawn over them. A
+    // grid colour that paints nothing, such as "none", draws no line.
+    if (setCanvasColour(ctx, "strokeStyle", theme.grid, el)) {
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const v of gridValues(lo)) {
+        // On a half pixel, so the 1 px line fills one row of pixels.
+        const y = Math.round(sy(v, lo)) + 0.5;
+        ctx.moveTo(layout.left, y);
+        ctx.lineTo(width - layout.right, y);
+      }
+      ctx.stroke();
+    }
 
     const tArr = times();
     if (!tArr.length) {
@@ -596,7 +612,6 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       return;
     }
     const tmax = maxTime();
-    const lo = yMin();
     const cols = groupColors();
     const lower = lowers();
     const upper = uppers();
@@ -698,6 +713,11 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     renderOverlay();
   }
 
+  /** The values of the five y ticks, from the axis floor to 100%. */
+  function gridValues(lo: number): number[] {
+    return [0, 1, 2, 3, 4].map((k) => lo + (k / 4) * (1 - lo));
+  }
+
   function renderOverlay() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
@@ -707,13 +727,10 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     const lo = yMin();
     const tx = kmText(sizes);
 
-    // y gridlines and ticks, as percentages.
-    for (let k = 0; k <= 4; k += 1) {
-      const v = lo + (k / 4) * (1 - lo);
+    // y tick labels, as percentages; the gridlines are on the canvas, under
+    // the bands and the curves.
+    for (const v of gridValues(lo)) {
       const y = sy(v, lo);
-      svg.appendChild(
-        line(layout.left, y, width - layout.right, y, theme.grid),
-      );
       svg.appendChild(
         text(
           layout.left - 8,

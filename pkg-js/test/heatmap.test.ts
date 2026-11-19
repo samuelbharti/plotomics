@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { isFlatRange } from "../src/core/ticks.js";
 import {
   readShape,
   zScoreRows,
@@ -7,7 +8,9 @@ import {
   buildRampLUT,
   tickIndices,
   toFloat32,
-  poolMatrix,
+  pooledSize,
+  axisPlan,
+  basePlan,
   labelEvery,
 } from "../src/components/heatmap.js";
 
@@ -111,6 +114,39 @@ describe("heatmap helpers", () => {
     expect(hi).toBe(10);
   });
 
+  it("mirrors a lone vmax or vmin about 0 for a diverging ramp", () => {
+    // Before, the other end came from the data, so 0 left the middle.
+    expect(
+      colorDomain([-3, 0, 1], { vmin: null, vmax: 2, diverging: true }),
+    ).toEqual([-2, 2]);
+    expect(
+      colorDomain([-1, 0, 1], { vmin: -3, vmax: null, diverging: true }),
+    ).toEqual([-3, 3]);
+  });
+
+  it("takes the other end from the data when a lone bound cannot centre", () => {
+    // A vmax below 0 leaves 0 outside the range, so nothing is mirrored.
+    expect(
+      colorDomain([-5, 0, 1], { vmin: null, vmax: -1, diverging: true }),
+    ).toEqual([-5, -1]);
+    // A sequential ramp keeps the data end.
+    expect(
+      colorDomain([-3, 0, 1], { vmin: null, vmax: 2, diverging: false }),
+    ).toEqual([-3, 2]);
+  });
+
+  it("widens a flat domain past 2 ** 52 and keeps it flat", () => {
+    const [lo, hi] = colorDomain([-7e15, -7e15], {
+      vmin: null,
+      vmax: null,
+      diverging: false,
+    });
+    expect(lo).toBeLessThan(hi);
+    // Still one colour bar label, and the cells at the middle level.
+    expect(isFlatRange(lo, hi)).toBe(true);
+    expect(normalizeToU8([-7e15], lo, hi)[0]).toBe(128);
+  });
+
   it("widens a degenerate (constant) domain", () => {
     const [lo, hi] = colorDomain([3, 3, 3], {
       vmin: null,
@@ -163,15 +199,56 @@ describe("heatmap helpers", () => {
     expect(low).not.toEqual([0xcc, 0xcc, 0xcc]);
   });
 
-  it("mean-pools a matrix, skipping missing cells", () => {
-    // 3 x 2 pooled by 2 rows and 2 columns: blocks [1,2,3,4] and [5,NaN].
-    const p = poolMatrix([1, 2, 3, 4, 5, Number.NaN], 3, 2, 2, 2);
-    expect(p.nrows).toBe(2);
-    expect(p.ncols).toBe(1);
-    expect(p.values[0]).toBeCloseTo(2.5, 6);
-    expect(p.values[1]).toBeCloseTo(5, 6);
-    const empty = poolMatrix([Number.NaN, Number.NaN], 2, 1, 2, 1);
-    expect(Number.isNaN(empty.values[0] as number)).toBe(true);
+  it("pools to about a texel a pixel, on a ladder of sizes", () => {
+    // At full view, a texel a pixel.
+    expect(pooledSize(1, 424)).toBe(424);
+    // Zoomed in to half the rows: the ladder runs 424, 466, 512, ..., 822,
+    // 904, and 904 texels in view would not each get a pixel.
+    expect(pooledSize(0.5, 424)).toBe(822);
+    for (const view of [1, 0.7, 0.3, 0.01, 1e-4]) {
+      const m = pooledSize(view, 424);
+      // Every texel in view gets a pixel, and nine tenths of the pixels
+      // or more get a texel of their own.
+      expect(m * view).toBeLessThanOrEqual(424 + 1e-9);
+      expect(m * view).toBeGreaterThan(0.9 * 424 - 1);
+    }
+  });
+
+  it("pools to the pixel count for a view of no rows", () => {
+    // These ran forever before.
+    expect(pooledSize(0, 424)).toBe(424);
+    expect(pooledSize(-1, 424)).toBe(424);
+    expect(pooledSize(Number.NaN, 424)).toBe(424);
+    expect(pooledSize(0.5, Number.NaN)).toBe(1);
+  });
+
+  it("plans a texel a row while the rows fit the pixels, else one a pixel", () => {
+    expect(axisPlan(424, 1, 424, 8192)).toEqual({
+      key: "r",
+      count: 424,
+      size: 1,
+      scale: 1,
+    });
+    // 425 or 5000 rows in 424 px: 424 even blocks, where halving the rows
+    // drew 213 or 313.
+    expect(axisPlan(425, 1, 424, 8192)).toMatchObject({ count: 424, size: 0 });
+    expect(axisPlan(5000, 1, 424, 8192)).toMatchObject({
+      count: 424,
+      size: 0,
+    });
+  });
+
+  it("plans aligned blocks past the texture limit", () => {
+    // 8292 rows over a limit of 8192: blocks of two rows from row 0.
+    const p = basePlan(8292, 8192);
+    expect(p).toEqual({ key: "a2", count: 4146, size: 2, scale: 1 });
+    // One row more: the last texel holds that row alone and is drawn over
+    // it, half a texel high.
+    const q = basePlan(8293, 8192);
+    expect(q.count).toBe(4147);
+    expect(q.scale).toBeCloseTo(8293 / 8294, 9);
+    // Zoomed in to a few rows, the view draws the aligned blocks.
+    expect(axisPlan(8292, 1e-3, 424, 8192)).toEqual(p);
   });
 
   it("labels every cell, every k-th cell, or none by the cell size", () => {

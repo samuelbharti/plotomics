@@ -14,7 +14,11 @@
  * Performance rule of the repo: the *data layer* (every cell) is drawn on a
  * canvas, never as per-cell DOM. We paint one ImageData pixel per cell into a
  * small offscreen canvas and let the GPU upscale it (nearest-neighbour) to the
- * display canvas, which stays smooth for very large matrices. The
+ * display canvas, which stays smooth for very large matrices. When the cells
+ * outnumber the pixels, they are mean-pooled to one block per pixel first
+ * (see `poolMean` in the core), so a lone outlier row still shows, fainter
+ * the more rows share its pixel, and a pixel is grey only when every cell
+ * under it is missing. The
  * low-cardinality overlay — dendrograms, labels, colorbar, title — is crisp
  * vector SVG so figures export cleanly.
  *
@@ -34,8 +38,10 @@ import {
   textSizes,
   textWidth,
   ramp,
-  viridis,
-  rdbu,
+  RAMPS,
+  isDivergingRamp,
+  matrixRamp,
+  poolMean,
   createTooltip,
   type Tooltip,
   measure,
@@ -67,8 +73,12 @@ export interface ClustermapOptions {
   metric: Metric;
   /** Agglomeration (linkage) method. */
   linkage: Linkage;
-  /** Sequential 'viridis' or diverging 'rdbu' color ramp. */
-  colormap: RampName;
+  /**
+   * Colour ramp: sequential 'viridis' or 'ltc', or diverging 'rdbu' or
+   * 'ltcdiv', whose range is symmetric about 0. `null` (the default) uses
+   * 'rdbu' when `zScore` is on and 'viridis' otherwise.
+   */
+  colormap: RampName | null;
   /** Standardize each row to mean 0 / sd 1 before mapping to color. */
   zScore: boolean;
   /** Cluster + reorder rows (skipped if a precomputed row order is supplied). */
@@ -89,7 +99,7 @@ export interface ClustermapOptions {
 export const defaultClustermapOptions: ClustermapOptions = {
   metric: "euclidean",
   linkage: "average",
-  colormap: "viridis",
+  colormap: null,
   zScore: false,
   clusterRows: true,
   clusterCols: true,
@@ -210,6 +220,8 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
   let theme = resolveTheme(opts.theme);
   let sizes = textSizes(theme);
   let data: PlotomicsData = initial.data ?? { columns: {} };
+  /** The ramp drawn: the one given, else one picked by `zScore`. */
+  const rampName = () => matrixRamp(opts.colormap, opts.zScore);
 
   let width = 0;
   let height = 0;
@@ -236,6 +248,9 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
   let lastValues: Float32Array | null = null;
   let rowCache: AxisCache | null = null;
   let colCache: AxisCache | null = null;
+  // The cells pooled for the image size last asked for, until they change.
+  let pooledImage: { w: number; h: number; canvas: HTMLCanvasElement } | null =
+    null;
 
   // DOM: display canvas for the heatmap + full-size SVG overlay. A small
   // offscreen canvas holds one pixel per cell and is upscaled onto the display.
@@ -392,7 +407,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
 
   /** Color domain: symmetric for diverging maps (rdbu / z-score), else data extent. */
   function computeColorDomain() {
-    diverging = opts.colormap === "rdbu" || opts.zScore;
+    diverging = isDivergingRamp(rampName()) || opts.zScore;
     [colorLo, colorHi] = diverging
       ? symmetricExtent(display)
       : dataExtent(display);
@@ -400,6 +415,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
 
   // ---- heatmap painting (canvas data layer) ----
   function paintCells() {
+    pooledImage = null;
     if (nrows === 0 || ncols === 0) return;
     cellCanvas.width = ncols;
     cellCanvas.height = nrows;
@@ -429,8 +445,54 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
   }
 
   function colorFn(): (t: number) => [number, number, number] {
-    const fn = opts.colormap === "rdbu" ? rdbu : viridis;
+    const fn = RAMPS[rampName()];
     return (t: number) => fn(Math.min(1, Math.max(0, t)));
+  }
+
+  /**
+   * The cells as an image to scale to `w` x `h` px: the one pixel per cell
+   * canvas while every row and column has a pixel, else the cells
+   * mean-pooled to one block per pixel, in the drawn order.
+   */
+  function cellImage(w: number, h: number): HTMLCanvasElement {
+    if (nrows <= h && ncols <= w) return cellCanvas;
+    if (pooledImage && pooledImage.w === w && pooledImage.h === h) {
+      return pooledImage.canvas;
+    }
+    const outR = Math.min(nrows, Math.max(1, h));
+    const outC = Math.min(ncols, Math.max(1, w));
+    const pooled = poolMean(
+      display,
+      nrows,
+      ncols,
+      outR,
+      outC,
+      rowOrder,
+      colOrder,
+    );
+    const out = document.createElement("canvas");
+    out.width = outC;
+    out.height = outR;
+    const ctx = out.getContext("2d");
+    if (ctx) {
+      const img = ctx.createImageData(outC, outR);
+      const buf = img.data;
+      const toColor = colorFn();
+      const span = colorHi - colorLo || 1;
+      for (let k = 0; k < pooled.length; k += 1) {
+        const v = pooled[k] as number;
+        const [r, g, b] = Number.isFinite(v)
+          ? toColor((v - colorLo) / span)
+          : MISSING_RGB;
+        buf[k * 4] = r;
+        buf[k * 4 + 1] = g;
+        buf[k * 4 + 2] = b;
+        buf[k * 4 + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+    pooledImage = { w, h, canvas: out };
+    return out;
   }
 
   function drawCanvas() {
@@ -446,14 +508,16 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (nrows === 0 || ncols === 0) return;
-    // Nearest-neighbour upscale from the 1px-per-cell offscreen buffer.
+    // Nearest-neighbour scaling from one pixel per cell, or per pooled block
+    // when the cells outnumber the pixels.
+    const src = cellImage(canvas.width, canvas.height);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(
-      cellCanvas,
+      src,
       0,
       0,
-      ncols,
-      nrows,
+      src.width,
+      src.height,
       0,
       0,
       canvas.width,
@@ -712,7 +776,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       3 * size,
       Math.min(160, heat.h - (anyMissing ? 30 : 8)),
     );
-    const toHex = ramp(opts.colormap);
+    const toHex = ramp(rampName());
 
     // Build a gradient from evenly-sampled stops (viridis/rdbu ramp).
     const defs = document.createElementNS(SVG_NS, "defs");
@@ -949,9 +1013,11 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       return serializeSVG(out);
     },
     async exportPNG(scale = 2) {
-      // The cells come from the one-pixel-per-cell buffer, so they stay
-      // sharp at any scale; the dendrograms, labels and colour bar go over.
+      // The cells come from one pixel per cell, or per pooled block when
+      // the image has fewer pixels than cells, so they stay sharp at any
+      // scale; the dendrograms, labels and colour bar go over.
       const { x, y, w, h } = layout.heat;
+      const k = dpr() * scale;
       return compositePNG({
         width,
         height,
@@ -959,7 +1025,15 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
         background: theme.background,
         layers:
           nrows > 0 && ncols > 0
-            ? [{ canvas: cellCanvas, x, y, width: w, height: h }]
+            ? [
+                {
+                  canvas: cellImage(Math.round(w * k), Math.round(h * k)),
+                  x,
+                  y,
+                  width: w,
+                  height: h,
+                },
+              ]
             : [],
         overlay: svg,
       });

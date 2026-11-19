@@ -50,7 +50,7 @@ test_that("one-element labels, ids and palettes stay arrays", {
 
 test_that("scalars in meta and options stay scalars", {
   m <- matrix(5, 1, 1)
-  json <- rendered_json(bioheatmap(m))
+  json <- rendered_json(bioheatmap(m, colormap = "viridis"))
   expect_match(json, '"nrows":1', fixed = TRUE)
   expect_match(json, '"colormap":"viridis"', fixed = TRUE)
 })

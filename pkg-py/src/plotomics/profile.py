@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+
 from ._base import (
     STATIC,
     PlotomicsWidget,
@@ -48,7 +50,8 @@ class Profile(PlotomicsWidget):
     bar_width:
         Fraction of each slot the bar occupies, in ``(0, 1]``.
     as_fraction:
-        Show values as a share of the total rather than raw counts.
+        ``True`` to show each value as a share of the total, in place of
+        the raw count. Every finite value must then be 0 or more.
     show_header, show_bar_labels:
         Toggle the header band and the tick labels.
     y_label:
@@ -92,9 +95,30 @@ class Profile(PlotomicsWidget):
             raise ValueError("`data` must provide a `value` column.")
         if not 0 < bar_width <= 1:
             raise ValueError("`bar_width` must be in (0, 1].")
+        # One True or False, so the check below and the plot read it alike.
+        if not isinstance(as_fraction, (bool, np.bool_)):
+            raise ValueError(
+                "`as_fraction` must be a single true or false value."
+            )
+        as_fraction = bool(as_fraction)
         value = _to_float32(val, "value")
         if value.size == 0:
             raise ValueError("`data` must contain at least one row.")
+        # Shares of a total with negative values are not defined. The sign
+        # is read before the float32 rounding, which turns a value such as
+        # -1e-50 into -0, so R and Python stop on the same values.
+        if as_fraction:
+            try:
+                exact = np.asarray(val, dtype=np.float64)
+            except (TypeError, ValueError):
+                exact = value.astype(np.float64)
+            finite = exact[np.isfinite(exact)]
+            negative = int(np.count_nonzero(finite < 0))
+            if negative:
+                raise ValueError(
+                    "`as_fraction` needs every `value` to be 0 or more; "
+                    f"found {negative} negative value(s)."
+                )
 
         buffer, schema = pack_columns({"value": value})
 
