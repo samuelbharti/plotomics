@@ -492,19 +492,17 @@ describe("heatmap in a browser", () => {
       const at = rowAt(el, y);
       spans.set(at, [...(spans.get(at) ?? []), y]);
     });
-    // The texel holding the row covers it and its partner in the block of
-    // two, and nothing else: the centre pixel of each row whole in view is
-    // lit exactly when the row is in that block. The edges of a texel in a
-    // texture this tall can land a few pixels off in the browser's
-    // renderer, with or without pooling, so they are not checked.
-    const block = [row - (row % 2), row - (row % 2) + 1];
+    // Once the view rests, a window of the matrix at a texel a row is
+    // drawn, so the row is lit and its partner in a block of two of the
+    // whole matrix is not: the centre pixel of each row whole in view is
+    // lit exactly when it is the row. The edges of a texel in a texture
+    // this tall can land a few pixels off in the browser's renderer, so
+    // they are not checked.
     let checked = 0;
     for (const [at, ys] of spans) {
       if (ys.includes(0) || ys.includes(colours.length - 1)) continue;
       const centre = colours[ys[Math.floor(ys.length / 2)] as number] as string;
-      expect(lit(centre.split(",").map(Number)), `row ${at}`).toBe(
-        block.includes(at),
-      );
+      expect(lit(centre.split(",").map(Number)), `row ${at}`).toBe(at === row);
       checked += 1;
     }
     expect(spans.get(row)?.length ?? 0).toBeGreaterThan(20);
@@ -532,11 +530,89 @@ describe("heatmap in a browser", () => {
       const i = 1 + Math.round(v * 254);
       return `${lut[i * 4]},${lut[i * 4 + 1]},${lut[i * 4 + 2]}`;
     };
-    let wrong = 0;
-    colours.forEach((c, y) => {
-      if (c === end(1 - (rowAt(el, y) % 2))) wrong += 1;
+    // Once the view rests, each row is drawn with its own value: the centre
+    // pixel of each row whole in view, as the tooltip names it, takes its
+    // end of the ramp. Pixels on a row edge can land on the next row in the
+    // browser's renderer, so they are not checked.
+    const spans = new Map<number, number[]>();
+    colours.forEach((_, y) => {
+      const at = rowAt(el, y);
+      spans.set(at, [...(spans.get(at) ?? []), y]);
     });
-    expect(wrong).toBe(0);
+    let checked = 0;
+    for (const [at, ys] of spans) {
+      if (ys.includes(0) || ys.includes(colours.length - 1)) continue;
+      const centre = colours[ys[Math.floor(ys.length / 2)] as number];
+      expect(centre, `row ${at}`).toBe(end(at % 2));
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThanOrEqual(5);
+  });
+
+  it("draws every row past the texture limit once the view rests on them", async () => {
+    const maxTex = textureLimit();
+    const nrows = maxTex + 100;
+    // Rows 0, 1, 0, 1, ...: a block of two of the whole matrix averages them.
+    const values = new Float32Array(nrows * 2);
+    for (let r = 0; r < nrows; r += 1) values.fill(r % 2, r * 2, (r + 1) * 2);
+    const el = container();
+    const plot = createHeatmap(el, {
+      data: { columns: { values }, meta: { nrows, ncols: 2 } },
+    });
+    instances.push(plot);
+    const gl = el.querySelector("canvas") as HTMLCanvasElement;
+    const h = gl.height;
+    // About 415 rows in view, each with a pixel.
+    const inView = Math.round(0.98 * h);
+    zoom(el, inView / nrows);
+    // While the view moves, nothing is uploaded: the blocks of two show.
+    expect(changes(columnColours(el))).toBeLessThan(10);
+    // At rest, a window of the rows at a texel a row: they alternate.
+    await rest();
+    expect(changes(columnColours(el))).toBeGreaterThan(0.8 * inView);
+    // A pan that stays inside the window keeps them, while it moves.
+    const r = gl.getBoundingClientRect();
+    gl.dispatchEvent(
+      new MouseEvent("mousedown", {
+        clientX: r.left + 100,
+        clientY: r.top + 100,
+        bubbles: true,
+      }),
+    );
+    el.dispatchEvent(
+      new MouseEvent("mousemove", {
+        clientX: r.left + 100,
+        clientY: r.top + 140,
+        bubbles: true,
+      }),
+    );
+    window.dispatchEvent(new MouseEvent("mouseup"));
+    expect(changes(columnColours(el))).toBeGreaterThan(0.8 * inView);
+    // A new clamp builds the window again for the new colours.
+    plot.setOptions({ vmax: 0.5 });
+    expect(changes(columnColours(el))).toBeGreaterThan(0.8 * inView);
+    // The export draws the rows as the screen does.
+    const blob = (await plot.exportPNG(1)) as Blob;
+    const png = await createImageBitmap(blob);
+    const k = png.width / el.clientWidth;
+    const c = document.createElement("canvas");
+    c.width = png.width;
+    c.height = png.height;
+    const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+    ctx.drawImage(png, 0, 0);
+    const x = Math.floor((gl.offsetLeft + gl.clientWidth / 2) * k);
+    const top = Math.ceil((gl.offsetTop + 2) * k);
+    const bottom = Math.floor((gl.offsetTop + gl.clientHeight - 2) * k);
+    const d = ctx.getImageData(x, top, 1, bottom - top).data;
+    const exported = Array.from(
+      { length: bottom - top },
+      (_, y) => `${d[y * 4]},${d[y * 4 + 1]},${d[y * 4 + 2]}`,
+    );
+    expect(changes(exported)).toBeGreaterThan(0.8 * inView);
+    // New data shows the whole matrix again.
+    plot.setData({ columns: { values }, meta: { nrows, ncols: 2 } });
+    expect(rowAt(el, 0)).toBe(0);
+    expect(rowAt(el, gl.height - 1)).toBeGreaterThan(nrows - 40);
   });
 
   it("pools no texture while the wheel turns, and the view once it rests", async () => {
