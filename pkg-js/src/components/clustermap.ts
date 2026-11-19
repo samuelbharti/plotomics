@@ -39,7 +39,8 @@ import {
   createTooltip,
   type Tooltip,
   measure,
-  releaseFallbackHeight,
+  releaseContainer,
+  contentOrigin,
   dpr,
   serializeSVG,
   compositePNG,
@@ -791,7 +792,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
     if (nrows === 0 || ncols === 0) return;
-    const rectEl = el.getBoundingClientRect();
+    const rectEl = contentOrigin(el);
     const px = e.clientX - rectEl.left;
     const py = e.clientY - rectEl.top;
     const { heat } = layout;
@@ -965,7 +966,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
       });
     },
     destroy() {
-      releaseFallbackHeight(el);
+      releaseContainer(el);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();

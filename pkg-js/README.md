@@ -55,7 +55,11 @@ also one set later. `destroy()` removes it again.
 The R and Python wrappers resize their plots when the page changes size. In
 plain JavaScript, `autoResize` passes each new size of the element to the
 plot. It also gives the 480 px to an element that was hidden when the plot
-was made, such as one in a tab, if it has no height once shown:
+was made, such as one in a tab, if it has no height once shown. A plot drawn
+before its element is in the page keeps the size it was first drawn at until
+`autoResize` or a `resize()` call runs. Call the function `autoResize`
+returns before `destroy()`; an observer still running after `destroy()`
+gives the empty element the 480 px again:
 
 ```js
 import { createVolcano } from "plotomics/volcano";

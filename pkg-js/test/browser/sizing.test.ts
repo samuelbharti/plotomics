@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createHeatmap } from "../../src/components/heatmap.js";
+import { createProfile } from "../../src/components/profile.js";
 import { createVolcano } from "../../src/components/volcano.js";
-import { autoResize, type PlotomicsInstance } from "../../src/core/index.js";
+import {
+  autoResize,
+  contentOrigin,
+  type PlotomicsInstance,
+} from "../../src/core/index.js";
 
 // A plot made in plain JavaScript, with no wrapper to size its element.
 
@@ -415,5 +420,137 @@ describe("the fallback height", () => {
     plot.destroy();
     expect(el.hasAttribute(FALLBACK)).toBe(false);
     expect(height(el)).toBe(0);
+  });
+});
+
+/** Where the SVG layer of a plot sits, relative to its element's border box. */
+function svgBox(el: HTMLElement) {
+  const e = el.getBoundingClientRect();
+  const s = (el.querySelector("svg") as SVGSVGElement).getBoundingClientRect();
+  return {
+    x: s.left - e.left,
+    y: s.top - e.top,
+    width: s.width,
+    height: s.height,
+  };
+}
+
+describe("a padded element", () => {
+  it("has the plot in its content box", () => {
+    const el = document.createElement("div");
+    el.style.cssText = "width:600px;height:300px;padding:20px;";
+    document.body.appendChild(el);
+    instances.push(
+      createVolcano(el, { data: volcanoData }) as PlotomicsInstance<unknown>,
+    );
+    expect(svgBox(el)).toEqual({ x: 20, y: 20, width: 600, height: 300 });
+    const s = (
+      el.querySelector("svg") as SVGSVGElement
+    ).getBoundingClientRect();
+    expect(contentOrigin(el)).toEqual({ left: s.left, top: s.top });
+  });
+
+  it("has the plot in its content box with box-sizing: border-box", () => {
+    const el = document.createElement("div");
+    el.style.cssText =
+      "box-sizing:border-box;width:600px;height:300px;padding:20px;";
+    document.body.appendChild(el);
+    instances.push(
+      createVolcano(el, { data: volcanoData }) as PlotomicsInstance<unknown>,
+    );
+    expect(svgBox(el)).toEqual({ x: 20, y: 20, width: 560, height: 260 });
+  });
+
+  it("has the plot in its content box when drawn before it is added", async () => {
+    const el = document.createElement("div");
+    el.style.cssText = "width:600px;padding:20px;";
+    const plot = heat(el);
+    const after = paragraph();
+    document.body.append(el, after);
+    stops.push(autoResize(el, plot));
+    await frames(6);
+    expect(svgBox(el)).toEqual({ x: 20, y: 20, width: 600, height: 480 });
+    expect(below(el, after)).toBe(true);
+  });
+
+  it("reads the pointer from where the plot starts", () => {
+    // Thirty narrow bars: a pointer read 20 px off lands on another bar.
+    const n = 30;
+    const data = {
+      columns: {
+        value: Array.from({ length: n }, (_, i) => i + 1),
+        label: Array.from({ length: n }, (_, i) => `bar${i}`),
+      },
+    };
+    const tipAt = (el: HTMLElement, fx: number, fy: number) => {
+      const s = (
+        el.querySelector("svg") as SVGSVGElement
+      ).getBoundingClientRect();
+      el.dispatchEvent(
+        new MouseEvent("mousemove", {
+          clientX: s.left + fx * s.width,
+          clientY: s.top + fy * s.height,
+          bubbles: true,
+        }),
+      );
+      const tip = el.querySelector("[data-plotomics-tooltip]") as HTMLElement;
+      return tip.style.opacity === "1" ? (tip.textContent ?? "") : "";
+    };
+    const plain = document.createElement("div");
+    plain.style.cssText = "width:600px;height:300px;";
+    const padded = document.createElement("div");
+    padded.style.cssText = "width:600px;height:300px;padding:20px;";
+    document.body.append(plain, padded);
+    instances.push(createProfile(plain, { data }));
+    instances.push(createProfile(padded, { data }));
+    for (const [fx, fy] of [
+      [0.5, 0.45],
+      [0.8, 0.5],
+    ]) {
+      const want = tipAt(plain, fx as number, fy as number);
+      expect(want).toMatch(/^bar/);
+      expect(tipAt(padded, fx as number, fy as number)).toBe(want);
+    }
+  });
+});
+
+describe("the fallback rules", () => {
+  it("come before a page layer that is already in the page", async () => {
+    // A fresh page whose own stylesheet declares a layer before any plot
+    // is made: the rules added later must still rank below it.
+    const frame = document.createElement("iframe");
+    frame.style.cssText = "width:800px;height:700px;";
+    frame.srcdoc =
+      "<!doctype html><html><head>" +
+      "<style>@layer utilities { .h-64 { height: 256px; } }</style>" +
+      "</head><body></body></html>";
+    document.body.appendChild(frame);
+    await new Promise((r) => frame.addEventListener("load", r, { once: true }));
+    const doc = frame.contentDocument as Document;
+    const el = doc.createElement("div");
+    el.className = "h-64";
+    heat(el);
+    doc.body.appendChild(el);
+    expect(height(el)).toBe(256);
+    await frames();
+    expect(height(el)).toBe(256);
+  });
+
+  it("follow an element moved into a second shadow root", async () => {
+    const roots = [0, 1].map(() => {
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      return host.attachShadow({ mode: "open" });
+    });
+    const el = document.createElement("div");
+    heat(el);
+    (roots[0] as ShadowRoot).appendChild(el);
+    await frames();
+    expect(height(el)).toBe(480);
+    const after = paragraph();
+    (roots[1] as ShadowRoot).append(el, after);
+    await frames();
+    expect(height(el)).toBe(480);
+    expect(below(el, after)).toBe(true);
   });
 });

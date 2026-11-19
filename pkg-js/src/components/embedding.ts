@@ -32,7 +32,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
-  releaseFallbackHeight,
+  releaseContainer,
   textWidth,
   fitText,
   dpr,
@@ -1254,7 +1254,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       });
     },
     destroy() {
-      releaseFallbackHeight(el);
+      releaseContainer(el);
       destroyed = true;
       loop.stop();
       refitAfterResize.cancel();

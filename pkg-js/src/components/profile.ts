@@ -34,7 +34,8 @@ import {
   createTooltip,
   type Tooltip,
   measure,
-  releaseFallbackHeight,
+  releaseContainer,
+  contentOrigin,
   dpr,
   serializeSVG,
   compositePNG,
@@ -290,7 +291,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
   function onMove(e: MouseEvent) {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
-    const rect = el.getBoundingClientRect();
+    const rect = contentOrigin(el);
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     const v = values();
@@ -608,7 +609,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
       });
     },
     destroy() {
-      releaseFallbackHeight(el);
+      releaseContainer(el);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();

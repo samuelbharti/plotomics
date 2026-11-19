@@ -31,7 +31,8 @@ import {
   createTooltip,
   type Tooltip,
   measure,
-  releaseFallbackHeight,
+  releaseContainer,
+  contentOrigin,
   dpr,
   serializeSVG,
   compositePNG,
@@ -982,7 +983,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     canvas.style.cursor = "grab";
   };
   const onMove = (e: MouseEvent) => {
-    const rect = el.getBoundingClientRect();
+    const rect = contentOrigin(el);
     if (dragging) {
       const span = dragStart.hi - dragStart.lo;
       const dxBins = ((e.clientX - dragStart.x) / plotSize()) * span;
@@ -1034,7 +1035,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   const onWheel = (e: WheelEvent) => {
     if (n === 0) return;
     e.preventDefault();
-    const rect = el.getBoundingClientRect();
+    const rect = contentOrigin(el);
     const anchorX = pxToBin(e.clientX - rect.left);
     const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
     let span = (viewHi - viewLo) * factor;
@@ -1219,7 +1220,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       });
     },
     destroy() {
-      releaseFallbackHeight(el);
+      releaseContainer(el);
       canvas.removeEventListener("mousedown", onDown);
       window.removeEventListener("mouseup", onUp);
       el.removeEventListener("mousemove", onMove);

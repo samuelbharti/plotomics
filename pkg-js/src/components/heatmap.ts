@@ -31,7 +31,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
-  releaseFallbackHeight,
+  releaseContainer,
   dpr,
   ramp,
   serializeSVG,
@@ -1113,7 +1113,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       });
     },
     destroy() {
-      releaseFallbackHeight(el);
+      releaseContainer(el);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("mousedown", onDown);
       window.removeEventListener("mouseup", onUp);

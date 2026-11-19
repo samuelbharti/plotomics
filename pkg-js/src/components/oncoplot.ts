@@ -40,7 +40,8 @@ import {
   createTooltip,
   type Tooltip,
   measure,
-  releaseFallbackHeight,
+  releaseContainer,
+  contentOrigin,
   dpr,
   serializeSVG,
   compositePNG,
@@ -532,7 +533,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
   function onMove(e: MouseEvent) {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
-    const rect = el.getBoundingClientRect();
+    const rect = contentOrigin(el);
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
     const hit = hitTest(px, py, layout, nrows(), ncols());
@@ -941,7 +942,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       });
     },
     destroy() {
-      releaseFallbackHeight(el);
+      releaseContainer(el);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();

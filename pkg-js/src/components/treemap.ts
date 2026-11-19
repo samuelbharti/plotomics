@@ -21,7 +21,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
-  releaseFallbackHeight,
+  releaseContainer,
   textWidth,
   dpr,
   serializeSVG,
@@ -770,7 +770,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       });
     },
     destroy() {
-      releaseFallbackHeight(el);
+      releaseContainer(el);
       canvas.removeEventListener("mousemove", onMove);
       canvas.removeEventListener("mouseleave", onLeave);
       canvas.removeEventListener("click", onClick);

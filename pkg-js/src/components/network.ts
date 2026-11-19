@@ -35,7 +35,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
-  releaseFallbackHeight,
+  releaseContainer,
   canvasToPNG,
   categoricalColors,
 } from "../core/index.js";
@@ -401,7 +401,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       return canvasToPNG(canvas, scale);
     },
     destroy() {
-      releaseFallbackHeight(el);
+      releaseContainer(el);
       el.removeEventListener("mousemove", onMove);
       tooltip.destroy();
       renderer?.kill();
