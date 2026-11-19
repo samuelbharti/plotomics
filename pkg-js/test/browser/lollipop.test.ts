@@ -100,7 +100,7 @@ function yTicks(el: HTMLElement): SVGTextElement[] {
   return svgTexts(el).filter(
     (t) =>
       t.getAttribute("text-anchor") === "end" &&
-      /^[\d.]+k?$/.test(t.textContent ?? ""),
+      /^[\d.]+[kM]?$/.test(t.textContent ?? ""),
   );
 }
 
@@ -942,5 +942,118 @@ describe("lollipop in a browser", () => {
     expect(hoverAt(el, x, y)).toContain("DBD");
     plot.setOptions({ showDomains: false });
     expect(hoverAt(el, x, y)).not.toContain("DBD");
+  });
+});
+
+describe("lollipop counts from Python and large counts", () => {
+  /** The y tick labels of a plot of `data`, as numbers, and the plot. */
+  function axisOf(data: Record<string, unknown>, options = {}) {
+    const el = container(800, 440);
+    const plot = createLollipop(el, {
+      data: data as never,
+      options,
+    });
+    instances.push(plot);
+    return { el, labels: yTicks(el) };
+  }
+
+  it("fits the axis to float32 counts, with no extra step", () => {
+    // Before the fix Python's 0.3 gave an axis to 0.35, 0.1 one to 0.12,
+    // and a 0.3 + 0.1 stack one to 0.5; R gives 0.3, 0.1 and 0.4.
+    for (const [position, count, top] of [
+      [[100], [0.3], 0.3],
+      [[100], [0.1], 0.1],
+      [[100, 100], [0.3, 0.1], 0.4],
+    ] as const) {
+      const { labels } = axisOf({
+        columns: {
+          position: new Float32Array(position),
+          count: new Float32Array(count),
+        },
+        meta: { length: 393 },
+      });
+      const values = labels.map((t) => Number(t.textContent));
+      expect(values.at(-1)).toBe(top);
+    }
+  });
+
+  it("prints a float32 count to seven digits, with the y label as its unit", () => {
+    // Before the fix the tooltip read "0.30000001192092896 samples".
+    const { el, labels } = axisOf(
+      {
+        columns: {
+          position: new Float32Array([100]),
+          count: new Float32Array([0.3]),
+          label: ["R175H"],
+        },
+        meta: { length: 393 },
+      },
+      { yLabel: "frequency" },
+    );
+    const top = labels.find((t) => Number(t.textContent) === 0.3);
+    expect(top).toBeDefined();
+    const y = Number(top?.getAttribute("y")) - 0.35 * 11;
+    const x = 52 + ((100 - 1) / (393 - 1)) * (800 - 52 - 16);
+    const tip = hoverAt(el, x, y);
+    expect(tip).toContain("frequency: 0.3");
+    expect(tip).not.toContain("0.3000");
+    expect(tip).not.toContain("sample");
+  });
+
+  it("keeps the sample wording for the default y label", () => {
+    const { el, labels } = axisOf({
+      columns: { position: [100], count: [1], label: ["R175H"] },
+      meta: { length: 393 },
+    });
+    const top = labels.find((t) => t.textContent === "1") as SVGTextElement;
+    const y = Number(top.getAttribute("y")) - 0.35 * 11;
+    const x = 52 + ((100 - 1) / (393 - 1)) * (800 - 52 - 16);
+    expect(hoverAt(el, x, y)).toContain("1 sample");
+  });
+
+  it("prints every count label in one unit", () => {
+    // Before the fix the axis read 200k to 800k, then 1.0M.
+    const { labels } = axisOf({
+      columns: { position: [100, 200], count: [1000000, 800000] },
+      meta: { length: 393 },
+    });
+    const text = labels.map((t) => t.textContent ?? "");
+    expect(text.at(-1)).toBe("1.0M");
+    for (const s of text.slice(1)) expect(s).toMatch(/M$/);
+  });
+
+  it("draws no domain for a fill that paints nothing, and reads var()", () => {
+    // A plain fillStyle keeps its last colour for "none" and var(), so the
+    // first domain took the backbone colour and the second no magenta.
+    const el = container(800, 440);
+    el.style.setProperty("--lollipop-domain", "#ff00ff");
+    instances.push(
+      createLollipop(el, {
+        data: {
+          columns: { position: [300], count: [1] },
+          meta: {
+            length: 393,
+            domains: [
+              { name: "N1", start: 20, end: 120 },
+              { name: "N2", start: 150, end: 250 },
+            ],
+            domainColors: ["none", "var(--lollipop-domain)"],
+          },
+        },
+      }),
+    );
+    // Above the 8 px backbone bar, inside the domain band.
+    const at = (name: string) => {
+      const t = svgTexts(el).find(
+        (s) => s.textContent === name,
+      ) as SVGTextElement;
+      return pixel(
+        el,
+        Number(t.getAttribute("x")),
+        Number(t.getAttribute("y")) - 0.35 * 9 - 7,
+      );
+    };
+    expect(at("N1")).toEqual([255, 255, 255]);
+    expect(at("N2")).toEqual([255, 0, 255]);
   });
 });

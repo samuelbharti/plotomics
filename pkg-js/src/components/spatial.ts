@@ -56,6 +56,7 @@ import {
   ramp,
   categoricalColors,
 } from "../core/index.js";
+import { setCanvasColour } from "../core/paint.js";
 
 export type SpatialColorMode = "auto" | "categorical" | "continuous";
 
@@ -692,8 +693,9 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
         ctx.globalAlpha = opts.imageOpacity;
         ctx.drawImage(image, fit.offsetX, fit.offsetY, dw, dh);
         ctx.globalAlpha = 1;
-      } else {
-        ctx.fillStyle = theme.grid;
+      } else if (setCanvasColour(ctx, "fillStyle", theme.grid, el)) {
+        // A grid colour that paints nothing, such as "none", draws no
+        // panel; var() and currentColor take the plot element's value.
         ctx.fillRect(fit.offsetX, fit.offsetY, dw, dh);
       }
     }

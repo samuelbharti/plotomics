@@ -39,7 +39,9 @@
 #'   *area* is proportional to recurrence, so these bound the mapping rather
 #'   than setting a size: raise `max_head_radius` when one hotspot dwarfs the
 #'   rest and you want the difference to read at a glance.
-#' @param y_label Axis title for the recurrence axis.
+#' @param y_label Axis title for the recurrence axis. It also names the count
+#'   in the tooltip: "12 samples" with the default, and "frequency: 0.3" for
+#'   `y_label = "frequency"`.
 #' @param backbone_color,stem_color Hex colours for the protein backbone
 #'   rectangle and the mutation stems.
 #' @param theme Optional named list of theme overrides. Its `categorical`

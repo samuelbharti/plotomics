@@ -266,3 +266,65 @@ describe("lollipop residue axis", () => {
     }
   });
 });
+
+describe("upset number units", () => {
+  it("prints the set sizes in the unit of the intersection axis", () => {
+    // Before the fix the axis read "1.0M, 1.5M" and the set sizes
+    // "2400k, 1950k".
+    const el = container(600, 400);
+    instances.push(
+      createUpset(el, {
+        data: {
+          columns: { size: [1600000, 900000, 400000] },
+          meta: {
+            sets: ["A", "B"],
+            setSizes: [2400000, 1950000],
+            membership: [1, 0, 0, 1, 1, 1],
+          },
+        },
+      }),
+    );
+    const all = texts(el).map((t) => t.textContent ?? "");
+    expect(all).toContain("2.40M");
+    expect(all).toContain("1.95M");
+    expect(all.some((s) => /^[\d.]+k$/.test(s))).toBe(false);
+    expect(all.filter((s) => /^[\d.]+M$/.test(s)).length).toBeGreaterThan(3);
+  });
+});
+
+describe("upset set sizes in the axis unit", () => {
+  const plot = (setSizes: number[], size: number[]) => {
+    const el = container(600, 400);
+    instances.push(
+      createUpset(el, {
+        data: {
+          columns: { size },
+          meta: {
+            sets: ["A", "B", "C", "D"].slice(0, setSizes.length),
+            setSizes,
+            membership: size.flatMap((_, i) =>
+              setSizes.map((_, k) => ((i + k) % 2 === 0 ? 1 : 0)),
+            ),
+          },
+        },
+      }),
+    );
+    return texts(el).map((t) => t.textContent ?? "");
+  };
+
+  it("prints the set sizes as the axis prints its ticks", () => {
+    // Before the fix the set sizes read "5k" to "1k" beside an axis of
+    // 0, 500, 1000 and on.
+    const all = plot([5000, 3000, 2000, 1000], [2500, 1200, 800]);
+    expect(all).toContain("1000");
+    for (const s of ["5000", "3000", "2000"]) expect(all).toContain(s);
+    expect(all.some((s) => /^[\d.]+k$/.test(s))).toBe(false);
+  });
+
+  it("keeps a fractional set size exact", () => {
+    // Before the fix 2.5 printed "3".
+    const all = plot([2.5, 4], [3, 2]);
+    expect(all).toContain("2.5");
+    expect(all).toContain("4.0");
+  });
+});

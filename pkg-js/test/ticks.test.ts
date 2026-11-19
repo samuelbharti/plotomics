@@ -4,7 +4,9 @@ import {
   fitDomainTicks,
   fitZeroTicks,
   formatTick,
+  formatTicks,
   isFlatRange,
+  snapRatio,
   rangeTicks,
   spaceTicks,
   stepDecimals,
@@ -287,5 +289,92 @@ describe("ranges too narrow or too small for round steps", () => {
     expect(isFlatRange(8.000000000000002, 8)).toBe(true);
     expect(isFlatRange(1, 1 + 1e-11)).toBe(false);
     expect(isFlatRange(0, 1e-300)).toBe(false);
+  });
+});
+
+describe("ticks for float32 values and one unit per axis", () => {
+  it("adds no step for the noise of a float32 value", () => {
+    // Python sends 0.3 as 0.30000001192092896. Before the fix that gave an
+    // axis to 0.35, 0.1 one to 0.12, and a 0.3 + 0.1 stack one to 0.5.
+    expect(zeroTicks(Math.fround(0.3), 5).top).toBe(0.3);
+    expect(zeroTicks(Math.fround(0.1), 5).top).toBe(0.1);
+    expect(zeroTicks(Math.fround(0.3) + Math.fround(0.1), 5).top).toBe(0.4);
+    expect(fitZeroTicks(Math.fround(0.3), 300).top).toBe(0.3);
+    // 0.7 as a float32 is a little below 0.7, which dropped its tick.
+    expect(domainTicks(0, Math.fround(0.7), 7).ticks.at(-1)).toBe(0.7);
+    // A value truly past a tick still takes the next step.
+    expect(zeroTicks(0.3001, 5).top).toBeGreaterThan(0.3);
+  });
+
+  it("prints every tick of an axis in the unit the largest needs", () => {
+    // Before the fix an axis read "800k, 1.0M" or "980k, 1.00M, 1.02M".
+    expect(formatTicks([0, 2e5, 4e5, 6e5, 8e5, 1e6], 2e5)).toEqual([
+      "0",
+      "0.2M",
+      "0.4M",
+      "0.6M",
+      "0.8M",
+      "1.0M",
+    ]);
+    expect(formatTicks([980000, 1000000, 1020000], 20000)).toEqual([
+      "0.98M",
+      "1.00M",
+      "1.02M",
+    ]);
+    expect(formatTicks([0, 5000, 10000, 15000, 20000], 5000)).toEqual([
+      "0",
+      "5k",
+      "10k",
+      "15k",
+      "20k",
+    ]);
+    expect(formatTicks([0, 500, 1000, 1500], 500)).toEqual([
+      "0",
+      "500",
+      "1000",
+      "1500",
+    ]);
+    expect(formatTicks([0, 0.5, 1], 0.5, { percent: true })).toEqual([
+      "0%",
+      "50%",
+      "100%",
+    ]);
+    expect(formatTicks([1, Number.NaN], 1)).toEqual(["1", "NA"]);
+  });
+});
+
+describe("colour bar ticks far from 0", () => {
+  // Narrow ranges far from 0. Before the fix the snap tolerance grew with
+  // the value, so 150000123 to 150001123 got a tick at 150001200 or
+  // 150000000, and 1000000 to 1000000.5 one at 1000000.6.
+  const ranges = [
+    [150000123, 150001123],
+    [1000000, 1000000.5],
+    [123456.7, 123457.3],
+    [1000000.03, 1000000.47],
+    [99999.95, 100000.45],
+  ] as const;
+
+  it("keeps every tick inside the range", () => {
+    for (const [lo, hi] of ranges) {
+      const sets = [1, 2, 3, 4, 5].map((n) => domainTicks(lo, hi, n).ticks);
+      for (const len of [20, 60, 120, 200, 400]) {
+        sets.push(fitDomainTicks(lo, hi, len).ticks);
+      }
+      for (const ticks of sets) {
+        expect(ticks.length).toBeGreaterThan(0);
+        for (const v of ticks) {
+          expect(v, `${lo} to ${hi}`).toBeGreaterThanOrEqual(lo);
+          expect(v, `${lo} to ${hi}`).toBeLessThanOrEqual(hi);
+        }
+      }
+    }
+  });
+
+  it("still takes a float32 end for the tick it stands for", () => {
+    // 0.7 as a float32 is 0.699999988; its tick is 0.7.
+    expect(domainTicks(0, Math.fround(0.7), 7).ticks.at(-1)).toBe(0.7);
+    expect(snapRatio(10000004.999999998)).toBe(10000005);
+    expect(snapRatio(1500011.23)).toBe(1500011.23);
   });
 });

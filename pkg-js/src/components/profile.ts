@@ -45,7 +45,8 @@ import {
   compositePNG,
   zeroTicks,
   fitZeroTicks,
-  formatTick,
+  formatTicks,
+  snapRatio,
   stepDecimals,
   defaultTheme,
   type TextSizes,
@@ -284,8 +285,8 @@ function signedTicks(lo: number, hi: number, count: number): ValueAxis {
     const ticks = hi > 0 ? [lo, 0, hi] : [lo, 0];
     return { ticks, bottom: lo, top: hi, step: 0 };
   }
-  const below = Math.ceil(-lo / step - 1e-9);
-  const above = Math.max(0, Math.ceil(hi / step - 1e-9));
+  const below = Math.ceil(snapRatio(-lo / step));
+  const above = Math.max(0, Math.ceil(snapRatio(hi / step)));
   const d = stepDecimals(step);
   const ticks: number[] = [];
   for (let i = -below; i <= above; i += 1) {
@@ -430,9 +431,9 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
   // Whether the axis shows shares: asFraction, with shares defined for the
   // values. Set by each render.
   let percent = false;
-  /** The label of the y tick at `val`. */
-  function tickText(val: number, step: number): string {
-    return formatTick(val, step, { percent });
+  /** The labels of the y ticks, all in the unit the largest needs. */
+  function tickLabels(axis: ValueAxis): string[] {
+    return formatTicks(axis.ticks, axis.step, { percent });
   }
   function plotted(): number[] {
     return barHeights(values(), opts.asFraction);
@@ -517,11 +518,8 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
         })
       : { ...zeroTicks(1, 4), bottom: 0 };
     let tickWidth = 0;
-    for (const val of axis.ticks) {
-      tickWidth = Math.max(
-        tickWidth,
-        textWidth(tickText(val, axis.step), sizes.label),
-      );
+    for (const label of tickLabels(axis)) {
+      tickWidth = Math.max(tickWidth, textWidth(label, sizes.label));
     }
     layout = frame(tickWidth);
     ctx.clearRect(0, 0, width, height);
@@ -599,19 +597,20 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
 
     // y tick labels, on round steps, each stating its value; the gridlines
     // are on the canvas, under the bars.
-    for (const val of axis.ticks) {
+    const labels = tickLabels(axis);
+    axis.ticks.forEach((val, i) => {
       const y = tickY(val, axis);
       svg.appendChild(
         text(
           layout.left - 8,
           y + midline(sizes.label),
-          tickText(val, axis.step),
+          labels[i] ?? "",
           theme.muted,
           "end",
           sizes.label,
         ),
       );
-    }
+    });
     // The y title is centred on the bars and may reach the element's edges.
     const yTitleCy = layout.plotTop + layout.plotH / 2;
     svg.appendChild(

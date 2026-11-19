@@ -111,5 +111,9 @@ export {
   isFlatRange,
   spaceTicks,
   formatTick,
+  formatTicks,
+  tickUnit,
+  type TickUnit,
+  snapRatio,
   rangeTicks,
 } from "./ticks.js";
