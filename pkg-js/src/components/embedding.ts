@@ -32,6 +32,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseContainer,
   textWidth,
   fitText,
   dpr,
@@ -1253,6 +1254,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       });
     },
     destroy() {
+      releaseContainer(el);
       destroyed = true;
       loop.stop();
       refitAfterResize.cancel();

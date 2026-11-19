@@ -43,6 +43,7 @@ import {
   legendLabelsFit,
   serializeSVG,
   compositePNG,
+  releaseContainer,
   categoricalColors,
 } from "../core/index.js";
 import Graph from "graphology";
@@ -576,6 +577,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       });
     },
     destroy() {
+      releaseContainer(el);
       el.removeEventListener("mousemove", onMove);
       tooltip.destroy();
       renderer?.kill();

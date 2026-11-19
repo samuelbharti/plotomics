@@ -57,9 +57,20 @@ test_that("labelled stems are resolved server-side, 0-based and sorted", {
   expect_equal(as.integer(w$x$data$meta$labelIndex), c(0L, 1L, 2L))
 })
 
-test_that("label_top_n = 0 emits no label index", {
+test_that("label_top_n = 0 sends an empty label index", {
+  # Without a list the browser labels the 12 most recurrent itself.
   w <- lollipop(variants_fixture(), length = 393, label_top_n = 0)
-  expect_null(w$x$data$meta$labelIndex)
+  expect_length(w$x$data$meta$labelIndex, 0)
+  json <- as.character(htmlwidgets:::toJSON(w$preRenderHook(w)$x))
+  expect_match(json, '"labelIndex":[]', fixed = TRUE)
+})
+
+test_that("equal class counts are ordered by code point, as in Python", {
+  v <- data.frame(position = 1:3, count = 1, class = c("b", "B", "a"),
+                  stringsAsFactors = FALSE)
+  # An English locale sorts a, b, B; Python's sorted() gives B, a, b.
+  w <- with_english_collation(lollipop(v, length = 10))
+  expect_equal(as.character(w$x$data$meta$classes), c("B", "a", "b"))
 })
 
 test_that("lollipop() validates its input", {

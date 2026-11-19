@@ -34,6 +34,28 @@ describe("decodeColumns", () => {
     expect(Array.from(cols.v as Float64Array)).toEqual([10, 20, 30]);
   });
 
+  it("throws when a column reads past the end of a view", () => {
+    // A view of 8 bytes inside a 32-byte buffer. The bytes after the view
+    // belong to something else, so a column may not read them.
+    const outer = new ArrayBuffer(32);
+    const view = new DataView(outer, 8, 8);
+    expect(() =>
+      decodeColumns(view, {
+        columns: [{ name: "x", dtype: "float32", length: 4, byteOffset: 0 }],
+      }),
+    ).toThrow(/exceeds buffer of 8 bytes/);
+    expect(() =>
+      decodeColumns(new Uint8Array(outer, 4, 8), {
+        columns: [{ name: "x", dtype: "uint8", length: 2, byteOffset: 7 }],
+      }),
+    ).toThrow(/exceeds buffer/);
+    // A column that fits the view still decodes.
+    const cols = decodeColumns(view, {
+      columns: [{ name: "x", dtype: "float32", length: 2, byteOffset: 0 }],
+    });
+    expect(cols.x?.length).toBe(2);
+  });
+
   it("throws when a column reads past the buffer", () => {
     const buf = new ArrayBuffer(8);
     expect(() =>

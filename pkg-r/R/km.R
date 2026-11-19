@@ -34,6 +34,12 @@
 #' @param theme Optional named list of theme overrides.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
+#' @param censor Optional data frame of censoring ticks, with numeric `time`
+#'   and `surv` columns and an optional `group` column naming each tick's
+#'   stratum, as Python's `Km(censor=)` takes. Column names must match
+#'   exactly. With a `survfit` object the ticks are read off the fit unless
+#'   `censor` is given. It comes last so the arguments before it keep their
+#'   positions.
 #' @return An `htmlwidget` object.
 #' @examples
 #' df <- data.frame(
@@ -60,11 +66,11 @@ km <- function(data,
                theme = NULL,
                width = NULL,
                height = NULL,
-               element_id = NULL) {
-  censor <- NULL
+               element_id = NULL,
+               censor = NULL) {
   if (inherits(data, "survfit")) {
     tidied <- bv_tidy_survfit(data, risk_times)
-    censor <- tidied$censor
+    if (is.null(censor)) censor <- tidied$censor
     if (is.null(risk_times)) risk_times <- tidied$risk_times
     if (is.null(risk_counts)) risk_counts <- tidied$risk_counts
     data <- tidied$curves
@@ -118,10 +124,22 @@ km <- function(data,
     meta$groupColors <- I(as.character(group_colors))
   }
 
-  if (!is.null(censor) && nrow(censor) > 0L) {
-    meta$censorTime <- I(as.numeric(censor$time))
-    meta$censorSurv <- I(as.numeric(censor$surv))
-    meta$censorGroup <- I(as.character(censor$group))
+  if (!is.null(censor)) {
+    # [[ ]] matches names exactly; $ would take a column `times` for
+    # `time`, where Python stops.
+    if (!is.data.frame(censor) || is.null(censor[["time"]]) ||
+        is.null(censor[["surv"]])) {
+      stop("`censor` must be a data frame with `time` and `surv` columns.",
+           call. = FALSE)
+    }
+    if (nrow(censor) > 0L) {
+      meta$censorTime <- I(bv_require_numeric(censor[["time"]], "censor$time"))
+      meta$censorSurv <- I(bv_require_numeric(censor[["surv"]], "censor$surv"))
+      # A tick without a group belongs to the only curve, as in Python.
+      if (!is.null(censor[["group"]])) {
+        meta$censorGroup <- I(as.character(censor[["group"]]))
+      }
+    }
   }
 
   if (!is.null(risk_times)) {

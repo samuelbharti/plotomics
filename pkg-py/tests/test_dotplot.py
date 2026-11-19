@@ -116,3 +116,14 @@ def test_dotplot_takes_a_missing_pct_and_value():
 def test_dotplot_rejects_an_unknown_colormap():
     with pytest.raises(ValueError, match="must be one of"):
         Dotplot(make_data(), colormap="magma")
+
+
+def test_dotplot_sends_a_missing_gene_or_cluster_as_null():
+    d = {"gene": ["A", None], "cluster": [float("nan"), "c"],
+         "pct": [10, 20], "value": [1.0, 2.0]}
+    w = Dotplot(d)
+    assert w.data["columns"]["gene"] == ["A", None]
+    assert w.data["columns"]["cluster"] == [None, "c"]
+    # R stops on a gene missing from `genes`, NA included.
+    with pytest.raises(ValueError, match="not present in `genes`: NA"):
+        Dotplot(d, genes=["A"])

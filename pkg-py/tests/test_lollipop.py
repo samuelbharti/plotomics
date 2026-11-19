@@ -150,3 +150,52 @@ def test_lollipop_sends_a_missing_label_as_null():
     d["label"] = ["R175H", float("nan"), None, "R282W"]
     w = Lollipop(d, length=393)
     assert w.data["columns"]["label"] == ["R175H", None, None, "R282W"]
+
+
+def test_lollipop_stops_on_a_missing_class_as_r_does():
+    # R: class(es) not present in `classes`: NA
+    d = make_data()
+    d["class"] = ["Missense", None, "Missense", "Truncating"]
+    with pytest.raises(ValueError, match="not present in `classes`: NA"):
+        Lollipop(d, length=393)
+
+
+def test_lollipop_sends_an_empty_label_index_for_label_top_n_0():
+    # Without a list the browser labels the top 12 itself.
+    w = Lollipop(make_data(), length=393, label_top_n=0)
+    assert w.data["meta"]["labelIndex"] == []
+
+
+def test_lollipop_orders_equal_class_counts_by_code_point_as_r():
+    # The same classes in R give ["B", "a", "b"], whatever the locale.
+    d = {"position": [1, 2, 3], "count": [1, 1, 1], "class": ["b", "B", "a"]}
+    assert Lollipop(d, length=10).data["meta"]["classes"] == ["B", "a", "b"]
+
+
+def test_lollipop_labels_every_variant_for_label_top_n_inf():
+    import math
+
+    # R: label_top_n = Inf labels all.
+    w = Lollipop(make_data(), length=393, label_top_n=math.inf)
+    assert w.data["meta"]["labelIndex"] == [0, 1, 2, 3]
+
+
+def test_lollipop_keeps_a_missing_class_given_in_classes_as_r_does():
+    import pandas as pd
+
+    # R: lollipop(data.frame(position = c(10, 20), count = c(3, 2),
+    # class = c("Missense", NA)), length = 100, classes = c("Missense", NA))
+    # sends class ["Missense", null] and classes ["Missense", null].
+    d = pd.DataFrame({"position": [10, 20], "count": [3, 2],
+                      "class": ["Missense", None]})
+    w = Lollipop(d, length=100, classes=["Missense", None])
+    assert w.data["columns"]["class"] == ["Missense", None]
+    assert w.data["meta"]["classes"] == ["Missense", None]
+
+
+def test_lollipop_labels_none_for_label_top_n_minus_inf():
+    import math
+
+    # R gives an empty list, as for 0.
+    w = Lollipop(make_data(), length=393, label_top_n=-math.inf)
+    assert w.data["meta"]["labelIndex"] == []

@@ -157,3 +157,10 @@ def test_clustermap_checks_label_lengths():
         Clustermap(m, row_labels=["a", "b"])
     with pytest.raises(ValueError, match="`col_labels` has 3 entries; expected 2"):
         Clustermap(m, col_labels=["a", "b", "c"])
+
+
+def test_clustermap_sends_a_missing_row_or_column_name_as_null():
+    m = np.arange(4, dtype=float).reshape(2, 2)
+    w = Clustermap(m, row_labels=["r1", float("nan")], col_labels=[None, "c2"])
+    assert w.data["meta"]["rowLabels"] == ["r1", None]
+    assert w.data["meta"]["colLabels"] == [None, "c2"]

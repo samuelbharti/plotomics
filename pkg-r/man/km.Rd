@@ -22,7 +22,8 @@ km(
   theme = NULL,
   width = NULL,
   height = NULL,
-  element_id = NULL
+  element_id = NULL,
+  censor = NULL
 )
 }
 \arguments{
@@ -61,6 +62,13 @@ zooming y exaggerates separation between curves.}
 \item{width, height}{Widget dimensions (any valid CSS size).}
 
 \item{element_id}{Optional explicit DOM id.}
+
+\item{censor}{Optional data frame of censoring ticks, with numeric \code{time}
+and \code{surv} columns and an optional \code{group} column naming each tick's
+stratum, as Python's \code{Km(censor=)} takes. Column names must match
+exactly. With a \code{survfit} object the ticks are read off the fit unless
+\code{censor} is given. It comes last so the arguments before it keep their
+positions.}
 }
 \value{
 An \code{htmlwidget} object.

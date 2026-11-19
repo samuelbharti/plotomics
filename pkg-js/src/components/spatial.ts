@@ -42,6 +42,7 @@ import {
   createTooltip,
   type Tooltip,
   measure,
+  releaseContainer,
   textWidth,
   fitText,
   fitLegend,
@@ -1042,6 +1043,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
       }
     },
     destroy() {
+      releaseContainer(el);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
       tooltip.destroy();

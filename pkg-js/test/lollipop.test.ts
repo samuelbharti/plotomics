@@ -5,9 +5,40 @@ import {
   placeLabels,
   residueTicks,
   stackVariants,
+  topLabelIndex,
   wrapRows,
 } from "../src/components/lollipop.js";
 import { textSizes } from "../src/core/theme.js";
+
+describe("lollipop default labels", () => {
+  it("picks the most recurrent variants, in row order", () => {
+    expect(topLabelIndex([3, 9, 1, 7, 5], 2)).toEqual([1, 3]);
+    expect(topLabelIndex(new Float32Array([3, 9, 1]), 12)).toEqual([0, 1, 2]);
+  });
+
+  it("keeps the row order for equal counts and puts a missing count last", () => {
+    // R: order(-c(2, 5, 2, NA, 2))[1:3] is 2 1 3; numpy's stable argsort
+    // gives the same rows.
+    const counts = [2, 5, 2, Number.NaN, 2];
+    expect(topLabelIndex(counts, 3)).toEqual([0, 1, 2]);
+    expect(topLabelIndex(counts, 5)).toEqual([0, 1, 2, 3, 4]);
+    expect(topLabelIndex([null, 1] as unknown as ArrayLike<number>, 1)).toEqual(
+      [1],
+    );
+  });
+
+  it("labels every variant for Infinity, as R's label_top_n = Inf", () => {
+    expect(topLabelIndex([3, 1, 2], Number.POSITIVE_INFINITY)).toEqual([
+      0, 1, 2,
+    ]);
+    expect(topLabelIndex([3, 1, 2], Number.NaN)).toEqual([]);
+  });
+
+  it("labels nothing for zero or a negative count", () => {
+    expect(topLabelIndex([1, 2], 0)).toEqual([]);
+    expect(topLabelIndex([1, 2], -3)).toEqual([]);
+  });
+});
 
 describe("lollipop layout", () => {
   it("stacks the stem area, backbone, PTM track and axis top to bottom", () => {

@@ -23,10 +23,13 @@
 #'   frequency bars divide by the number of samples shown, so pass `samples`
 #'   to count unaltered samples of the cohort too.
 #' @param classes Character vector of alteration classes, which fixes both the
-#'   legend order and the colour assignment. Defaults to the classes present.
-#'   A gene and sample with two or more different classes is drawn as
-#'   `"Multi-hit"`, in dark grey, which is added to the classes when it
-#'   occurs.
+#'   legend order and the colour assignment. Defaults to the classes present,
+#'   most frequent first, equal counts by name in code point order, as in
+#'   Python. A missing class (`NA`) stops with an error, unless `classes`
+#'   holds `NA` too: then it is a class of its own, sent as null. A row with a
+#'   missing gene or sample is left out. A gene and sample with two or more
+#'   different classes is drawn as `"Multi-hit"`, in dark grey, which is added
+#'   to the classes when it occurs.
 #' @param class_colors Character vector of hex colours, one per entry of
 #'   `classes`. `NULL` uses the component's categorical palette.
 #' @param burden Numeric vector, one value per sample, for the top barplot.
@@ -97,7 +100,7 @@ oncoplot <- function(alterations,
   alt_class <- as.character(alterations$class)
 
   if (is.null(classes)) {
-    classes <- names(sort(table(alt_class), decreasing = TRUE))
+    classes <- bv_by_frequency(alt_class)
   }
   classes <- as.character(classes)
   unknown <- setdiff(unique(alt_class), classes)
@@ -112,9 +115,12 @@ oncoplot <- function(alterations,
   }
 
   # A gene and sample with two or more different classes is one cell, drawn
-  # as "Multi-hit"; otherwise the last row would win without a word.
+  # as "Multi-hit"; otherwise the last row would win without a word. A row
+  # with no gene or no sample names no cell, so it makes no Multi-hit.
   pair <- paste(alt_gene, alt_sample, sep = "\r")
-  n_class <- tapply(alt_class, pair, function(x) length(unique(x)))
+  has_cell <- !is.na(alt_gene) & !is.na(alt_sample)
+  n_class <- tapply(alt_class[has_cell], pair[has_cell],
+                    function(x) length(unique(x)))
   multi <- names(n_class)[n_class > 1L]
   if (length(multi) > 0L) {
     if (!MULTI_HIT %in% classes) {
@@ -199,7 +205,9 @@ oncoplot <- function(alterations,
           "annotation '%s' must have one value per sample.", a$name
         ), call. = FALSE)
       }
-      f <- factor(as.character(unname(values)))
+      values <- as.character(unname(values))
+      # Levels in code point order, as Python sorts them.
+      f <- factor(values, levels = bv_sort_text(values))
       out <- list(
         name = as.character(a$name)[1],
         # I() keeps a single level, or a single sample, from unboxing to a
@@ -244,8 +252,10 @@ oncoplot <- function(alterations,
 #' it is what makes mutual exclusivity between drivers visible as a staircase.
 #'
 #' Exposed separately so a caller can compute the order once and reuse it for
-#' both an interactive [oncoplot()] and a static rendering, rather than letting
-#' two implementations tie-break differently.
+#' both an interactive [oncoplot()] and a static rendering, so two
+#' implementations cannot tie-break differently. Remaining ties go by name in
+#' code point order, whatever the locale, which is the order Python's
+#' `memo_sort()` uses.
 #'
 #' @param alterations A data frame with columns `gene`, `sample` and `class`.
 #' @param genes Optional character vector to use instead of the derived gene
@@ -269,12 +279,12 @@ oncoplot_memo_sort <- function(alterations, genes = NULL, samples = NULL) {
     # Rank genes by the number of samples they are altered in, not by rows:
     # three mutations in one sample count once.
     pairs <- unique(data.frame(g = g, s = s, stringsAsFactors = FALSE))
-    genes <- names(sort(table(pairs$g), decreasing = TRUE))
+    genes <- bv_by_frequency(pairs$g)
   } else {
     genes <- as.character(genes)
   }
   if (is.null(samples)) {
-    samples <- sort(unique(s))
+    samples <- bv_sort_text(s)
     hit <- matrix(FALSE, nrow = length(genes), ncol = length(samples),
                   dimnames = list(genes, samples))
     gi <- match(g, genes)
