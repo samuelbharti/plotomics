@@ -595,6 +595,35 @@ describe("heatmap in a browser", () => {
     }
   });
 
+  it("keeps every outlier in view while zooming out after an option change", async () => {
+    const nrows = 5000;
+    const outliers = [1500, 2001, 2502, 3003, 3504];
+    const el = container();
+    const plot = createHeatmap(el, {
+      data: {
+        columns: { values: withRows(nrows, 4, outliers) },
+        meta: { nrows, ncols: 4 },
+      },
+    });
+    instances.push(plot);
+    const h = (el.querySelector("canvas") as HTMLCanvasElement).height;
+    for (let i = 0; i < 12; i += 1) zoom(el, Math.exp(-0.1));
+    await rest();
+    // A new clamp drops the pooled textures; the whole matrix's is built
+    // again with this view's, so a zoom out has one to draw from.
+    plot.setOptions({ vmax: 0.99 });
+    const missed: string[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      zoom(el, Math.exp(0.1));
+      const top = rowAt(el, 0);
+      const bottom = rowAt(el, h - 1);
+      const inView = outliers.filter((r) => r > top && r < bottom).length;
+      const drawn = colourRuns(el, 0.5, lit);
+      if (drawn !== inView) missed.push(`step ${i + 1}: ${drawn} of ${inView}`);
+    }
+    expect(missed).toEqual([]);
+  });
+
   it("draws noise as its average, not pushed to the ends of the ramp", () => {
     const nrows = 5000;
     const ncols = 400;

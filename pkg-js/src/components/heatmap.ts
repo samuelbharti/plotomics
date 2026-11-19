@@ -767,6 +767,18 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       scale: baseScale,
     };
     if (!regl || !basePlans) return base;
+    // The texture for the whole matrix fits every view, so it is the one a
+    // moving view can always stand on. Pooled textures are dropped when the
+    // matrix or its colours change, and its size follows the plot's, so
+    // each render at rest builds it again when it is missing.
+    const wholeRows = axisPlan(shape.nrows, 1, canvas.height, maxTex);
+    const wholeCols = axisPlan(shape.ncols, 1, canvas.width, maxTex);
+    const whole = `${wholeRows.key}x${wholeCols.key}`;
+    const wholeIsBase =
+      wholeRows.key === basePlans[0].key && wholeCols.key === basePlans[1].key;
+    if (!moving && !wholeIsBase && !pooled.has(whole)) {
+      pooled.set(whole, pooledTexture(wholeRows, wholeCols));
+    }
     const rows = axisPlan(shape.nrows, viewH, canvas.height, maxTex);
     const cols = axisPlan(shape.ncols, viewW, canvas.width, maxTex);
     if (rows.key === basePlans[0].key && cols.key === basePlans[1].key) {
@@ -778,22 +790,10 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     else if (moving) {
       settleLater();
       return standIn(base);
-    } else {
-      hit = {
-        tex: regl.texture(
-          textureOptions(levelsFor(rows, cols), rows.count, cols.count),
-        ),
-        rows,
-        cols,
-        scale: [cols.scale, rows.scale],
-      };
-    }
+    } else hit = pooledTexture(rows, cols);
     pooled.set(key, hit);
     // Drop the copies drawn longest ago, but not the one for the whole
-    // matrix, which a zoom out always comes back to.
-    const whole = `${axisPlan(shape.nrows, 1, canvas.height, maxTex).key}x${
-      axisPlan(shape.ncols, 1, canvas.width, maxTex).key
-    }`;
+    // matrix.
     for (const [oldKey, old] of pooled) {
       if (pooled.size <= MAX_POOLED) break;
       if (oldKey === whole || oldKey === key) continue;
@@ -801,6 +801,18 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       pooled.delete(oldKey);
     }
     return hit;
+  }
+
+  /** The matrix pooled by the given plans, as a texture. */
+  function pooledTexture(rows: AxisPlan, cols: AxisPlan): PooledTexture {
+    return {
+      tex: (regl as Regl).texture(
+        textureOptions(levelsFor(rows, cols), rows.count, cols.count),
+      ),
+      rows,
+      cols,
+      scale: [cols.scale, rows.scale],
+    };
   }
 
   /**
