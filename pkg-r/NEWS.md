@@ -1,4 +1,4 @@
-# plotomics (development version)
+# plotomics 0.3.0
 
 ## Changes
 
@@ -9,8 +9,8 @@
   the widget.
 * Past 8 categories the default palette changes from Okabe-Ito to scanpy's
   20-colour cluster palette, so the 9th group no longer takes the colour of the
-  1st. `km()`, `lollipop()`, `oncoplot()`, `bioprofile()` and `violin()` now
-  take their colours from `theme$categorical`.
+  1st. `km()`, `lollipop()` classes, `oncoplot()`, `bioprofile()` and `violin()`
+  now take their colours from `theme$categorical`.
 * Each plot has its own default height, the one its `*Output()` function uses:
   `clustermap()`, `dotplot()`, `oncoplot()`, `spatial()` and `violin()` 560 px,
   `km()` and `upset()` 520, `lollipop()` 440, `bioprofile()` 380 and the
@@ -24,6 +24,36 @@
   not given. Genes rank by the number of samples altered, and a gene and
   sample altered in two or more ways show one "Multi-hit" cell, as maftools
   does.
+* `theme = list(padding = )` puts room around every plot: one number for all
+  four sides, or `top`, `right`, `bottom` and `left`, 10 px by default. Axes,
+  labels and legends stay inside it, and exports keep it.
+* Gridlines sit under the data in every plot. A `theme$grid` of "none", a
+  transparent colour or an R colour name such as "grey90" draws no grid.
+* Axes and colour bars label round values in one unit per axis.
+* `violin()` caps the widest violin at `violin_aspect` (0.8) times its row
+  height, never narrower than four times the label size; `violin_aspect = NULL`
+  turns the cap off.
+* `bioheatmap()` and `clustermap()` draw z-scores with `rdbu` when `colormap` is
+  `NULL`, the new default, and mirror a lone positive `vmax` or negative `vmin`
+  about 0 with a diverging colormap. With more rows or columns than pixels they
+  draw the mean of the cells under each pixel, so an outlier row no longer
+  vanishes. `bioheatmap()` gains `legend_title`.
+* `network()` labels nodes from the starting zoom (`label_threshold = 4`) and
+  draws a legend of its node groups, which `show_legend = FALSE` turns off.
+* `spatial()` takes its default spot diameter from the spacing of the spots and
+  stops on a `spot_diameter` that is not one positive number. Its legend and
+  colour bar sit right of the image.
+* `embedding()` keeps its legend in a gutter right of the points, and it,
+  `treemap()`, `bioheatmap()`, `clustermap()` and `hic()` accept `ltc` and
+  `ltcdiv`.
+* `lollipop()`: round count ticks with gridlines, a domain palette of its own
+  (`theme$categorical` colours the classes only), readable domain names, and a
+  tooltip worded by `y_label`.
+* `bioprofile(as_fraction = TRUE)` stops on negative values, and `as_fraction`
+  must be one `TRUE` or `FALSE`.
+* `km()` takes `censor`, a data frame of censoring ticks, as its last argument.
+* `oncoplot()` and `lollipop()` break ties by name in code point order, whatever
+  the locale, so the colours match Python's.
 
 ## Bug fixes
 
@@ -57,6 +87,9 @@
   ("cluster 2" before "cluster 10") and lasso selections across re-renders.
 * The `bioprofile()`, `upset()` and `lollipop()` axes put ticks on round values
   with exact labels, and long `upset()` set names fit their column.
+* Every Shiny example in the help runs as written.
+* Hover lines up with the plot inside an element with a CSS border, and a widget
+  keeps a height set in CSS.
 
 # plotomics 0.1.0
 

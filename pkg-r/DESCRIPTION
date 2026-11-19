@@ -1,7 +1,7 @@
 Package: plotomics
 Type: Package
 Title: High-Performance Bioinformatics Visualizations
-Version: 0.2.0
+Version: 0.3.0
 Authors@R: c(
     person("Samuel", "Bharti", , "samuelbharti.io@gmail.com",
            role = c("aut", "cre", "cph"),
