@@ -263,3 +263,94 @@ describe("spatial spot spacing on awkward layouts", () => {
     }
   });
 });
+
+/** A seeded generator of numbers in [0, 1). */
+function seeded(seed: number) {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/** Milliseconds a call of medianNeighbourDistance takes, and its result. */
+function timed(xs: number[], ys: number[]) {
+  const t = performance.now();
+  const value = medianNeighbourDistance(xs, ys);
+  return { value, ms: performance.now() - t };
+}
+
+describe("spatial spot spacing with spots far off", () => {
+  it("stays as fast with one spot far off as without it", () => {
+    // Before the fix one far spot crowded the slide into a few cells and
+    // every query scanned all of it: 26 s for the first layout below,
+    // about 0.5 s for the other two.
+    const rand = seeded(3);
+    const n = 1_000_000;
+    const rx = Array.from({ length: n }, () => rand() * 20000);
+    const ry = Array.from({ length: n }, () => rand() * 20000);
+    const gx: number[] = [];
+    const gy: number[] = [];
+    for (let i = 0; i < 300; i += 1) {
+      for (let j = 0; j < 300; j += 1) {
+        gx.push(i);
+        gy.push(j);
+      }
+    }
+    const line = Array.from({ length: 100_000 }, (_, i) => i);
+    const cases: [string, number[], number[], number, number][] = [
+      ["1e6 random spots", rx, ry, 1e8, 1e8],
+      ["a 300 x 300 grid", gx, gy, 1e6, 1e6],
+      ["a diagonal line", line, line, -1e9, -1e9],
+    ];
+    for (const [name, xs, ys, fx, fy] of cases) {
+      const base = timed(xs, ys);
+      const far = timed([fx, ...xs.slice(1)], [fy, ...ys.slice(1)]);
+      expect(far.ms, name).toBeLessThan(4 * base.ms + 100);
+      expect(far.value as number, name).toBeCloseTo(base.value as number, 0);
+    }
+  });
+
+  it("gives the result of checking every pair, with spots far off", () => {
+    const rand = seeded(5);
+    for (let k = 0; k < 200; k += 1) {
+      // More than 100 spots, so the grid spans the 1st to 99th percentile.
+      const n = 101 + Math.floor(rand() * 300);
+      const grid = 2 + Math.floor(rand() * 30);
+      const xs: number[] = [];
+      const ys: number[] = [];
+      for (let i = 0; i < n; i += 1) {
+        xs.push(Math.floor(rand() * grid) * 1.5);
+        ys.push(rand() < 0.2 ? 0 : Math.floor(rand() * grid));
+      }
+      const far = Math.floor(rand() * 6);
+      for (let f = 0; f < far; f += 1) {
+        const i = Math.floor(rand() * n);
+        xs[i] = (rand() - 0.5) * 10 ** (2 + Math.floor(rand() * 8));
+        ys[i] = (rand() - 0.5) * 10 ** (2 + Math.floor(rand() * 8));
+      }
+      expect(medianNeighbourDistance(xs, ys), `layout ${k}`).toBe(
+        bruteForce(xs, ys),
+      );
+    }
+  });
+
+  it("gives null for coordinates whose squared distances overflow or underflow", () => {
+    // Before the fix the first two never returned.
+    const huge = Array.from({ length: 1000 }, (_, i) => -1e308 + i * 2e305);
+    expect(medianNeighbourDistance(huge, new Array(1000).fill(0))).toBeNull();
+    const { xs, ys } = grid(70, 70, 1e-300);
+    expect(medianNeighbourDistance(xs, ys)).toBeNull();
+    const big = grid(300, 300, 1e-300);
+    expect(medianNeighbourDistance(big.xs, big.ys)).toBeNull();
+  });
+
+  it("still measures very large and very small spacings", () => {
+    const large = grid(300, 300, 1e100);
+    const small = grid(300, 300, 1e-100);
+    const l = medianNeighbourDistance(large.xs, large.ys) as number;
+    const s = medianNeighbourDistance(small.xs, small.ys) as number;
+    expect(l / 1e100).toBeCloseTo(1, 9);
+    expect(s / 1e-100).toBeCloseTo(1, 9);
+  });
+});

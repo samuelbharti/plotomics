@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { fitLegend, legendLabelsFit } from "../src/core/index.js";
+import {
+  fitLegend,
+  legendCandidates,
+  legendLabelsFit,
+} from "../src/core/index.js";
 
 describe("legend rows that fit the height", () => {
   it("lists every entry and the NA entry when they fit", () => {
@@ -86,5 +90,23 @@ describe("legend labels in a narrow gutter", () => {
     expect(fits(["NA"], 13)).toBe(true);
     expect(fits(["NA"], 12)).toBe(false);
     expect(fits([], 0)).toBe(true);
+  });
+});
+
+describe("legend labels at any height", () => {
+  it("lists the labels the legend can show, the widest +N more row and NA", () => {
+    expect(legendCandidates(["B", "C", "Wolfram cells"], true, 14)).toEqual([
+      "B",
+      "C",
+      "Wolfram cells",
+      "+2 more",
+      "NA",
+    ]);
+    const many = Array.from({ length: 20 }, (_, i) => `c${i}`);
+    expect(legendCandidates(many, false, 14)).toEqual([
+      ...many.slice(0, 14),
+      "+19 more",
+    ]);
+    expect(legendCandidates(["only"], false)).toEqual(["only"]);
   });
 });

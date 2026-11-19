@@ -766,3 +766,54 @@ describe("spatial spot size and legend gutter", () => {
     expect(outsideBox(el)).toEqual([]);
   });
 });
+
+describe("spatial legend as the widget grows taller", () => {
+  /** Spots on a 4 x 4 grid over a 100 x 100 image. */
+  function spots(color: unknown[]) {
+    const x: number[] = [];
+    const y: number[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      for (let j = 0; j < 4; j += 1) {
+        x.push(10 + i * 25);
+        y.push(10 + j * 25);
+      }
+    }
+    return {
+      columns: {
+        x,
+        y,
+        color: x.map((_, i) => color[i % color.length]) as unknown as string[],
+      },
+      meta: { imgWidth: 100, imgHeight: 100 },
+    };
+  }
+
+  const cases: [string, unknown[], number[]][] = [
+    // Before the fix, at 150 px, heights 36 to 49 showed "B" and "+2 more"
+    // cut, and from 50 px "Wolfram cells" came in and the legend went away.
+    ["levels", ["B", "C", "Wolfram cells"], [150, 300]],
+    // Before the fix a colour bar that the height left no room for its NA
+    // key showed, and went away once the NA key came in.
+    ["colour bar", [1, 2, null], [100, 110, 120, 130]],
+  ];
+  for (const [name, color, widths] of cases) {
+    it(`never loses the ${name} at a greater height`, () => {
+      for (const width of widths) {
+        const shown: number[] = [];
+        for (let height = 20; height <= 140; height += 2) {
+          const el = container(width, height);
+          const sp = createSpatial(el, { data: spots(color) });
+          if (svgTexts(el).length > 0) shown.push(height);
+          sp.destroy();
+          el.remove();
+        }
+        const first = shown[0] ?? Number.POSITIVE_INFINITY;
+        const gaps: number[] = [];
+        for (let height = 20; height <= 140; height += 2) {
+          if (height > first && !shown.includes(height)) gaps.push(height);
+        }
+        expect(gaps, `${width} px`).toEqual([]);
+      }
+    });
+  }
+});

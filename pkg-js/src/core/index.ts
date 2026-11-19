@@ -63,7 +63,12 @@ export {
   dpr,
 } from "./dom.js";
 
-export { type LegendFit, fitLegend, legendLabelsFit } from "./legend.js";
+export {
+  type LegendFit,
+  fitLegend,
+  legendCandidates,
+  legendLabelsFit,
+} from "./legend.js";
 
 export {
   type ScatterplotView,

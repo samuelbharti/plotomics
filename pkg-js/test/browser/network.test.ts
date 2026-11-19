@@ -332,3 +332,38 @@ describe("network legend in a small widget", () => {
     expect(graphRight(el)).toBeLessThan(el.getBoundingClientRect().right - 50);
   });
 });
+
+describe("network legend as the widget grows taller", () => {
+  it("never loses the legend at a greater height", () => {
+    // Before the fix, at 150 px wide, heights 36 to 49 showed "B" and
+    // "+2 more" cut, and from 50 px "Wolfram cells" came in and the legend
+    // went away.
+    for (const width of [150, 300]) {
+      const shown: number[] = [];
+      for (let height = 20; height <= 120; height += 2) {
+        const el = container(width, height);
+        const net = createNetwork(el, {
+          data: {
+            columns: { id: ["a", "b", "c"], x: [0, 1, 2], y: [0, 1, 0] },
+            meta: { nodeGroup: ["B", "C", "Wolfram cells"] },
+          },
+        });
+        if (legendTexts(el).length > 0) shown.push(height);
+        else {
+          expect(graphRight(el)).toBeCloseTo(
+            el.getBoundingClientRect().right,
+            0,
+          );
+        }
+        net.destroy();
+        el.remove();
+      }
+      const first = shown[0] ?? Number.POSITIVE_INFINITY;
+      const gaps: number[] = [];
+      for (let height = 20; height <= 120; height += 2) {
+        if (height > first && !shown.includes(height)) gaps.push(height);
+      }
+      expect(gaps, `${width} px`).toEqual([]);
+    }
+  });
+});

@@ -45,6 +45,7 @@ import {
   textWidth,
   fitText,
   fitLegend,
+  legendCandidates,
   legendLabelsFit,
   dpr,
   serializeSVG,
@@ -151,10 +152,15 @@ export function spotRadius(
  *
  * The spots go into a grid of cells that hold about two spots each, and the
  * search for a spot's neighbour moves out ring by ring from its own cell,
- * clipped to the grid, until no closer spot can be left. Spots at one place
- * are searched for once, and each cell lists one spot per place, so a slide
- * with many spots at a few places stays fast. At most `maxQueries` spots,
- * spread over the input, are measured, which keeps a large slide fast.
+ * clipped to the grid, until no closer spot can be left. The grid spans the
+ * 1st to 99th percentile of each coordinate, so a few spots far off do not
+ * crowd the slide into a few cells. Spots at one place are searched for
+ * once, and each cell lists one spot per place, so a slide with many spots
+ * at a few places stays fast. At most `maxQueries` spots, spread over the
+ * input, are measured, which keeps a large slide fast.
+ *
+ * Also null for coordinates so large that a squared distance overflows, or
+ * so small that it underflows to 0: the caller then takes its fallback.
  */
 export function medianNeighbourDistance(
   xs: ArrayLike<number | null>,
@@ -187,21 +193,53 @@ export function medianNeighbourDistance(
     if (y < minY) minY = y;
     if (y > maxY) maxY = y;
   }
-  const w = maxX - minX;
-  const h = maxY - minY;
-  if (w === 0 && h === 0) return null;
-  // About two spots per cell, and no more cells along the long side than
-  // spots, so a thin strip of spots does not make a huge grid.
-  const cell = Math.max(Math.sqrt((2 * w * h) / n), (2 * Math.max(w, h)) / n);
+  if (maxX === minX && maxY === minY) return null;
+  // The grid spans the 1st to 99th percentile of each coordinate, and the
+  // spots outside go into its edge cells. A spot moved into an edge cell is
+  // at least as far off as that cell, so the search stays exact. When most
+  // spots share one place, the grid spans them all.
+  let [loX, hiX] = coreRange(px);
+  let [loY, hiY] = coreRange(py);
+  if (loX === hiX && loY === hiY)
+    [loX, hiX, loY, hiY] = [minX, maxX, minY, maxY];
+  const w = hiX - loX;
+  const h = hiY - loY;
+  const ext = Math.max(w, h);
+  // No ring of the search reaches past twice the extent, so its squared
+  // distances stay finite.
+  if (!Number.isFinite(4 * ext * ext)) return null;
+  let m = 0;
+  for (let i = 0; i < n; i += 1) {
+    const x = px[i] as number;
+    const y = py[i] as number;
+    if (x >= loX && x <= hiX && y >= loY && y <= hiY) m += 1;
+  }
+  m = Math.max(m, 2);
+  // About two spots of the span per cell, and no more cells along the long
+  // side than spots, so a thin strip of spots does not make a huge grid.
+  // Each extent has its own square root, so two tiny ones do not underflow.
+  const cell = Math.max(
+    Math.sqrt(2 / m) * Math.sqrt(w) * Math.sqrt(h),
+    (2 * ext) / m,
+  );
+  if (!(cell * cell > 0)) return null;
   const gx = Math.floor(w / cell) + 1;
   const gy = Math.floor(h / cell) + 1;
   const cells = gx * gy;
+  // The sizing gives at most about 1.5 cells a spot.
+  if (!(cells <= 4 * n + 16)) return null;
   const cellOf = new Uint32Array(n);
   // Spots sorted by cell: those of cell k are members[start[k]..start[k+1]).
   const start = new Uint32Array(cells + 1);
   for (let i = 0; i < n; i += 1) {
-    const cx = Math.min(gx - 1, Math.floor(((px[i] as number) - minX) / cell));
-    const cy = Math.min(gy - 1, Math.floor(((py[i] as number) - minY) / cell));
+    const cx = Math.max(
+      0,
+      Math.min(gx - 1, Math.floor(((px[i] as number) - loX) / cell)),
+    );
+    const cy = Math.max(
+      0,
+      Math.min(gy - 1, Math.floor(((py[i] as number) - loY) / cell)),
+    );
     const k = cy * gx + cx;
     cellOf[i] = k;
     start[k + 1] = (start[k + 1] as number) + 1;
@@ -319,6 +357,24 @@ export function medianNeighbourDistance(
   return dists.length % 2
     ? (dists[mid] as number)
     : ((dists[mid - 1] as number) + (dists[mid] as number)) / 2;
+}
+
+/**
+ * The 1st and 99th percentile of `values`, from at most 10,000 of them
+ * spread over the input.
+ */
+function coreRange(values: readonly number[]): [number, number] {
+  const step = Math.max(1, Math.ceil(values.length / 10_000));
+  const sample = new Float64Array(Math.ceil(values.length / step));
+  for (let i = 0, k = 0; i < values.length; i += step, k += 1) {
+    sample[k] = values[i] as number;
+  }
+  sample.sort();
+  const last = sample.length - 1;
+  return [
+    sample[Math.floor(0.01 * last)] as number,
+    sample[Math.ceil(0.99 * last)] as number,
+  ];
 }
 
 /** Min/max of a numeric column, ignoring non-finite entries. */
@@ -721,6 +777,10 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
    * colour bar is 90 px tall, or shorter to fit the height with the NA key
    * under it, down to two label heights; then the NA key goes, then the bar.
    * Its numbers are not cut.
+   *
+   * Whether the gutter is wide enough does not depend on the height: it is
+   * checked for every label the legend can show at some height, so a taller
+   * widget never loses the legend.
    */
   function legendLayout(legend: LegendState): LegendLayout {
     if (!legend) return null;
@@ -729,6 +789,15 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     const w = (s: string) => textWidth(s, fs, theme.fontFamily);
     const cap = Math.floor(width * MAX_LEGEND_SHARE);
     if (legend.kind === "categorical") {
+      const candidates = legendCandidates(
+        legend.levels,
+        legend.missing,
+        LEGEND_MAX,
+      );
+      const widest = cap - 2 * LEGEND_PAD - sw - 5;
+      if (!legendLabelsFit(candidates, widest, fs, theme.fontFamily)) {
+        return null;
+      }
       const rowH = Math.round(fs * 1.3);
       const y0 = Math.round(fs + 5);
       // Rows whose baseline is 6 px or more above the bottom, so the text
@@ -754,10 +823,16 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
         LEGEND_PAD + sw + 5 + Math.ceil(longest) + LEGEND_PAD,
         cap,
       );
-      const room = gutter - 2 * LEGEND_PAD - sw - 5;
-      if (!legendLabelsFit(labels, room, fs, theme.fontFamily)) return null;
       return { kind: "categorical", rows, gutter };
     }
+    // The gutter holds the NA key whether or not the height leaves it room.
+    const labelW = Math.max(w(fmt(legend.lo)), w(fmt(legend.hi)));
+    const inner = Math.max(
+      BAR_W + 5 + labelW,
+      legend.missing ? sw + 5 + w("NA") : 0,
+    );
+    const gutter = LEGEND_PAD + Math.ceil(inner) + LEGEND_PAD;
+    if (gutter > cap) return null;
     // The last baseline is 6 px or more above the bottom, as for the rows.
     const avail = height - 6 - BAR_TOP;
     const naRow = Math.round(fs + 7);
@@ -765,10 +840,6 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     const missing = legend.missing && avail - naRow >= least;
     const barH = Math.min(BAR_MAX, avail - (missing ? naRow : 0));
     if (barH < least) return null;
-    const labelW = Math.max(w(fmt(legend.lo)), w(fmt(legend.hi)));
-    const inner = Math.max(BAR_W + 5 + labelW, missing ? sw + 5 + w("NA") : 0);
-    const gutter = LEGEND_PAD + Math.ceil(inner) + LEGEND_PAD;
-    if (gutter > cap) return null;
     return {
       kind: "continuous",
       lo: legend.lo,

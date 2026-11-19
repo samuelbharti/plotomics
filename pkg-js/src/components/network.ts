@@ -39,6 +39,7 @@ import {
   textWidth,
   fitText,
   fitLegend,
+  legendCandidates,
   legendLabelsFit,
   serializeSVG,
   compositePNG,
@@ -393,7 +394,9 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
    * height holds (see fitLegend), and the gutter is the widest row with its
    * swatch and padding, at most a share of the widget, with longer labels
    * cut. No rows and no gutter when there are no groups, when not one row
-   * fits, or when the gutter cannot show a few characters of each label.
+   * fits, or when the widest gutter cannot show a few characters of every
+   * label the legend can show at some height. That last check does not
+   * depend on the height, so a taller widget never loses the legend.
    */
   function legendLayout(): { rows: LegendRow[]; gutter: number } {
     const none = { rows: [], gutter: 0 };
@@ -403,6 +406,15 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     const y0 = Math.round(fs + 5);
     const groups = legend.filter((e) => !e.missing);
     const tail = legend.find((e) => e.missing);
+    const sw = swatchSize();
+    const cap = Math.floor(width * MAX_LEGEND_SHARE);
+    const candidates = legendCandidates(
+      groups.map((e) => e.label),
+      tail !== undefined,
+      LEGEND_MAX,
+    );
+    const widest = cap - 2 * LEGEND_PAD - sw - 5;
+    if (!legendLabelsFit(candidates, widest, fs, theme.fontFamily)) return none;
     // Rows whose baseline is 6 px or more above the bottom, so the text
     // ends inside the widget.
     const fit = fitLegend(
@@ -418,17 +430,12 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     if (fit.missing && tail)
       rows.push({ label: tail.label, color: tail.color });
     if (rows.length === 0) return none;
-    const sw = swatchSize();
-    const labels = rows.map((r) => r.label);
-    const longest = labels.reduce(
-      (mx, s) => Math.max(mx, textWidth(s, fs, theme.fontFamily)),
+    const longest = rows.reduce(
+      (mx, r) => Math.max(mx, textWidth(r.label, fs, theme.fontFamily)),
       0,
     );
     const want = LEGEND_PAD + sw + 5 + Math.ceil(longest) + LEGEND_PAD;
-    const gutter = Math.min(want, Math.floor(width * MAX_LEGEND_SHARE));
-    const room = gutter - 2 * LEGEND_PAD - sw - 5;
-    if (!legendLabelsFit(labels, room, fs, theme.fontFamily)) return none;
-    return { rows, gutter };
+    return { rows, gutter: Math.min(want, cap) };
   }
 
   /** Size the graph to the widget less the legend gutter, and draw the legend. */

@@ -64,3 +64,20 @@ export function legendLabelsFit(
     return textWidth(least, size, fontFamily) <= room;
   });
 }
+
+/**
+ * Every label a legend of `labels`, and of an NA entry when `missing`, can
+ * show at some height: the first `max` labels, the widest "+N more" row and
+ * "NA". A plot that checks these with {@link legendLabelsFit}, not the rows
+ * of its present height, does not lose its legend as it grows taller.
+ */
+export function legendCandidates(
+  labels: readonly string[],
+  missing: boolean,
+  max = Number.POSITIVE_INFINITY,
+): string[] {
+  const out = labels.slice(0, max);
+  if (labels.length >= 2) out.push(`+${labels.length - 1} more`);
+  if (missing) out.push("NA");
+  return out;
+}
