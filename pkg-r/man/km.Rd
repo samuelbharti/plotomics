@@ -8,7 +8,6 @@ km(
   data,
   groups = NULL,
   group_colors = NULL,
-  censor = NULL,
   risk_times = NULL,
   risk_counts = NULL,
   p_label = NULL,
@@ -23,7 +22,8 @@ km(
   theme = NULL,
   width = NULL,
   height = NULL,
-  element_id = NULL
+  element_id = NULL,
+  censor = NULL
 )
 }
 \arguments{
@@ -36,11 +36,6 @@ assignment. Defaults to order of appearance.}
 
 \item{group_colors}{One hex colour per stratum. \code{NULL} uses the component's
 categorical palette.}
-
-\item{censor}{Optional data frame of censoring ticks, with numeric \code{time}
-and \code{surv} columns and an optional \code{group} column naming each tick's
-stratum, as Python's \code{Km(censor=)} takes. With a \code{survfit} object the
-ticks are read off the fit unless \code{censor} is given.}
 
 \item{risk_times}{Numeric vector of times for the at-risk table, also used as
 the x-axis ticks. \code{NULL} picks an even grid across the follow-up.}
@@ -67,6 +62,13 @@ zooming y exaggerates separation between curves.}
 \item{width, height}{Widget dimensions (any valid CSS size).}
 
 \item{element_id}{Optional explicit DOM id.}
+
+\item{censor}{Optional data frame of censoring ticks, with numeric \code{time}
+and \code{surv} columns and an optional \code{group} column naming each tick's
+stratum, as Python's \code{Km(censor=)} takes. Column names must match
+exactly. With a \code{survfit} object the ticks are read off the fit unless
+\code{censor} is given. It comes last so the arguments before it keep their
+positions.}
 }
 \value{
 An \code{htmlwidget} object.

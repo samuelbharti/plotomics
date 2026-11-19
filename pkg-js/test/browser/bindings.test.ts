@@ -121,6 +121,27 @@ describe("htmlwidgets sizing", () => {
     }
   });
 
+  it("keeps a height that a stylesheet gives the element", () => {
+    // volcanoOutput("v", height = NULL) with #vv { height: 50vh } in the page.
+    const style = document.createElement("style");
+    style.textContent = "#vv { height: 50vh; }";
+    document.head.appendChild(style);
+    try {
+      const { factory } = countingFactory();
+      registerComponent("counting", factory);
+      const binding = (
+        window as unknown as { plotomics: { htmlwidget(n: string): Binding } }
+      ).plotomics.htmlwidget("counting");
+      const el = document.createElement("div");
+      el.id = "vv";
+      document.body.appendChild(el);
+      binding.factory(el, el.offsetWidth, el.offsetHeight);
+      expect(el.style.height).toBe("");
+    } finally {
+      style.remove();
+    }
+  });
+
   it("fixes the height in px when the element has none of its own", () => {
     const { factory } = countingFactory();
     registerComponent("counting", factory);

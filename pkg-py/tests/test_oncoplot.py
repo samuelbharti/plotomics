@@ -309,3 +309,14 @@ def test_oncoplot_stops_on_a_missing_class_as_r_does():
     d["class"] = ["Missense", None, "Missense", "Amplification", "Missense"]
     with pytest.raises(ValueError, match="not present in `classes`: NA"):
         Oncoplot(d)
+
+
+def test_oncoplot_keeps_a_missing_class_given_in_classes_as_r_does():
+    # R: oncoplot(data.frame(gene = c("A", "B"), sample = c("s1", "s2"),
+    # class = c("m", NA)), classes = c("m", NA)) sends classes ["m", null]
+    # and codes [1, 0, 0, 2].
+    w = Oncoplot({"gene": ["A", "B"], "sample": ["s1", "s2"],
+                  "class": ["m", None]}, classes=["m", None])
+    assert w.data["meta"]["classes"] == ["m", None]
+    codes = np.frombuffer(w.buffer, dtype=np.float32, count=4)
+    assert codes.tolist() == [1, 0, 0, 2]

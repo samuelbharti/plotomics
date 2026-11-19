@@ -45,12 +45,15 @@ barrel import (`plotomics`) down to what you use.
 ## Sizing
 
 A plot takes the size of its element, so give the element a CSS height. An
-element in the page with no height of its own gets 480 px, so the plot does
-not cover the content below it.
+element with no height of its own gets 480 px, so the plot does not cover
+the content below it. This covers an element added to the page after the
+plot is drawn too. The 480 px comes from a CSS rule of zero specificity, so
+any height your CSS sets wins over it, also one set later.
 
 The R and Python wrappers resize their plots when the page changes size. In
 plain JavaScript, `autoResize` passes each new size of the element to the
-plot:
+plot. It also gives the 480 px to an element that was hidden when the plot
+was made, such as one in a tab, if it has no height once shown:
 
 ```js
 import { createVolcano } from "plotomics/volcano";

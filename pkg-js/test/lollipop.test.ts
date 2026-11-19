@@ -27,6 +27,13 @@ describe("lollipop default labels", () => {
     );
   });
 
+  it("labels every variant for Infinity, as R's label_top_n = Inf", () => {
+    expect(topLabelIndex([3, 1, 2], Number.POSITIVE_INFINITY)).toEqual([
+      0, 1, 2,
+    ]);
+    expect(topLabelIndex([3, 1, 2], Number.NaN)).toEqual([]);
+  });
+
   it("labels nothing for zero or a negative count", () => {
     expect(topLabelIndex([1, 2], 0)).toEqual([]);
     expect(topLabelIndex([1, 2], -3)).toEqual([]);

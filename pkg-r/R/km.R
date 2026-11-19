@@ -18,10 +18,6 @@
 #'   assignment. Defaults to order of appearance.
 #' @param group_colors One hex colour per stratum. `NULL` uses the component's
 #'   categorical palette.
-#' @param censor Optional data frame of censoring ticks, with numeric `time`
-#'   and `surv` columns and an optional `group` column naming each tick's
-#'   stratum, as Python's `Km(censor=)` takes. With a `survfit` object the
-#'   ticks are read off the fit unless `censor` is given.
 #' @param risk_times Numeric vector of times for the at-risk table, also used as
 #'   the x-axis ticks. `NULL` picks an even grid across the follow-up.
 #' @param risk_counts Integer matrix, strata x `risk_times`. Computed from a
@@ -38,6 +34,12 @@
 #' @param theme Optional named list of theme overrides.
 #' @param width,height Widget dimensions (any valid CSS size).
 #' @param element_id Optional explicit DOM id.
+#' @param censor Optional data frame of censoring ticks, with numeric `time`
+#'   and `surv` columns and an optional `group` column naming each tick's
+#'   stratum, as Python's `Km(censor=)` takes. Column names must match
+#'   exactly. With a `survfit` object the ticks are read off the fit unless
+#'   `censor` is given. It comes last so the arguments before it keep their
+#'   positions.
 #' @return An `htmlwidget` object.
 #' @examples
 #' df <- data.frame(
@@ -50,7 +52,6 @@
 km <- function(data,
                groups = NULL,
                group_colors = NULL,
-               censor = NULL,
                risk_times = NULL,
                risk_counts = NULL,
                p_label = NULL,
@@ -65,7 +66,8 @@ km <- function(data,
                theme = NULL,
                width = NULL,
                height = NULL,
-               element_id = NULL) {
+               element_id = NULL,
+               censor = NULL) {
   if (inherits(data, "survfit")) {
     tidied <- bv_tidy_survfit(data, risk_times)
     if (is.null(censor)) censor <- tidied$censor
@@ -123,17 +125,19 @@ km <- function(data,
   }
 
   if (!is.null(censor)) {
-    if (!is.data.frame(censor) || is.null(censor$time) ||
-        is.null(censor$surv)) {
+    # [[ ]] matches names exactly; $ would take a column `times` for
+    # `time`, where Python stops.
+    if (!is.data.frame(censor) || is.null(censor[["time"]]) ||
+        is.null(censor[["surv"]])) {
       stop("`censor` must be a data frame with `time` and `surv` columns.",
            call. = FALSE)
     }
     if (nrow(censor) > 0L) {
-      meta$censorTime <- I(bv_require_numeric(censor$time, "censor$time"))
-      meta$censorSurv <- I(bv_require_numeric(censor$surv, "censor$surv"))
+      meta$censorTime <- I(bv_require_numeric(censor[["time"]], "censor$time"))
+      meta$censorSurv <- I(bv_require_numeric(censor[["surv"]], "censor$surv"))
       # A tick without a group belongs to the only curve, as in Python.
-      if (!is.null(censor$group)) {
-        meta$censorGroup <- I(as.character(censor$group))
+      if (!is.null(censor[["group"]])) {
+        meta$censorGroup <- I(as.character(censor[["group"]]))
       }
     }
   }

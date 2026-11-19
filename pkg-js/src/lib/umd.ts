@@ -44,10 +44,17 @@ function ensureGlobal(): PlotomicsGlobal {
           type: "output",
           factory(el: HTMLElement, _width: number, height: number) {
             el.style.position = "relative";
-            // A CSS height on the element, such as "100vh", "calc(...)" or a
-            // percentage, is kept, so the plot still follows the window.
-            // Only an element with no height of its own is fixed in px.
-            if (height && !el.style.height) el.style.height = `${height}px`;
+            // A CSS height on the element, inline such as "100vh", "calc(...)"
+            // or a percentage, or from a stylesheet, is kept, so the plot
+            // still follows the window. Only an element laid out at 0 px
+            // high is given the height htmlwidgets passes.
+            if (
+              height > 0 &&
+              !el.style.height &&
+              el.getBoundingClientRect().height <= 0
+            ) {
+              el.style.height = `${height}px`;
+            }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let inst: PlotomicsInstance<any> | null = null;
             let lastOptions: Record<string, unknown> = {};

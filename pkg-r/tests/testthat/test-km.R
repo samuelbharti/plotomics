@@ -189,3 +189,21 @@ test_that("km() uses the given censor ticks over those of a survfit", {
   w <- km(fit, censor = data.frame(time = 15, surv = 0.5))
   expect_equal(as.numeric(w$x$data$meta$censorTime), 15)
 })
+
+test_that("km() keeps risk_times as its fourth argument", {
+  df <- data.frame(time = c(0, 5, 12, 0, 7, 15),
+                   surv = c(1, 0.9, 0.7, 1, 0.8, 0.5),
+                   group = rep(c("treated", "control"), each = 3))
+  w <- km(df, NULL, NULL, c(0, 6, 12))
+  expect_equal(as.numeric(w$x$data$meta$riskTimes), c(0, 6, 12))
+  expect_equal(utils::tail(names(formals(km)), 1), "censor")
+})
+
+test_that("km() matches censor columns by their exact names", {
+  df <- data.frame(time = c(0, 5), surv = c(1, 0.9))
+  # $ would take `times` for `time`; Python stops on this table.
+  expect_error(
+    km(df, censor = data.frame(times = 3, survival = 0.9)),
+    "`censor` must be a data frame with `time` and `surv`"
+  )
+})

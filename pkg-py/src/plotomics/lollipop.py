@@ -58,7 +58,8 @@ class Lollipop(PlotomicsWidget):
     label_top_n:
         Label the n most recurrent variants. Which stems get a label is
         resolved here and sent to the browser, so a redraw, an export and any
-        static counterpart all label the same ones.
+        static counterpart all label the same ones. ``0`` labels none and
+        ``math.inf`` labels all, as ``Inf`` does in R.
     show_ptms, show_domains, show_legend:
         Toggle the surrounding tracks.
     min_head_radius, max_head_radius:
@@ -101,7 +102,7 @@ class Lollipop(PlotomicsWidget):
         classes: list[str] | None = None,
         class_colors: list[str] | None = None,
         domain_colors: list[str] | None = None,
-        label_top_n: int = 12,
+        label_top_n: int | float = 12,
         show_ptms: bool = True,
         show_domains: bool = True,
         show_legend: bool = True,
@@ -153,7 +154,8 @@ class Lollipop(PlotomicsWidget):
             counted = Counter(c for c in cls if c is not None)
             classes = sorted(counted, key=lambda c: (-counted[c], c))
         if classes is not None:
-            classes = [str(c) for c in classes]
+            # A missing class given in `classes` stays None, as R keeps NA.
+            classes = _text_or_none(classes)
             unknown = _not_in(cls or [], classes)
             if unknown:
                 raise ValueError(
@@ -200,7 +202,9 @@ class Lollipop(PlotomicsWidget):
         # pick on its own. With label_top_n = 0 the list is sent empty: the
         # browser labels the top 12 when it gets no list at all.
         if lab is not None:
-            top = np.argsort(-count, kind="stable")[: max(0, label_top_n)]
+            # min() takes math.inf down to the number of variants.
+            n_top = max(0, int(min(label_top_n, count.size)))
+            top = np.argsort(-count, kind="stable")[:n_top]
             meta["labelIndex"] = sorted(int(i) for i in top)
 
         options: dict[str, Any] = {

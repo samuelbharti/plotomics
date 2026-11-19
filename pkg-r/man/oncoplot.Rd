@@ -45,10 +45,11 @@ to count unaltered samples of the cohort too.}
 \item{classes}{Character vector of alteration classes, which fixes both the
 legend order and the colour assignment. Defaults to the classes present,
 most frequent first, equal counts by name in code point order, as in
-Python. A missing class (\code{NA}) stops with an error. A row with a missing
-gene or sample is left out. A gene and sample with two or more different
-classes is drawn as \code{"Multi-hit"}, in dark grey, which is added to the
-classes when it occurs.}
+Python. A missing class (\code{NA}) stops with an error, unless \code{classes}
+holds \code{NA} too: then it is a class of its own, sent as null. A row with a
+missing gene or sample is left out. A gene and sample with two or more
+different classes is drawn as \code{"Multi-hit"}, in dark grey, which is added
+to the classes when it occurs.}
 
 \item{class_colors}{Character vector of hex colours, one per entry of
 \code{classes}. \code{NULL} uses the component's categorical palette.}

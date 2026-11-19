@@ -90,10 +90,11 @@ class Oncoplot(PlotomicsWidget):
     classes:
         Alteration classes, fixing both legend order and colour assignment.
         Defaults to the classes present, most frequent first, equal counts by
-        name, as in R. A missing class stops with an error, as in R. A gene and
-        sample with two or more different classes is drawn as
-        ``"Multi-hit"``, in dark grey, which is added to the classes when it
-        occurs.
+        name, as in R. A missing class stops with an error, as in R, unless
+        ``classes`` holds None too: then it is a class of its own, sent as
+        null. A gene and sample with two or more different classes is drawn
+        as ``"Multi-hit"``, in dark grey, which is added to the classes when
+        it occurs.
     class_colors:
         One hex colour per entry of ``classes``. ``None`` uses the component's
         categorical palette.
@@ -180,10 +181,11 @@ class Oncoplot(PlotomicsWidget):
         if classes is None:
             # Most frequent first, equal counts by name in code point order,
             # as R orders them. A missing class is not counted; it stops
-            # below, as in R.
+            # below, as in R, unless the given classes hold None.
             counted = Counter(c for c in alt_class if c is not None)
             classes = sorted(counted, key=lambda c: (-counted[c], c))
-        classes = [str(c) for c in classes]
+        # A missing class given in `classes` stays None, as R keeps NA.
+        classes = _text_or_none(classes)
         unknown = _not_in(alt_class, classes)
         if unknown:
             raise ValueError(

@@ -116,19 +116,26 @@ export function fitText(
 /**
  * Measure a container, falling back to sensible defaults for headless/0-size.
  *
- * A container in the page with no height of its own, such as a plain div
- * with no CSS height, measures 0 px high. It is given the fallback height,
- * so the plot drawn at that height takes up room in the page and does not
- * cover the content below it. A container with a CSS height is left as it
- * is, and so is one that is not in the page yet.
+ * A plot drawn at the fallback height into a container with no height would
+ * cover the content below it, so two kinds of container get the fallback
+ * height as well, through a CSS rule of zero specificity: one laid out in
+ * the page at 0 px high, such as a plain div with no CSS height, and one not
+ * in the page yet, which is often added to the page after the plot is
+ * drawn. Any CSS height the page gives the container wins over it. A container hidden
+ * at creation, as in a tab not shown, gets no fallback: its size is not
+ * known until it is shown, and {@link autoResize} handles it then.
  */
 export function measure(
   el: HTMLElement,
   fallback: { width: number; height: number } = { width: 640, height: 480 },
 ): { width: number; height: number } {
-  const rect = el.getBoundingClientRect();
-  if (rect.height <= 0 && hasNoHeight(el)) {
-    el.style.height = `${fallback.height}px`;
+  let rect = el.getBoundingClientRect();
+  if (!el.style.height) {
+    const laidOut = el.isConnected && el.getClientRects().length > 0;
+    if ((laidOut && rect.height <= 0) || !el.isConnected) {
+      applyFallbackHeight(el, fallback.height);
+      if (laidOut) rect = el.getBoundingClientRect();
+    }
   }
   return {
     width: rect.width > 0 ? rect.width : fallback.width,
@@ -136,22 +143,72 @@ export function measure(
   };
 }
 
+/** Marks an element that takes the fallback height. */
+const FALLBACK_ATTR = "data-plotomics-fallback";
+/** The custom property that holds the fallback height. */
+const FALLBACK_VAR = "--plotomics-fallback-height";
+
 /**
- * Whether an element in the page takes its height from its content only.
- * Its computed height is "auto" while it is hidden and "0px" once laid out
- * with nothing in it. A height set in CSS, such as "300px" or "100%" in a
- * hidden tab, is kept.
+ * Give `el` a height of `height` px that any CSS height wins over.
+ *
+ * The height comes from the rule `:where([data-plotomics-fallback])`, which
+ * has zero specificity and is placed first in the document, or in the
+ * shadow root that holds `el`. An inline height, a stylesheet rule or a
+ * class added later all win over it. The element itself gets only the
+ * attribute and a custom property, never an inline height.
  */
-function hasNoHeight(el: HTMLElement): boolean {
-  if (!el.isConnected || el.style.height) return false;
-  const h = getComputedStyle(el).height;
-  return h === "auto" || h === "0px";
+function applyFallbackHeight(el: HTMLElement, height: number): void {
+  el.setAttribute(FALLBACK_ATTR, "");
+  el.style.setProperty(FALLBACK_VAR, `${height}px`);
+  addFallbackRule(el);
+}
+
+/** Add the fallback rule to the document or shadow root of `el`, once. */
+function addFallbackRule(el: Element): void {
+  const doc = el.ownerDocument;
+  const root = el.getRootNode();
+  const holder: ParentNode | null =
+    typeof ShadowRoot !== "undefined" && root instanceof ShadowRoot
+      ? root
+      : (doc.head ?? doc.documentElement);
+  if (!holder || holder.querySelector("style[data-plotomics-fallback-rule]")) {
+    return;
+  }
+  const style = doc.createElement("style");
+  style.setAttribute("data-plotomics-fallback-rule", "");
+  style.textContent = `:where([${FALLBACK_ATTR}]){height:var(${FALLBACK_VAR},480px)}`;
+  holder.insertBefore(style, holder.firstChild);
+}
+
+/**
+ * Give a laid-out element the fallback height exactly when nothing else
+ * gives it a height: added when it is 0 px high, as after a tab with no
+ * CSS height is shown, and dropped when the page gives it a height without
+ * it, as a grid row does once an element made outside the page is added
+ * to one. An element that is hidden, or has an inline height, is left as
+ * it is.
+ */
+function fitFallback(el: Element): void {
+  if (!(el instanceof HTMLElement) || el.style.height) return;
+  if (!el.isConnected || el.getClientRects().length === 0) return;
+  if (el.hasAttribute(FALLBACK_ATTR)) {
+    el.removeAttribute(FALLBACK_ATTR);
+    if (el.getBoundingClientRect().height > 0) return;
+  } else if (el.getBoundingClientRect().height > 0) {
+    return;
+  }
+  const given = Number.parseFloat(el.style.getPropertyValue(FALLBACK_VAR));
+  applyFallbackHeight(el, given > 0 ? given : 480);
 }
 
 /**
  * Follow the size of `el`. Each time it changes, `target.resize` gets the
  * new width and height in CSS px. A size of 0, as in a hidden tab, is
  * skipped. Returns a function that stops following.
+ *
+ * It also keeps the fallback height of {@link measure} right as the page
+ * changes: an element shown at 0 px high gets it, and an element the page
+ * gives a height of its own drops it.
  *
  * The R and Python wrappers do this for every plot. In plain JavaScript,
  * call it once the plot is made, and call the function it returns before
@@ -170,12 +227,33 @@ export function autoResize(
   target: { resize(width: number, height: number): void },
 ): () => void {
   if (typeof ResizeObserver === "undefined") return () => {};
+  let frame = 0;
+  // A size set inside the observer's own callback would be reported in the
+  // same frame, which the browser flags as a loop, so the fallback height
+  // is fitted in the next frame.
+  const fit = () => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      fitFallback(el);
+    });
+  };
   const ro = new ResizeObserver((entries) => {
     const r = entries[entries.length - 1]?.contentRect;
-    if (r && r.width > 0 && r.height > 0) target.resize(r.width, r.height);
+    if (!r || r.width <= 0) return;
+    if (r.height > 0) {
+      target.resize(r.width, r.height);
+      if (el.hasAttribute(FALLBACK_ATTR)) fit();
+    } else {
+      fit();
+    }
   });
   ro.observe(el);
-  return () => ro.disconnect();
+  return () => {
+    ro.disconnect();
+    if (frame) cancelAnimationFrame(frame);
+    frame = 0;
+  };
 }
 
 /** Device pixel ratio, clamped to keep GPU memory sane on retina displays. */

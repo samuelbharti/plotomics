@@ -261,7 +261,8 @@ export function headRadius(
  * `argsort(-count)` have them.
  */
 export function topLabelIndex(counts: ArrayLike<number>, n: number): number[] {
-  const k = Math.max(0, Math.floor(Number.isFinite(n) ? n : 0));
+  // Infinity labels every variant, as R's label_top_n = Inf does.
+  const k = Number.isNaN(n) ? 0 : Math.max(0, Math.floor(n));
   if (k === 0) return [];
   const rank = (i: number) => {
     const v = counts[i];
