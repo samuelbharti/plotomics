@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { page } from "vitest/browser";
 import { createVolcano } from "../../src/components/volcano.js";
 import type { PlotomicsInstance } from "../../src/core/index.js";
-import { canvasPNG, type MarkBox, markBox } from "./helpers.js";
+import { canvasPNG, drawnPixels, type MarkBox, markBox } from "./helpers.js";
 
 // Volcano behaviour that needs a real browser: framing with p = 0 and missing
-// values, label placement, and a theme change reaching the canvas.
+// values, label placement, a theme change reaching the canvas, and the
+// gridlines under the points.
 
 function container(width: number, height: number) {
   const el = document.createElement("div");
@@ -171,5 +173,147 @@ describe("volcano in a browser", () => {
     host.style.backgroundColor = "rgb(1, 2, 3)";
     createVolcano(host, { data: { columns: { x: [1], y: [1] } } }).destroy();
     expect(host.style.backgroundColor).toBe("rgb(1, 2, 3)");
+  });
+});
+
+/** RGB of a PNG at a point given in CSS px of a widget `cssWidth` wide. */
+async function pngPixel(
+  png: Blob,
+  cssWidth: number,
+  x: number,
+  y: number,
+): Promise<number[]> {
+  const bitmap = await createImageBitmap(png);
+  const k = bitmap.width / cssWidth;
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  const d = ctx.getImageData(Math.floor(x * k), Math.floor(y * k), 1, 1).data;
+  return [d[0] as number, d[1] as number, d[2] as number];
+}
+
+/** The widget as the screen shows it, as a PNG. */
+async function screenPNG(el: HTMLElement): Promise<Blob> {
+  const shot = await page.screenshot({ element: el, save: false });
+  const bytes = Uint8Array.from(atob(shot), (c) => c.charCodeAt(0));
+  return new Blob([bytes], { type: "image/png" });
+}
+
+const far = (a: number[], b: number[]) =>
+  Math.max(...a.map((v, i) => Math.abs(v - (b[i] as number))));
+
+describe("volcano gridlines", () => {
+  // A dense block of large points, all called up, over log2 fold changes
+  // from 1.5 to 4 and -log10 p from 2 to 10. The x axis runs from -4 to 4,
+  // so the gridline at 3 runs through the block and the one at -2 through
+  // empty space.
+  function blockData() {
+    const x: number[] = [];
+    const y: number[] = [];
+    for (let i = 0; i <= 50; i += 1) {
+      for (let j = 0; j <= 80; j += 1) {
+        x.push(1.5 + (i / 50) * 2.5);
+        y.push(2 + (j / 80) * 8);
+      }
+    }
+    return { columns: { x, y } };
+  }
+
+  const options = {
+    pointSize: 10,
+    opacity: 1,
+    labelTopN: 0,
+    showThresholdLines: false,
+  };
+  const W = 500;
+
+  async function ready(el: HTMLElement) {
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(10_000);
+    await new Promise((r) => setTimeout(r, 300));
+  }
+
+  /** x of the gridline at an x tick, and a y in the block of points. */
+  function gridAt(el: HTMLElement, value: string) {
+    const label = Array.from(el.querySelectorAll("svg text")).find(
+      (t) =>
+        t.textContent === value && t.getAttribute("text-anchor") === "middle",
+    ) as SVGTextElement;
+    const e = el.getBoundingClientRect();
+    const plot = (
+      el.querySelector("canvas") as HTMLCanvasElement
+    ).getBoundingClientRect();
+    return {
+      x: Number(label.getAttribute("x")),
+      y: Math.round((plot.top + plot.bottom) / 2 - e.top),
+    };
+  }
+
+  /**
+   * How far the pixels on the gridline at 3, inside the block of points,
+   * are from the points beside it; and how far the pixel on the gridline at
+   * -2, in empty space, is from the grid colour.
+   */
+  async function gridOf(el: HTMLElement, png: Blob) {
+    const inside = gridAt(el, "3");
+    const point = await pngPixel(png, W, inside.x + 3, inside.y);
+    let across = 0;
+    for (const dx of [-1, 0, 1]) {
+      const p = await pngPixel(png, W, inside.x + dx, inside.y);
+      across = Math.max(across, far(p, point));
+    }
+    const empty = gridAt(el, "-2");
+    let grid = 255;
+    for (const dx of [-1, 0, 1]) {
+      const p = await pngPixel(png, W, empty.x + dx, empty.y);
+      grid = Math.min(grid, far(p, [0xe5, 0xe7, 0xeb]));
+    }
+    return { across, grid, point };
+  }
+
+  it("draws the gridlines under the points, on screen and in the PNG", async () => {
+    // Before the fix the gridlines were SVG lines over the canvas, so a
+    // pale line crossed every point under it.
+    const el = container(W, 400);
+    const plot = createVolcano(el, { data: blockData(), options });
+    instances.push(plot);
+    await ready(el);
+    for (const png of [await screenPNG(el), await plot.exportPNG?.(1)]) {
+      const g = await gridOf(el, png as Blob);
+      // The block of points is drawn, not the white page.
+      expect(far(g.point, [255, 255, 255])).toBeGreaterThan(60);
+      expect(g.across).toBeLessThan(12);
+      expect(g.grid).toBeLessThan(12);
+    }
+  });
+
+  it("keeps the gridlines under the points in the SVG export", async () => {
+    const el = container(W, 400);
+    const plot = createVolcano(el, { data: blockData(), options });
+    instances.push(plot);
+    await ready(el);
+    const doc = new DOMParser().parseFromString(
+      plot.exportSVG?.() ?? "",
+      "image/svg+xml",
+    );
+    const nodes = Array.from(doc.documentElement.children);
+    const image = nodes.findIndex((n) => n.localName === "image");
+    const isGrid = (n: Element) => n.getAttribute("stroke") === "#e5e7eb";
+    expect(image).toBeGreaterThan(0);
+    expect(nodes.slice(0, image).filter(isGrid).length).toBeGreaterThan(4);
+    expect(nodes.slice(image + 1).filter(isGrid)).toEqual([]);
+  });
+
+  it("removes both SVG layers on destroy", () => {
+    const el = container(W, 400);
+    createVolcano(el, { data: blockData(), options }).destroy();
+    expect(el.querySelectorAll("svg").length).toBe(0);
   });
 });

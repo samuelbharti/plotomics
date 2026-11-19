@@ -3,6 +3,8 @@ import {
   groupRuns,
   layoutProfile,
   finiteMax,
+  finiteTotal,
+  barHeights,
 } from "../src/components/profile.js";
 import { textSizes } from "../src/core/theme.js";
 
@@ -41,6 +43,45 @@ describe("profile axis maximum", () => {
     expect(finiteMax([0, 3, 7])).toBe(7);
     expect(finiteMax([Number.NaN, 2])).toBe(2);
     expect(finiteMax([])).toBe(0);
+  });
+});
+
+describe("profile shares with values that are not finite", () => {
+  // R sends NA, NaN and Inf as null; Python sends NaN and Infinity as they
+  // are. None of them draws a bar, so none counts in the total.
+  const R = [3, null, 5] as unknown as number[];
+  const PY = Float32Array.from([3, Number.NaN, 5]);
+  const PY_INF = [3, Number.POSITIVE_INFINITY, 5];
+
+  it("sums the finite values only", () => {
+    expect(finiteTotal(PY)).toBe(8);
+    expect(finiteTotal(R)).toBe(8);
+    expect(finiteTotal(PY_INF)).toBe(8);
+    expect(finiteTotal([])).toBe(0);
+  });
+
+  it("gives each bar its share of the finite total", () => {
+    // Before the fix a NaN made the total NaN, so the bars kept their raw
+    // values (3 and 5) under a percent axis that read up to 500%.
+    for (const values of [PY, R, PY_INF]) {
+      const h = barHeights(values, true);
+      expect(h[0]).toBeCloseTo(0.375, 10);
+      expect(h[1]).toBeNaN();
+      expect(h[2]).toBeCloseTo(0.625, 10);
+    }
+  });
+
+  it("keeps raw values without asFraction, and no bar for a missing one", () => {
+    const h = barHeights(R, false);
+    expect(h[0]).toBe(3);
+    expect(h[1]).toBeNaN();
+    expect(h[2]).toBe(5);
+  });
+
+  it("keeps raw values when the finite total is not positive", () => {
+    const h = barHeights([0, Number.NaN, 0], true);
+    expect(h[0]).toBe(0);
+    expect(h[2]).toBe(0);
   });
 });
 

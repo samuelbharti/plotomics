@@ -12,7 +12,8 @@
  * apparently small "A + B" bar next to large "A" and "B" bars is evidence of
  * mutual exclusivity rather than an artefact.
  *
- * Bars and dots are canvas-drawn; labels and axes are an SVG overlay.
+ * Bars, dots and the gridlines under them are canvas-drawn; labels and axes
+ * are an SVG overlay.
  *
  * The component draws the columns in the order given. Which intersections are
  * worth showing, and in what order, is an analysis decision.
@@ -346,16 +347,31 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, width, height);
-    if (!s.length || !names.length) {
-      renderOverlay(zeroTicks(1, 4));
+    const empty = !s.length || !names.length;
+    // Whole-number ticks, as many as the bar panel holds without crowding.
+    const axis = empty
+      ? zeroTicks(1, 4)
+      : fitZeroTicks(finiteMax(s), layout.barH - 6, {
+          integer: true,
+          minGapPx: fontSizes.label + 5,
+        });
+
+    // Gridlines first, so the bars are drawn over them.
+    ctx.strokeStyle = theme.grid;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const v of axis.ticks) {
+      // On a half pixel, so the 1 px line fills one row of pixels.
+      const y = Math.round(tickY(v, axis.top)) + 0.5;
+      ctx.moveTo(layout.left, y);
+      ctx.lineTo(width - 12, y);
+    }
+    ctx.stroke();
+    if (empty) {
+      renderOverlay(axis);
       return;
     }
 
-    // Whole-number ticks, as many as the bar panel holds without crowding.
-    const axis = fitZeroTicks(finiteMax(s), layout.barH - 6, {
-      integer: true,
-      minGapPx: fontSizes.label + 5,
-    });
     const max = axis.top;
     const bw = Math.max(1, layout.colW * 0.68);
     const mem = membership();
@@ -436,16 +452,22 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     renderOverlay(axis);
   }
 
+  /** y of the bar axis tick at `v`, on an axis that ends at `top`. */
+  function tickY(v: number, top: number): number {
+    return layout.barBaseline - (v / top) * (layout.barH - 6);
+  }
+
   function renderOverlay(axis: { ticks: number[]; top: number; step: number }) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const names = sets();
 
-    // Bar axis, on round steps, each label stating its value. The zero
-    // label sits on the baseline, which is also the top of the first matrix
-    // row. Letters reach 0.8 em above a baseline and 0.2 em below it, so
-    // when that row is too short to keep the first set name clear of the
-    // zero, the zero is left out: the bars start there anyway.
+    // Bar axis labels, on round steps, each stating its value; the
+    // gridlines are on the canvas, under the bars. The zero label sits on
+    // the baseline, which is also the top of the first matrix row. Letters
+    // reach 0.8 em above a baseline and 0.2 em below it, so when that row is
+    // too short to keep the first set name clear of the zero, the zero is
+    // left out: the bars start there anyway.
     const label = fontSizes.label;
     const rowText = layout.rowText;
     const zeroClear =
@@ -453,8 +475,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       layout.rowH / 2 + midline(rowText) - 0.8 * rowText >=
         midline(label) + 0.2 * label + 1;
     for (const v of axis.ticks) {
-      const y = layout.barBaseline - (v / axis.top) * (layout.barH - 6);
-      svg.appendChild(line(layout.left, y, width - 12, y, theme.grid));
+      const y = tickY(v, axis.top);
       if (v === 0 && !zeroClear) continue;
       svg.appendChild(
         text(
@@ -577,23 +598,6 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     t.setAttribute("transform", `rotate(-90 ${x} ${y})`);
     return t;
   }
-  function line(
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number,
-    stroke: string,
-  ) {
-    const l = document.createElementNS(SVG_NS, "line");
-    l.setAttribute("x1", String(x1));
-    l.setAttribute("y1", String(y1));
-    l.setAttribute("x2", String(x2));
-    l.setAttribute("y2", String(y2));
-    l.setAttribute("stroke", stroke);
-    l.setAttribute("stroke-width", "1");
-    return l;
-  }
-
   function doResize(w: number, h: number) {
     width = w;
     height = h;

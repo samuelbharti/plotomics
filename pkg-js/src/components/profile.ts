@@ -8,17 +8,19 @@
  * underneath it without a legend. It generalises to any ordered categorical
  * profile that groups into runs, which is why it is not called "sbs96".
  *
- * Bars are canvas-drawn and the header, axis and labels are an SVG overlay. At
- * 96 bars canvas is not strictly required, but keeping the data layer on canvas
- * means a caller can hand it a few thousand bins (a copy-number profile, a
- * binned coverage track) without the component falling over.
+ * Bars, and the gridlines under them, are canvas-drawn; the header, axis and
+ * labels are an SVG overlay. At 96 bars canvas is not strictly required, but
+ * keeping the data layer on canvas means a caller can hand it a few thousand
+ * bins (a copy-number profile, a binned coverage track) without the component
+ * falling over.
  *
  * Groups must arrive as contiguous runs, which is what makes the header blocks
  * meaningful. The component does not sort: reordering the bars is the caller's
  * decision, and for SBS96 the canonical order is part of the convention.
  *
  * ## Data contract
- * - `columns.value`  `number[]`  bar height (required)
+ * - `columns.value`  `number[]`  bar height (required); a value that is not
+ *   finite (null from R, NaN or Infinity from Python) draws no bar
  * - `columns.group`  `string[]`  group per bar; contiguous runs become blocks
  * - `columns.label`  `string[]`  per-bar tick label, e.g. the trinucleotide
  * - `meta.groups`       `string[]`  group order; defaults to order of appearance
@@ -154,6 +156,38 @@ export function finiteMax(values: ArrayLike<number>): number {
   return m;
 }
 
+/**
+ * The sum of the finite values. A value that is not finite (null from R, NaN
+ * or Infinity from Python) draws no bar, so it adds nothing to the total.
+ */
+export function finiteTotal(values: ArrayLike<number>): number {
+  let total = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i] as number;
+    if (Number.isFinite(v)) total += v;
+  }
+  return total;
+}
+
+/**
+ * The height of each bar: its value, or with `asFraction` its share of the
+ * finite total, so the bars and the percent axis agree. A value that is not
+ * finite gives NaN, which draws no bar.
+ */
+export function barHeights(
+  values: ArrayLike<number>,
+  asFraction: boolean,
+): number[] {
+  const total = finiteTotal(values);
+  const denom = asFraction && total > 0 ? total : 1;
+  const out = new Array<number>(values.length);
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i] as number;
+    out[i] = Number.isFinite(v) ? v / denom : Number.NaN;
+  }
+  return out;
+}
+
 export interface ProfileLayout {
   left: number;
   right: number;
@@ -275,13 +309,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     return formatTick(val, step, { percent: opts.asFraction });
   }
   function plotted(): number[] {
-    const v = values();
-    const out = new Array<number>(v.length);
-    let total = 0;
-    for (let i = 0; i < v.length; i += 1) total += v[i] as number;
-    const denom = opts.asFraction && total > 0 ? total : 1;
-    for (let i = 0; i < v.length; i += 1) out[i] = (v[i] as number) / denom;
-    return out;
+    return barHeights(values(), opts.asFraction);
   }
 
   // ---- pointer ----
@@ -304,11 +332,15 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     }
     const lab = barLabels()[i] ?? String(i);
     const g = groupCol()[i] ?? "";
-    let total = 0;
-    for (let k = 0; k < v.length; k += 1) total += v[k] as number;
-    const pct = total > 0 ? (100 * (v[i] as number)) / total : 0;
+    // The share is of the finite total, as the bars and the axis use.
+    const value = v[i] as number;
+    const total = finiteTotal(v);
+    const pct = total > 0 ? (100 * value) / total : 0;
+    const body = Number.isFinite(value)
+      ? `${fmtInt(value)} (${pct.toFixed(1)}%)`
+      : "no value";
     tooltip.show(
-      `<b>${esc(lab)}</b> ${esc(g)}<br/>${fmtInt(v[i] as number)} (${pct.toFixed(1)}%)`,
+      `<b>${esc(lab)}</b> ${esc(g)}<br/>${body}`,
       lastPointer.x,
       lastPointer.y,
     );
@@ -367,6 +399,18 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.background;
     ctx.fillRect(0, 0, width, height);
+
+    // Gridlines first, so the bars are drawn over them.
+    ctx.strokeStyle = theme.grid;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const val of axis.ticks) {
+      // On a half pixel, so the 1 px line fills one row of pixels.
+      const y = Math.round(tickY(val, axis.top)) + 0.5;
+      ctx.moveTo(layout.left, y);
+      ctx.lineTo(width - layout.right, y);
+    }
+    ctx.stroke();
     if (!v.length) {
       renderOverlay(axis);
       return;
@@ -406,6 +450,11 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     renderOverlay(axis);
   }
 
+  /** y of the tick at `val`, on an axis that ends at `top`. */
+  function tickY(val: number, top: number): number {
+    return layout.baseline - (val / top) * layout.plotH;
+  }
+
   function renderOverlay(axis: { ticks: number[]; top: number; step: number }) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
@@ -414,12 +463,10 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     const gcols = groupColors();
     const tx = profileText(sizes);
 
-    // y gridlines and ticks, on round steps, each label stating its value.
+    // y tick labels, on round steps, each stating its value; the gridlines
+    // are on the canvas, under the bars.
     for (const val of axis.ticks) {
-      const y = layout.baseline - (val / axis.top) * layout.plotH;
-      svg.appendChild(
-        line(layout.left, y, width - layout.right, y, theme.grid),
-      );
+      const y = tickY(val, axis.top);
       svg.appendChild(
         text(
           layout.left - 8,
@@ -536,23 +583,6 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     t.setAttribute("transform", `rotate(-90 ${x} ${y})`);
     return t;
   }
-  function line(
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number,
-    stroke: string,
-  ) {
-    const l = document.createElementNS(SVG_NS, "line");
-    l.setAttribute("x1", String(x1));
-    l.setAttribute("y1", String(y1));
-    l.setAttribute("x2", String(x2));
-    l.setAttribute("y2", String(y2));
-    l.setAttribute("stroke", stroke);
-    l.setAttribute("stroke-width", "1");
-    return l;
-  }
-
   function doResize(w: number, h: number) {
     width = w;
     height = h;

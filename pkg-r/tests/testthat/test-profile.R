@@ -42,6 +42,21 @@ test_that("value works without group or label columns", {
   expect_null(w$x$data$meta$groups)
 })
 
+test_that("bioprofile() warns on values that are not finite and keeps their rows", {
+  # JSON sends NA, NaN and Inf as null. The plot draws no bar for them and
+  # leaves them out of the total, as it does for NaN from Python.
+  expect_warning(
+    w <- bioprofile(data.frame(value = c(3, NaN, Inf, 5)), as_fraction = TRUE),
+    "`value` has 2 non-finite value"
+  )
+  json <- jsonlite::toJSON(
+    w$preRenderHook(w)$x,
+    auto_unbox = TRUE, null = "null", na = "null"
+  )
+  expect_match(as.character(json), '"value":[3,null,null,5]', fixed = TRUE)
+  expect_true(w$x$options$asFraction)
+})
+
 test_that("bioprofile() validates its input", {
   df <- profile_fixture()
   expect_error(bioprofile(list(value = 1)), "must be a data frame")

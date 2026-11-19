@@ -7,6 +7,9 @@
  * reference implementation for the whole component library — new components
  * should mirror its structure (pure helpers + a factory returning a
  * PlotomicsInstance).
+ *
+ * The gridlines sit in a second SVG under the points, so no line crosses a
+ * point.
  */
 import {
   type PlotomicsData,
@@ -310,7 +313,10 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   const xScale = scaleLinear().domain(xDomain);
   const yScale = scaleLinear().domain(yDomain);
 
-  // DOM: a canvas (GPU points) inset by margins, plus a full-size SVG overlay.
+  // DOM: a canvas (GPU points) inset by margins, between two full-size SVGs.
+  // The one under it holds the gridlines, which show through the canvas
+  // because regl-scatterplot leaves it transparent where there is no point.
+  // The one over it holds the axes, the threshold lines and the labels.
   el.style.position = el.style.position || "relative";
   // regl-scatterplot leaves the canvas transparent, so the theme background is
   // painted on the element: the plot panel and the axis margins alike.
@@ -319,9 +325,13 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   el.style.backgroundColor = theme.background;
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;display:block;";
+  const under = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
   const svg = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
-  svg.style.cssText =
-    "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  for (const layer of [under, svg]) {
+    layer.style.cssText =
+      "position:absolute;inset:0;pointer-events:none;overflow:visible;";
+  }
+  el.appendChild(under);
   el.appendChild(canvas);
   el.appendChild(svg);
   const tooltip: Tooltip = createTooltip(el, theme);
@@ -392,8 +402,10 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     canvas.style.height = `${innerH()}px`;
     canvas.width = Math.round(innerW() * ratio);
     canvas.height = Math.round(innerH() * ratio);
-    svg.setAttribute("width", String(width));
-    svg.setAttribute("height", String(height));
+    for (const layer of [under, svg]) {
+      layer.setAttribute("width", String(width));
+      layer.setAttribute("height", String(height));
+    }
   }
 
   // Every change asks the loop for a render. Renders run one at a time and
@@ -477,7 +489,9 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
 
   // ---- overlay rendering (axes, thresholds, labels) ----
   function renderOverlay() {
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    for (const layer of [under, svg]) {
+      while (layer.firstChild) layer.removeChild(layer.firstChild);
+    }
     if (!width || !height) return;
 
     const axisColor = theme.axis;
@@ -485,11 +499,12 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
 
     // Baseline offset that centres a tick label on its tick.
     const mid = Math.round(sizes.label * 0.35);
+    // Gridlines go in the SVG under the canvas, so no line crosses a point.
     // x ticks
     for (const t of niceTicks(xDomain)) {
       const x = pxX(t);
       if (x < margin.left - 1 || x > width - margin.right + 1) continue;
-      svg.appendChild(
+      under.appendChild(
         line(x, margin.top, x, height - margin.bottom, gridColor, 1),
       );
       svg.appendChild(
@@ -506,7 +521,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     for (const t of niceTicks(yDomain)) {
       const y = pxY(t);
       if (y < margin.top - 1 || y > height - margin.bottom + 1) continue;
-      svg.appendChild(
+      under.appendChild(
         line(margin.left, y, width - margin.right, y, gridColor, 1),
       );
       svg.appendChild(text(margin.left - 8, y + mid, fmt(t), axisColor, "end"));
@@ -765,10 +780,15 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       img.setAttribute("height", String(innerH()));
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
+      // The gridlines go under the points, as on screen.
+      for (const node of Array.from(under.childNodes).reverse()) {
+        out.insertBefore(node.cloneNode(true), out.firstChild);
+      }
       return serializeSVG(out);
     },
     async exportPNG(scale = 2) {
-      // The points at their place, with the axes and labels over them.
+      // The points at their place, over the gridlines and under the axes
+      // and labels.
       return compositePNG({
         width,
         height,
@@ -783,6 +803,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
             height: innerH(),
           },
         ],
+        underlay: under,
         overlay: svg,
       });
     },
@@ -793,6 +814,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       el.removeEventListener("mousemove", onMove);
       tooltip.destroy();
       scatterplot.destroy();
+      under.remove();
       canvas.remove();
       svg.remove();
       el.style.backgroundColor = priorBackground;
