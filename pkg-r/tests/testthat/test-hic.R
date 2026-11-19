@@ -86,3 +86,87 @@ test_that("hic() forwards vmax_percentile and theme when set", {
   expect_null(auto$x$options$vmaxPercentile)
   expect_null(auto$x$options$theme)
 })
+
+test_that("hic() checks its numeric arguments", {
+  m <- matrix(runif(4), 2, 2)
+  number <- "must be a single finite number"
+  expect_error(hic(m, vmin = "a"), paste0("`vmin` ", number))
+  expect_error(hic(m, vmin = NaN), paste0("`vmin` ", number))
+  expect_error(hic(m, vmin = -Inf), paste0("`vmin` ", number))
+  expect_error(hic(m, vmax = c(1, 2)), paste0("`vmax` ", number))
+  expect_error(hic(m, vmax = NaN), paste0("`vmax` ", number))
+  expect_error(hic(m, vmax = Inf), paste0("`vmax` ", number))
+  expect_error(hic(m, vmax = factor(3)), paste0("`vmax` ", number))
+  expect_error(hic(m, vmax = TRUE), paste0("`vmax` ", number))
+  expect_error(hic(m, vmax = -5), "`vmax` must be greater than `vmin`")
+  expect_error(
+    hic(m, vmin = 2, vmax = 2, transform = "linear"),
+    "`vmax` must be greater than `vmin`"
+  )
+  expect_error(
+    hic(m, vmin = -3, vmax = -1),
+    "`vmax` must be greater than 0 with the log transform"
+  )
+  for (p in list(99, -1, 0, NaN, "0.9", c(0.5, 0.9))) {
+    expect_error(
+      hic(m, vmax_percentile = p),
+      "`vmax_percentile` must be in \\(0, 1\\]"
+    )
+  }
+  for (b in list(-5, 0, NaN, "a", c(1, 2))) {
+    expect_error(
+      hic(m, bin_size = b),
+      "`bin_size` must be a single positive number"
+    )
+  }
+  for (s in list("no", NA, 1, c(TRUE, FALSE), NULL)) {
+    expect_error(
+      hic(m, symmetric = s),
+      "`symmetric` must be a single true or false value"
+    )
+  }
+})
+
+test_that("hic() keeps the numeric arguments it is given", {
+  m <- matrix(runif(4), 2, 2)
+  w <- hic(m,
+    bin_size = 5000L, vmin = -2L, vmax = 3, vmax_percentile = 1,
+    transform = "linear", symmetric = FALSE
+  )
+  expect_identical(w$x$data$meta$binSize, 5000)
+  expect_identical(w$x$options$vmin, -2)
+  expect_identical(w$x$options$vmax, 3)
+  expect_identical(w$x$options$vmaxPercentile, 1)
+  expect_false(w$x$options$symmetric)
+  # Below 0 with the log transform, vmin acts as 0.
+  expect_identical(hic(m, vmin = -3, vmax = 1)$x$options$vmax, 1)
+})
+
+test_that("hic() reads NA as an unset numeric argument", {
+  m <- matrix(runif(4), 2, 2)
+  w <- hic(m, bin_size = NA, vmin = NA, vmax = NA_real_, vmax_percentile = NA)
+  expect_null(w$x$data$meta$binSize)
+  expect_null(w$x$options$vmin)
+  expect_null(w$x$options$vmax)
+  expect_null(w$x$options$vmaxPercentile)
+  expect_null(hic(m, vmin = NULL)$x$options$vmin)
+})
+
+test_that("hic() sends a named or 1x1 matrix argument as a plain value", {
+  trip <- data.frame(i = 0, j = 1, v = 5)
+  w <- hic(trip,
+    n = 2, symmetric = c(a = FALSE), bin_size = c(b = 5000),
+    vmin = matrix(1), vmax = c(top = 9), vmax_percentile = matrix(0.9)
+  )
+  expect_identical(w$x$options$symmetric, FALSE)
+  expect_identical(
+    hic(trip, n = 2, symmetric = matrix(TRUE))$x$options$symmetric, TRUE
+  )
+  expect_identical(w$x$data$meta$binSize, 5000)
+  expect_identical(w$x$options$vmin, 1)
+  expect_identical(w$x$options$vmax, 9)
+  expect_identical(w$x$options$vmaxPercentile, 0.9)
+  json <- as.character(htmlwidgets:::toJSON(w$preRenderHook(w)$x))
+  expect_match(json, '"symmetric":false', fixed = TRUE)
+  expect_match(json, '"vmax":9', fixed = TRUE)
+})

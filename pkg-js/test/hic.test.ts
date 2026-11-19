@@ -224,12 +224,16 @@ describe("hic helpers", () => {
       100,
       "linear",
     );
-    expect(Array.from(bytes)).toEqual([0, 0, 128, 255, 255]);
+    // A missing cell is 0, no signal 1, and the scale runs from 2 to 255.
+    expect(Array.from(bytes)).toEqual([0, 1, 129, 255, 255]);
     // A negative vmin on the linear scale clamps low values to the first color.
     const diverging = encodeIntensity([-5, -2, 0, 2], -2, 2, "linear");
-    expect(Array.from(diverging)).toEqual([1, 1, 128, 255]);
-    // The log scale keeps zero contacts as background.
-    expect(encodeIntensity([0, 1], 0, 10, "log")[0]).toBe(0);
+    expect(Array.from(diverging)).toEqual([2, 2, 129, 255]);
+    // The log scale keeps zero contacts as no signal, a code of their own
+    // that is not the code of a missing cell.
+    expect(Array.from(encodeIntensity([0, Number.NaN], 0, 10, "log"))).toEqual([
+      1, 0,
+    ]);
   });
 
   it("builds an rdbu lookup that differs from viridis", () => {

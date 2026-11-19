@@ -60,8 +60,10 @@ function ensureGlobal(): PlotomicsGlobal {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let inst: PlotomicsInstance<any> | null = null;
             let lastOptions: Record<string, unknown> = {};
-            // Whether Shiny holds a non-empty selection from this widget.
-            let hasSelection = false;
+            // What clears the selection Shiny holds from this widget: [] after
+            // a lasso selection, null after a click selection, and undefined
+            // when it holds none.
+            let clearWith: [] | null | undefined;
             return {
               renderValue(x: RenderPayload) {
                 const factory = g.components[name];
@@ -70,8 +72,13 @@ function ensureGlobal(): PlotomicsGlobal {
                     `plotomics: component "${name}" not registered`,
                   );
                 const sent = x.options ?? {};
-                const options = withShinySelection(el, sent, (n) => {
-                  hasSelection = n > 0;
+                const options = withShinySelection(el, sent, (value) => {
+                  clearWith =
+                    value === null || (Array.isArray(value) && !value.length)
+                      ? undefined
+                      : Array.isArray(value)
+                        ? []
+                        : null;
                 });
                 // R leaves out NULL arguments. If an option sent last time is
                 // missing now, build the component again so its default
@@ -80,9 +87,9 @@ function ensureGlobal(): PlotomicsGlobal {
                   inst.destroy();
                   inst = null;
                   // The new instance starts with nothing selected.
-                  if (hasSelection) {
-                    sendShinySelection(el, []);
-                    hasSelection = false;
+                  if (clearWith !== undefined) {
+                    sendShinySelection(el, clearWith);
+                    clearWith = undefined;
                   }
                 }
                 if (!inst) {
@@ -114,22 +121,26 @@ function ensureGlobal(): PlotomicsGlobal {
 
 /**
  * In a Shiny app (`HTMLWidgets.shinyMode`), inject an `onSelect` that pushes the
- * component's lasso selection to `input$<outputId>_selected`. Outside Shiny this
- * is a no-op, and components without selection ignore the extra option key.
+ * component's selection to `input$<outputId>_selected`: the row indices of a
+ * lasso selection (embedding), or the id of a clicked node, and null when the
+ * click lands on no node (network). Shiny reads null as `NULL`. Outside Shiny
+ * this is a no-op, and components without selection ignore the extra option
+ * key.
  */
 function withShinySelection(
   el: HTMLElement,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   options: Record<string, any>,
-  onReport?: (count: number) => void,
+  onReport?: (value: unknown) => void,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Record<string, any> {
   if (shinyMode(el)) {
     return {
       ...options,
-      onSelect: (indices: number[]) => {
-        onReport?.(indices.length);
-        sendShinySelection(el, indices);
+      onSelect: (selection: unknown) => {
+        const value = selection === undefined ? null : selection;
+        onReport?.(value);
+        sendShinySelection(el, value);
       },
     };
   }
@@ -149,11 +160,11 @@ function shinyMode(el: HTMLElement): boolean {
 }
 
 /** Set `input$<outputId>_selected`, outside Shiny a no-op. */
-function sendShinySelection(el: HTMLElement, indices: number[]): void {
+function sendShinySelection(el: HTMLElement, value: unknown): void {
   if (!shinyMode(el)) return;
   (window as unknown as ShinyWindow).Shiny?.setInputValue?.(
     `${el.id}_selected`,
-    indices,
+    value,
     { priority: "event" },
   );
 }
