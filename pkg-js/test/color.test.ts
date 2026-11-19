@@ -11,6 +11,13 @@ import {
   categoricalColors,
 } from "../src/core/color.js";
 import { OKABE_ITO, PALETTE_20 } from "../src/core/theme.js";
+import {
+  RAMPS,
+  type RampName,
+  ltc as coreLtc,
+  ltcdiv as coreLtcdiv,
+} from "../src/core/index.js";
+import * as core from "../src/core/index.js";
 
 const RAMP_FNS = [
   ["viridis", viridis],
@@ -18,6 +25,19 @@ const RAMP_FNS = [
   ["ltc", ltc],
   ["ltcdiv", ltcdiv],
 ] as const;
+
+describe("plotomics/core", () => {
+  it("exports ltc and ltcdiv by name, as it does viridis and rdbu", () => {
+    expect(coreLtc).toBe(ltc);
+    expect(coreLtcdiv).toBe(ltcdiv);
+  });
+
+  it("exports every ramp of RAMPS by name", () => {
+    for (const name of Object.keys(RAMPS) as RampName[]) {
+      expect(core[name], name).toBe(RAMPS[name]);
+    }
+  });
+});
 
 describe("ramps guard against a non-finite input", () => {
   // Regression: a NaN t indexed the stop array with NaN, handed back undefined

@@ -9,6 +9,11 @@
 import type { PlotomicsData } from "../core/index.js";
 import { categoricalScale } from "../core/index.js";
 import Graph from "graphology";
+// The exported signatures name the graph type `graphology.default`. A
+// project that resolves modules the node16 way loads the graphology types as
+// CommonJS, and there a default import names the whole module, not the class
+// (TS2709 "Cannot use namespace 'Graph' as a type").
+import type * as graphology from "graphology";
 import forceAtlas2 from "graphology-layout-forceatlas2";
 
 /** `"forceatlas2"` runs a layout when x/y are missing; `"precomputed"` requires
@@ -128,7 +133,7 @@ export interface GroupLegendEntry {
  * a group.
  */
 export function groupLegend(
-  graph: Graph,
+  graph: graphology.default,
   defaultColor: string,
 ): GroupLegendEntry[] {
   const seen = new Map<string, string>();
@@ -184,7 +189,7 @@ export function buildGraph(
     colorFor: (group: string | undefined) => string;
     directed?: boolean;
   },
-): { graph: Graph; dropped: EdgeDrops } {
+): { graph: graphology.default; dropped: EdgeDrops } {
   const graph = new Graph({
     multi: false,
     type: opts.directed ? "directed" : "undirected",
@@ -304,7 +309,10 @@ export function buildGraph(
 
 /** Run a bounded ForceAtlas2 layout in place. No-op for empty/edgeless graphs.
  * Iterations are clamped to a sane range. Mutates node x/y. */
-export function runForceAtlas2(graph: Graph, iterations: number): void {
+export function runForceAtlas2(
+  graph: graphology.default,
+  iterations: number,
+): void {
   if (graph.order < 2 || graph.size === 0) return;
   const iters = Math.max(1, Math.min(Math.round(iterations), 2000));
   const settings = forceAtlas2.inferSettings(graph);

@@ -15,10 +15,10 @@ class Gosling(PlotomicsWidget):
 
     Gosling (grammar of scalable, linked, interactive nucleotide graphics) is
     fully config-driven: you pass a Gosling *specification* as a ``dict`` and
-    data flows through the spec's own ``data`` blocks (tileset URLs, indexed
+    data flows through the ``"data"`` blocks of the spec (tileset URLs, indexed
     BAM/BED/VCF/BigWig, or CSV/JSON URLs and inline values). Gosling streams and
     tiles large genomic datasets on the GPU via HiGlass, so there is no separate
-    ``data`` argument.
+    data argument.
 
     Parameters
     ----------

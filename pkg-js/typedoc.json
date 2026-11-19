@@ -4,6 +4,7 @@
   "entryPoints": ["src/lib/index.ts", "src/core/index.ts"],
   "out": "site",
   "readme": "README.md",
+  "treatWarningsAsErrors": true,
   "hostedBaseUrl": "https://www.samuelbharti.com/plotomics/js/",
   "navigationLinks": {
     "plotomics": "https://www.samuelbharti.com/plotomics/",

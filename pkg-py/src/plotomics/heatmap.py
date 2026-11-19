@@ -29,7 +29,9 @@ class Heatmap(PlotomicsWidget):
     shows the mean of the cells under it, so a lone outlier row still shows,
     fainter the more rows share its pixel. A matrix with more rows or columns
     than the GPU's texture limit is averaged in blocks of two or more rows (or
-    columns) to fit it, so zoomed in, the rows of a block share their mean.
+    columns) to fit it. Zoomed in until each row and column in view has a
+    pixel of its own, the view shows every row and column once it stops
+    moving.
 
     In R this plot is ``bioheatmap()``, with the alias
     ``heatmap_plotomics()``. A function named ``heatmap()`` would mask

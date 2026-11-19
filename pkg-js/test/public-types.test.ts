@@ -47,6 +47,9 @@ import type {
   TypedArray,
   decodeColumns,
   fitView,
+  ltc,
+  ltcdiv,
+  viridis,
 } from "plotomics/core";
 import type {
   Linkage as ClustermapLinkage,
@@ -79,6 +82,8 @@ export type Checks = [
   >,
   Assert<Same<TypedArray, ReturnType<typeof decodeColumns>[string]>>,
   Assert<Same<DomainScale, Parameters<typeof fitView>[1]>>,
+  Assert<Same<typeof ltc, typeof viridis>>,
+  Assert<Same<typeof ltcdiv, typeof viridis>>,
 ];
 `;
 

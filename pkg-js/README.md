@@ -25,22 +25,68 @@ npm install plotomics
 The same name on every registry: `npm install plotomics`,
 `pip install plotomics`, `install.packages("plotomics")`.
 
-## Tree-shakeable subpath imports
+## Subpath imports
 
-Import a single component from its subpath so your bundle only pulls in that
-component and its engine, not every visualization:
+Import each component from its own subpath. The bundle then holds that
+component and its engine, and the build needs only the peers of that
+component (see [Optional engine peer dependencies](#optional-engine-peer-dependencies)):
 
 ```js
 import { createEmbedding } from "plotomics/embedding";
 
+// 3,000 cells in three clusters.
+const centres = { "T cell": [0, 0], "B cell": [4, 1], NK: [2, 4] };
+const x = [];
+const y = [];
+const color = [];
+for (const [type, [cx, cy]] of Object.entries(centres)) {
+  for (let i = 0; i < 1000; i += 1) {
+    x.push(cx + Math.random() + Math.random() - 1);
+    y.push(cy + Math.random() + Math.random() - 1);
+    color.push(type);
+  }
+}
+
+// An element on the page, such as <div id="plot"></div>.
+const el = document.getElementById("plot");
 const inst = createEmbedding(el, {
   data: { columns: { x, y, color } },
-  options: { pointSize: 4, mouseMode: "lasso", onSelect: (idx) => …},
+  options: {
+    pointSize: 4,
+    mouseMode: "lasso",
+    onSelect: (idx) => console.log(`${idx.length} cells selected`),
+  },
 });
 ```
 
-The package sets `"sideEffects": false`, so a bundler also tree-shakes the
-barrel import (`plotomics`) down to what you use.
+The barrel import (`import { createVolcano } from "plotomics"`) loads every
+component, so the bundler must resolve all eight optional peers, also the
+ones of components you never use. The package sets `"sideEffects": false`,
+which lets a bundler drop the unused code, but only after it has resolved
+those imports. Without the peers the build stops: esbuild cannot resolve
+`gosling.js`, `react`, `react-dom/client`, `igv/dist/igv.esm.js`,
+`graphology`, `graphology-layout-forceatlas2`, `sigma` and `sigma/rendering`,
+and Vite reports exports missing from them. Use the barrel only when all the
+peers are installed.
+
+## Browser and bundler
+
+The components draw into the page, so they need a browser (or another DOM),
+and the package ships ES modules for a bundler such as Vite or esbuild. Six
+entries cannot be imported in plain Node, so a server-side render cannot
+import them either:
+
+| Import | Fails in plain Node through |
+| --- | --- |
+| `plotomics/volcano`, `plotomics/embedding` | `regl-scatterplot` |
+| `plotomics/gosling` | `higlass-text`, which `gosling.js` loads |
+| `plotomics/igv` | `igv` |
+| `plotomics/network` | `sigma` |
+| `plotomics` (the barrel) | all of the above |
+
+In an app that renders on the server, import these components only in code
+that runs in the browser, for example with `await import("plotomics/volcano")`
+inside an effect.
 
 ## Sizing
 
@@ -114,10 +160,44 @@ module at build time. Install only the engine(s) your app actually uses:
 npm install plotomics sigma graphology graphology-layout-forceatlas2
 ```
 
-`react` and `react-dom` are optional peers required only by `plotomics/gosling`,
-because Gosling.js is a React component internally. No plotomics component
-imports React itself. Gosling.js 1.0.7 supports React 16 through 18 and pixi.js 6, which
-is why those peer ranges stop short of the current majors.
+`react` and `react-dom` are optional peers required only by `plotomics/gosling`:
+Gosling.js is a React component, and the Gosling component mounts it with
+React. No other plotomics component uses React. Gosling.js 1.0.7 supports
+React 16 through 18 and pixi.js 6, which is why those peer ranges stop short
+of the current majors.
+
+### React 19
+
+npm checks an optional peer whenever the project has that package. In a
+project on React 19, `npm install plotomics` therefore stops with an
+`ERESOLVE` error, even when the project never imports `plotomics/gosling`.
+Until Gosling.js supports React 19
+([#72](https://github.com/samuelbharti/plotomics/issues/72)), add an override
+to the `package.json` of the project. It gives plotomics the React of the
+project and keeps the peer check for every other package:
+
+```json
+"overrides": {
+  "plotomics": {
+    "react": "$react",
+    "react-dom": "$react-dom"
+  }
+}
+```
+
+The other way is `--legacy-peer-deps`, which turns the peer check off for
+every package. It holds for one install only: a later plain `npm install`
+stops with `ERESOLVE` again. Pass it on every install, or set it once in the
+`.npmrc` of the project:
+
+```sh
+npm install plotomics --legacy-peer-deps
+# or, for every install:
+echo "legacy-peer-deps=true" >> .npmrc
+```
+
+Every component except `plotomics/gosling` then works with React 19.
+`plotomics/gosling` still needs React 18.
 
 ## Documentation
 

@@ -81,7 +81,7 @@ class Network(PlotomicsWidget):
 
     Notes
     -----
-    Clicking a node sets the ``selected`` trait to the clicked node id (a
+    Clicking a node sets ``widget.selected`` to the clicked node id (a
     string); clicking the empty canvas sets it to ``None``. Observe it with
     ``widget.observe(fn, names="selected")``.
 

@@ -18,14 +18,23 @@ and Streamlit. Large numeric columns are shipped to the browser as a single
 binary buffer rather than JSON, so several hundred thousand points stay
 interactive.
 
-Seventeen components ship, including the two genome browsers, `igv()` and
-`gosling()`, which the R package does not carry.
+Seventeen components ship, including the two genome browsers, `IGV` and
+`Gosling`, which the R package does not carry.
 
 ## Installation
 
 ```bash
 pip install plotomics
 ```
+
+The examples below build their data with pandas, which plotomics does not
+install. To run them, install it too:
+
+```bash
+pip install plotomics pandas
+```
+
+A dict of NumPy arrays works in place of a pandas DataFrame.
 
 ## Quick start
 
@@ -46,7 +55,8 @@ Volcano(df, fc_threshold=1.0, p_threshold=0.05)
 
 The widgets are anywidgets, so they render in Shiny for Python through
 [`shinywidgets`](https://github.com/posit-dev/py-shinywidgets): `output_widget`
-in the UI, `@render_widget` on the server:
+in the UI, `@render_widget` on the server. Install both with
+`pip install shiny shinywidgets`:
 
 ```python
 from shiny import App, ui
