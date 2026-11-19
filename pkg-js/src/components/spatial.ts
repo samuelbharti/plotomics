@@ -680,8 +680,9 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     gutter = layout?.gutter ?? 0;
     fit = fitTransform(width - gutter, height, imgW(), imgH());
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = theme.background;
-    ctx.fillRect(0, 0, width, height);
+    if (setCanvasColour(ctx, "fillStyle", theme.background, el)) {
+      ctx.fillRect(0, 0, width, height);
+    }
 
     const dw = imgW() * fit.scale;
     const dh = imgH() * fit.scale;
@@ -1036,7 +1037,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
         out.insertBefore(img, out.firstChild);
       }
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -1048,6 +1049,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
           scale,
           padding: plot.padding,
           background: theme.background,
+          element: el,
           layers: [{ canvas, x: 0, y: 0, width, height }],
           overlay: svg,
         });

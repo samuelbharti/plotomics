@@ -1264,7 +1264,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         out.insertBefore(node.cloneNode(true), out.firstChild);
       }
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -1277,6 +1277,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [
           { canvas, x: m.left, y: m.top, width: innerW(), height: innerH() },
         ],

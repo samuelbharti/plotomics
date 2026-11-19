@@ -190,6 +190,24 @@ function colLabelRoom(bottom: number, size: number): number {
   return Math.max(0, (bottom - 12) * Math.SQRT2 - 0.3 * size);
 }
 
+/** The smallest radius in px of a dot at 100%, however small its cell. */
+const MIN_DOT_RADIUS = 1;
+
+/**
+ * The radius in px of a dot at 100%: `maxRadius`, made smaller so that dots
+ * in neighbouring cells do not overlap, but never below
+ * {@link MIN_DOT_RADIUS}, so a plot with many genes or groups still draws
+ * its dots. Never below 0.
+ */
+export function dotMaxRadius(
+  maxRadius: number,
+  cellW: number,
+  cellH: number,
+): number {
+  const room = Math.min(cellW / 2 - 1, cellH / 2 - 1);
+  return Math.max(0, Math.min(maxRadius, Math.max(MIN_DOT_RADIUS, room)));
+}
+
 /**
  * Radius for a percentage, area-proportional.
  *
@@ -415,8 +433,10 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     const valueLabel = valueTitle();
     const pct = pctCol()[i] as number;
     const value = valueCol()[i] as number;
+    // A missing gene or group name (null from R and Python) reads "NA", as
+    // the legend keys do.
     tooltip.show(
-      `<b>${esc(geneCol()[i] ?? "")}</b> in ${esc(clusterCol()[i] ?? "")}<br/>` +
+      `<b>${esc(geneCol()[i] ?? "NA")}</b> in ${esc(clusterCol()[i] ?? "NA")}<br/>` +
         `${Number.isFinite(pct) ? `${pct.toFixed(1)}%` : "NA"} expressing<br/>` +
         `${esc(valueLabel)} ${Number.isFinite(value) ? value.toFixed(2) : "NA"}`,
       lastPointer.x,
@@ -470,8 +490,9 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     });
 
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = theme.background;
-    ctx.fillRect(0, 0, width, height);
+    if (setCanvasColour(ctx, "fillStyle", theme.background, el)) {
+      ctx.fillRect(0, 0, width, height);
+    }
     if (!g.length || !c.length) {
       renderOverlay();
       return;
@@ -499,12 +520,8 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     const val = valueCol();
     const gIndex = new Map(g.map((v, i) => [v, i]));
     const cIndex = new Map(c.map((v, i) => [v, i]));
-    // Cap the radius so dots never overlap regardless of the option.
-    const maxR = Math.min(
-      opts.maxRadius,
-      layout.cellW / 2 - 1,
-      layout.cellH / 2 - 1,
-    );
+    // Cap the radius so dots do not overlap, down to a 1 px floor.
+    const maxR = dotMaxRadius(opts.maxRadius, layout.cellW, layout.cellH);
 
     for (let i = 0; i < gc.length; i += 1) {
       const row = gIndex.get(gc[i] as string);
@@ -637,13 +654,9 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
       );
     });
 
-    // Size legend. Radii come from dotRadius, so the swatches are literally the
-    // same scale the dots use rather than a redrawn approximation.
-    const maxR = Math.min(
-      opts.maxRadius,
-      layout.cellW / 2 - 1,
-      layout.cellH / 2 - 1,
-    );
+    // Size legend. Radii come from dotRadius, so the swatches are the same
+    // scale the dots use, and never below 0.
+    const maxR = dotMaxRadius(opts.maxRadius, layout.cellW, layout.cellH);
     // Below the baseline of a label centred on the bottom of the bar.
     const sizeTitleY =
       barTop +
@@ -790,7 +803,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -801,6 +814,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [{ canvas, x: 0, y: 0, width, height }],
         overlay: svg,
       });

@@ -93,3 +93,68 @@ export function setCanvasColour(
   }
   return true;
 }
+
+let pixelCtx: CanvasRenderingContext2D | null | undefined;
+
+/** A 1 x 1 canvas to paint a colour on and read it back. */
+function pixelContext(): CanvasRenderingContext2D | null {
+  if (pixelCtx === undefined) {
+    const canvas =
+      typeof document === "undefined" ? null : document.createElement("canvas");
+    if (canvas) {
+      canvas.width = 1;
+      canvas.height = 1;
+    }
+    pixelCtx = canvas?.getContext("2d", { willReadFrequently: true }) ?? null;
+  }
+  return pixelCtx;
+}
+
+/**
+ * The red, green, blue and alpha of `colour`, each 0 to 255, as a 2D canvas
+ * paints it, after var() and currentColor are read inside `el` as
+ * {@link setCanvasColour} reads them. Null for a colour that paints nothing,
+ * and outside a browser.
+ */
+export function colourBytes(
+  colour: string | null | undefined,
+  el?: Element,
+): [number, number, number, number] | null {
+  const ctx = pixelContext();
+  if (!ctx || !setCanvasColour(ctx, "fillStyle", colour, el)) return null;
+  ctx.clearRect(0, 0, 1, 1);
+  ctx.fillRect(0, 0, 1, 1);
+  const d = ctx.getImageData(0, 0, 1, 1).data;
+  const a = d[3] as number;
+  return a === 0 ? null : [d[0] as number, d[1] as number, d[2] as number, a];
+}
+
+/** Bytes from {@link colourBytes} as a hex colour, or rgba() with an alpha. */
+export function bytesToColour(rgba: readonly number[]): string {
+  const [r = 0, g = 0, b = 0, a = 255] = rgba;
+  if (a >= 255) {
+    const h = (v: number) => Math.round(v).toString(16).padStart(2, "0");
+    return `#${h(r)}${h(g)}${h(b)}`;
+  }
+  return `rgba(${r}, ${g}, ${b}, ${Number((a / 255).toFixed(3))})`;
+}
+
+/**
+ * `colour` as a hex colour, or as rgba() when it is translucent, with
+ * var() and currentColor read inside `el`. Every reader takes these two
+ * forms: a canvas, a WebGL library such as sigma, which reads no other,
+ * and an SVG file opened away from the page, where var() means nothing.
+ * Null for a colour that paints nothing. Outside a browser the colour
+ * comes back as given.
+ */
+export function plainColour(
+  colour: string | null | undefined,
+  el?: Element,
+): string | null {
+  if (!pixelContext()) {
+    const given = (colour ?? "").trim();
+    return given && given.toLowerCase() !== "none" ? given : null;
+  }
+  const rgba = colourBytes(colour, el);
+  return rgba ? bytesToColour(rgba) : null;
+}

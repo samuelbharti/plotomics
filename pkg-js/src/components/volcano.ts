@@ -795,7 +795,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         out.insertBefore(node.cloneNode(true), out.firstChild);
       }
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -807,6 +807,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [
           {
             canvas,

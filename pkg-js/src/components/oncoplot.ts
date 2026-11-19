@@ -54,6 +54,7 @@ import {
   categoricalColors,
   PALETTE_20,
 } from "../core/index.js";
+import { setCanvasColour } from "../core/paint.js";
 
 export interface OncoplotOptions {
   /** Fraction of a cell's width left blank between columns, in [0, 0.5). */
@@ -614,8 +615,9 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     const ctx = canvas.getContext("2d");
     if (!ctx || !width || !height) return;
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = theme.background;
-    ctx.fillRect(0, 0, width, height);
+    if (setCanvasColour(ctx, "fillStyle", theme.background, el)) {
+      ctx.fillRect(0, 0, width, height);
+    }
 
     const R = nrows();
     const C = ncols();
@@ -938,7 +940,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -949,6 +951,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [{ canvas, x: 0, y: 0, width, height }],
         overlay: svg,
       });

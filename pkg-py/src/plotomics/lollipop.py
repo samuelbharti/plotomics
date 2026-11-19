@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from collections.abc import Mapping
 from numbers import Real
 from typing import Any
 
@@ -19,6 +20,35 @@ from ._base import (
     _to_float32,
     pack_columns,
 )
+
+
+def _rows(table: Any, fields: tuple[str, ...], name: str) -> list[dict[str, Any]]:
+    """The rows of ``table`` as mappings of ``fields``.
+
+    ``table`` is a list or tuple of mappings, or a table with one column per
+    field: a pandas or polars DataFrame, a pyarrow Table or a dict of arrays.
+    A DataFrame refuses to be read as true or false, so it is never asked.
+    """
+    wanted = ", ".join(f"`{f}`" for f in fields[:-1]) + f" and `{fields[-1]}`"
+    message = f"`{name}` must contain columns {wanted}."
+    if isinstance(table, (list, tuple)):
+        if not all(
+            isinstance(r, Mapping) and all(f in r for f in fields) for r in table
+        ):
+            raise ValueError(message)
+        return [{f: r[f] for f in fields} for r in table]
+    columns = {f: _column(table, f) for f in fields}
+    if any(c is None for c in columns.values()):
+        raise ValueError(message)
+    # A pyarrow value, null included, as the Python value it holds.
+    values = {
+        f: [v.as_py() if hasattr(v, "as_py") else v for v in c]
+        for f, c in columns.items()
+    }
+    n = len(values[fields[0]])
+    if any(len(v) != n for v in values.values()):
+        raise ValueError(f"the columns of `{name}` must be the same length.")
+    return [{f: values[f][i] for f in fields} for i in range(n)]
 
 
 class Lollipop(PlotomicsWidget):
@@ -47,9 +77,13 @@ class Lollipop(PlotomicsWidget):
     gene, uniprot:
         Identifiers shown on the axis title.
     domains:
-        Optional sequence of mappings with ``name``, ``start`` and ``end``.
+        Optional domain rectangles with ``name``, ``start`` and ``end``: a
+        pandas or polars ``DataFrame`` with those columns, as R takes a data
+        frame, or a list of mappings with those keys. A domain whose name is
+        missing (``None``, NaN or pandas NA) is drawn with no name.
     ptms:
-        Optional sequence of mappings with ``position`` and ``type``.
+        Optional modification sites with ``position`` and ``type``, as a
+        ``DataFrame`` or a list of mappings, as for ``domains``.
     classes:
         Fixes the legend order and colour assignment. Defaults to the classes
         present, most frequent first.
@@ -110,8 +144,8 @@ class Lollipop(PlotomicsWidget):
         length: int,
         gene: str | None = None,
         uniprot: str | None = None,
-        domains: list[dict[str, Any]] | None = None,
-        ptms: list[dict[str, Any]] | None = None,
+        domains: Any = None,
+        ptms: Any = None,
         classes: list[str] | None = None,
         class_colors: list[str] | None = None,
         domain_colors: list[str] | None = None,
@@ -194,21 +228,31 @@ class Lollipop(PlotomicsWidget):
             meta["classes"] = classes
         if class_colors is not None:
             meta["classColors"] = [str(c) for c in class_colors]
-        if domains:
+        domain_rows = (
+            []
+            if domains is None
+            else _rows(domains, ("name", "start", "end"), "domains")
+        )
+        if domain_rows:
+            # A missing name crosses as null, as R sends NA, so the browser
+            # draws no name for it, where str() would write "None".
+            names = _text_or_none([d["name"] for d in domain_rows])
             meta["domains"] = [
                 {
-                    "name": str(d["name"]),
+                    "name": names[i],
                     "start": float(d["start"]),
                     "end": float(d["end"]),
                 }
-                for d in domains
+                for i, d in enumerate(domain_rows)
             ]
             if domain_colors is not None:
                 meta["domainColors"] = [str(c) for c in domain_colors]
-        if ptms:
+        ptm_rows = [] if ptms is None else _rows(ptms, ("position", "type"), "ptms")
+        if ptm_rows:
+            types = _text_or_none([p["type"] for p in ptm_rows])
             meta["ptms"] = [
-                {"position": float(p["position"]), "type": str(p["type"])}
-                for p in ptms
+                {"position": float(p["position"]), "type": types[i]}
+                for i, p in enumerate(ptm_rows)
             ]
 
         # Resolve the labelled stems once, here, so the renderer does not

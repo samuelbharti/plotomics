@@ -34,6 +34,7 @@ import {
   categoricalColors,
 } from "../core/index.js";
 import { uniqueId } from "../core/dom.js";
+import { plainColour } from "../core/paint.js";
 import {
   stratify,
   treemap,
@@ -386,8 +387,12 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     const ratio = dpr();
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.clearRect(0, 0, plotW(), plotH());
-    ctx.fillStyle = theme.background;
-    ctx.fillRect(0, 0, plotW(), plotH());
+    // var() and currentColor read inside the element, as a canvas cannot.
+    const background = plainColour(theme.background, el);
+    if (background) {
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, plotW(), plotH());
+    }
     if (layoutLeaves.length === 0) return;
 
     // Group tiles first: their header strip and border show the group color.
@@ -407,7 +412,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
 
     const ext = valueExtent(layoutLeaves);
     ctx.lineWidth = 0.5;
-    ctx.strokeStyle = theme.background;
+    ctx.strokeStyle = background ?? "rgba(0, 0, 0, 0)";
     for (const leaf of layoutLeaves) {
       const x = leaf.x0;
       const y = leaf.y0;
@@ -766,7 +771,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -777,6 +782,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [
           { canvas, x: 0, y: plotTop(), width: plotW(), height: plotH() },
         ],

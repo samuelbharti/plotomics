@@ -308,11 +308,12 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       .map((v, k) => (v ? names[k] : null))
       .filter(Boolean);
     const total = data.meta?.total as number | undefined;
-    const pct = total
-      ? ` (${((100 * (s[i] as number)) / total).toFixed(1)}%)`
-      : "";
+    // R sends a missing size as null and Python as NaN; it reads "NA".
+    const n = s[i] as number | null;
+    const known = typeof n === "number" && Number.isFinite(n);
+    const pct = total && known ? ` (${((100 * n) / total).toFixed(1)}%)` : "";
     tooltip.show(
-      `<b>${(s[i] as number).toLocaleString()}</b>${pct}<br/>` +
+      `<b>${known ? n.toLocaleString() : "NA"}</b>${pct}<br/>` +
         `${inSet.length ? esc(inSet.join(" + ")) : "none"}`,
       lastPointer.x,
       lastPointer.y,
@@ -362,8 +363,9 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     layout = frame(0);
 
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = theme.background;
-    ctx.fillRect(0, 0, width, height);
+    if (setCanvasColour(ctx, "fillStyle", theme.background, el)) {
+      ctx.fillRect(0, 0, width, height);
+    }
     const empty = !s.length || !names.length;
     // Whole-number ticks, as many as the bar panel holds without crowding.
     const axis = empty
@@ -672,7 +674,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
       img.setAttribute("href", canvas.toDataURL("image/png"));
       out.insertBefore(img, out.firstChild);
       return serializeSVG(
-        padSVG(out, width, height, plot.padding, theme.background),
+        padSVG(out, width, height, plot.padding, theme.background, el),
       );
     },
     async exportPNG(scale = 2) {
@@ -683,6 +685,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
         scale,
         padding: plot.padding,
         background: theme.background,
+        element: el,
         layers: [{ canvas, x: 0, y: 0, width, height }],
         overlay: svg,
       });

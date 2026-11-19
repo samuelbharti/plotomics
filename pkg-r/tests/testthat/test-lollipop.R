@@ -62,6 +62,19 @@ test_that("a single domain still yields a list, not a bare object", {
   expect_equal(w$x$data$meta$domains[[1]]$name, "only")
 })
 
+test_that("a domain with an NA name crosses as null, as Python sends None", {
+  # The browser draws no name for null.
+  w <- lollipop(variants_fixture(), length = 393,
+                domains = data.frame(name = c(NA, "Kinase"), start = c(10, 100),
+                                     end = c(90, 200)))
+  json <- as.character(htmlwidgets:::toJSON(w$preRenderHook(w)$x))
+  expect_match(
+    json,
+    '"domains":[{"name":null,"start":10,"end":90},{"name":"Kinase"',
+    fixed = TRUE
+  )
+})
+
 test_that("labelled stems are resolved server-side, 0-based and sorted", {
   w <- lollipop(variants_fixture(), length = 393, label_top_n = 3)
   # The three most recurrent are rows 1, 2, 3 (counts 21, 15, 13) -> 0, 1, 2.

@@ -16,7 +16,32 @@ export interface Tooltip {
   destroy(): void;
 }
 
-/** A lightweight absolutely-positioned tooltip anchored to a container. */
+/** Space in px between the pointer and its tooltip. */
+const TIP_OFFSET = 12;
+/** The widest a tooltip grows, in px. Longer text wraps. */
+const TIP_MAX_WIDTH = 320;
+
+/**
+ * Where a tooltip `size` px long starts along one side of a widget `room`
+ * px long, for the pointer at `at`: {@link TIP_OFFSET} px past the pointer,
+ * or as far before it when it would run past the end. When neither side has
+ * the room, it is kept inside the widget, against its end, and a tooltip
+ * longer than the widget starts at 0.
+ */
+export function tipStart(at: number, size: number, room: number): number {
+  const after = at + TIP_OFFSET;
+  if (after + size <= room) return after;
+  const before = at - TIP_OFFSET - size;
+  if (before >= 0) return before;
+  return Math.max(0, room - size);
+}
+
+/**
+ * A lightweight absolutely-positioned tooltip anchored to a container. It
+ * sits right of and below the pointer, and flips to the left or above it
+ * near the right or bottom edge, so it stays inside the container. Text
+ * wider than {@link TIP_MAX_WIDTH} px, or than the container, wraps.
+ */
 export function createTooltip(
   container: HTMLElement,
   theme: PlotomicsTheme,
@@ -34,8 +59,12 @@ export function createTooltip(
     boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
     opacity: "0",
     transition: "opacity 80ms ease",
-    maxWidth: "320px",
-    whiteSpace: "nowrap",
+    left: "0px",
+    top: "0px",
+    boxSizing: "border-box",
+    maxWidth: `${TIP_MAX_WIDTH}px`,
+    whiteSpace: "normal",
+    overflowWrap: "break-word",
   } satisfies Partial<CSSStyleDeclaration>);
   // The container must be a positioning context.
   if (getComputedStyle(container).position === "static") {
@@ -47,13 +76,25 @@ export function createTooltip(
 
   return {
     show(html, clientX, clientY) {
-      const rect = container.getBoundingClientRect();
       tip.innerHTML = html;
+      // Measured at the top left corner, where it has the whole width of
+      // the container, so its text wraps only past the widest it may be.
+      const roomW = container.clientWidth;
+      const roomH = container.clientHeight;
+      tip.style.left = "0px";
+      tip.style.top = "0px";
+      const widest = roomW > 0 ? Math.min(TIP_MAX_WIDTH, roomW) : TIP_MAX_WIDTH;
+      tip.style.maxWidth = `${widest}px`;
+      const w = tip.offsetWidth;
+      const h = tip.offsetHeight;
+      // The pointer from the padding box of the container, where the tip is
+      // placed, inside any border.
+      const rect = container.getBoundingClientRect();
+      const x = clientX - rect.left - container.clientLeft;
+      const y = clientY - rect.top - container.clientTop;
+      tip.style.left = `${tipStart(x, w, roomW)}px`;
+      tip.style.top = `${tipStart(y, h, roomH)}px`;
       tip.style.opacity = "1";
-      const x = clientX - rect.left + 12;
-      const y = clientY - rect.top + 12;
-      tip.style.left = `${x}px`;
-      tip.style.top = `${y}px`;
     },
     hide() {
       tip.style.opacity = "0";
