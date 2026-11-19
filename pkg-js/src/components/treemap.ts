@@ -564,7 +564,9 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     // The ends of the key are not round values, so each prints as the value
     // it is, and both in one notation (see keyLabels). Where the breadcrumb
     // leaves them too little room, they print to fewer significant digits,
-    // down to two; the key is left out when even those meet the breadcrumb.
+    // down to two, while the two ends still read differently. The key is
+    // left out when even those meet the breadcrumb, or when fewer digits
+    // would print the same value at both ends.
     const ends = hi > lo ? [lo, hi] : [lo];
     let loText = "";
     let hiText = "";
@@ -572,6 +574,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     let fits = false;
     for (const digits of [undefined, 5, 4, 3, 2]) {
       [loText = "", hiText = ""] = keyLabels(ends, digits);
+      if (hiText && hiText === loText) break;
       const hiW = textWidth(hiText, fs, theme.fontFamily);
       const loW = textWidth(loText, fs, theme.fontFamily);
       x = Math.floor(width - 8 - hiW - 4 - barW);

@@ -749,18 +749,27 @@ describe("clustermap colour bar labels too long for the gutter", () => {
     [0.5, 0.5001, 20, ["0.5000", "0.5001"]],
   ];
   for (const [lo, hi, fontSize, ends] of pairs) {
-    it(`cuts only the end pair of ${lo} to ${hi} when even it does not fit, fontSize ${fontSize}`, () => {
-      // Before the fix three to seven labels were cut to one prefix, such
-      // as "1000.0\u2026".
+    it(`leaves out the labels of ${lo} to ${hi} when even the end pair cut reads one text, fontSize ${fontSize}`, () => {
+      // The end pair differs in its last digit, so 6 px less than it needs
+      // cuts both labels to one text. Before the fix the bar read that
+      // text, such as "1000.0\u2026", two to seven times.
       const el = make(
         widthFor(widest(ends, fontSize) - 6, fontSize),
         lo,
         hi,
         fontSize,
       );
-      const labels = tickLabels(el);
-      expect(labels.length).toBe(2);
-      for (const s of labels) expect(s.endsWith("\u2026")).toBe(true);
+      expect(tickLabels(el)).toEqual([]);
+      expect(
+        Array.from(el.querySelectorAll("svg text")).some((t) =>
+          (t.textContent ?? "").endsWith("\u2026"),
+        ),
+      ).toBe(false);
+      // The bar and its title stay.
+      expect(el.querySelector("svg linearGradient")).not.toBeNull();
+      expect(
+        Array.from(el.querySelectorAll("svg text")).map((t) => t.textContent),
+      ).toContain("value");
     });
   }
 });

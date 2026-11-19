@@ -328,3 +328,58 @@ describe("treemap value key in a narrow widget", () => {
     expect(drawn).not.toContain("0e+0");
   });
 });
+
+describe("treemap value key whose ends round to one value", () => {
+  const tree = (values: number[]) => ({
+    columns: {
+      id: ["root", ...values.map((_, i) => `leaf${i}`)],
+      parent: ["", ...values.map(() => "root")],
+      value: [0, ...values],
+    },
+  });
+  /**
+   * The width of a widget, with no theme padding, whose breadcrumb strip
+   * holds the key with ends `short` but not with ends `long`, as in the
+   * tests above. Measured in the plot's own font.
+   */
+  function widthBetween(short: string[], long: string[], fontSize: number) {
+    const sizes = textSizes({ fontSize });
+    const w = (s: string, size: number) =>
+      textWidth(s, size, defaultTheme.fontFamily);
+    const crumbs = 8 + 1.1 * w("root", sizes.axisTitle) + 6;
+    const need = (ends: string[]) =>
+      crumbs + 24 + 90 + ends.reduce((sum, s) => sum + w(s, sizes.label), 0);
+    expect(need(long) - need(short)).toBeGreaterThanOrEqual(6);
+    return Math.ceil((need(short) + need(long)) / 2);
+  }
+
+  const cases: [number[], number, string[], string[]][] = [
+    // Before the fix the key read "100" at both ends at 250 px, fontSize
+    // 16, and "1.2e-4" at both ends at 300 px, fontSize 20.
+    [[100.1, 100.25, 100.4], 16, ["100", "100"], ["100.1", "100.4"]],
+    [
+      [0.000123457, 0.0001237, 0.000123999],
+      20,
+      ["1.2e-4", "1.2e-4"],
+      ["1.23e-4", "1.24e-4"],
+    ],
+  ];
+  for (const [values, fontSize, same, differ] of cases) {
+    it(`leaves the key out when fewer digits print ${same[0]} at both ends, fontSize ${fontSize}`, () => {
+      // Too narrow for the ends that still differ, wide enough for those
+      // that read the same.
+      const width = widthBetween(same, differ, fontSize);
+      const el = document.createElement("div");
+      el.style.cssText = `width:${width}px;height:300px;`;
+      document.body.appendChild(el);
+      instances.push(
+        createTreemap(el, {
+          data: tree(values),
+          options: { colorBy: "value", theme: { fontSize, padding: 0 } },
+        }),
+      );
+      expect(el.querySelector("svg linearGradient"), `${width} px`).toBeNull();
+      expect(texts(el)).not.toContain(same[0]);
+    });
+  }
+});

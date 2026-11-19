@@ -898,19 +898,18 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     const lx = x0 + barW + 5;
     const room = width - 2 - 1.4 * axisTitle - 4 - lx;
     const bar = colorbarTicks(barH);
+    const shown = bar.labels.map((s) => fitLabel(s, room));
+    // Labels cut to one text, such as "1000.0\u2026" twice, would state
+    // no value; they are left out, with their ticks, and the bar and its
+    // title stay. The tooltip gives the values of the cells.
+    const distinct = new Set(shown).size === shown.length;
     bar.ticks.forEach((v, i) => {
+      if (!distinct) return;
       const y =
         y0 + (bar.flat ? 0.5 : (colorHi - v) / (colorHi - colorLo)) * barH;
       svg.appendChild(rect(x0 + barW, y - 0.5, 3, 1, theme.axis, "none", 0));
       svg.appendChild(
-        text(
-          lx,
-          y + 0.35 * size,
-          fitLabel(bar.labels[i] ?? "", room),
-          theme.muted,
-          "start",
-          size,
-        ),
+        text(lx, y + 0.35 * size, shown[i] ?? "", theme.muted, "start", size),
       );
     });
     // The title runs up beside the bar, 4 px right of the widest tick label
