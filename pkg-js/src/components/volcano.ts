@@ -1046,9 +1046,12 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       // the line, shown or hidden, joins or leaves the y range, so the plot
       // fits again while the view is untouched. No other option changes the
       // data range, so the current pan/zoom stays.
+      // A new point size changes the room kept for the points at the
+      // edges, so it fits again too.
       applyData(
         (opts.pThreshold !== prevOpts.pThreshold ||
-          opts.showThresholdLines !== prevOpts.showThresholdLines) &&
+          opts.showThresholdLines !== prevOpts.showThresholdLines ||
+          opts.pointSize !== prevOpts.pointSize) &&
           isStartView(scatterplot),
       );
     },

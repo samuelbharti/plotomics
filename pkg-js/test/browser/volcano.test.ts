@@ -1083,6 +1083,56 @@ describe("volcano background", () => {
 });
 
 describe("volcano large points", () => {
+  it("fits a new point size at the start view, and keeps a zoomed view", async () => {
+    const el = container(600, 240);
+    const v = createVolcano(el, {
+      data: { columns: { x: [2, -2, 3], y: [5, 10, 20] } },
+      options: { pointSize: 3, labelTopN: 0 },
+    });
+    instances.push(v);
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(0);
+    await new Promise((r) => setTimeout(r, 300));
+    v.setOptions({ pointSize: 30 });
+    await new Promise((r) => setTimeout(r, 500));
+    const box = (await markBox((await canvasPNG(el)) as Blob)) as MarkBox;
+    // Before the fix the plot kept the room of 3 px points, and the 30 px
+    // points ran to the edges.
+    expect(box.top).toBeGreaterThan(0);
+    expect(box.left).toBeGreaterThan(0);
+    expect(box.bottom).toBeLessThan(1);
+    expect(box.right).toBeLessThan(1);
+
+    // A view the person zoomed stays as it is.
+    await frame();
+    await frame();
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const r = canvas.getBoundingClientRect();
+    const start = yTicks(el).join(",");
+    for (let i = 0; i < 4; i += 1) {
+      canvas.dispatchEvent(
+        new WheelEvent("wheel", {
+          clientX: r.left + r.width / 2,
+          clientY: r.top + r.height / 2,
+          deltaY: -120,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await frame();
+    }
+    await expect.poll(() => yTicks(el).join(","), slow).not.toBe(start);
+    await new Promise((res) => setTimeout(res, 300));
+    const zoomed = yTicks(el).join(",");
+    v.setOptions({ pointSize: 10 });
+    await new Promise((res) => setTimeout(res, 300));
+    expect(yTicks(el).join(",")).toBe(zoomed);
+  });
+
   it("keeps a large point inside the plot at every side", async () => {
     const inf = Number.POSITIVE_INFINITY;
     for (const y of [

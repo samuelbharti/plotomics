@@ -239,6 +239,11 @@ export function buildGraph(
     defaultNodeSize: number;
     colorFor: (group: string | undefined) => string;
     directed?: boolean;
+    /**
+     * Reads a colour of the `color` column for the renderer. The colour as
+     * given is kept on the edge as `rawColor`, to be read again later.
+     */
+    readEdgeColor?: (color: string) => string;
   },
 ): { graph: graphology.default; dropped: EdgeDrops } {
   const graph = new Graph({
@@ -325,8 +330,15 @@ export function buildGraph(
       dropped.duplicate += 1;
       continue;
     }
+    const read = opts.readEdgeColor;
     const edge = graph.addEdge(e.source, e.target, {
-      color: e.color ?? opts.defaultEdgeColor,
+      color:
+        e.color === undefined
+          ? opts.defaultEdgeColor
+          : read
+            ? read(e.color)
+            : e.color,
+      ...(e.color !== undefined && read ? { rawColor: e.color } : {}),
       // ForceAtlas2 reads `weight` as attraction, and a negative attraction
       // makes it diverge, so the layout gets |weight|. The signed value is kept
       // as `rawWeight`; a missing weight (NaN) falls back to the default of 1.

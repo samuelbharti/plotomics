@@ -1,3 +1,4 @@
+import Sigma from "sigma";
 import { afterEach, describe, expect, it } from "vitest";
 import { createNetwork, edgeColour } from "../../src/components/network.js";
 import {
@@ -1155,6 +1156,154 @@ describe("network destroy", () => {
       expect(style.backgroundImage, name).toBe(image);
       expect(style.backgroundColor, name).toBe(colour);
       el.remove();
+    }
+  });
+});
+
+describe("network with a label grid it cannot read", () => {
+  it("draws its labels, by node size, and never throws", async () => {
+    // Sigma's label grid is its own, outside its types. Catch the renderer
+    // the network builds, and give it a grid whose cells are not lists.
+    const proto = Sigma.prototype as unknown as {
+      render: (...args: unknown[]) => unknown;
+    };
+    const realRender = proto.render;
+    let renderer: Record<string, unknown> | null = null;
+    proto.render = function (this: Record<string, unknown>, ...args) {
+      renderer = this;
+      return realRender.apply(this, args);
+    };
+    const errors: string[] = [];
+    const onError = (e: ErrorEvent) => {
+      errors.push(e.message);
+      e.preventDefault();
+    };
+    window.addEventListener("error", onError);
+    try {
+      for (const cells of [{ 0: 5, 1: 7 }, { 0: { key: "PROT1" } }]) {
+        const rec = recordLabelBoxes();
+        try {
+          const el = container(800, 480);
+          const net = createNetwork(el, {
+            data: proteins(),
+            options: { theme: { fontSize: 16 } },
+          });
+          await expect.poll(() => rec.boxes().length, poll).toBeGreaterThan(0);
+          const r = renderer as unknown as Record<string, unknown>;
+          const grid = r.labelGrid as Record<
+            string,
+            (...args: unknown[]) => unknown
+          >;
+          // Sigma keeps using its grid; the cells read malformed.
+          const odd = {
+            resizeAndClear: (...a: unknown[]) => grid.resizeAndClear?.(...a),
+            add: (...a: unknown[]) => grid.add?.(...a),
+            organize: () => grid.organize?.(),
+            getLabelsToDisplay: (...a: unknown[]) =>
+              grid.getLabelsToDisplay?.(...a),
+            cells,
+          };
+          Object.defineProperty(r, "labelGrid", {
+            configurable: true,
+            get: () => odd,
+            set: () => {},
+          });
+          const at = JSON.stringify(cells);
+          // Before the fix this threw "cell.forEach is not a function", and
+          // so did every frame after it, which drew no label.
+          expect(() => net.resize(800, 480), at).not.toThrow();
+          const mouse = el.querySelector(
+            "canvas.sigma-mouse",
+          ) as HTMLCanvasElement;
+          const box = mouse.getBoundingClientRect();
+          for (let i = 0; i < 3; i += 1) {
+            mouse.dispatchEvent(
+              new WheelEvent("wheel", {
+                clientX: box.left + box.width / 2,
+                clientY: box.top + box.height / 2,
+                deltaY: -200,
+                bubbles: true,
+                cancelable: true,
+              }),
+            );
+            await new Promise((res) => setTimeout(res, 60));
+          }
+          await new Promise((res) => setTimeout(res, 500));
+          expect(errors, at).toEqual([]);
+          expect(rec.boxes().length, at).toBeGreaterThan(3);
+          net.destroy();
+          el.remove();
+        } finally {
+          rec.restore();
+        }
+      }
+    } finally {
+      proto.render = realRender;
+      window.removeEventListener("error", onError);
+    }
+  });
+});
+
+describe("network colours of the color column", () => {
+  /** Two nodes on one line, joined by one edge 3.85 px wide, in `color`. */
+  const pair = (color: string) => ({
+    columns: {
+      id: ["A", "B"],
+      x: [0, 10],
+      y: [0, 0],
+      source: ["A"],
+      target: ["B"],
+      weight: [1],
+      color: [color],
+    },
+  });
+
+  /** The pixel of the middle column furthest from white: the edge. */
+  async function edgePixel(net: PlotomicsInstance<unknown>) {
+    await new Promise((r) => setTimeout(r, 300));
+    const png = (await net.exportPNG?.(1)) as Blob;
+    const bitmap = await createImageBitmap(png);
+    const c = document.createElement("canvas");
+    c.width = bitmap.width;
+    c.height = bitmap.height;
+    const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const d = ctx.getImageData(Math.floor(c.width / 2), 0, 1, c.height).data;
+    let best = [255, 255, 255];
+    let far = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const px = [d[i], d[i + 1], d[i + 2]] as number[];
+      const dist = px.reduce((sum, v) => sum + (255 - v), 0);
+      if (dist > far) {
+        far = dist;
+        best = px;
+      }
+    }
+    return { rgb: best, far };
+  }
+
+  it("reads var() and leaves a colour that paints nothing undrawn", async () => {
+    const el = container();
+    el.style.setProperty("--edge", "#d62728");
+    const net = createNetwork(el, { data: pair("var(--edge)") });
+    instances.push(net);
+    // Before the fix sigma drew var() black.
+    const red = await edgePixel(net);
+    expect(red.rgb[0], "var()").toBeGreaterThan(190);
+    expect(red.rgb[1], "var()").toBeLessThan(70);
+    // The page changes the colour, and a resize reads it again.
+    el.style.setProperty("--edge", "#1f77b4");
+    net.resize(600, 400);
+    const blue = await edgePixel(net);
+    expect(blue.rgb[2], "var() after a resize").toBeGreaterThan(150);
+    expect(blue.rgb[0], "var() after a resize").toBeLessThan(70);
+
+    for (const given of ["none", "grey85"]) {
+      const other = createNetwork(container(), { data: pair(given) });
+      instances.push(other);
+      // Before the fix sigma drew it black; now no edge is drawn.
+      expect((await edgePixel(other)).far, given).toBeLessThan(30);
     }
   });
 });

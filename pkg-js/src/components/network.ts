@@ -355,7 +355,7 @@ interface FrameLabel extends LabelCandidate {
  * the order the grid ranks them.
  */
 interface LabelGrid {
-  cells?: Record<string, { key: string }[]>;
+  cells?: unknown;
 }
 
 /**
@@ -386,15 +386,26 @@ class FrameLabels {
    * size of their node.
    */
   private readRanks(renderer: Sigma): void {
-    const grid = (renderer as unknown as { labelGrid?: LabelGrid }).labelGrid;
-    const cells = grid?.cells;
-    if (!cells || cells === this.rankedCells) return;
-    this.rankedCells = cells;
-    this.ranks = new Map();
-    for (const cell of Object.values(cells)) {
-      cell.forEach((c, i) => {
-        this.ranks.set(c.key, i);
-      });
+    // The grid is sigma's own, outside its types, so a cell that is not a
+    // list of nodes is passed over, and a read that throws leaves the
+    // ranks out; the labels on screen then go by the size of their node.
+    try {
+      const grid = (renderer as unknown as { labelGrid?: LabelGrid }).labelGrid;
+      const cells = grid?.cells;
+      if (cells === this.rankedCells) return;
+      this.rankedCells = cells;
+      this.ranks = new Map();
+      if (!cells || typeof cells !== "object") return;
+      for (const cell of Object.values(cells)) {
+        if (!Array.isArray(cell)) continue;
+        cell.forEach((c: unknown, i) => {
+          const key = (c as { key?: unknown } | null)?.key;
+          if (typeof key === "string") this.ranks.set(key, i);
+        });
+      }
+    } catch {
+      this.rankedCells = null;
+      this.ranks = new Map();
     }
   }
 
@@ -630,8 +641,40 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   }
 
   /**
+   * A reader of the colours of the `color` column, as sigma reads them:
+   * each distinct colour is read once (see sigmaColour), so one that paints
+   * nothing is clear, not black.
+   */
+  function edgeColourReader(): (colour: string) => string {
+    const read = new Map<string, string>();
+    return (colour) => {
+      let out = read.get(colour);
+      if (out === undefined) {
+        out = sigmaColour(colour);
+        read.set(colour, out);
+      }
+      return out;
+    };
+  }
+
+  /**
+   * The colours of the `color` column that depend on the page, var() and
+   * currentColor, as read now.
+   */
+  function pageEdgeColours(): string[] {
+    const given = data.columns.color as unknown;
+    if (!Array.isArray(given)) return [];
+    const page = new Set<string>();
+    for (const c of given) {
+      if (typeof c === "string" && /var\(|currentcolor/i.test(c)) page.add(c);
+    }
+    return [...page].map((c) => `${c}=${sigmaColour(c)}`);
+  }
+
+  /**
    * The colours the graph is drawn with, as read inside the element: the
-   * group palette, the default node and edge colours and the hover colours.
+   * group palette, the default node and edge colours, the hover colours
+   * and the edge colours that depend on the page.
    */
   function readColours(): string {
     return JSON.stringify([
@@ -639,21 +682,22 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       sigmaColour(opts.defaultNodeColor),
       defaultEdge(),
       hoverColours(theme, el),
+      pageEdgeColours(),
     ]);
   }
   /** The colours of the last build or recolour, from readColours. */
   let drawnColours = "";
 
   /**
-   * Give the nodes, and the edges of the default colour, the colours read
-   * now, and the renderer its new default and hover colours, in place. The
+   * Give the nodes and the edges the colours read now, an edge with a
+   * colour of its own reading it again, and the renderer its new default
+   * and hover colours, in place. The
    * graph, its layout, the camera and a hover stay as they are. A new
    * renderer started at the first view, and never sent leaveNode for the
    * node hovered in the old one, so its tooltip and dimming stayed. The
    * groups keep the order of their levels, in the colours and the legend.
    */
   function recolour(colours: string) {
-    const oldEdge = (JSON.parse(drawnColours || "[]") as unknown[])[2];
     const colorFor = groupColours();
     graph.forEachNode((node, attrs) => {
       graph.setNodeAttribute(
@@ -662,9 +706,17 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
         colorFor(attrs.group as string | undefined),
       );
     });
+    // An edge with a colour of its own reads it again; any other takes
+    // the default colour.
     const edge = defaultEdge();
+    const readEdge = edgeColourReader();
     graph.forEachEdge((key, attrs) => {
-      if (attrs.color === oldEdge) graph.setEdgeAttribute(key, "color", edge);
+      const raw = attrs.rawColor as string | undefined;
+      graph.setEdgeAttribute(
+        key,
+        "color",
+        raw === undefined ? edge : readEdge(raw),
+      );
     });
     legend = groupLegend(
       graph,
@@ -692,6 +744,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     const { graph: g, dropped } = buildGraph(data, {
       defaultNodeColor: sigmaColour(opts.defaultNodeColor),
       defaultEdgeColor: defaultEdge(),
+      readEdgeColor: edgeColourReader(),
       defaultNodeSize: opts.defaultNodeSize,
       directed: opts.directed,
       colorFor,
