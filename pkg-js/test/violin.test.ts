@@ -7,8 +7,51 @@ import {
   resolveViolinAspect,
   violinMaxWidth,
   violinPolygon,
+  violinValueTicks,
 } from "../src/components/violin.js";
 import { defaultTheme, textSizes } from "../src/core/index.js";
+
+describe("violin value axis", () => {
+  it("labels round values of a row in one format, each at its place", () => {
+    // Before, the raw ends of the grid: "4.02" over "-2.9".
+    const t = violinValueTicks(-2.9, 4.02, 400, 11);
+    expect(t.labels).toEqual(["-2", "0", "2", "4"]);
+    expect(t.ticks).toEqual([-2, 0, 2, 4]);
+    expect(t.at[1]).toBeCloseTo(2.9 / 6.92, 9);
+    expect(violinValueTicks(0, 2.5, 200, 11).labels).toEqual([
+      "0.0",
+      "0.5",
+      "1.0",
+      "1.5",
+      "2.0",
+      "2.5",
+    ]);
+  });
+
+  it("keeps a line and a half of text between labels", () => {
+    for (const length of [20, 40, 80, 160]) {
+      const t = violinValueTicks(0, 10, length, 11);
+      for (let i = 1; i < t.at.length; i += 1) {
+        const gap = ((t.at[i] as number) - (t.at[i - 1] as number)) * length;
+        expect(gap).toBeGreaterThanOrEqual(1.6 * 11);
+      }
+    }
+  });
+
+  it("takes the round value nearest the middle of a row too short for two", () => {
+    expect(violinValueTicks(-0.0000456, 123_456_789, 2, 11).labels).toEqual([
+      "100M",
+    ]);
+  });
+
+  it("labels a flat grid once, at the middle", () => {
+    expect(violinValueTicks(3, 3, 100, 11)).toEqual({
+      ticks: [3],
+      labels: ["3"],
+      at: [0.5],
+    });
+  });
+});
 
 describe("violin helpers", () => {
   it("reads a density row out of the flattened matrix", () => {

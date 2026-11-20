@@ -135,6 +135,11 @@ spatial <- function(data,
     } else {
       as.character(data$color)
     }
+    # Numbers drawn on a colour ramp warn about a missing or infinite value,
+    # as in Python; numbers read as categories key it "NA".
+    if (is.numeric(data$color) && color_mode != "categorical") {
+      bv_check_finite(columns$color, "color")
+    }
     # Levels not given: a factor states them (as in embedding()), else the
     # browser takes the distinct values. `colors` then needs at least one
     # entry per level; extra entries are not used.
@@ -166,7 +171,7 @@ spatial <- function(data,
   if (!is.null(spot_diameter)) meta$spotDiameter <- as.numeric(spot_diameter)
   # I() so a single level or colour still crosses as a JSON array.
   if (!is.null(levels)) meta$levels <- I(as.character(levels))
-  if (!is.null(colors)) meta$colors <- I(as.character(colors))
+  if (!is.null(colors)) meta$colors <- I(bv_colour(as.character(colors)))
   if (levels_given && !is.null(colors) &&
         length(levels) != length(colors)) {
     stop("`colors` must have one entry per level.", call. = FALSE)
@@ -206,8 +211,18 @@ spatial <- function(data,
 #'   `renderSpatial()` returns a Shiny render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-#'   # The browser fetches the image, so put tissue.png in the app's www/
-#'   # folder. Without it the spots are drawn on a blank background.
+#'   # The image is a drawn stand-in, built as a data URI so the app needs
+#'   # no file. A real app puts its image in the app's www/ folder and
+#'   # passes the file name, such as "tissue.png", without "www/".
+#'   svg <- paste0(
+#'     "<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600'>",
+#'     "<rect width='600' height='600' fill='#F4ECF0'/>",
+#'     "<ellipse cx='300' cy='260' rx='230' ry='190' fill='#D9A9C4'/>",
+#'     "</svg>"
+#'   )
+#'   tissue <- paste0(
+#'     "data:image/svg+xml,", utils::URLencode(svg, reserved = TRUE)
+#'   )
 #'   ui <- shiny::fluidPage(spatialOutput("sp"))
 #'   server <- function(input, output) {
 #'     output$sp <- renderSpatial({
@@ -216,7 +231,7 @@ spatial <- function(data,
 #'         y = runif(50, 0, 600),
 #'         color = rnorm(50)
 #'       )
-#'       spatial(spots, image = "tissue.png", img_width = 600,
+#'       spatial(spots, image = tissue, img_width = 600,
 #'               img_height = 600, spot_diameter = 12)
 #'     })
 #'   }

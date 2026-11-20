@@ -383,3 +383,73 @@ describe("treemap value key whose ends round to one value", () => {
     });
   }
 });
+
+describe("treemap tooltip values", () => {
+  /** Four genes under one root with the given values. */
+  const genes = (value: number[]) => ({
+    columns: {
+      id: ["root", "a", "b", "c", "d"],
+      parent: ["", "root", "root", "root", "root"],
+      value: [0, ...value],
+    },
+    meta: { labels: ["All", "GENE_A", "GENE_B", "GENE_C", "GENE_D"] },
+  });
+
+  /** The value lines the tooltip shows as the pointer crosses the tiles. */
+  function tipValues(el: HTMLElement): Set<string> {
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const r = canvas.getBoundingClientRect();
+    const seen = new Set<string>();
+    for (let i = 1; i < 150; i += 1) {
+      for (let j = 1; j < 100; j += 1) {
+        canvas.dispatchEvent(
+          new MouseEvent("mousemove", {
+            clientX: r.left + (r.width * i) / 150,
+            clientY: r.top + (r.height * j) / 100,
+            bubbles: true,
+          }),
+        );
+        const tip = Array.from(el.children).find((c) => c.tagName === "DIV");
+        const line = /value: (.*)$/.exec(tip?.textContent ?? "");
+        if (line) seen.add(line[1] as string);
+      }
+    }
+    return seen;
+  }
+
+  it("shows a count in full, with thousands separators", () => {
+    const el = container();
+    instances.push(
+      createTreemap(el, { data: genes([45678, 2500000, 1234567, 1000000]) }),
+    );
+    const seen = tipValues(el);
+    // Before the fix these read "4.6e+4", "2.5e+6", "1.2e+6" and "1.0e+6".
+    for (const v of [45678, 2500000, 1234567, 1000000]) {
+      expect(seen, String(v)).toContain(v.toLocaleString());
+    }
+  });
+
+  it("shows other values to six significant digits", () => {
+    const el = container();
+    instances.push(
+      createTreemap(el, { data: genes([1234.56789, 999.5, 1500.25, 1100]) }),
+    );
+    const seen = tipValues(el);
+    // Before the fix these read "1.2e+3", "999.5" and "1.5e+3".
+    expect(seen).toContain((1234.57).toLocaleString());
+    expect(seen).toContain("999.5");
+    expect(seen).toContain((1500.25).toLocaleString());
+    const small = container();
+    instances.push(
+      createTreemap(small, {
+        data: genes([0.000123456789, 0.0002, 0.00015, 0.00018]),
+      }),
+    );
+    // Before the fix it read "1.2e-4".
+    expect(tipValues(small)).toContain(
+      (0.000123457).toLocaleString(undefined, {
+        maximumFractionDigits: 9,
+      }),
+    );
+  });
+});

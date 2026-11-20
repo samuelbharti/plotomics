@@ -53,7 +53,12 @@ import {
   formatTicks,
   isFlatRange,
 } from "../core/index.js";
-import { setCanvasColour } from "../core/paint.js";
+import { guardDestroy } from "../core/dom.js";
+import {
+  canvasColour,
+  hideUnreadableColours,
+  setCanvasColour,
+} from "../core/paint.js";
 
 export interface DotplotOptions {
   /** Sequential ramp for the expression channel. */
@@ -523,6 +528,9 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     const cIndex = new Map(c.map((v, i) => [v, i]));
     // Cap the radius so dots do not overlap, down to a 1 px floor.
     const maxR = dotMaxRadius(opts.maxRadius, layout.cellW, layout.cellH);
+    // The ring of a dot with no value, as the canvas reads the colour;
+    // null when it paints nothing, which leaves the ring out.
+    const ring = canvasColour(theme.muted, el);
 
     for (let i = 0; i < gc.length; i += 1) {
       const row = gIndex.get(gc[i] as string);
@@ -542,9 +550,11 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
       if (!Number.isFinite(v)) {
         // No value to colour by: an open ring keeps the size readable
         // without claiming the lowest colour.
-        ctx.strokeStyle = theme.muted;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        if (ring) {
+          ctx.strokeStyle = ring;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
         continue;
       }
       // A reversed domain (hi below lo) runs the ramp the other way, and a
@@ -557,7 +567,17 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     renderOverlay();
   }
 
-  function renderOverlay() {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, theme, svg);
+  }
+
+  function drawOverlay() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const g = genes();
@@ -829,7 +849,7 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----

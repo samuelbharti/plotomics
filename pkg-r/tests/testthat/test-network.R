@@ -148,3 +148,60 @@ test_that("network() labels default-size nodes and draws a group legend", {
   expect_true(w$x$options$showLegend)
   expect_false(network(nodes, edges, show_legend = FALSE)$x$options$showLegend)
 })
+
+test_that("network() sends the levels of a factor group, in order", {
+  nodes <- data.frame(id = c("a", "b", "c"))
+  nodes$group <- factor(c("Low", "High", "Low"),
+    levels = c("High", "Mid", "Low")
+  )
+  edges <- data.frame(source = "a", target = "b")
+  w <- network(nodes, edges)
+  # Before the fix only the text went, and the browser took the groups in
+  # the order the nodes have them, which left "Mid" out.
+  expect_equal(w$x$data$meta$nodeGroup, c("Low", "High", "Low"))
+  expect_equal(w$x$data$meta$nodeGroupLevels, c("High", "Mid", "Low"))
+  # Text groups state no order.
+  nodes$group <- as.character(nodes$group)
+  expect_null(network(nodes, edges)$x$data$meta$nodeGroupLevels)
+  # One level still goes as an array.
+  nodes$group <- factor("Only", levels = "Only")[c(1, 1, 1)]
+  json <- jsonlite::toJSON(
+    network(nodes, edges)$preRenderHook(network(nodes, edges))$x,
+    auto_unbox = TRUE
+  )
+  expect_match(json, '"nodeGroupLevels":["Only"]', fixed = TRUE)
+})
+
+test_that("network() leaves the edge colour to the theme by default", {
+  nodes <- data.frame(id = c("a", "b"))
+  edges <- data.frame(source = "a", target = "b")
+  # Before the fix every edge was #d6dae1, light in the dark theme too.
+  expect_null(network(nodes, edges)$x$options$defaultEdgeColor)
+  w <- network(nodes, edges, default_edge_color = "#d62728")
+  expect_equal(w$x$options$defaultEdgeColor, "#d62728")
+})
+
+test_that("network() sends a missing edge colour as null", {
+  nodes <- data.frame(id = c("a", "b", "c"))
+  edges <- data.frame(
+    source = c("a", "b"), target = c("b", "c"), color = c("#d62728", NA)
+  )
+  w <- network(nodes, edges)
+  # null, not the text "NA", with the NA setting htmlwidgets writes it
+  # with: the browser gives the edge the default colour.
+  json <- jsonlite::toJSON(
+    w$preRenderHook(w)$x,
+    na = "null", auto_unbox = TRUE
+  )
+  expect_match(json, '"color":["#d62728",null]', fixed = TRUE)
+})
+
+test_that("network() sends an R colour name for the edges as hex", {
+  nodes <- data.frame(id = c("a", "b"))
+  edges <- data.frame(source = "a", target = "b")
+  # Before the fix "grey85" went as it was, which the browser cannot read.
+  w <- network(nodes, edges, default_edge_color = "grey85")
+  expect_equal(w$x$options$defaultEdgeColor, "#D9D9D9")
+  w <- network(nodes, edges, default_edge_color = "#d62728")
+  expect_equal(w$x$options$defaultEdgeColor, "#d62728")
+})

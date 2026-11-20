@@ -10,9 +10,171 @@ import {
   axisTicks,
   tickStep,
   formatCoord,
+  formatCoords,
+  hicColorbarLabels,
+  hicColorbarTicks,
   colormapLUT,
   encodeIntensity,
 } from "../src/components/hic.js";
+
+describe("hic colour bar ticks", () => {
+  const gaps = { minGapPx: 18, endGapPx: 13 };
+  const labels = (t: { label: string }[]) => t.map((x) => x.label);
+
+  it("labels round values of a linear scale in one unit", () => {
+    // Before, the raw ends: "1.2e+4" over "5".
+    const t = hicColorbarTicks(5, 12_345.6, "linear", 400, gaps);
+    expect(labels(t)).toEqual(["2k", "4k", "6k", "8k", "10k", "12k"]);
+    expect(t.map((x) => x.value)).toEqual([
+      2000, 4000, 6000, 8000, 10_000, 12_000,
+    ]);
+    for (const x of t) {
+      expect(x.at).toBeCloseTo((x.value - 5) / (12_345.6 - 5), 9);
+    }
+    expect(labels(hicColorbarTicks(-2, 2, "linear", 400, gaps))).toEqual([
+      "-2",
+      "-1",
+      "0",
+      "1",
+      "2",
+    ]);
+  });
+
+  it("labels powers of ten of a log scale, where the bar has room", () => {
+    const tall = hicColorbarTicks(0, 12_345.6, "log", 400, gaps);
+    expect(labels(tall)).toEqual(["0", "1", "10", "100", "1k", "10k"]);
+    for (const x of tall) {
+      expect(x.at).toBeCloseTo(Math.log1p(x.value) / Math.log1p(12_345.6), 9);
+    }
+    // 1, 2 and 5 times each power when they fit.
+    expect(labels(hicColorbarTicks(0, 60, "log", 600, gaps))).toEqual([
+      "0",
+      "1",
+      "2",
+      "5",
+      "10",
+      "20",
+      "50",
+    ]);
+    // Every second power on a short bar, then fewer, never touching.
+    for (const length of [120, 60, 30, 12]) {
+      const t = hicColorbarTicks(0, 1_234_567, "log", length, gaps);
+      expect(t.length).toBeGreaterThan(0);
+      for (let i = 1; i < t.length; i += 1) {
+        const gap = ((t[i]?.at as number) - (t[i - 1]?.at as number)) * length;
+        expect(gap).toBeGreaterThanOrEqual(gaps.minGapPx);
+      }
+    }
+    // A scale from vmin above 0 starts at the first power inside it.
+    expect(labels(hicColorbarTicks(5, 12_345.6, "log", 400, gaps))).toEqual([
+      "10",
+      "20",
+      "50",
+      "100",
+      "200",
+      "500",
+      "1k",
+      "2k",
+      "5k",
+      "10k",
+    ]);
+    expect(labels(hicColorbarTicks(5, 12_345.6, "log", 150, gaps))).toEqual([
+      "10",
+      "100",
+      "1k",
+      "10k",
+    ]);
+  });
+
+  it("labels the powers of a large log scale short, in one notation", () => {
+    // Before, every power printed in full, "1000000000", which a narrow
+    // margin cut or left out.
+    expect(labels(hicColorbarTicks(0, 1e6, "log", 80, gaps))).toEqual([
+      "1",
+      "100",
+      "10k",
+      "1M",
+    ]);
+    expect(labels(hicColorbarTicks(0, 5e8, "log", 400, gaps))).toContain(
+      "100M",
+    );
+    // From a billion up, every power takes the exponent form.
+    const billion = labels(hicColorbarTicks(0, 1e9, "log", 160, gaps));
+    expect(billion[billion.length - 1]).toBe("1e+9");
+    for (const s of billion) expect(s).toMatch(/^(0|[125]e\+\d+)$/);
+    const huge = labels(hicColorbarTicks(0, 1e15, "log", 120, gaps));
+    expect(huge[huge.length - 1]).toBe("1e+15");
+    for (const s of huge) expect(s.length).toBeLessThanOrEqual(5);
+  });
+
+  it("takes the exponent form when the unit form is wider than the room", () => {
+    // Before, "10000M" did not fit a narrow bar, and only "0" was left.
+    const width = (s: string) => 7 * s.length;
+    const t = hicColorbarTicks(0, 1e10, "linear", 400, {
+      ...gaps,
+      roomPx: width("1e+10"),
+      labelPx: width,
+    });
+    expect(labels(t)).toEqual(["0", "1e+10"]);
+    // With room, the unit form stays.
+    const wide = hicColorbarTicks(0, 1e10, "linear", 400, {
+      ...gaps,
+      roomPx: 100,
+      labelPx: width,
+    });
+    expect(labels(wide)).toContain("10000M");
+  });
+
+  it("takes a coarser linear step when the labels are wider than the room", () => {
+    const width = (s: string) => 7 * s.length;
+    const t = hicColorbarTicks(0, 1e15, "linear", 400, {
+      ...gaps,
+      roomPx: 40,
+      labelPx: width,
+    });
+    expect(labels(t)).toEqual(["0", "1e+15"]);
+  });
+
+  it("takes round linear ticks where log1p is near linear", () => {
+    expect(labels(hicColorbarTicks(0, 0.05, "log", 400, gaps))).toEqual([
+      "0.00",
+      "0.01",
+      "0.02",
+      "0.03",
+      "0.04",
+      "0.05",
+    ]);
+    expect(labels(hicColorbarTicks(0, 5, "log", 400, gaps))).toEqual([
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+    ]);
+  });
+
+  it("labels a flat scale once, at the middle", () => {
+    expect(hicColorbarTicks(3, 3, "linear", 400, gaps)).toEqual([
+      { value: 3, label: "3", at: 0.5 },
+    ]);
+  });
+
+  it("lists every label a bar of any length can take", () => {
+    for (const [lo, hi, tr] of [
+      [5, 12_345.6, "linear"],
+      [0, 1_234_567, "log"],
+      [0, 0.05, "log"],
+    ] as const) {
+      const all = new Set(hicColorbarLabels(lo, hi, tr));
+      for (const length of [12, 30, 60, 120, 400, 900]) {
+        for (const x of hicColorbarTicks(lo, hi, tr, length, gaps)) {
+          expect(all.has(x.label), `${x.label} at ${length} px`).toBe(true);
+        }
+      }
+    }
+  });
+});
 
 describe("hic helpers", () => {
   it("reads n from meta and infers from a square dense length", () => {
@@ -113,6 +275,26 @@ describe("hic helpers", () => {
     expect(formatCoord(500)).toBe("500");
     expect(formatCoord(2000)).toBe("2kb");
     expect(formatCoord(3_000_000)).toBe("3Mb");
+  });
+
+  it("labels the ticks of one axis in the unit of the largest", () => {
+    // Before, each label took its own unit: "800kb, 1.0Mb".
+    expect(formatCoords([0, 400_000, 800_000, 1_200_000], 400_000)).toEqual([
+      "0",
+      "0.4Mb",
+      "0.8Mb",
+      "1.2Mb",
+    ]);
+    expect(formatCoords([500, 1000, 1500], 500)).toEqual([
+      "0.5kb",
+      "1.0kb",
+      "1.5kb",
+    ]);
+    expect(formatCoords([0, 200, 400], 200)).toEqual(["0", "200", "400"]);
+    expect(formatCoords([999_000, 1_000_000], 1_000)).toEqual([
+      "0.999Mb",
+      "1.000Mb",
+    ]);
   });
 
   it("keeps the zeros of whole coordinates", () => {

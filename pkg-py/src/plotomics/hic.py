@@ -147,6 +147,18 @@ class HiC(PlotomicsWidget):
             i, j, v = _extract_triplet(matrix)
 
         if i is not None and j is not None and v is not None:
+            # A contact with no row or no column index has no cell. Read as
+            # whole numbers, None stopped as "`i` must be numeric" and NaN
+            # became -2147483648. R stops with the same message.
+            for name, values in (("i", i), ("j", j)):
+                bad = int(
+                    np.count_nonzero(~np.isfinite(_numeric(values, name, np.float64)))
+                )
+                if bad:
+                    raise ValueError(
+                        f"`{name}` has {bad} missing or infinite value(s); "
+                        "every contact needs an `i` and a `j` index."
+                    )
             i_arr = _numeric(i, "i", np.int32)
             j_arr = _numeric(j, "j", np.int32)
             v_arr = _numeric(v, "v", np.float32)
@@ -188,7 +200,7 @@ class HiC(PlotomicsWidget):
                 "Provide a dense `matrix` or a sparse triplet (i, j, v)."
             )
 
-        buffer, schema = pack_columns(columns)
+        buffer, schema = pack_columns(columns, names={"values": "matrix"})
 
         meta: dict[str, Any] = {"n": int(n)}
         if bin_size is not None:

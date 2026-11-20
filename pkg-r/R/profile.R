@@ -118,7 +118,7 @@ bioprofile <- function(data,
       if (length(group_colors) != length(groups)) {
         stop("`group_colors` must have one entry per group.", call. = FALSE)
       }
-      meta$groupColors <- I(as.character(group_colors))
+      meta$groupColors <- I(bv_colour(as.character(group_colors)))
     }
   }
   if (!is.null(title)) meta$title <- as.character(title)[1]

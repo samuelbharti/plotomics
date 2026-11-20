@@ -71,7 +71,7 @@ def test_profile_defaults():
 def test_profile_warns_on_values_that_are_not_finite_and_keeps_them():
     # NaN and Infinity reach the plot as they are. It draws no bar for them
     # and leaves them out of the total, as it does for R's NA, sent as null.
-    with pytest.warns(UserWarning, match="'value' contains 2 non-finite"):
+    with pytest.warns(UserWarning, match=r"`value` has 2 value\(s\)"):
         w = Profile({"value": [3, np.nan, np.inf, 5]}, as_fraction=True)
     values = np.frombuffer(w.buffer, dtype=np.float32)
     assert values[0] == 3 and values[3] == 5

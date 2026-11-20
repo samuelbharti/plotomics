@@ -25,6 +25,7 @@ import {
   serializeSVG,
   themePadding,
 } from "../core/index.js";
+import { guardDestroy } from "../core/dom.js";
 // Import the runtime value from the ESM build explicitly: the package's `main`
 // field points at a UMD bundle (`module.exports = factory()`) with no `default`
 // export, which esbuild cannot import as `default`. The `module`/ESM build does
@@ -115,6 +116,15 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
   // them, and the stored options stay as they came.
   let currentLocus: string | null = null;
   let loadedTracks = new Set<string>();
+  // The relayout igv.js runs after resize() goes on after the call returns.
+  // A browser is removed only once it is done: removed first, igv.js threw
+  // from the relayout, as it read the tracks it had let go.
+  let relayout: Promise<unknown> = Promise.resolve();
+
+  /** Remove `b` once a relayout in progress is done. */
+  function removeLater(b: Browser) {
+    void relayout.then(() => igv.removeBrowser(b));
+  }
 
   function startBrowser() {
     const gen = ++generation;
@@ -174,7 +184,7 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
       stableJSON(opts.config ?? null) !== stableJSON(prev.config ?? null);
     if (rebuild) {
       if (browser) {
-        igv.removeBrowser(browser);
+        removeLater(browser);
         browser = null;
       }
       clearElement(host);
@@ -197,9 +207,15 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
     },
     resize() {
       // igv.js tracks its container size internally and re-lays out on window
-      // resize; a visibilityChange nudge covers tab/accordion reveals. If the
+      // resize; a relayout of this browser covers tab/accordion reveals, as
+      // igv.visibilityChange() does for every browser on the page. If the
       // browser isn't ready there is nothing to nudge.
-      if (browser) void igv.visibilityChange();
+      if (!browser) return;
+      const live = browser as unknown as { layoutChange?: () => unknown };
+      const done = live.layoutChange
+        ? live.layoutChange.call(browser)
+        : igv.visibilityChange();
+      relayout = Promise.resolve(done).catch(() => undefined);
     },
     exportSVG() {
       // igv.js can serialize the current view to SVG once the browser is
@@ -211,7 +227,7 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
     destroy() {
       destroyed = true;
       if (browser) {
-        igv.removeBrowser(browser);
+        removeLater(browser);
         browser = null;
       }
       // If a browser is still loading, its resolution handler sees
@@ -220,5 +236,5 @@ export const createIgv: PlotomicsFactory<IgvOptions> = (el, initial) => {
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };

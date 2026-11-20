@@ -83,13 +83,18 @@ def _to_float64(values: Any, name: str) -> np.ndarray:
 
 
 def _warn_nonfinite(arr: np.ndarray, name: str) -> None:
-    """Emit exactly one warning if a float column carries NaN/Inf values."""
+    """Emit exactly one warning if a float column carries NaN/Inf values.
+
+    The count takes in missing values (None and NaN, which arrive here as
+    NaN) and infinite ones, and the words are the ones R uses.
+    """
     if arr.dtype.kind != "f":
         return
     count = int(np.count_nonzero(~np.isfinite(arr)))
     if count:
         warnings.warn(
-            f"column '{name}' contains {count} non-finite value(s) (NaN/Inf)",
+            f"`{name}` has {count} value(s) that are missing (NA or NaN) or "
+            "infinite (Inf or -Inf).",
             stacklevel=3,
         )
 
@@ -158,6 +163,7 @@ def pack_columns(
     *,
     equal_length: bool = True,
     quiet: Any = (),
+    names: Mapping[str, str] | None = None,
 ) -> tuple[bytes, dict]:
     """Pack named numeric columns into one buffer + a ``BufferSchema`` dict.
 
@@ -173,11 +179,16 @@ def pack_columns(
     quiet:
         Names of columns whose NaN/Inf values are not warned about here,
         because the caller warns about them in its own words.
+    names:
+        The name a warning or an error gives a column, where the user passed
+        it under another name, such as the ``matrix`` packed as ``values``.
+        A column not in it goes by its own name.
     """
+    names = names or {}
     converted: list[tuple[str, np.ndarray, str]] = []
     for name, values in numeric.items():
         arr, dtype = _to_transport(
-            np.asarray(values), name, warn=name not in quiet
+            np.asarray(values), names.get(name, name), warn=name not in quiet
         )
         converted.append((name, arr, dtype))
 

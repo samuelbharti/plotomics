@@ -28,9 +28,9 @@ class Volcano(PlotomicsWidget):
         ``x`` (log2 fold change) and ``y`` (``-log10`` p-value); an optional
         ``label`` column supplies gene names for tooltips and top-hit labels.
         A ``y`` of ``inf`` (p = 0) is drawn just above the highest finite value
-        and counts as significant. Rows with NaN in ``x`` or ``y``, or a ``y``
-        of ``-inf``, are not drawn, with a warning that counts them; R gives
-        the same warning.
+        and the p-value threshold, and counts as significant. Rows with NaN in
+        ``x`` or ``y``, or a ``y`` of ``-inf``, are not drawn, with a warning
+        that counts them; R gives the same warning.
     fc_threshold:
         Absolute log2 fold-change cutoff for calling a hit.
     p_threshold:
@@ -48,7 +48,8 @@ class Volcano(PlotomicsWidget):
         Optional mapping overriding the up / down / not-significant point colors
         (keys ``"up"``, ``"down"``, ``"ns"``). ``None`` keeps the defaults.
     show_threshold_lines:
-        Draw the fold-change / p-value threshold guide lines.
+        Draw the fold-change / p-value threshold guide lines. The y axis then
+        always reaches the p-value guide.
     theme:
         Optional theme overrides forwarded to the JS renderer. Its
         ``padding`` entry is the space in px between the edge of the widget

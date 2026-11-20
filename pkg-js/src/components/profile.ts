@@ -56,7 +56,14 @@ import {
   fitText,
   categoricalColors,
 } from "../core/index.js";
-import { setCanvasColour } from "../core/paint.js";
+import { guardDestroy } from "../core/dom.js";
+import {
+  canvasColours,
+  colourBytes,
+  hideUnreadableColours,
+  setCanvasColour,
+  textFallback,
+} from "../core/paint.js";
 import { tickStep } from "d3-array";
 
 export interface ProfileOptions {
@@ -552,6 +559,11 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     const glist = groups();
     const gcols = groupColors();
     const bw = Math.max(1, layout.slot * opts.barWidth);
+    // Each colour as the canvas reads it, var() and currentColor included;
+    // null for one that paints nothing, whose bars and blocks are left out.
+    const read = canvasColours(el);
+    const fillOf = (gi: number) =>
+      read(gi >= 0 ? (gcols[gi] as string) : theme.foreground);
 
     // Bars, up from the zero line, or down from it for a negative value.
     const zero = tickY(0, axis);
@@ -560,8 +572,9 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
       if (!Number.isFinite(y)) continue;
       // A missing group (null) is a group of its own, as in R's unique(), so
       // its bars take the colour of its block in the banner.
-      const gi = glist.indexOf(gcol[i] as string);
-      ctx.fillStyle = gi >= 0 ? (gcols[gi] as string) : theme.foreground;
+      const fill = fillOf(glist.indexOf(gcol[i] as string));
+      if (!fill) continue;
+      ctx.fillStyle = fill;
       const x = layout.left + i * layout.slot + (layout.slot - bw) / 2;
       ctx.fillRect(x, Math.min(y, zero), bw, Math.abs(zero - y));
     }
@@ -569,8 +582,9 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     // Group banner.
     if (opts.showHeader) {
       for (const run of groupRuns(gcol)) {
-        const gi = glist.indexOf(run.group);
-        ctx.fillStyle = gi >= 0 ? (gcols[gi] as string) : theme.foreground;
+        const fill = fillOf(glist.indexOf(run.group));
+        if (!fill) continue;
+        ctx.fillStyle = fill;
         const x0 = layout.left + run.start * layout.slot;
         const x1 = layout.left + (run.end + 1) * layout.slot;
         ctx.fillRect(
@@ -591,7 +605,17 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     return layout.baseline - ((val - axis.bottom) / span) * layout.plotH;
   }
 
-  function renderOverlay(axis: ValueAxis) {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, theme, svg);
+  }
+
+  function drawOverlay(axis: ValueAxis) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const gcol = groupCol();
@@ -647,7 +671,10 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
               (x0 + x1) / 2,
               layout.headerTop + tx.headerH / 2 + midline(sizes.label),
               run.group,
-              readableOn(bg),
+              readableOn(
+                colourBytes(bg, el),
+                textFallback("foreground", theme.background, el),
+              ),
               "middle",
               sizes.label,
             ),
@@ -784,17 +811,19 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----
-/** Black or white, whichever reads better on the given background. */
-function readableOn(hex: string): string {
-  const h = hex.replace("#", "");
-  if (h.length < 6) return "#FFFFFF";
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
+/**
+ * Black or white, whichever reads better on a background given as bytes
+ * (see colourBytes), so a named or var() colour counts as the colour it
+ * shows. `bare` on a block that paints nothing, where the name sits on the
+ * plot itself: the foreground for the plot's background.
+ */
+function readableOn(rgba: readonly number[] | null, bare: string): string {
+  if (!rgba) return bare;
+  const [r = 0, g = 0, b = 0] = rgba;
   // Rec. 601 luma; the SBS palette spans near-black to pale pink, so a fixed
   // colour would be unreadable on one end or the other.
   return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#233038" : "#FFFFFF";

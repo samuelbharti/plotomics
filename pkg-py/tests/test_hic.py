@@ -79,6 +79,37 @@ def test_hic_rejects_out_of_range_index():
         HiC(i=[0, 5], j=[1, 2], v=[1.0, 2.0], n=3)
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"i": [0, None], "j": [1, 1], "v": [1.0, 2.0]}, "`i` has 1 missing"),
+        ({"i": [0.0, math.nan], "j": [1, 1], "v": [1.0, 2.0], "n": 3},
+         "`i` has 1 missing"),
+        ({"i": [0, 1, 2], "j": [math.nan, math.inf, 1], "v": [1.0, 2.0, 3.0],
+          "n": 3}, "`j` has 2 missing"),
+    ],
+)
+def test_hic_names_a_sparse_index_column_with_a_missing_value_as_r_does(
+    kwargs, message
+):
+    # Before the fix None stopped as "`i` must be numeric" and NaN became
+    # -2147483648, out of range.
+    with pytest.raises(ValueError) as err:
+        HiC(**kwargs)
+    assert str(err.value).startswith(message)
+    assert str(err.value).endswith(
+        "missing or infinite value(s); every contact needs an `i` and a "
+        "`j` index."
+    )
+
+
+def test_hic_names_a_missing_index_in_a_data_frame():
+    pd = pytest.importorskip("pandas")
+    d = pd.DataFrame({"i": [0, np.nan], "j": [1, 1], "v": [1.0, 2.0]})
+    with pytest.raises(ValueError, match="`i` has 1 missing or infinite"):
+        HiC(d)
+
+
 def test_hic_rejects_negative_index():
     with pytest.raises(ValueError, match=r"in \[0, 3\)"):
         HiC(i=[0, -1], j=[1, 2], v=[1.0, 2.0], n=3)

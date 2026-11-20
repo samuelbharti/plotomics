@@ -42,7 +42,7 @@ def test_pack_columns_raises_on_int64_overflow():
 
 def test_pack_columns_warns_on_nonfinite():
     arr = np.array([1.0, np.nan, np.inf], dtype=np.float32)
-    with pytest.warns(UserWarning, match="non-finite"):
+    with pytest.warns(UserWarning, match="missing"):
         pack_columns({"x": arr})
 
 
@@ -218,7 +218,7 @@ def test_volcano_counts_only_the_y_values_it_does_not_draw_as_r_does():
         warnings.simplefilter("error")
         Volcano({"x": [1.0, 2.0], "y": [np.inf, 2.0]})
     # x keeps its own warning.
-    with pytest.warns(UserWarning, match=re.escape("'x' contains 1 non-finite")):
+    with pytest.warns(UserWarning, match=re.escape("`x` has 1 value(s) that")):
         Volcano({"x": [np.inf, 2.0], "y": [1.0, 2.0]})
 
 

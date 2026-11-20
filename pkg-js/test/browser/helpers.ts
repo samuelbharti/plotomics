@@ -1,3 +1,5 @@
+import { page } from "vitest/browser";
+
 /** A sized element in the page for a component to mount into. */
 export function mountPoint(): HTMLElement {
   const el = document.createElement("div");
@@ -140,4 +142,57 @@ export function trackRequests(): {
       XMLHttpRequest.prototype.open = realOpen;
     },
   };
+}
+
+/**
+ * Inline backgrounds a host element can have, each set the way a page
+ * script sets it. The last one gives a var() shorthand and then a colour,
+ * which the browser keeps but reads back as empty text for each part.
+ */
+export const HOST_BACKGROUNDS: [string, (el: HTMLElement) => void][] = [
+  [
+    "a gradient",
+    (el) => {
+      el.style.background = "linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255))";
+    },
+  ],
+  [
+    "a var() shorthand",
+    (el) => {
+      el.style.setProperty("--host-bg", "linear-gradient(red, blue)");
+      el.style.background = "var(--host-bg)";
+    },
+  ],
+  [
+    "a var() shorthand and a colour",
+    (el) => {
+      el.style.setProperty("--host-bg", "linear-gradient(red, blue)");
+      el.style.background = "var(--host-bg)";
+      el.style.backgroundColor = "rgb(7, 8, 9)";
+    },
+  ],
+];
+
+/**
+ * How many pixels of the element on screen are strongly red or strongly
+ * blue, as the red to blue gradients of {@link HOST_BACKGROUNDS} paint.
+ */
+export async function gradientPixels(el: HTMLElement): Promise<number> {
+  const shot = await page.screenshot({ element: el, save: false });
+  const bytes = Uint8Array.from(atob(shot), (c) => c.charCodeAt(0));
+  const bitmap = await createImageBitmap(
+    new Blob([bytes], { type: "image/png" }),
+  );
+  const c = document.createElement("canvas");
+  c.width = bitmap.width;
+  c.height = bitmap.height;
+  const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  const d = ctx.getImageData(0, 0, c.width, c.height).data;
+  let n = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    if (Math.abs((d[i] as number) - (d[i + 2] as number)) > 100) n += 1;
+  }
+  return n;
 }

@@ -55,8 +55,12 @@ import {
   categoricalColors,
 } from "../core/index.js";
 import { fitAxisTicks } from "../core/ticks.js";
-import { scatterBackground } from "../core/paint.js";
-import { uniqueId } from "../core/dom.js";
+import {
+  hideUnreadableColours,
+  scatterBackground,
+  scatterColour,
+} from "../core/paint.js";
+import { guardDestroy, uniqueId } from "../core/dom.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
@@ -519,6 +523,20 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   let drawn: Int32Array = new Int32Array(0);
   // Whether some drawn point has no colour value (drawn grey, keyed "NA").
   let missingColor = false;
+  /**
+   * The point colours of the last draw as given, with whether they came
+   * from the ramp, which gives hex. A resize() reads the others again.
+   */
+  let pointColours: { colours: string[]; ramp: boolean } = {
+    colours: [],
+    ramp: false,
+  };
+
+  /** The point colours regl-scatterplot reads, from pointColours. */
+  function glColours(): (string | [number, number, number, number])[] {
+    const { colours, ramp } = pointColours;
+    return ramp ? colours : colours.map((c) => scatterColour(c, el));
+  }
   // One id per instance for the SVG elements, distinct across widgets that
   // load the module again each (as anywidget does). A shared id would make
   // every colorbar's `url(#…)` resolve to the first instance's gradient.
@@ -581,7 +599,11 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     if (data.columns.x && isStartView(scatterplot)) applyData(true);
   }, 120);
 
-  scatterplot.subscribe("pointOver", (k: number) => showTip(drawn[k] ?? k));
+  scatterplot.subscribe("pointOver", (k: number) => {
+    // A drag pans the view or draws a lasso: no tooltip until it ends.
+    if (pressed) forgetHover();
+    else showTip(drawn[k] ?? k);
+  });
   scatterplot.subscribe("pointOut", () => tooltip.hide());
   scatterplot.subscribe("select", ({ points }: { points: number[] }) => {
     // Report data rows, not the scatterplot's point numbers.
@@ -597,12 +619,28 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     xDomain = xScale.domain() as [number, number];
     yDomain = yScale.domain() as [number, number];
     renderOverlay();
+    // The point the tooltip names has moved with the view.
+    forgetHover();
   });
+  // A lasso stops the hover, and the tooltip would stay through it.
+  scatterplot.subscribe("lassoStart", () => forgetHover());
+
+  /**
+   * Hide the tooltip, and forget the hovered point, so the next move of
+   * the pointer names the point under it, also when that is the same one.
+   */
+  function forgetHover() {
+    tooltip.hide();
+    scatterplot.hover(-1, { preventEvent: true });
+  }
 
   const lastPointer = { x: 0, y: 0 };
+  /** Whether a mouse button was down at the last move over the plot. */
+  let pressed = false;
   const onMove = (e: MouseEvent) => {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
+    pressed = e.buttons !== 0;
   };
   el.addEventListener("mousemove", onMove);
 
@@ -828,10 +866,13 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       await fitView(scatterplot, xScale, yScale, xBase, yBase);
       if (destroyed) return;
     }
-    // Colours go in just before the points they belong to.
+    // Colours go in just before the points they belong to. regl-scatterplot
+    // reads hex and RGBA arrays only, so a palette colour is read first,
+    // var() and currentColor included. The ramp gives hex, read as it is.
+    pointColours = { colours: pointColor, ramp: mode === "continuous" };
     scatterplot.set({
       colorBy,
-      pointColor,
+      pointColor: glColours(),
       pointSize: opts.pointSize,
       pointScaleMode: opts.pointScaleMode,
       opacity: opts.opacity,
@@ -850,7 +891,17 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   }
 
   // ---- overlay rendering (optional axes + legend) ----
-  function renderOverlay() {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, theme, under, svg);
+  }
+
+  function drawOverlay() {
     for (const layer of [under, svg]) {
       while (layer.firstChild) layer.removeChild(layer.firstChild);
     }
@@ -1357,6 +1408,15 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       applyData(refit);
     },
     resize(w, h) {
+      // regl-scatterplot cannot read var(), so its colours were read inside
+      // the element. A custom property the page changed since takes its new
+      // value here, as the canvas plots take it when they draw again.
+      if (pointColours.colours.length) {
+        void scatterplot.set({
+          backgroundColor: scatterBackground(theme, el),
+          pointColor: glColours(),
+        });
+      }
       if (w === outerW && h === outerH) return;
       doResize(w, h);
       refitAfterResize();
@@ -1413,7 +1473,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----

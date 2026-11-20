@@ -96,7 +96,9 @@ violin <- function(data,
 
   grid <- bv_require_numeric(grid, "grid")
   bv_check_finite(grid, "grid")
-  if (is.unsorted(grid)) {
+  # Each step between two values that are there must go up, as Python
+  # checks it; a missing value is warned about above and drawn.
+  if (any(diff(grid) < 0, na.rm = TRUE)) {
     stop("`grid` must be ascending.", call. = FALSE)
   }
   dm <- as.matrix(density)
@@ -155,7 +157,7 @@ violin <- function(data,
       if (length(group_colors) != length(groups)) {
         stop("`group_colors` must have one entry per group.", call. = FALSE)
       }
-      meta$groupColors <- I(as.character(group_colors))
+      meta$groupColors <- I(bv_colour(as.character(group_colors)))
     }
   }
   if (!is.null(median)) {

@@ -124,7 +124,9 @@ class Heatmap(PlotomicsWidget):
 
         # Row-major flatten: element (r, c) at index r * ncols + c.
         values = np.ascontiguousarray(arr).reshape(-1)
-        buffer, schema = pack_columns({"values": values})
+        buffer, schema = pack_columns(
+            {"values": values}, names={"values": "matrix"}
+        )
 
         meta: dict[str, Any] = {"nrows": nrows, "ncols": ncols}
         rlabels = _check_labels(row_labels, nrows, "row_labels")

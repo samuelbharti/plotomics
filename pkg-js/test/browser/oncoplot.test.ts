@@ -259,3 +259,45 @@ describe("oncoplot in a browser", () => {
     }
   });
 });
+
+describe("oncoplot sample count", () => {
+  /** The text under the grid that counts the samples. */
+  const countText = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll("svg text"))
+      .map((t) => t.textContent ?? "")
+      .find((s) => /^\d+ /.test(s));
+
+  const make = (ncols: number, xLabel?: string) => {
+    const el = document.createElement("div");
+    el.style.cssText = "width:600px;height:400px;";
+    document.body.appendChild(el);
+    const plot = createOncoplot(el, {
+      data: {
+        columns: { codes: Array.from({ length: 2 * ncols }, (_, i) => i % 2) },
+        meta: {
+          nrows: 2,
+          ncols,
+          genes: ["TP53", "KRAS"],
+          samples: Array.from({ length: ncols }, (_, i) => `S${i + 1}`),
+          classes: ["Missense_Mutation"],
+        },
+      },
+      options: xLabel === undefined ? {} : { xLabel },
+    });
+    const text = countText(el);
+    plot.destroy();
+    el.remove();
+    return text;
+  };
+
+  it("reads 1 sample for one column with the default label", () => {
+    // Before the fix: "1 samples".
+    expect(make(1)).toBe("1 sample");
+    expect(make(2)).toBe("2 samples");
+  });
+
+  it("writes a label the caller set as given", () => {
+    expect(make(1, "tumours")).toBe("1 tumours");
+    expect(make(3, "patients")).toBe("3 patients");
+  });
+});

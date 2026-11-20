@@ -1442,3 +1442,141 @@ describe("embedding axes zoomed past the precision of their numbers", () => {
     }
   });
 });
+
+describe("embedding tooltip after the view moves", () => {
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+
+  /**
+   * An embedding whose middle cell sits at the centre of the plot, with the
+   * tooltip naming it.
+   */
+  async function hovered(mouseMode: "panZoom" | "lasso" = "panZoom") {
+    const el = container(600, 400);
+    instances.push(
+      createEmbedding(el, {
+        data: {
+          columns: { x: [-3, 0, 3], y: [0, 4, 8], label: ["c1", "c2", "c3"] },
+        },
+        options: {
+          showAxes: true,
+          pointSize: 8,
+          pointScaleMode: "constant",
+          mouseMode,
+        },
+      }),
+    );
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(0);
+    await frame();
+    await frame();
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const r = canvas.getBoundingClientRect();
+    const centre = {
+      clientX: r.left + r.width / 2,
+      clientY: r.top + r.height / 2,
+    };
+    const tip = () =>
+      Array.from(el.children).find((c) => c.tagName === "DIV") as HTMLElement;
+    const move = async (dx = 0, dy = 0) => {
+      canvas.dispatchEvent(
+        new MouseEvent("mousemove", {
+          clientX: centre.clientX + dx,
+          clientY: centre.clientY + dy,
+          bubbles: true,
+        }),
+      );
+      await frame();
+      await frame();
+    };
+    await move();
+    expect(tip().style.opacity).toBe("1");
+    expect(tip().textContent).toContain("c2");
+    return { el, canvas, centre, tip, move };
+  }
+
+  /** Press at the centre, drag 80 px right and 40 px down, and let go. */
+  async function drag(
+    canvas: HTMLCanvasElement,
+    centre: { clientX: number; clientY: number },
+  ) {
+    const at = (dx: number) => ({
+      clientX: centre.clientX + dx,
+      clientY: centre.clientY + dx / 2,
+      bubbles: true,
+      buttons: 1,
+    });
+    canvas.dispatchEvent(new MouseEvent("mousedown", at(0)));
+    // The moves go to the canvas under the pointer, as a browser sends
+    // them, and reach the window the scatterplot listens on.
+    for (let k = 1; k <= 10; k += 1) {
+      canvas.dispatchEvent(new MouseEvent("mousemove", at(8 * k)));
+      await new Promise((res) => setTimeout(res, 20));
+    }
+    canvas.dispatchEvent(new MouseEvent("mouseup", { ...at(80), buttons: 0 }));
+  }
+
+  it("hides the tooltip after a zoom, and shows it again on a move", async () => {
+    const { el, canvas, centre, tip, move } = await hovered();
+    const start = svgTexts(el).join(",");
+    for (let i = 0; i < 5; i += 1) {
+      canvas.dispatchEvent(
+        new WheelEvent("wheel", {
+          ...centre,
+          deltaY: -120,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await frame();
+    }
+    await expect
+      .poll(() => svgTexts(el).join(","), { timeout: 30_000, interval: 100 })
+      .not.toBe(start);
+    await new Promise((res) => setTimeout(res, 300));
+    // Before the fix the tooltip stayed until the pointer moved.
+    expect(tip().style.opacity).not.toBe("1");
+    // The cell is still under the pointer, and a move names it again. A
+    // slow machine can still be settling the view, which hides it again,
+    // so the move is made until the tooltip stays.
+    await expect
+      .poll(async () => {
+        await move();
+        return tip().style.opacity;
+      }, poll)
+      .toBe("1");
+    expect(tip().textContent).toContain("c2");
+  });
+
+  it("hides the tooltip after a drag pan, and shows it again on a move", async () => {
+    const { el, canvas, centre, tip, move } = await hovered();
+    const start = svgTexts(el).join(",");
+    await drag(canvas, centre);
+    await expect
+      .poll(() => svgTexts(el).join(","), { timeout: 30_000, interval: 100 })
+      .not.toBe(start);
+    await new Promise((res) => setTimeout(res, 300));
+    // Before the fix the tooltip stayed where the drag began.
+    expect(tip().style.opacity).not.toBe("1");
+    // The cell moved with the drag, to where it ended, and a move there
+    // names it again, once the view has settled.
+    await expect
+      .poll(async () => {
+        await move(80, 40);
+        return tip().style.opacity;
+      }, poll)
+      .toBe("1");
+    expect(tip().textContent).toContain("c2");
+  });
+
+  it("hides the tooltip when a lasso starts", async () => {
+    const { canvas, centre, tip } = await hovered("lasso");
+    await drag(canvas, centre);
+    await new Promise((res) => setTimeout(res, 300));
+    // Before the fix the tooltip stayed through the lasso.
+    expect(tip().style.opacity).not.toBe("1");
+  });
+});

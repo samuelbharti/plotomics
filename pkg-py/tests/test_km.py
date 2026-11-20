@@ -1,3 +1,4 @@
+import json
 import warnings
 
 import numpy as np
@@ -184,6 +185,44 @@ def test_km_reads_a_polars_categorical_by_its_own_values():
     enum = pl.Enum(["control", "treated"])
     d = d.with_columns(pl.col("group").cast(pl.String).cast(enum))
     assert Km(d).data["meta"]["groups"] == ["control", "treated"]
+
+
+def test_km_leaves_out_a_censor_mark_with_a_missing_time_or_surv_as_r_does():
+    nan = float("nan")
+    d = {"time": [0.0, 5.0, 10.0, 20.0], "surv": [1.0, 0.9, 0.7, 0.5]}
+    censor = {
+        "time": [7.0, None, 12.0, 15.0, float("inf")],
+        "surv": [0.9, 0.8, nan, 0.6, 0.5],
+        "group": ["a", "b", "c", "d", "e"],
+    }
+    # Before the fix NaN reached the widget data, which is then not valid
+    # JSON, and the browser drew the mark at 0.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        w = Km(d, censor=censor)
+    assert [str(c.message) for c in caught] == [
+        "Left out 3 censor mark(s) with a missing or infinite `time` or `surv`."
+    ]
+    meta = w.data["meta"]
+    assert meta["censorTime"] == [7.0, 15.0]
+    assert meta["censorSurv"] == [0.9, 0.6]
+    assert meta["censorGroup"] == ["a", "d"]
+    json.dumps(w.data, allow_nan=False)
+
+    # No mark left: no censoring ticks are sent.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        none = Km(d, censor={"time": [nan], "surv": [0.5]})
+    assert "censorTime" not in none.data["meta"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        Km(d, censor={"time": [7.0], "surv": [0.9]})
+
+
+def test_km_stops_on_censor_columns_of_different_lengths():
+    d = {"time": [0.0, 5.0], "surv": [1.0, 0.8]}
+    with pytest.raises(ValueError, match="same length; got time=2, surv=1"):
+        Km(d, censor={"time": [3.0, 4.0], "surv": [0.9]})
 
 
 def test_km_stops_on_censor_without_time_and_surv():
