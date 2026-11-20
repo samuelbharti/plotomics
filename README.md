@@ -100,7 +100,7 @@ and exercised for, not a benchmark and not a ceiling.
 | Protein domain lollipop | Lollipop, also called a mutation needle plot, over Pfam/InterPro domains | canvas 2-D + SVG | hundreds to thousands of variants |
 | Kaplan-Meier curve | KM survival curves, censoring ticks, CI bands, number-at-risk table | canvas 2-D + SVG; fit from `survival` / `lifelines` | a handful of strata |
 | Categorical profile | SBS96 mutational signature profile, six substitution-class blocks | canvas 2-D + SVG | 96 contexts, up to a few thousand bins |
-| UpSet plot | UpSet: intersection bars over a membership matrix | canvas 2-D + SVG; exclusive intersections computed in R | dozens of sets |
+| UpSet plot | UpSet: intersection bars over a membership matrix | canvas 2-D + SVG; exclusive intersections computed in R or Python | dozens of sets |
 | Gene treemap | Treemap of gene sets and pathway composition | canvas 2-D + `d3-hierarchy` (squarified layout) | 60k leaves |
 | Network graph | Force-directed PPI, co-expression and regulatory graphs | `sigma` v3 (WebGL) + `graphology` + `graphology-layout-forceatlas2` | 5k nodes |
 | Hi-C contact matrix | Hi-C / Micro-C contact maps | `regl` (WebGL) with a level-of-detail pyramid, no tile server | 1024 × 1024 ≈ 1M bins |
@@ -147,10 +147,10 @@ win.
 
 ```text
 pkg-js/
-  src/core/        plotomics/core  instance interface, theme, color, binary transport, export
-  src/components/  plotomics       the headless viz factories
+  src/core/        plotomics/core     instance interface, theme, color, binary transport, export
+  src/components/  plotomics/<name>   the headless viz factories
+  src/lib/         plotomics          the package entry, and the bindings the entry points share
   src/entries/     the htmlwidgets (UMD) and anywidget entry points
-  src/lib/         the bindings those entry points share
   dev/             the dev harness
 pkg-r/          R package (htmlwidgets)
 pkg-py/         Python package (anywidget)

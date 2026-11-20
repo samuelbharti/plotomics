@@ -207,7 +207,8 @@ spatial <- function(data,
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
 #'   # The image is a drawn stand-in, built as a data URI so the app needs
-#'   # no file. A real app passes the path of an image in its www/ folder.
+#'   # no file. A real app puts its image in the app's www/ folder and
+#'   # passes the file name, such as "tissue.png", without "www/".
 #'   svg <- paste0(
 #'     "<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600'>",
 #'     "<rect width='600' height='600' fill='#F4ECF0'/>",

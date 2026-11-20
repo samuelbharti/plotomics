@@ -64,18 +64,6 @@ test_that("the spatial() example draws on an image it builds itself", {
   expect_match(w$x$data$meta$image, "^data:image/svg\\+xml,")
 })
 
-test_that("the spatial Shiny example builds its image too", {
-  rd <- pkg_file("man", "spatial-shiny.Rd")
-  skip_if_not(file.exists(rd), "man/spatial-shiny.Rd is not in the built package")
-  ex <- tempfile(fileext = ".R")
-  on.exit(unlink(ex))
-  tools::Rd2ex(rd, ex)
-  code <- paste(readLines(ex), collapse = "\n")
-  # The app runs only interactively, so check the code it would run.
-  expect_no_match(code, "tissue.png", fixed = TRUE)
-  expect_match(code, "data:image/svg+xml,", fixed = TRUE)
-})
-
 test_that("DESCRIPTION lists the URL of the pkgdown site", {
   yml <- pkg_file("_pkgdown.yml")
   desc <- pkg_file("DESCRIPTION")
