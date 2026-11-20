@@ -166,7 +166,7 @@ spatial <- function(data,
   if (!is.null(spot_diameter)) meta$spotDiameter <- as.numeric(spot_diameter)
   # I() so a single level or colour still crosses as a JSON array.
   if (!is.null(levels)) meta$levels <- I(as.character(levels))
-  if (!is.null(colors)) meta$colors <- I(as.character(colors))
+  if (!is.null(colors)) meta$colors <- I(bv_colour(as.character(colors)))
   if (levels_given && !is.null(colors) &&
         length(levels) != length(colors)) {
     stop("`colors` must have one entry per level.", call. = FALSE)

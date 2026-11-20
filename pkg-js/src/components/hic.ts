@@ -41,12 +41,16 @@ import {
   compositePNG,
   RAMPS,
   type RGB,
+  domainTicks,
+  fitDomainTicks,
+  formatTick,
+  formatTicks,
 } from "../core/index.js";
 import { releaseRegl } from "../core/gl.js";
-import { uniqueId } from "../core/dom.js";
+import { guardDestroy, uniqueId } from "../core/dom.js";
 import createREGL from "regl";
 import type { Regl, Texture2D, DrawCommand } from "regl";
-import { resolveColour } from "../core/paint.js";
+import { hideUnreadableColours, resolveColour } from "../core/paint.js";
 
 /** Any colour ramp of the core: "viridis", "rdbu", "ltc" or "ltcdiv". */
 export type HicColormap = RampName;
@@ -355,13 +359,261 @@ export function axisTicks(
  * digits are kept and trailing zeros after the decimal point are dropped.
  */
 export function formatCoord(bp: number, step = 0): string {
-  const a = Math.abs(bp);
-  const [div, unit] = a >= 1e6 ? [1e6, "Mb"] : a >= 1e3 ? [1e3, "kb"] : [1, ""];
+  const [div, unit] = coordUnit(Math.abs(bp));
   const v = bp / div;
   if (step > 0) return `${v.toFixed(decimalsFor(step / div))}${unit}`;
   if (div === 1) return `${Math.round(bp)}`;
   const s = v.toPrecision(3);
   return `${s.includes(".") ? s.replace(/\.?0+$/, "") : s}${unit}`;
+}
+
+/** The unit for a coordinate of `bp`: Mb from a million, kb from a thousand. */
+function coordUnit(bp: number): [number, string] {
+  return bp >= 1e6 ? [1e6, "Mb"] : bp >= 1e3 ? [1e3, "kb"] : [1, ""];
+}
+
+/**
+ * The labels of the ticks of one genomic axis at `bps`, on multiples of
+ * `step` bp, all in one unit: the unit of the largest, as
+ * {@link formatCoord} picks it, so an axis reads "0.8Mb, 1.0Mb", never
+ * "800kb, 1.0Mb". The step sets the decimals, so every label is exact and
+ * neighbours never read the same. 0 reads "0".
+ */
+export function formatCoords(bps: readonly number[], step: number): string[] {
+  let max = 0;
+  for (const bp of bps) {
+    if (Number.isFinite(bp)) max = Math.max(max, Math.abs(bp));
+  }
+  const [div, unit] = coordUnit(max);
+  const decimals = step > 0 ? decimalsFor(step / div) : 0;
+  return bps.map((bp) =>
+    bp === 0 ? "0" : `${(bp / div).toFixed(decimals)}${unit}`,
+  );
+}
+
+/** A labelled value of a colour bar and its place along the bar. */
+export interface ColorbarTick {
+  value: number;
+  label: string;
+  /** 0 at the bottom of the bar, the low end of the scale, to 1 at the top. */
+  at: number;
+}
+
+/**
+ * The scale of a Hi-C colour bar: its ends and the place of a value along
+ * it, as {@link normalizeIntensity} maps the value to a colour. A scale with
+ * no width is flat and places every value at the middle.
+ */
+function colorbarScale(
+  vmin: number,
+  vmax: number,
+  transform: HicTransform,
+): { lo: number; hi: number; flat: boolean; at: (v: number) => number } {
+  if (transform === "log") {
+    const lo = Math.max(0, vmin);
+    const hi = Math.max(lo, vmax);
+    const l0 = Math.log1p(lo);
+    const l1 = Math.log1p(hi);
+    const flat = !(l1 > l0);
+    return {
+      lo,
+      hi,
+      flat,
+      at: (v) => (flat ? 0.5 : (Math.log1p(v) - l0) / (l1 - l0)),
+    };
+  }
+  const flat = !(vmax > vmin);
+  return {
+    lo: vmin,
+    hi: vmax,
+    flat,
+    at: (v) => (flat ? 0.5 : (v - vmin) / (vmax - vmin)),
+  };
+}
+
+/**
+ * The candidate values for a log colour bar, densest first. A scale that
+ * reaches two powers of ten above 1 is labelled at 1, 2 and 5 times each
+ * power of ten, then at every power, every second power and so on, each
+ * set with 0 when the scale starts at 0 and then without it. Below that,
+ * log1p is near linear, and the candidates are round linear ticks.
+ * `exponent` says which notation the powers take (see powerLabel): the
+ * exponent form when the scale reaches a billion.
+ */
+function logColorbarSets(
+  lo: number,
+  hi: number,
+): { sets: number[][]; powers: boolean; exponent: boolean } {
+  const kLow = Math.max(0, Math.ceil(Math.log10(Math.max(lo, 1)) - 1e-9));
+  const kTop = Math.floor(Math.log10(Math.max(hi, 1)) + 1e-9);
+  if (kTop <= kLow) {
+    const sets: number[][] = [];
+    for (let count = 5; count >= 1; count -= 1) {
+      sets.push(domainTicks(lo, hi, count).ticks);
+    }
+    return { sets, powers: false, exponent: false };
+  }
+  const zero = lo === 0 ? [0] : [];
+  const dense: number[] = [];
+  for (let k = kLow; k <= kTop; k += 1) {
+    for (const m of [1, 2, 5]) {
+      const v = m * 10 ** k;
+      if (v >= lo && v <= hi) dense.push(v);
+    }
+  }
+  const sets = [[...zero, ...dense]];
+  for (let every = 1; every <= kTop - kLow + 1; every += 1) {
+    const powers: number[] = [];
+    for (let k = kTop; k >= kLow; k -= every) powers.unshift(10 ** k);
+    if (zero.length) sets.push([0, ...powers]);
+    sets.push(powers);
+  }
+  return { sets, powers: true, exponent: kTop >= 9 };
+}
+
+/**
+ * A power of ten, or 2 or 5 times one, as a log colour bar labels it,
+ * exactly and in at most five characters. Below a billion each takes the
+ * unit of its own size, as log scales print them: "1", "200", "5k",
+ * "100k", "1M", "500M". With `exponent`, for a scale that reaches a
+ * billion, every one takes the exponent form: "1e+0", "2e+3", "1e+15". 0
+ * reads "0".
+ */
+function powerLabel(v: number, exponent: boolean): string {
+  if (v === 0) return "0";
+  const exact = (x: number) => String(Number(x.toPrecision(12)));
+  if (exponent) {
+    const k = Math.floor(Math.log10(v) + 1e-9);
+    return `${exact(v / 10 ** k)}e+${k}`;
+  }
+  if (v < 1e3) return exact(v);
+  return v < 1e6 ? `${exact(v / 1e3)}k` : `${exact(v / 1e6)}M`;
+}
+
+/**
+ * Labels for the round values of a log colour bar, in one notation for the
+ * bar: powers of ten as {@link powerLabel} writes them, and round linear
+ * ticks, for a scale below two powers of ten above 1, as
+ * {@link formatTicks} writes them, in the unit and decimals of their step.
+ */
+function logColorbarLabels(
+  values: number[],
+  kind: { powers: boolean; exponent: boolean },
+): string[] {
+  if (kind.powers) return values.map((v) => powerLabel(v, kind.exponent));
+  const step =
+    values.length > 1
+      ? Math.abs((values[1] as number) - (values[0] as number))
+      : 0;
+  return formatTicks(values, step > 0 ? step : 1);
+}
+
+/**
+ * Round values to label on the colour bar of a Hi-C map, for the scale from
+ * `vmin` to `vmax` under `transform`, on a bar `lengthPx` long, with their
+ * labels in one format and their places along the bar. The labels keep
+ * `minGapPx` between them (`endGapPx` for a linear bar left with its two
+ * ends). A linear bar takes round ticks as the heatmap and clustermap colour
+ * bars do. When their labels are wider than `roomPx`, as `labelPx`
+ * measures them, it takes the exponent form, then a coarser step with
+ * shorter labels. A log bar takes
+ * powers of ten, with 2 and 5 times them when the bar has room, and 0 at
+ * the bottom of a scale that starts there, keeping the top power when it
+ * thins them; below two powers of ten above 1, where log1p is near linear,
+ * round linear ticks. A flat scale has one label, at the middle.
+ */
+export function hicColorbarTicks(
+  vmin: number,
+  vmax: number,
+  transform: HicTransform,
+  lengthPx: number,
+  opts: {
+    minGapPx: number;
+    endGapPx: number;
+    roomPx?: number;
+    labelPx?: (label: string) => number;
+  },
+): ColorbarTick[] {
+  const s = colorbarScale(vmin, vmax, transform);
+  if (!Number.isFinite(s.lo) || !Number.isFinite(s.hi)) return [];
+  if (s.flat) return [{ value: s.hi, label: formatTick(s.hi, 0), at: 0.5 }];
+  const ticksOf = (values: number[], labels: string[]) =>
+    values.map((value, k) => ({
+      value,
+      label: labels[k] ?? "",
+      at: s.at(value),
+    }));
+  if (transform !== "log") {
+    const { roomPx, labelPx } = opts;
+    let best: ColorbarTick[] = [];
+    for (let maxCount = 4; maxCount >= 1; maxCount -= 1) {
+      const { ticks, step } = fitDomainTicks(s.lo, s.hi, lengthPx, {
+        maxCount,
+        minGapPx: opts.minGapPx,
+        endGapPx: opts.endGapPx,
+      });
+      const fit = (labels: string[]) =>
+        roomPx === undefined ||
+        !labelPx ||
+        labels.every((label) => labelPx(label) <= roomPx);
+      const labels = formatTicks(ticks, step);
+      best = ticksOf(ticks, labels);
+      if (fit(labels)) break;
+      // Labels in their unit can be wider than the exponent form, such as
+      // "10000M" for "1e+10": the exponent form goes before a coarser step.
+      const exponent = formatTicks(ticks, step, { exponent: true });
+      if (fit(exponent)) return ticksOf(ticks, exponent);
+    }
+    return best;
+  }
+  const gapOk = (lower: number, upper: number) =>
+    (s.at(upper) - s.at(lower)) * lengthPx >= opts.minGapPx;
+  const fits = (values: number[]) =>
+    values.every((v, k) => k === 0 || gapOk(values[k - 1] as number, v));
+  const kind = logColorbarSets(s.lo, s.hi);
+  const sets = kind.sets.filter((set) => set.length > 0);
+  const chosen = sets.find(fits);
+  if (chosen) return ticksOf(chosen, logColorbarLabels(chosen, kind));
+  // The sparsest set, thinned from the top so no two labels touch, each
+  // value keeping the label the whole set gives it.
+  const last = sets[sets.length - 1] ?? [];
+  const labels = logColorbarLabels(last, kind);
+  const kept: number[] = [];
+  const keptLabels: string[] = [];
+  for (let k = last.length - 1; k >= 0; k -= 1) {
+    const v = last[k] as number;
+    const upper = kept[0];
+    if (upper === undefined || gapOk(v, upper)) {
+      kept.unshift(v);
+      keptLabels.unshift(labels[k] ?? "");
+    }
+  }
+  return ticksOf(kept, keptLabels);
+}
+
+/**
+ * Every label {@link hicColorbarTicks} can give for a scale, at any length
+ * of bar, so the margin for them is known before the bar's length is.
+ */
+export function hicColorbarLabels(
+  vmin: number,
+  vmax: number,
+  transform: HicTransform,
+): string[] {
+  const s = colorbarScale(vmin, vmax, transform);
+  if (!Number.isFinite(s.lo) || !Number.isFinite(s.hi)) return [];
+  if (s.flat) return [formatTick(s.hi, 0)];
+  const out: string[] = [];
+  if (transform !== "log") {
+    for (let count = 1; count <= 10; count += 1) {
+      const t = domainTicks(s.lo, s.hi, count);
+      out.push(...formatTicks(t.ticks, t.step));
+    }
+    return out;
+  }
+  const kind = logColorbarSets(s.lo, s.hi);
+  for (const set of kind.sets) out.push(...logColorbarLabels(set, kind));
+  return out;
 }
 
 /**
@@ -674,12 +926,18 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     opts.label || (data.meta?.chrom ? String(data.meta.chrom) : "");
   const colorbarTitle = () =>
     opts.transform === "log" ? "contacts (log)" : "contacts";
-  /** The colour bar's values: the top and the bottom of the scale. */
-  const colorbarValues = () => [
-    vmaxResolved,
-    opts.transform === "log" ? Math.max(0, opts.vmin) : opts.vmin,
-  ];
-  const colorbarTicks = () => colorbarValues().map(fmtVal);
+  /**
+   * The colour bar's round values for a bar `lengthPx` long, as many as
+   * keep a line and a half of text between their labels, with labels no
+   * wider than `roomPx` where a coarser step gives them.
+   */
+  const colorbarTicks = (lengthPx: number, roomPx: number) =>
+    hicColorbarTicks(opts.vmin, vmaxResolved, opts.transform, lengthPx, {
+      minGapPx: 1.6 * sizes.label,
+      endGapPx: sizes.label + 2,
+      roomPx,
+      labelPx: (s) => tw(s, sizes.label),
+    });
   /** `s` cut with an ellipsis to fit `maxW` px at `size` px. */
   function fit(s: string, maxW: number, size: number): string {
     if (tw(s, size) <= maxW) return s;
@@ -693,21 +951,16 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     return lo > 0 ? `${s.slice(0, lo)}\u2026` : "";
   }
   /**
-   * `v` as text that fits `maxW` px at `size` px: as the colour bar writes
-   * it, else to three significant digits or whole, and cut only when none
-   * fits.
+   * The labels of ticks `ticks` (in bins) on an axis ticked every `stepBp`:
+   * genomic coordinates all in one unit, or bin numbers.
    */
-  function fitValue(v: number, maxW: number, size: number): string {
-    const forms = [fmtVal(v)];
-    if (Number.isFinite(v) && Math.abs(v) >= 1) {
-      forms.push(String(Number(v.toPrecision(3))), String(Math.round(v)));
-    }
-    for (const s of forms) if (tw(s, size) <= maxW) return s;
-    return fit(forms[forms.length - 1] as string, maxW, size);
-  }
-  /** The label of tick `t` (in bins) on an axis ticked every `stepBp`. */
-  const tickLabel = (t: number, stepBp: number) =>
-    binSize > 1 ? formatCoord(t * binSize, stepBp) : String(Math.round(t));
+  const tickLabels = (ticks: number[], stepBp: number) =>
+    binSize > 1
+      ? formatCoords(
+          ticks.map((t) => t * binSize),
+          stepBp,
+        )
+      : ticks.map((t) => String(Math.round(t)));
   /**
    * The ticks the axes can take for the view, finest step first: the steps
    * for 6 down to 2 ticks, each with its ticks (in bins), their labels and
@@ -727,7 +980,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       const ticks = axisTicks(viewLo, viewHi, target, minStep).filter(
         (t) => t >= viewLo - 1e-6 && t <= viewHi + 1e-6,
       );
-      const labels = ticks.map((t) => tickLabel(t, step * binSize));
+      const labels = tickLabels(ticks, step * binSize);
       let widest = 0;
       for (const s of labels) widest = Math.max(widest, tw(s, sizes.label));
       out.push({ step, ticks, labels, widest });
@@ -793,8 +1046,15 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       9 + 1.3 * label,
       titled ? 8 + 1.15 * titleSize : 0,
     );
+    // Every label the colour bar can take, as its length is not known yet.
     let valueW = 0;
-    for (const t of colorbarTicks()) valueW = Math.max(valueW, tw(t, label));
+    for (const t of hicColorbarLabels(
+      opts.vmin,
+      vmaxResolved,
+      opts.transform,
+    )) {
+      valueW = Math.max(valueW, tw(t, label));
+    }
     [margin.right, titleOn.right] = withTitle(
       MARGIN.right,
       capW,
@@ -900,7 +1160,17 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   }
 
   // ---- SVG overlay: genomic axis ticks + colorbar ----
-  function renderOverlay() {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, theme, svg);
+  }
+
+  function drawOverlay() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
 
@@ -1029,20 +1299,30 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     bar.setAttribute("stroke-width", "1");
     svg.appendChild(bar);
 
-    // vmin at bottom, vmax at top, cut to the widget.
+    // Round values inside the scale, each centred on its place along the
+    // bar by a short tick, the high end at the top. A label wider than the
+    // room left in the widget is left out with its tick, never cut: a cut
+    // label states no value, or the wrong one. The tooltip gives the value
+    // of a cell.
     const { label, axisTitle: titleSize } = sizes;
     const vx = x + COLORBAR_W + 4;
-    const [hiTick, loTick] = colorbarValues().map((v) =>
-      fitValue(v, width - 2 - vx, label),
-    ) as [string, string];
-    svg.appendChild(
-      text(vx, top + 0.75 * label, hiTick, theme.axis, "start", label),
-    );
-    svg.appendChild(text(vx, top + h, loTick, theme.axis, "start", label));
+    const room = width - 2 - vx;
+    let valueW = 0;
+    for (const t of colorbarTicks(h, room)) {
+      const s = t.label;
+      if (!s || tw(s, label) > room) continue;
+      const y = top + (1 - t.at) * h;
+      svg.appendChild(
+        line(x + COLORBAR_W, y, x + COLORBAR_W + 3, y, theme.axis, 1),
+      );
+      svg.appendChild(
+        text(vx, y + 0.35 * label, s, theme.axis, "start", label),
+      );
+      valueW = Math.max(valueW, tw(s, label));
+    }
     if (!titleOn.right) return;
     // The title is turned to read downward, so its letters stand right of
-    // its baseline; it starts 4 px right of the wider label.
-    const valueW = Math.max(tw(hiTick, label), tw(loTick, label));
+    // its baseline; it starts 4 px right of the widest label.
     const tx = vx + valueW + 4 + 0.3 * titleSize;
     const cy = top + h / 2;
     // No longer than the bar, so it stays clear of the bottom title.
@@ -1331,7 +1611,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----

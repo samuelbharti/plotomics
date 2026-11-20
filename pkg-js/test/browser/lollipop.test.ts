@@ -1159,3 +1159,159 @@ describe("lollipop count labels and legend rows on a short widget", () => {
     }
   });
 });
+
+describe("lollipop labels at small sizes", () => {
+  // TP53 hotspots with four domains and six PTMs, as R's example draws them.
+  // Before the fix, at 300 x 200 px with fontSize 16, "R158H" was placed
+  // beside a head near the baseline, over the DNA-binding domain.
+  const labels = [
+    "R175H",
+    "R248Q",
+    "R248W",
+    "R273H",
+    "R273C",
+    "G245S",
+    "R282W",
+    "Y220C",
+    "H179R",
+    "R158H",
+    "R213*",
+    "R196*",
+    "R342*",
+    "R306*",
+    "R337C",
+    "R249S",
+    "C176F",
+    "C238Y",
+    "X234_splice",
+    "P152fs",
+  ];
+  const tp53 = {
+    columns: {
+      position: [
+        175, 248, 248, 273, 273, 245, 282, 220, 179, 158, 213, 196, 342, 306,
+        337, 249, 176, 238, 234, 152,
+      ],
+      count: [
+        86, 62, 55, 50, 44, 30, 28, 25, 20, 18, 16, 14, 12, 10, 9, 8, 7, 6, 5,
+        4,
+      ],
+      class: [
+        ...new Array<string>(10).fill("Missense"),
+        ...new Array<string>(4).fill("Nonsense"),
+        ...new Array<string>(4).fill("Missense"),
+        "Splice",
+        "Frame_Shift_Del",
+      ],
+      label: labels,
+    },
+    meta: {
+      length: 393,
+      gene: "TP53",
+      uniprot: "P04637",
+      classes: ["Missense", "Nonsense", "Frame_Shift_Del", "Splice"],
+      domains: [
+        { name: "Transactivation domain 1", start: 6, end: 29 },
+        { name: "Transactivation domain 2", start: 35, end: 59 },
+        { name: "P53 DNA-binding domain", start: 95, end: 288 },
+        { name: "P53 tetramerisation motif", start: 319, end: 357 },
+      ],
+      // One colour no head or label takes, to find the blocks by.
+      domainColors: ["#ff00ff"],
+      ptms: [15, 20, 46, 315, 382, 392].map((position) => ({
+        position,
+        type: "Phospho",
+      })),
+      labelIndex: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    },
+  };
+
+  /** The same hotspots, with every variant asked to be labelled. */
+  const everyLabel = {
+    ...tp53,
+    meta: { ...tp53.meta, labelIndex: labels.map((_, i) => i) },
+  };
+
+  it("keeps every variant label clear of the domain blocks", () => {
+    for (const data of [tp53, everyLabel]) {
+      for (const [w, h, fontSize] of [
+        [300, 200, 16],
+        [300, 200, 12],
+        [360, 240, 14],
+        [400, 260, 16],
+        [500, 300, 16],
+        [900, 440, 12],
+        [900, 440, 20],
+        [250, 180, 8],
+        [1600, 300, 16],
+      ] as const) {
+        const el = container(w, h);
+        const plot = createLollipop(el, {
+          data,
+          options: { theme: { fontSize } },
+        });
+        const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+        const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+        const ratio = canvas.width / canvas.clientWidth;
+        const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        const magenta = (x: number, y: number) => {
+          const i = (y * canvas.width + x) * 4;
+          return d[i] === 255 && d[i + 1] === 0 && d[i + 2] === 255;
+        };
+        const origin = canvas.getBoundingClientRect();
+        const shown = svgTexts(el).filter((t) =>
+          labels.includes(t.textContent ?? ""),
+        );
+        const where = `${w} x ${h}, font ${fontSize}`;
+        expect(shown.length, where).toBeGreaterThan(0);
+        for (const t of shown) {
+          // The box of the label, trimmed to one em across its line, as the
+          // text size tests measure it.
+          const r = t.getBoundingClientRect();
+          const trim = 0.18 * Number(t.getAttribute("font-size"));
+          const x0 = Math.ceil((r.left - origin.left) * ratio);
+          const x1 = Math.floor((r.right - origin.left) * ratio);
+          const y0 = Math.ceil((r.top + trim - origin.top) * ratio);
+          const y1 = Math.floor((r.bottom - trim - origin.top) * ratio);
+          let hit = 0;
+          for (
+            let y = Math.max(0, y0);
+            y < Math.min(canvas.height, y1);
+            y += 1
+          ) {
+            for (
+              let x = Math.max(0, x0);
+              x < Math.min(canvas.width, x1);
+              x += 1
+            ) {
+              if (magenta(x, y)) hit += 1;
+            }
+          }
+          expect(hit, `${where}: "${t.textContent}"`).toBe(0);
+        }
+        plot.destroy();
+        el.remove();
+      }
+    }
+  });
+
+  it("shows a label whose letters clear the domain band", () => {
+    // The bound once counted the whole font box, with room for a
+    // descender: "P152fs" and "R158H" have none, and their letters cleared
+    // the band by 1.5 to 2 px, but they were left out.
+    for (const [w, h, fontSize, name] of [
+      [900, 440, 20, "P152fs"],
+      [400, 260, 16, "R158H"],
+    ] as const) {
+      const el = container(w, h);
+      const plot = createLollipop(el, {
+        data: everyLabel,
+        options: { theme: { fontSize } },
+      });
+      const shown = svgTexts(el).map((t) => t.textContent);
+      expect(shown, `${w} x ${h}, font ${fontSize}`).toContain(name);
+      plot.destroy();
+      el.remove();
+    }
+  });
+});

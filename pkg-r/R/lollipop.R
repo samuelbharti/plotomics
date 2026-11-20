@@ -144,7 +144,9 @@ lollipop <- function(variants,
   if (!is.null(gene)) meta$gene <- as.character(gene)[1]
   if (!is.null(uniprot)) meta$uniprot <- as.character(uniprot)[1]
   if (!is.null(classes)) meta$classes <- I(classes)
-  if (!is.null(class_colors)) meta$classColors <- I(as.character(class_colors))
+  if (!is.null(class_colors)) {
+    meta$classColors <- I(bv_colour(as.character(class_colors)))
+  }
 
   if (!is.null(domains)) {
     # Any table with rows: a data frame, a tibble or a Bioconductor
@@ -167,7 +169,7 @@ lollipop <- function(variants,
            end = as.numeric(domains$end[i]))
     })
     if (!is.null(domain_colors)) {
-      meta$domainColors <- I(as.character(domain_colors))
+      meta$domainColors <- I(bv_colour(as.character(domain_colors)))
     }
   }
   if (!is.null(ptms)) {
@@ -200,8 +202,8 @@ lollipop <- function(variants,
     minHeadRadius = min_head_radius,
     maxHeadRadius = max_head_radius,
     yLabel = y_label,
-    backboneColor = backbone_color,
-    stemColor = stem_color
+    backboneColor = bv_colour(backbone_color),
+    stemColor = bv_colour(stem_color)
   )
   if (!is.null(theme)) options$theme <- theme
 

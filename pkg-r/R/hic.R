@@ -127,6 +127,19 @@ hic <- function(mat,
     # Guard the empty-triplet trap: `max(integer(0))` is -Inf; require rows
     # before inferring `n` from the indices.
     bv_require_nonempty(length(i), "i/j/v")
+    # A contact with no row or no column index has no cell. Before this
+    # check, `max()` and the range check below met the NA and stopped with
+    # "missing value where TRUE/FALSE needed". Python stops with the same
+    # message.
+    for (name in c("i", "j")) {
+      bad <- sum(!is.finite(if (name == "i") i else j))
+      if (bad > 0L) {
+        stop(sprintf(paste0(
+          "`%s` has %d missing or infinite value(s); every contact needs ",
+          "an `i` and a `j` index."
+        ), name, bad), call. = FALSE)
+      }
+    }
     bv_check_finite(v, "v")
     i <- as.integer(i)
     j <- as.integer(j)

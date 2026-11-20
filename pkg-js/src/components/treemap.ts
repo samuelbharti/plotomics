@@ -33,8 +33,12 @@ import {
   type RampName,
   categoricalColors,
 } from "../core/index.js";
-import { uniqueId } from "../core/dom.js";
-import { plainColour } from "../core/paint.js";
+import { guardDestroy, uniqueId } from "../core/dom.js";
+import {
+  canvasColours,
+  hideUnreadableColours,
+  plainColour,
+} from "../core/paint.js";
 import {
   stratify,
   treemap,
@@ -394,18 +398,25 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       ctx.fillRect(0, 0, plotW(), plotH());
     }
     if (layoutLeaves.length === 0) return;
+    // Each palette and theme colour as the canvas reads it, var() and
+    // currentColor included; null for one that paints nothing, whose tiles
+    // are left out. The ramp of colorBy "value" gives hex, read as it is.
+    const read = canvasColours(el);
 
     // Group tiles first: their header strip and border show the group color.
     if (opts.colorBy === "parent") {
       for (const g of layoutGroups) {
-        ctx.fillStyle = groupColor(g.data.id);
+        const fill = read(groupColor(g.data.id));
+        if (!fill) continue;
+        ctx.fillStyle = fill;
         ctx.globalAlpha = 0.85;
         ctx.fillRect(g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0);
         ctx.globalAlpha = 1;
       }
     } else {
-      for (const g of layoutGroups) {
-        ctx.fillStyle = theme.axis;
+      const axis = read(theme.axis);
+      for (const g of axis ? layoutGroups : []) {
+        ctx.fillStyle = axis as string;
         ctx.fillRect(g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0);
       }
     }
@@ -419,7 +430,12 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
       const w = leaf.x1 - leaf.x0;
       const h = leaf.y1 - leaf.y0;
       if (w <= 0 || h <= 0) continue;
-      ctx.fillStyle = fillFor(leaf, ext);
+      const fill =
+        opts.colorBy === "value"
+          ? fillFor(leaf, ext)
+          : read(fillFor(leaf, ext));
+      if (!fill) continue;
+      ctx.fillStyle = fill;
       ctx.fillRect(x, y, w, h);
       if (w > 2 && h > 2) ctx.strokeRect(x + 0.25, y + 0.25, w - 0.5, h - 0.5);
     }
@@ -432,7 +448,17 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     renderOverlay();
   }
 
-  function renderOverlay() {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, theme, svg);
+  }
+
+  function drawOverlay() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     renderBreadcrumb();
@@ -813,7 +839,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----

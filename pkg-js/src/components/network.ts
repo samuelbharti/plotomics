@@ -48,12 +48,15 @@ import {
   releaseContainer,
   categoricalColors,
 } from "../core/index.js";
+import { guardDestroy } from "../core/dom.js";
 import {
   bytesToColour,
   colourBytes,
+  hideUnreadableColours,
   luminance,
   plainColour,
   setCanvasColour,
+  textFallback,
 } from "../core/paint.js";
 import Graph from "graphology";
 import Sigma from "sigma";
@@ -159,7 +162,8 @@ const LAYER_ORDER = [
  * sigma reads: any other colour, such as "none", "grey90" or var(), it
  * draws black.
  *
- * - `label`: the label text, in the theme foreground.
+ * - `label`: the label text, in the theme foreground, or, when that
+ *   cannot be read, the default foreground for the background.
  * - `box`: the box behind a hovered label. It is the theme background when
  *   the label reads on it (a contrast of 4.5 or more), else white behind a
  *   dark label and near black behind a light one.
@@ -171,7 +175,10 @@ export function hoverColours(
   theme: Pick<PlotomicsTheme, "foreground" | "background" | "grid">,
   el?: Element,
 ): { label: string; box: string; dim: string } {
-  const fg = colourBytes(theme.foreground, el) ?? [0, 0, 0, 255];
+  const fg = colourBytes(theme.foreground, el) ??
+    colourBytes(textFallback("foreground", theme.background, el)) ?? [
+      0, 0, 0, 255,
+    ];
   const bg = colourBytes(theme.background, el);
   const opaque = bg && bg[3] === 255 ? bg : null;
   const lf = luminance(fg);
@@ -327,6 +334,13 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
 
   let graph: Graph = new Graph();
   let renderer: Sigma | null = null;
+  /**
+   * The hover colours the renderer draws with (see hoverColours) and the
+   * colour of the edges of a hovered node. The renderer reads them when it
+   * draws, so a recolour changes them in place.
+   */
+  let hover = { label: "#000000", box: "#ffffff", dim: "#e5e7eb" };
+  let hoverEdge = "#000000";
   let hovered: string | null = null;
   let neighborSet: Set<string> = new Set();
 
@@ -355,11 +369,74 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     return categoricalColors(theme.categorical, n);
   }
 
+  /**
+   * `colour` as sigma reads it: hex or rgba(), with var() and currentColor
+   * read inside the element. Sigma draws any other colour black; one that
+   * paints nothing comes back clear.
+   */
+  function sigmaColour(colour: string): string {
+    return plainColour(colour, el) ?? "rgba(0, 0, 0, 0)";
+  }
+
+  /**
+   * The colours the graph is drawn with, as read inside the element: the
+   * group palette, the default node and edge colours and the hover colours.
+   */
+  function readColours(): string {
+    return JSON.stringify([
+      paletteColors().map(sigmaColour),
+      sigmaColour(opts.defaultNodeColor),
+      sigmaColour(opts.defaultEdgeColor),
+      hoverColours(theme, el),
+    ]);
+  }
+  /** The colours of the last build or recolour, from readColours. */
+  let drawnColours = "";
+
+  /**
+   * Give the nodes, and the edges of the default colour, the colours read
+   * now, and the renderer its new default and hover colours, in place. The
+   * graph, its layout, the camera and a hover stay as they are. A new
+   * renderer started at the first view, and never sent leaveNode for the
+   * node hovered in the old one, so its tooltip and dimming stayed.
+   */
+  function recolour(colours: string) {
+    const oldEdge = (JSON.parse(drawnColours || "[]") as unknown[])[2];
+    const colorFor = groupColorResolver(
+      paletteColors().map(sigmaColour),
+      sigmaColour(opts.defaultNodeColor),
+    );
+    graph.forEachNode((node, attrs) => {
+      graph.setNodeAttribute(
+        node,
+        "color",
+        colorFor(attrs.group as string | undefined),
+      );
+    });
+    const edge = sigmaColour(opts.defaultEdgeColor);
+    graph.forEachEdge((key, attrs) => {
+      if (attrs.color === oldEdge) graph.setEdgeAttribute(key, "color", edge);
+    });
+    legend = groupLegend(graph, sigmaColour(opts.defaultNodeColor));
+    drawnColours = colours;
+    hover = hoverColours(theme, el);
+    hoverEdge = sigmaColour(opts.defaultNodeColor);
+    renderer?.setSetting(
+      "defaultNodeColor",
+      sigmaColour(opts.defaultNodeColor),
+    );
+    renderer?.setSetting("defaultEdgeColor", edge);
+    renderer?.setSetting("labelColor", { color: hover.label });
+  }
+
   function buildAndLayout(): { graph: Graph; dropped: EdgeDrops } {
-    const colorFor = groupColorResolver(paletteColors(), opts.defaultNodeColor);
+    const colorFor = groupColorResolver(
+      paletteColors().map(sigmaColour),
+      sigmaColour(opts.defaultNodeColor),
+    );
     const { graph: g, dropped } = buildGraph(data, {
-      defaultNodeColor: opts.defaultNodeColor,
-      defaultEdgeColor: opts.defaultEdgeColor,
+      defaultNodeColor: sigmaColour(opts.defaultNodeColor),
+      defaultEdgeColor: sigmaColour(opts.defaultEdgeColor),
       defaultNodeSize: opts.defaultNodeSize,
       directed: opts.directed,
       colorFor,
@@ -391,16 +468,17 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   function makeRenderer() {
     renderer?.kill();
     const labelSize = textSizes(theme).label;
-    const colours = hoverColours(theme, el);
+    hover = hoverColours(theme, el);
+    hoverEdge = sigmaColour(opts.defaultNodeColor);
     renderer = new Sigma(graph, host, {
       stagePadding: stagePadding(),
       // The padding can take the whole element, which leaves sigma's
       // container no width or height. Sigma would throw there; with this
       // setting it draws 1 px canvases, which the host hides.
       allowInvalidContainer: true,
-      defaultNodeColor: opts.defaultNodeColor,
-      defaultEdgeColor: opts.defaultEdgeColor,
-      labelColor: { color: colours.label },
+      defaultNodeColor: sigmaColour(opts.defaultNodeColor),
+      defaultEdgeColor: sigmaColour(opts.defaultEdgeColor),
+      labelColor: { color: hover.label },
       labelFont: theme.fontFamily,
       labelSize,
       // Sigma shows a set number of labels per grid cell, 100 px wide by
@@ -409,7 +487,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       labelGridCellSize: Math.round((100 * labelSize) / 11),
       defaultDrawNodeLabel: drawNodeLabel,
       defaultDrawNodeHover: (context, data, settings) =>
-        drawNodeHover(context, data, settings, colours.box),
+        drawNodeHover(context, data, settings, hover.box),
       labelRenderedSizeThreshold: opts.labelThreshold,
       renderLabels: true,
       // Directed graphs draw arrowheads via sigma's arrow edge program.
@@ -425,13 +503,13 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
         if (node === hovered || neighborSet.has(node)) {
           return { ...attrs, zIndex: 1 };
         }
-        return { ...attrs, color: colours.dim, label: "", zIndex: 0 };
+        return { ...attrs, color: hover.dim, label: "", zIndex: 0 };
       },
       edgeReducer: (edge, attrs) => {
         if (!hovered) return attrs;
         const [s, t] = graph.extremities(edge);
         if (s === hovered || t === hovered) {
-          return { ...attrs, color: opts.defaultNodeColor, zIndex: 1 };
+          return { ...attrs, color: hoverEdge, zIndex: 1 };
         }
         return { ...attrs, hidden: true };
       },
@@ -582,6 +660,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       svg.appendChild(t);
       y += rowH;
     }
+    hideUnreadableColours(el, theme, svg);
   }
 
   function showTip(node: string) {
@@ -601,7 +680,8 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     tooltip.hide();
     const built = buildAndLayout();
     graph = built.graph;
-    legend = groupLegend(graph, opts.defaultNodeColor);
+    legend = groupLegend(graph, sigmaColour(opts.defaultNodeColor));
+    drawnColours = readColours();
     reportDropped(built.dropped);
     // Sigma reads the size of its container when it is created.
     layout();
@@ -629,6 +709,11 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     },
     resize(w, h) {
       fitBox(w, h);
+      // Sigma cannot read var(), so its colours were read inside the
+      // element. A custom property the page changed since takes its new
+      // value here, as the canvas plots take it when they draw again.
+      const colours = readColours();
+      if (colours !== drawnColours) recolour(colours);
       layout();
       renderer?.resize();
       renderer?.refresh();
@@ -729,7 +814,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     return out;
   }
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----

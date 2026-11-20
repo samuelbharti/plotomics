@@ -61,6 +61,27 @@ test_that("hic() rejects out-of-range sparse indices", {
   expect_error(hic(trip, n = 3), "indices must be in \\[0, n\\)")
 })
 
+test_that("hic() names a sparse index column with a missing value, as Python does", {
+  # Before the fix both stopped with "missing value where TRUE/FALSE
+  # needed".
+  msg <- function(name, n) {
+    sprintf(paste0(
+      "`%s` has %d missing or infinite value(s); every contact needs an ",
+      "`i` and a `j` index."
+    ), name, n)
+  }
+  na_i <- data.frame(i = c(0, NA), j = c(1, 1), v = c(1, 2))
+  expect_error(hic(na_i), msg("i", 1L), fixed = TRUE)
+  expect_error(hic(na_i, n = 3), msg("i", 1L), fixed = TRUE)
+  na_j <- list(i = c(0, 1, 2), j = c(NaN, Inf, 1), v = c(1, 2, 3))
+  expect_error(hic(na_j, n = 3), msg("j", 2L), fixed = TRUE)
+  # A missing value is still a warning, and a missing cell.
+  expect_warning(
+    hic(data.frame(i = c(0, 1), j = c(1, 1), v = c(1, NA))),
+    "`v` has 1 non-finite value"
+  )
+})
+
 test_that("hic() rejects mismatched i/j/v lengths", {
   trip <- list(i = c(0L, 1L), j = c(0L), v = c(1, 2))
   expect_error(hic(trip, n = 3), "must have equal length")

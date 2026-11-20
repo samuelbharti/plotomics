@@ -260,6 +260,22 @@ export function textWidth(
 }
 
 /**
+ * How far in px the letters of `text` reach below their baseline, set at
+ * `size` px in `fontFamily` as {@link textWidth} measures it: about 0 for
+ * "R158H", and more for a letter with a descender, such as "p". Null
+ * outside a browser, where nothing is measured.
+ */
+export function textDescent(
+  text: string,
+  size: number,
+  fontFamily: string,
+): number | null {
+  textWidth(text, size, fontFamily);
+  if (!measureCtx) return null;
+  return Math.max(0, measureCtx.measureText(text).actualBoundingBoxDescent);
+}
+
+/**
  * `text` cut with an ellipsis to at most `maxWidth` px, measured as
  * {@link textWidth} does. Text that fits comes back whole, and when not
  * even the ellipsis fits the result is empty.
@@ -589,4 +605,48 @@ let idSeq = 0;
 export function uniqueId(prefix: string): string {
   idSeq += 1;
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${idSeq}`;
+}
+
+/**
+ * `instance` with a destroy() that runs once, and every other method a
+ * no-op after it: a second destroy(), and a setData(), setOptions() or
+ * resize() after destroy(), return at once, and the exports give null. A
+ * host may call any of them after the plot is gone, as when a Shiny output
+ * or a notebook cell is removed while a resize or an update is on its way.
+ * Getters, such as the selection of an embedding, read as before.
+ */
+export function guardDestroy<T extends { destroy(): void }>(instance: T): T {
+  let destroyed = false;
+  const out = {} as T;
+  for (const key of Object.keys(instance)) {
+    const d = Object.getOwnPropertyDescriptor(
+      instance,
+      key,
+    ) as PropertyDescriptor;
+    if (typeof d.value === "function") {
+      const fn = d.value as (...args: unknown[]) => unknown;
+      if (key === "destroy") {
+        d.value = () => {
+          if (destroyed) return;
+          destroyed = true;
+          fn.call(instance);
+        };
+      } else {
+        const gone =
+          key === "exportPNG"
+            ? () => Promise.resolve(null)
+            : key === "exportSVG"
+              ? () => null
+              : () => undefined;
+        d.value = (...args: unknown[]) =>
+          destroyed ? gone() : fn.apply(instance, args);
+      }
+    } else if (d.get || d.set) {
+      const { get, set } = d;
+      if (get) d.get = () => get.call(instance);
+      if (set) d.set = (v: unknown) => set.call(instance, v);
+    }
+    Object.defineProperty(out, key, d);
+  }
+  return out;
 }

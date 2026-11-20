@@ -533,3 +533,22 @@ describe("a pair of ticks on a short colour bar", () => {
     expect(formatTicks(shorter.ticks, shorter.step)).toEqual(["0.2M", "1.2M"]);
   });
 });
+
+describe("formatTicks with exponent", () => {
+  it("writes every label in the exponent form, whatever its length", () => {
+    expect(formatTicks([0, 1e10], 1e10)).toEqual(["0", "10000M"]);
+    expect(formatTicks([0, 1e10], 1e10, { exponent: true })).toEqual([
+      "0",
+      "1e+10",
+    ]);
+    expect(formatTicks([0, 5e9, 1e10], 5e9, { exponent: true })).toEqual([
+      "0",
+      "0.5e+10",
+      "1.0e+10",
+    ]);
+    // Percentages stay in fixed point.
+    expect(
+      formatTicks([0, 0.5], 0.5, { percent: true, exponent: true }),
+    ).toEqual(["0%", "50%"]);
+  });
+});
