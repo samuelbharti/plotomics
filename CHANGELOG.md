@@ -83,10 +83,10 @@ be behind the tag.
   modes), so an unknown name raises `ValueError`; it reached the browser and
   drew a blank widget.
 - JavaScript API: `niceMax` is no longer exported from the profile and UpSet
-  modules, and `layoutUpset`, `layoutDotplot` and `layoutViolin` take label
-  widths in px where they took a character count. `plotomics/core` adds
-  `textSizes`, `textWidth`, `fitText`, `categoricalColors`, `PALETTE_20` and
-  `compositePNG`.
+  modules, nor `stackLabels` from the lollipop module, and `layoutUpset`,
+  `layoutDotplot` and `layoutViolin` take label widths in px where they took a
+  character count. `plotomics/core` adds `textSizes`, `textWidth`, `fitText`,
+  `categoricalColors`, `PALETTE_20` and `compositePNG`.
 - Gridlines sit under the data in every plot, on screen and in the PNG and SVG
   exports; they crossed the dots, points, bars, curves and confidence bands. A
   grid colour of "none", a transparent colour or one the browser cannot read
@@ -142,12 +142,15 @@ be behind the tag.
 - Tooltips flip to the other side of the pointer near the right and bottom
   edges, stay inside the widget where they fit, wrap long text, and never cover
   the pointer. (#214)
-- The clustermap, spatial and treemap colour bars and the volcano and embedding
-  axes label round, exact values in one unit; very small or very narrow ranges
-  use one exponent form for the whole bar or axis. A bar with little room takes
-  a coarser step or shorter end labels, and leaves its labels out before it
-  would show two equal ones. The volcano and embedding margins widen to fit long
-  labels deep in a zoom. (#218, #219)
+- The clustermap, spatial and Hi-C colour bars and the volcano, embedding, Hi-C
+  and violin axes label round, exact values in one unit; very small or very
+  narrow ranges use one exponent form for the whole bar or axis. A Hi-C log
+  colour bar writes each power of ten in its own short unit ("100", "10k",
+  "1M"), and the exponent form from a billion up. A bar with little room takes a
+  coarser step or shorter end labels, and leaves a label out before it would cut
+  it or show two equal ones. The treemap key labels its two ends in one format.
+  The volcano and embedding margins widen to fit long labels deep in a zoom.
+  (#218, #219, #221)
 - R `km()` labels strata without the variable names ("1, FALSE" where survfit
   writes "sex=1, I(age > 65)=FALSE"), and keeps survfit's names when they cannot
   be cut safely. A Cox model fit with several `newdata` rows draws one curve per
@@ -165,6 +168,26 @@ be behind the tag.
   `symmetric` arguments, with the same errors. (#213)
 - R and Python take a data frame (pandas, polars, a tibble or a Bioconductor
   DataFrame) for lollipop `domains` and `ptms`. (#214)
+- Every theme colour and every colour option may be a CSS variable or
+  `currentColor` in every plot, on screen and in the exports, and a canvas reads
+  the new value when the page changes it and the plot draws again or resizes. A
+  colour the page cannot read leaves out the marks and keys that take it, text
+  in it takes the default theme's colour, and the browser console names it once.
+  (#221)
+- R sends colour names that CSS lacks, such as "grey50" or "steelblue4", as
+  their hex values, so every R colour name works; a name CSS knows, such as
+  "green", keeps its CSS colour. (#221)
+- Network edges with no colour of their own take a colour from the theme,
+  quieter than the nodes and labels in light and dark themes; R and Python
+  `default_edge_color` default to `NULL` and `None` for it. Network labels never
+  overlap: a label on screen keeps its place while it fits, and of two new
+  labels the larger node's stays. Group colours and the legend follow R factor
+  levels and pandas Categorical order, unused levels included, as the embedding
+  and spatial plots do. (#222)
+- The warning about missing or infinite values reads the same in R and Python
+  and names the argument the user passed. R `oncoplot()` warns about a missing
+  `burden`, and R `spatial()` about missing values in a numeric `color` column,
+  as Python does. (#222)
 
 ### Removed
 
@@ -250,6 +273,31 @@ be behind the tag.
   runs in linear time. (#216)
 - The type declarations check with `skipLibCheck: false`, and the README code
   runs as written in R, Python and JavaScript. (#217)
+- The profile tooltip prints small fractions to six significant digits; 0.00084
+  read "0.00". The UpSet total moves to its own line when it would run into the
+  top tick label. (#218)
+- A second `destroy()` threw in the volcano, embedding, heatmap and Hi-C.
+  `destroy()` now runs once in every component, every other method does nothing
+  after it, and the exports give null. (#221)
+- A KM censor mark with a missing or infinite time or survival is left out, with
+  a warning in R and Python; it was drawn at 0, and Python sent data the widget
+  could not read. Python `Km()` stops when the censor columns differ in length.
+  (#221)
+- Sparse Hi-C input with a missing or infinite `i` or `j` stops with a clear
+  message in R and Python. (#221)
+- Lollipop labels stay clear of the domain blocks at small sizes, and a
+  one-sample oncoplot reads "1 sample". (#221)
+- The volcano draws p = 0 genes above the threshold line and every other point,
+  keeps a drawn threshold line in view, and keeps large points clear of the plot
+  edges. The volcano and embedding tooltips hide when the view zooms or pans or
+  a lasso starts. (#222)
+- Treemap tooltips print values in full; 45678 read 4.6e+4. Per-edge network
+  colours resolve var() and take the default colour when missing; they drew
+  black. The network and the volcano leave the element's own background as it
+  was. R `violin()` draws with a missing `grid` value, as Python does; it
+  stopped with an error. (#222)
+- The R reference site links each source file in `pkg-r/`, where its links were
+  404s, and the spatial Shiny help example builds its own image. (#220)
 
 ## [0.2.0] - 2026-08-14
 

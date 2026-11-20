@@ -29,8 +29,9 @@
   labels and legends stay inside it.
 * Gridlines sit under the data in every plot. A `theme$grid` of "none", a
   transparent colour or an R colour name such as "grey90" draws no grid.
-* Axes and colour bars label round values in one unit per axis, and keep
-  fewer labels on a short plot so that no two overlap.
+* Axes and colour bars label round values in one unit per axis (a `hic()` log
+  colour bar writes each power of ten in its own unit), and keep fewer labels on
+  a short plot so that no two overlap.
 * `violin()` caps the widest violin at `violin_aspect` (0.8) times its row
   height, never narrower than four times the label size; `violin_aspect = NULL`
   turns the cap off.
@@ -68,8 +69,21 @@
 * `hic()` checks `vmin`, `vmax`, `vmax_percentile`, `bin_size` and `symmetric`.
 * `lollipop()` takes any data frame for `domains` and `ptms`, a Bioconductor
   `DataFrame` included.
-* Colour bars and axes label round, exact values; very small ranges use one
-  exponent form. Tooltips stay inside the widget.
+* Colour bars and axes label round, exact values, the `hic()` colour bar and
+  axes and the `violin()` value axis included; very small ranges use one
+  exponent form. The `treemap()` key labels its two ends. Tooltips stay inside
+  the widget.
+* Any theme colour or colour argument may be a CSS variable. R colour names that
+  CSS lacks, such as "grey50" or "steelblue4", are sent as hex, so every R
+  colour name works; a name CSS knows, such as "green", keeps its CSS colour. A
+  colour the browser cannot read leaves out the marks that take it, text in it
+  takes the default colour, and the browser console names it.
+* `network()` edges take a default colour from the theme when
+  `default_edge_color` is `NULL`, the new default, labels never overlap, and
+  group colours and the legend follow factor levels.
+* The warning about missing or infinite values reads the same in R and Python
+  and names the argument. `oncoplot()` warns about a missing `burden`, and
+  `spatial()` about missing values in a numeric `color` column.
 
 ## Bug fixes
 
@@ -114,6 +128,22 @@
   `hic()` draws missing bins as background.
 * A named palette in `theme$categorical` reaches the plot, and `treemap()`
   checks large trees quickly.
+* A `dotplot()` with hundreds of genes draws its dots, and `network()` hover
+  stays readable with a `theme$grid` of "none" and on a dark background.
+* `hic()` axis labels keep their units at narrow widths.
+* The `bioprofile()` tooltip prints small fractions to six significant digits,
+  and the `upset()` total moves to its own line when it would run into the top
+  tick label.
+* `km()` leaves out censor marks with a missing or infinite `time` or `surv`,
+  with a warning.
+* `hic()` with sparse input stops with a clear message when `i` or `j` is
+  missing.
+* `volcano()` draws p = 0 genes above the threshold line, and the `volcano()`
+  and `embedding()` tooltips hide when the view moves.
+* `violin()` draws with a missing `grid` value, where it stopped with an error.
+* `lollipop()` labels stay clear of domains at small sizes, a one-sample
+  `oncoplot()` reads "1 sample", `treemap()` tooltips print values in full, and
+  a missing `network()` edge colour takes the default colour.
 
 # plotomics 0.1.0
 
