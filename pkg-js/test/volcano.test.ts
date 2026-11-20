@@ -7,6 +7,7 @@ import {
   preparePoints,
   tooltipHtml,
   placeLabels,
+  roomForPoints,
   yRange,
 } from "../src/components/volcano.js";
 
@@ -144,5 +145,22 @@ describe("volcano threshold line and p = 0", () => {
     const [lo, hi] = yRange(p.yDraw, line);
     expect(lo).toBe(0);
     expect(hi).toBeCloseTo(21 * 1.04, 10);
+  });
+});
+
+describe("volcano room for large points", () => {
+  it("keeps the radius of a point free past the outermost points", () => {
+    // An axis 158 px long from 0 to 21.84 holds points from 20 to 21: 6 px
+    // above the top one. A point 20 px across needs 11 px.
+    const [lo, hi] = roomForPoints([0, 21.84], 20, 21, 11, 158);
+    const px = 158 / (hi - lo);
+    expect((hi - 21) * px).toBeGreaterThanOrEqual(11 - 1e-9);
+    expect((20 - lo) * px).toBeGreaterThanOrEqual(11 - 1e-9);
+    // Room that is there already stays as it is.
+    expect(roomForPoints([0, 100], 10, 90, 2, 500)).toEqual([0, 100]);
+    // Both ends of a range that is too short grow by the same share.
+    const [a, b] = roomForPoints([0, 1], 0, 1, 10, 100);
+    expect(-a).toBeCloseTo(b - 1, 10);
+    expect(-a * (100 / (b - a))).toBeCloseTo(10, 10);
   });
 });

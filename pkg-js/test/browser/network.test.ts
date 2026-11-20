@@ -7,7 +7,7 @@ import {
   darkTheme,
   defaultTheme,
 } from "../../src/core/index.js";
-import { drawnPixels } from "./helpers.js";
+import { HOST_BACKGROUNDS, drawnPixels, gradientPixels } from "./helpers.js";
 
 // Sigma draws with WebGL, so export and the renderer's own checks need a
 // real browser.
@@ -720,6 +720,168 @@ describe("network labels that collide", () => {
   });
 });
 
+describe("network labels during a zoom", () => {
+  /** A frame of sigma's labels canvas. */
+  interface Frame {
+    /** The labels sigma asked for: each is measured to be placed. */
+    asked: Set<string>;
+    /** The labels drawn, with the boxes of their letters. */
+    drawn: Map<string, TextBox>;
+  }
+
+  /** The labels sigma asks for and those drawn, frame by frame. */
+  function recordFrames() {
+    const proto = CanvasRenderingContext2D.prototype;
+    const realText = proto.fillText;
+    const realClear = proto.clearRect;
+    const realMeasure = proto.measureText;
+    const frames: Frame[] = [];
+    const empty = (): Frame => ({ asked: new Set(), drawn: new Map() });
+    let current = empty();
+    const labels = (c: CanvasRenderingContext2D) =>
+      c.canvas.className === "sigma-labels";
+    proto.clearRect = function (
+      this: CanvasRenderingContext2D,
+      ...args: Parameters<typeof realClear>
+    ) {
+      if (labels(this)) {
+        frames.push(current);
+        current = empty();
+      }
+      return realClear.apply(this, args);
+    };
+    proto.measureText = function (this: CanvasRenderingContext2D, text) {
+      if (labels(this)) current.asked.add(text);
+      return realMeasure.call(this, text);
+    };
+    proto.fillText = function (
+      this: CanvasRenderingContext2D,
+      text: string,
+      x: number,
+      y: number,
+    ) {
+      if (labels(this)) {
+        const m = realMeasure.call(this, text);
+        current.drawn.set(text, {
+          text,
+          left: x - m.actualBoundingBoxLeft,
+          right: x + m.actualBoundingBoxRight,
+          top: y - m.actualBoundingBoxAscent,
+          bottom: y + m.actualBoundingBoxDescent,
+        });
+      }
+      return realText.call(this, text, x, y);
+    };
+    return {
+      frames: () => [...frames, current],
+      restore() {
+        proto.fillText = realText;
+        proto.clearRect = realClear;
+        proto.measureText = realMeasure;
+      },
+    };
+  }
+
+  it("never lets a label on screen blink out for a label that comes in", {
+    timeout: 120_000,
+  }, async () => {
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    // Each size twice: the frames a zoom draws depend on the timing.
+    for (const [width, fontSize] of [
+      [400, 12],
+      [800, 16],
+      [1200, 20],
+      [600, 14],
+      [400, 12],
+      [800, 16],
+      [1200, 20],
+      [600, 14],
+    ] as const) {
+      const rec = recordFrames();
+      try {
+        const el = container(width, 480);
+        const net = createNetwork(el, {
+          data: proteins(),
+          options: { theme: { fontSize } },
+        });
+        await expect.poll(() => rec.frames().length, poll).toBeGreaterThan(1);
+        await wait(300);
+        const from = rec.frames().length;
+        const mouse = el.querySelector(
+          "canvas.sigma-mouse",
+        ) as HTMLCanvasElement;
+        const r = mouse.getBoundingClientRect();
+        const at = {
+          clientX: r.left + r.width * 0.4,
+          clientY: r.top + r.height * 0.45,
+        };
+        // Six wheel steps in and ten out.
+        for (const [steps, deltaY] of [
+          [6, -200],
+          [10, 200],
+        ] as const) {
+          for (let i = 0; i < steps; i += 1) {
+            mouse.dispatchEvent(
+              new WheelEvent("wheel", {
+                ...at,
+                deltaY,
+                bubbles: true,
+                cancelable: true,
+              }),
+            );
+            await wait(60);
+          }
+          await wait(500);
+        }
+        const frames = rec.frames().slice(from);
+        const blinks: string[] = [];
+        for (let i = 1; i < frames.length - 1; i += 1) {
+          const [before, now, after] = [
+            frames[i - 1] as Frame,
+            frames[i] as Frame,
+            frames[i + 1] as Frame,
+          ];
+          for (const [t, a] of before.drawn) {
+            const b = after.drawn.get(t);
+            // A label drawn before and after this frame, and asked for in
+            // it, was left out by the overlap check. A label sigma's grid
+            // did not ask for is left out by sigma, as without the check.
+            if (!b || now.drawn.has(t) || !now.asked.has(t)) continue;
+            // Where it would have been: halfway between the frames around.
+            const was = {
+              left: (a.left + b.left) / 2,
+              right: (a.right + b.right) / 2,
+              top: (a.top + b.top) / 2,
+              bottom: (a.bottom + b.bottom) / 2,
+            };
+            const near = (o: TextBox) =>
+              o.left < was.right + 4 &&
+              was.left < o.right + 4 &&
+              o.top < was.bottom + 4 &&
+              was.top < o.bottom + 4;
+            const newcomers = [...now.drawn.values()].filter(
+              (o) => !before.drawn.has(o.text) && near(o),
+            );
+            if (newcomers.length > 0) {
+              blinks.push(
+                `${t} in frame ${i}, for ${newcomers.map((o) => o.text)}`,
+              );
+            }
+          }
+        }
+        // Before the fix PROT14 left frame 27 at 400 px, fontSize 12, as
+        // PROT182, PROT140 and PROT131 came in and took its room.
+        expect(blinks, `${width} px, fontSize ${fontSize}`).toEqual([]);
+        expect(frames.length).toBeGreaterThan(10);
+        net.destroy();
+        el.remove();
+      } finally {
+        rec.restore();
+      }
+    }
+  });
+});
+
 describe("network labels after a new render", () => {
   it("draws the same labels again after new options and new data", async () => {
     const rec = recordLabelBoxes();
@@ -795,21 +957,21 @@ describe("network destroy", () => {
     expect(bare.getAttribute("style") ?? "").not.toContain("background");
   });
 
-  it("covers a gradient on the element, and puts it back on destroy", () => {
-    for (const given of [
-      "linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255))",
-      "var(--host-bg)",
-    ]) {
+  it("covers the element's own background, and leaves it as it was", async () => {
+    for (const [name, setup] of HOST_BACKGROUNDS) {
       const el = container();
-      el.style.setProperty("--host-bg", "linear-gradient(red, blue)");
-      el.style.background = given;
-      const before = el.style.getPropertyValue("background");
+      setup(el);
+      const style = getComputedStyle(el);
+      const [image, colour] = [style.backgroundImage, style.backgroundColor];
       const net = createNetwork(el, { data: ring() });
-      // Before the fix only the colour was set, and the gradient showed
-      // through sigma's transparent canvases.
-      expect(getComputedStyle(el).backgroundImage, given).toBe("none");
+      await new Promise((r) => setTimeout(r, 300));
+      // The plot's frame paints the theme background over the element.
+      expect(await gradientPixels(el), name).toBeLessThan(50);
       net.destroy();
-      expect(el.style.getPropertyValue("background"), given).toBe(before);
+      // Before the fix a var() shorthand followed by a colour came back
+      // with no image: the browser reads such a shorthand back as empty.
+      expect(style.backgroundImage, name).toBe(image);
+      expect(style.backgroundColor, name).toBe(colour);
       el.remove();
     }
   });

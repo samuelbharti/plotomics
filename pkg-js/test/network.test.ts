@@ -435,6 +435,36 @@ describe("network labels that keep clear of each other", () => {
     ).toEqual([1, 2]);
   });
 
+  it("keeps a label drawn in the frame before, then the larger node's", () => {
+    // Before the fix the hub's label took the room of a label already on
+    // screen, which then blinked out as a zoom brought the hub in.
+    const labels = [
+      { box: box(0, 0), size: 4, shown: true },
+      { box: box(30, 5), size: 16 },
+      { box: box(100, 0), size: 4 },
+      { box: box(110, 5), size: 8 },
+    ];
+    expect(clearLabels(labels)).toEqual([0, 3]);
+  });
+
+  it("keeps two labels on screen that touch, and the lower ranked of two that overlap", () => {
+    // Letters 0.5 px into each other, both on screen: both stay.
+    expect(
+      clearLabels([
+        { box: box(0, 0), size: 4, shown: true },
+        { box: box(39.5, 9.5), size: 4, shown: true },
+      ]),
+    ).toEqual([0, 1]);
+    // 3 px into each other: the label with the lower place in its grid
+    // cell stays, as sigma's grid keeps it longest on a zoom out.
+    expect(
+      clearLabels([
+        { box: box(0, 0), size: 4, shown: true, rank: 3 },
+        { box: box(37, 7), size: 4, shown: true, rank: 0 },
+      ]),
+    ).toEqual([1]);
+  });
+
   it("leaves out only labels that a drawn label is next to", () => {
     let s = 7;
     const rand = () => {

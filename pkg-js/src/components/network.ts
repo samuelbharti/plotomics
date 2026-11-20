@@ -61,7 +61,6 @@ import {
   plainColour,
   setCanvasColour,
 } from "../core/paint.js";
-import { keepBackground } from "../core/dom.js";
 import Graph from "graphology";
 import Sigma from "sigma";
 import {
@@ -73,6 +72,7 @@ import {
   type EdgeDrops,
   type GroupLegendEntry,
   type LabelBox,
+  type LabelCandidate,
   buildGraph,
   clearLabels,
   groupColorResolver,
@@ -89,6 +89,7 @@ export {
   type EdgeDrops,
   type GroupLegendEntry,
   type LabelBox,
+  type LabelCandidate,
   type NetworkLayout,
   LABEL_GAP,
   buildGraph,
@@ -257,19 +258,24 @@ type LabelArgs = Parameters<NodeLabelDrawingFunction>;
 /**
  * Which side of its node a label goes on, and its width. Sigma puts it on
  * the right; a label that would run past the right edge goes on the left.
- * Sets the label font on the context.
+ * A label that `wasLeft` in the frame before stays there while it fits
+ * there, so a zoom that moves its node away from the edge does not make it
+ * jump to the other side and back. Sets the label font on the context.
  */
 function labelSide(
   context: LabelArgs[0],
   data: LabelArgs[1],
   settings: LabelArgs[2],
+  wasLeft = false,
 ): { left: boolean; width: number; metrics: TextMetrics } {
   context.font = `${settings.labelWeight} ${settings.labelSize}px ${settings.labelFont}`;
   const metrics = context.measureText(data.label ?? "");
   const width = metrics.width;
   // The context is scaled by the pixel ratio; the edge is in CSS pixels.
   const edge = context.canvas.width / (context.getTransform().a || 1);
-  return { left: data.x + data.size + 3 + width > edge, width, metrics };
+  const past = data.x + data.size + 3 + width > edge;
+  const fitsLeft = data.x - data.size - 3 - width >= 0;
+  return { left: past || (wasLeft && fitsLeft), width, metrics };
 }
 
 /**
@@ -280,9 +286,10 @@ function labelPlace(
   context: LabelArgs[0],
   data: LabelArgs[1],
   settings: LabelArgs[2],
-): { x: number; baseline: number; box: LabelBox } {
+  wasLeft = false,
+): { x: number; baseline: number; box: LabelBox; left: boolean } {
   const size = settings.labelSize;
-  const { left, width, metrics } = labelSide(context, data, settings);
+  const { left, width, metrics } = labelSide(context, data, settings, wasLeft);
   const x = left
     ? Math.max(0, data.x - data.size - 3 - width)
     : data.x + data.size + 3;
@@ -294,6 +301,7 @@ function labelPlace(
   return {
     x,
     baseline,
+    left,
     box: {
       left: x - ink(metrics.actualBoundingBoxLeft, 0),
       right: x + ink(metrics.actualBoundingBoxRight, width),
@@ -304,23 +312,37 @@ function labelPlace(
 }
 
 /** A node label, on the side that {@link labelSide} picks. */
-const drawNodeLabel: NodeLabelDrawingFunction = (context, data, settings) => {
+function drawNodeLabel(
+  context: LabelArgs[0],
+  data: LabelArgs[1],
+  settings: LabelArgs[2],
+  wasLeft = false,
+): void {
   if (!data.label) return;
-  const { x, baseline } = labelPlace(context, data, settings);
+  const { x, baseline } = labelPlace(context, data, settings, wasLeft);
   context.fillStyle = settings.labelColor.color ?? "#000";
   context.fillText(data.label, x, baseline);
-};
+}
 
 /** A node label sigma asks for in a frame: where it goes, and how. */
-interface FrameLabel {
+interface FrameLabel extends LabelCandidate {
+  /** The node. */
+  key: string;
+  /** Whether the label went on the left of its node. */
+  left: boolean;
   text: string;
   x: number;
   baseline: number;
-  box: LabelBox;
-  /** The node's size on screen. */
-  size: number;
   font: string;
   color: string;
+}
+
+/**
+ * Sigma's label grid, which its types leave out: per cell, the nodes in
+ * the order the grid ranks them.
+ */
+interface LabelGrid {
+  cells?: Record<string, { key: string }[]>;
 }
 
 /**
@@ -329,17 +351,56 @@ interface FrameLabel {
  * is done, larger nodes first and with no label whose letters run into one
  * already drawn (see {@link clearLabels}). Sigma's grid shows a set number
  * of labels per cell, but labels in neighbouring cells can still overlap.
+ * The labels drawn in the frame before go first, so a zoom does not make a
+ * label blink out for a frame.
  */
 class FrameLabels {
   private labels: FrameLabel[] = [];
   private context: CanvasRenderingContext2D | null = null;
+  /** The nodes whose labels the frame before drew. */
+  private shown = new Set<string>();
+  /** The nodes whose labels went on the left in the frame before. */
+  private left = new Set<string>();
+  /** The place of each node in its cell of sigma's label grid. */
+  private ranks = new Map<string, number>();
+  /** The cells the ranks were read from. */
+  private rankedCells: unknown = null;
+
+  /**
+   * Read the place of each node in its cell of sigma's label grid, once
+   * each time sigma builds the grid again. A sigma without the grid where
+   * this looks leaves the ranks out, and labels on screen then go by the
+   * size of their node.
+   */
+  private readRanks(renderer: Sigma): void {
+    const grid = (renderer as unknown as { labelGrid?: LabelGrid }).labelGrid;
+    const cells = grid?.cells;
+    if (!cells || cells === this.rankedCells) return;
+    this.rankedCells = cells;
+    this.ranks = new Map();
+    for (const cell of Object.values(cells)) {
+      cell.forEach((c, i) => {
+        this.ranks.set(c.key, i);
+      });
+    }
+  }
 
   /** The drawing function sigma calls for each label. */
   readonly collect: NodeLabelDrawingFunction = (context, data, settings) => {
     if (!data.label) return;
-    const { x, baseline, box } = labelPlace(context, data, settings);
+    // Sigma passes the node as `key`, which its type leaves out.
+    const key = (data as { key?: string }).key ?? data.label;
+    const { x, baseline, box, left } = labelPlace(
+      context,
+      data,
+      settings,
+      this.left.has(key),
+    );
     this.context = context;
     this.labels.push({
+      key,
+      left,
+      shown: this.shown.has(key),
       text: data.label,
       x,
       baseline,
@@ -355,16 +416,37 @@ class FrameLabels {
     this.labels = [];
   }
 
-  /** Draw the labels that keep clear of each other, and forget them all. */
-  draw(): void {
+  /** Whether the label of `key` went on the left in the frame before. */
+  wasLeft(key: string): boolean {
+    return this.left.has(key);
+  }
+
+  /**
+   * Draw the labels that keep clear of each other, and forget them all.
+   * With `remember`, the next frame lets them go first. A hover hides the
+   * labels of the nodes it fades, so a frame drawn under a hover is not
+   * remembered: the labels before it come back after it.
+   */
+  draw(remember: boolean, renderer: Sigma | null): void {
     const context = this.context;
+    const drawn = new Set<string>();
+    // Sigma builds its grid again in the frame, before it asks for labels.
+    if (renderer) this.readRanks(renderer);
+    for (const label of this.labels) label.rank = this.ranks.get(label.key);
     if (context) {
       for (const i of clearLabels(this.labels)) {
         const label = this.labels[i] as FrameLabel;
         context.font = label.font;
         context.fillStyle = label.color;
         context.fillText(label.text, label.x, label.baseline);
+        drawn.add(label.key);
       }
+    }
+    if (remember) {
+      this.shown = drawn;
+      this.left = new Set(
+        this.labels.filter((label) => label.left).map((label) => label.key),
+      );
     }
     this.labels = [];
   }
@@ -379,6 +461,7 @@ function drawNodeHover(
   data: LabelArgs[1],
   settings: LabelArgs[2],
   fill: string,
+  wasLeft = false,
 ): void {
   const size = settings.labelSize;
   const pad = 2;
@@ -388,7 +471,7 @@ function drawNodeHover(
   context.shadowBlur = 8;
   context.shadowColor = "#000";
   if (typeof data.label === "string") {
-    const { left, width } = labelSide(context, data, settings);
+    const { left, width } = labelSide(context, data, settings, wasLeft);
     const boxWidth = Math.round(width + 5);
     const boxHeight = Math.round(size + 2 * pad);
     const radius = Math.max(data.size, size / 2) + pad;
@@ -415,7 +498,7 @@ function drawNodeHover(
   context.shadowOffsetX = 0;
   context.shadowOffsetY = 0;
   context.shadowBlur = 0;
-  drawNodeLabel(context, data, settings);
+  drawNodeLabel(context, data, settings, wasLeft);
 }
 
 // ---------------------------------------------------------------------------
@@ -434,9 +517,9 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   el.style.position = el.style.position || "relative";
-  // destroy() puts back the background the element had.
-  const restoreBackground = keepBackground(el);
-  el.style.background = theme.background;
+  // The plot's frame paints the theme background over the whole element,
+  // under sigma's transparent canvases, so the element's own background is
+  // left as it is.
   const host = document.createElement("div");
   host.style.cssText = "position:absolute;left:0;top:0;overflow:hidden;";
   // The legend, over the gutter right of the graph.
@@ -564,8 +647,15 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       // another is left out, the label of the smaller node first.
       labelGridCellSize: Math.round((100 * labelSize) / 11),
       defaultDrawNodeLabel: frameLabels.collect,
+      // The hovered label goes on the side its label is on.
       defaultDrawNodeHover: (context, data, settings) =>
-        drawNodeHover(context, data, settings, colours.box),
+        drawNodeHover(
+          context,
+          data,
+          settings,
+          colours.box,
+          frameLabels.wasLeft((data as { key?: string }).key ?? ""),
+        ),
       labelRenderedSizeThreshold: opts.labelThreshold,
       renderLabels: true,
       // Directed graphs draw arrowheads via sigma's arrow edge program.
@@ -594,8 +684,8 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     });
 
     renderer.on("beforeRender", () => frameLabels.clear());
-    renderer.on("afterRender", () => frameLabels.draw());
-    frameLabels.draw();
+    renderer.on("afterRender", () => frameLabels.draw(!hovered, renderer));
+    frameLabels.draw(!hovered, renderer);
     renderer.on("enterNode", ({ node }) => {
       hovered = node;
       neighborSet = new Set(graph.neighbors(node));
@@ -787,7 +877,6 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
-      el.style.background = theme.background;
       fitBox();
       applyData();
     },
@@ -847,7 +936,6 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       renderer?.kill();
       renderer = null;
       plot.remove();
-      restoreBackground();
     },
   };
 

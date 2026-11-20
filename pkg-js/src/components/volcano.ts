@@ -40,7 +40,6 @@ import {
 } from "../core/index.js";
 import { fitAxisTicks } from "../core/ticks.js";
 import { scatterBackground } from "../core/paint.js";
-import { keepBackground } from "../core/dom.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
@@ -270,6 +269,63 @@ export function yRange(
   return range;
 }
 
+/**
+ * Widen `range`, the range of an axis `length` px long that holds the
+ * points from `lo` to `hi`, so that each end keeps at least `room` px past
+ * the outermost point: a point `2 * room` px across then ends inside the
+ * plot. The room the range gives already is kept. A point too large for
+ * the axis takes at most 45% of it at each end.
+ */
+export function roomForPoints(
+  range: [number, number],
+  lo: number,
+  hi: number,
+  room: number,
+  length: number,
+): [number, number] {
+  if (
+    !(length > 0) ||
+    !(room > 0) ||
+    !Number.isFinite(lo) ||
+    !Number.isFinite(hi) ||
+    hi < lo
+  ) {
+    return range;
+  }
+  const f = Math.min(room / length, 0.45);
+  const below = Math.max(0, lo - range[0]);
+  const above = Math.max(0, range[1] - hi);
+  const d = hi - lo;
+  // The span s holds the points and, at each end, the larger of the room
+  // given and the share f of s: s = d + max(below, f s) + max(above, f s).
+  // Each way of taking the two maxima gives a span, and the one that
+  // holds is the largest of them.
+  const span = Math.max(
+    d + below + above,
+    (d + below) / (1 - f),
+    (d + above) / (1 - f),
+    d / (1 - 2 * f),
+  );
+  return [lo - Math.max(below, f * span), hi + Math.max(above, f * span)];
+}
+
+/**
+ * The smallest and the largest finite value, read in one pass, so a
+ * million points do not overflow the call stack as a spread would.
+ * NaN for both when no value is finite.
+ */
+function finiteExtent(values: ArrayLike<number>): [number, number] {
+  let lo = Number.POSITIVE_INFINITY;
+  let hi = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i] as number;
+    if (!Number.isFinite(v)) continue;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  return lo <= hi ? [lo, hi] : [Number.NaN, Number.NaN];
+}
+
 /** Tooltip HTML for one point; the label is escaped. */
 export function tooltipHtml(label: string, x: number, y: number): string {
   const yText = y === Infinity ? "Inf (p = 0)" : y.toFixed(2);
@@ -391,12 +447,9 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   // because regl-scatterplot leaves it transparent where there is no point.
   // The one over it holds the axes, the threshold lines and the labels.
   el.style.position = el.style.position || "relative";
-  // regl-scatterplot leaves the canvas transparent, so the theme background is
-  // painted on the element: the plot panel and the axis margins alike.
-  // It is the whole background, so an image or a gradient the element
-  // has does not show through. destroy() puts back what the element had.
-  const restoreBackground = keepBackground(el);
-  el.style.background = theme.background;
+  // regl-scatterplot leaves the canvas transparent. The plot's frame paints
+  // the theme background under it, over the whole element, the axis margins
+  // included, so the element's own background is left as it is.
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;display:block;";
   const under = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
@@ -590,10 +643,30 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     const fitW = innerW();
     const fitH = innerH();
     if (fit) {
-      xDomain = symmetricExtent(pts.x);
-      yDomain = yRange(
-        pts.yDraw,
-        opts.showThresholdLines ? -Math.log10(opts.pThreshold) : undefined,
+      // Each side keeps the radius of a point, and a pixel, past the
+      // outermost points, so a large point is not cut by the plot's edge.
+      const room = opts.pointSize / 2 + 1;
+      const [xLo, xHi] = finiteExtent(pts.x);
+      const [yLo, yHi] = finiteExtent(pts.yDraw);
+      const [x0, x1] = roomForPoints(
+        symmetricExtent(pts.x),
+        xLo,
+        xHi,
+        room,
+        fitW,
+      );
+      // The x range stays centred on 0.
+      const half = Math.max(Math.abs(x0), Math.abs(x1));
+      xDomain = [-half, half];
+      yDomain = roomForPoints(
+        yRange(
+          pts.yDraw,
+          opts.showThresholdLines ? -Math.log10(opts.pThreshold) : undefined,
+        ),
+        yLo,
+        yHi,
+        room,
+        fitH,
       );
       [baseX, baseY] = baseDomains(xDomain, yDomain, fitW, fitH);
     }
@@ -934,7 +1007,6 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       const prevOpts = opts;
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
-      el.style.background = theme.background;
       const prev = margin;
       const prevBase = baseMargin;
       const [prevW, prevH] = [width, height];
@@ -1016,7 +1088,6 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       tooltip.destroy();
       scatterplot.destroy();
       plot.remove();
-      restoreBackground();
     },
   };
 

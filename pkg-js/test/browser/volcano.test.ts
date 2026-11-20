@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { createVolcano } from "../../src/components/volcano.js";
 import { type PlotomicsInstance, darkTheme } from "../../src/core/index.js";
-import { canvasPNG, drawnPixels, type MarkBox, markBox } from "./helpers.js";
+import {
+  HOST_BACKGROUNDS,
+  canvasPNG,
+  drawnPixels,
+  gradientPixels,
+  type MarkBox,
+  markBox,
+} from "./helpers.js";
 
 // Volcano behaviour that needs a real browser: framing with p = 0 and missing
 // values, label placement, a theme change reaching the canvas, and the
@@ -159,17 +166,22 @@ describe("volcano in a browser", () => {
     }
   });
 
-  it("paints the theme background, also when the theme changes later", () => {
+  it("paints the theme background, also when the theme changes later", async () => {
     const el = container(600, 400);
     const v = createVolcano(el, {
       data: { columns: { x: spread(200, -3, 3, 8), y: spread(200, 0, 5, 9) } },
     });
     instances.push(v);
-    // regl-scatterplot leaves its canvas transparent, so the colour sits on
-    // the element behind it.
-    expect(getComputedStyle(el).backgroundColor).toBe("rgb(255, 255, 255)");
+    // regl-scatterplot leaves its canvas transparent; the plot's frame
+    // paints the colour behind it, over the whole element, here in the
+    // theme padding.
+    expect(await pngPixel(await screenPNG(el), 600, 3, 3)).toEqual([
+      255, 255, 255,
+    ]);
     v.setOptions({ theme: { background: "#000000" } });
-    expect(getComputedStyle(el).backgroundColor).toBe("rgb(0, 0, 0)");
+    expect(await pngPixel(await screenPNG(el), 600, 3, 3)).toEqual([0, 0, 0]);
+    // The element's own background is left as it is.
+    expect(el.style.backgroundColor).toBe("");
     v.destroy();
     instances = [];
     expect(el.style.backgroundColor).toBe("");
@@ -1042,24 +1054,63 @@ describe("volcano refit for a new threshold", () => {
 });
 
 describe("volcano background", () => {
-  it("covers a gradient on the element, and puts it back on destroy", () => {
-    for (const given of [
-      "linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255))",
-      "var(--host-bg)",
-    ]) {
+  it("covers the element's own background, and leaves it as it was", async () => {
+    for (const [name, setup] of HOST_BACKGROUNDS) {
       const el = container(600, 400);
-      el.style.setProperty("--host-bg", "linear-gradient(red, blue)");
-      el.style.background = given;
-      const before = el.style.getPropertyValue("background");
+      setup(el);
+      const style = getComputedStyle(el);
+      const [image, colour] = [style.backgroundImage, style.backgroundColor];
       const v = createVolcano(el, {
-        data: { columns: { x: [-1, 1], y: [1, 2] } },
+        data: { columns: { x: [-0.5, 0.5], y: [0.5, 1] } },
+        options: { labelTopN: 0 },
       });
-      // Before the fix only the colour was set, and the gradient showed
-      // through the transparent canvas.
-      expect(getComputedStyle(el).backgroundImage, given).toBe("none");
+      await expect
+        .poll(async () => {
+          const png = await canvasPNG(el);
+          return png ? drawnPixels(png) : 0;
+        }, poll)
+        .toBeGreaterThan(0);
+      // The plot's frame paints the theme background over the element.
+      expect(await gradientPixels(el), name).toBeLessThan(50);
       v.destroy();
-      expect(el.style.getPropertyValue("background"), given).toBe(before);
+      // Before the fix a var() shorthand followed by a colour came back
+      // with no image: the browser reads such a shorthand back as empty.
+      expect(style.backgroundImage, name).toBe(image);
+      expect(style.backgroundColor, name).toBe(colour);
       el.remove();
+    }
+  });
+});
+
+describe("volcano large points", () => {
+  it("keeps a large point inside the plot at every side", async () => {
+    const inf = Number.POSITIVE_INFINITY;
+    for (const y of [
+      [inf, inf, 20],
+      [5, 10, 20],
+    ]) {
+      const el = container(600, 240);
+      instances.push(
+        createVolcano(el, {
+          data: { columns: { x: [2, -2, 3], y } },
+          options: { pointSize: 20, labelTopN: 0 },
+        }),
+      );
+      await expect
+        .poll(async () => {
+          const png = await canvasPNG(el);
+          return png ? drawnPixels(png) : 0;
+        }, poll)
+        .toBeGreaterThan(0);
+      await new Promise((r) => setTimeout(r, 300));
+      const box = (await markBox((await canvasPNG(el)) as Blob)) as MarkBox;
+      // Before the fix the top point touched row 0: the 4% of room above
+      // it was less than its radius of 10 px.
+      const at = JSON.stringify(y.map(String));
+      expect(box.top, at).toBeGreaterThan(0);
+      expect(box.left, at).toBeGreaterThan(0);
+      expect(box.bottom, at).toBeLessThan(1);
+      expect(box.right, at).toBeLessThan(1);
     }
   });
 });

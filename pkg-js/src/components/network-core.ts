@@ -378,34 +378,71 @@ export interface LabelBox {
   bottom: number;
 }
 
+/** A node label that {@link clearLabels} may draw. */
+export interface LabelCandidate {
+  /** The box the letters of the label fill. */
+  box: LabelBox;
+  /** The size of the node on screen. */
+  size: number;
+  /** Whether the frame before drew the label. */
+  shown?: boolean;
+  /** The place of the node in its cell of sigma's label grid, 0 first. */
+  rank?: number;
+}
+
 /** Least room between the letters of two node labels, in px. */
 export const LABEL_GAP = 2;
+/**
+ * How far, in px, the letters of two labels that were both on screen may
+ * run into each other before one goes: less than a pixel, which does not
+ * show as an overlap.
+ */
+const SHOWN_OVERLAP = 1;
 /** Side of the cells that file label boxes for the overlap check, in px. */
 const LABEL_CELL = 64;
 
 /**
- * The node labels to draw in a frame, as indices into `labels`, so that no
- * two drawn labels come within `gap` px of each other. Each box holds the
- * letters of its label. Larger nodes go first, as sigma ranks the labels
- * of one grid cell, and labels of nodes of one size go in the order given.
- * A label is left out only when its letters come within `gap` of the
- * letters of a label already taken, so every label left out has a drawn
- * one next to it.
+ * The node labels to draw in a frame, as indices into `labels`, so that
+ * their letters do not run into each other. Each box holds the letters of
+ * its label. A label is left out when its letters come within `gap` px of
+ * the letters of a label already taken, so every label left out has a
+ * drawn one next to it.
+ *
+ * The labels `shown` in the frame before go first, so a label on screen
+ * keeps its place while it still fits, and does not blink out for a frame
+ * as a zoom brings new labels in. Two of them go only when their letters
+ * overlap by {@link SHOWN_OVERLAP} px or more, so a zoom that brings them a
+ * hair closer for a frame does not make one blink. Of two such labels the
+ * one with the lower `rank` stays: the place of its node in its cell of
+ * sigma's label grid. As a zoom out thins the grid it keeps that label
+ * longest, so the other one does not come back for a frame when the grid
+ * drops the label that took its room. Then larger nodes go first, as
+ * sigma ranks the labels of one grid cell, and labels of nodes of one size
+ * go in the order given.
  */
 export function clearLabels(
-  labels: readonly { box: LabelBox; size: number }[],
+  labels: readonly LabelCandidate[],
   gap = LABEL_GAP,
 ): number[] {
-  const size = (i: number) => (labels[i] as { size: number }).size;
+  const at = (i: number) => labels[i] as LabelCandidate;
+  const rank = (i: number) =>
+    at(i).shown ? (at(i).rank ?? Number.POSITIVE_INFINITY) : 0;
   const order = labels
     .map((_, i) => i)
-    .sort((a, b) => size(b) - size(a) || a - b);
+    .sort(
+      (a, b) =>
+        Number(!!at(b).shown) - Number(!!at(a).shown) ||
+        rank(a) - rank(b) ||
+        at(b).size - at(a).size ||
+        a - b,
+    );
   // The boxes taken so far, filed by cell, so a box is checked only
   // against the boxes near it.
-  const cells = new Map<string, LabelBox[]>();
+  const cells = new Map<string, { box: LabelBox; shown: boolean }[]>();
   const kept: number[] = [];
   for (const i of order) {
-    const box = (labels[i] as { box: LabelBox }).box;
+    const { box } = at(i);
+    const shown = !!at(i).shown;
     const x0 = Math.floor((box.left - gap) / LABEL_CELL);
     const x1 = Math.floor((box.right + gap) / LABEL_CELL);
     const y0 = Math.floor((box.top - gap) / LABEL_CELL);
@@ -415,19 +452,21 @@ export function clearLabels(
       for (let cy = y0; cy <= y1; cy += 1) keys.push(`${cx},${cy}`);
     }
     const near = keys.some((key) =>
-      (cells.get(key) ?? []).some(
-        (o) =>
-          box.left < o.right + gap &&
-          o.left < box.right + gap &&
-          box.top < o.bottom + gap &&
-          o.top < box.bottom + gap,
-      ),
+      (cells.get(key) ?? []).some((o) => {
+        const g = shown && o.shown ? -SHOWN_OVERLAP : gap;
+        return (
+          box.left < o.box.right + g &&
+          o.box.left < box.right + g &&
+          box.top < o.box.bottom + g &&
+          o.box.top < box.bottom + g
+        );
+      }),
     );
     if (near) continue;
     for (const key of keys) {
       const cell = cells.get(key);
-      if (cell) cell.push(box);
-      else cells.set(key, [box]);
+      if (cell) cell.push({ box, shown });
+      else cells.set(key, [{ box, shown }]);
     }
     kept.push(i);
   }
