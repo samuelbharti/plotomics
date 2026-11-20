@@ -59,6 +59,8 @@ export interface VolcanoOptions {
   colors: { up: string; down: string; ns: string };
   xLabel: string;
   yLabel: string;
+  /** Draw the dashed fold-change and p-value threshold lines. The y axis
+   * then always reaches the p-value line. */
   showThresholdLines: boolean;
   /** Label the N most significant up- and down-regulated genes. */
   labelTopN: number;
@@ -182,18 +184,25 @@ export interface VolcanoPoints {
   yDraw: Float64Array;
 }
 
+/** Whether a y threshold is one the plot shows: finite and above 0. */
+function shownThreshold(y: number | undefined): y is number {
+  return y !== undefined && Number.isFinite(y) && y > 0;
+}
+
 /**
  * Read the x and y columns into the points that can be drawn. A row with a
  * missing x or y (null, which is how R's JSON sends NA, or NaN) is left out.
  * A y of +Infinity (p = 0, common in differential-expression tables) is kept:
- * it is classified as significant and drawn just above the highest finite y.
- * `infiniteRows` lists rows whose y is +Infinity even though the column holds
- * null there; R uses it, because JSON has no Infinity.
+ * it is classified as significant and drawn just above the highest finite y
+ * and the threshold line at `yThreshold`, so it sits with the significant
+ * genes. `infiniteRows` lists rows whose y is +Infinity even though the
+ * column holds null there; R uses it, because JSON has no Infinity.
  */
 export function preparePoints(
   xCol: Column,
   yCol: Column,
   infiniteRows?: ArrayLike<number>,
+  yThreshold?: number,
 ): VolcanoPoints {
   const n = Math.min(xCol.length, yCol.length);
   const inf = new Set<number>();
@@ -224,9 +233,11 @@ export function preparePoints(
       if (y > hi) hi = y;
     }
   }
-  // 5% of the drawn y range above the highest finite y. The axis starts at
-  // 0, so the range is measured from 0, which keeps p = 0 clear of the top
-  // finite point when the finite values sit in a narrow band.
+  // 5% of the drawn y range above the highest finite y and the threshold
+  // line. The axis starts at 0, so the range is measured from 0, which
+  // keeps p = 0 clear of the top finite point when the finite values sit
+  // in a narrow band.
+  if (shownThreshold(yThreshold) && yThreshold > hi) hi = yThreshold;
   const span = hi - Math.min(0, lo);
   const top = Number.isFinite(hi) ? hi + 0.05 * (span || 1) : 1;
   return {
@@ -235,6 +246,89 @@ export function preparePoints(
     y: Float64Array.from(ys),
     yDraw: Float64Array.from(ys, (y) => (y === Infinity ? top : y)),
   };
+}
+
+/**
+ * The y range a fit shows: the drawn y values with 4% of their range above
+ * and below, down to 0 at least. The highest point, or the threshold line
+ * at `yThreshold` when the plot draws one, keeps 4% of the axis above it,
+ * so the line is always in view and p = 0 drawn above a high finite y is
+ * not cut by the top of the plot.
+ */
+export function yRange(
+  yDraw: ArrayLike<number>,
+  yThreshold?: number,
+): [number, number] {
+  const range = paddedExtent(yDraw as Column);
+  range[0] = Math.min(0, range[0]);
+  let high = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i < yDraw.length; i += 1) {
+    const y = yDraw[i] as number;
+    if (Number.isFinite(y) && y > high) high = y;
+  }
+  if (shownThreshold(yThreshold) && yThreshold > high) high = yThreshold;
+  if (Number.isFinite(high)) {
+    const top = high + 0.04 * (high - range[0]);
+    if (range[1] < top) range[1] = top;
+  }
+  return range;
+}
+
+/**
+ * Widen `range`, the range of an axis `length` px long that holds the
+ * points from `lo` to `hi`, so that each end keeps at least `room` px past
+ * the outermost point: a point `2 * room` px across then ends inside the
+ * plot. The room the range gives already is kept. A point too large for
+ * the axis takes at most 45% of it at each end.
+ */
+export function roomForPoints(
+  range: [number, number],
+  lo: number,
+  hi: number,
+  room: number,
+  length: number,
+): [number, number] {
+  if (
+    !(length > 0) ||
+    !(room > 0) ||
+    !Number.isFinite(lo) ||
+    !Number.isFinite(hi) ||
+    hi < lo
+  ) {
+    return range;
+  }
+  const f = Math.min(room / length, 0.45);
+  const below = Math.max(0, lo - range[0]);
+  const above = Math.max(0, range[1] - hi);
+  const d = hi - lo;
+  // The span s holds the points and, at each end, the larger of the room
+  // given and the share f of s: s = d + max(below, f s) + max(above, f s).
+  // Each way of taking the two maxima gives a span, and the one that
+  // holds is the largest of them.
+  const span = Math.max(
+    d + below + above,
+    (d + below) / (1 - f),
+    (d + above) / (1 - f),
+    d / (1 - 2 * f),
+  );
+  return [lo - Math.max(below, f * span), hi + Math.max(above, f * span)];
+}
+
+/**
+ * The smallest and the largest finite value, read in one pass, so a
+ * million points do not overflow the call stack as a spread would.
+ * NaN for both when no value is finite.
+ */
+function finiteExtent(values: ArrayLike<number>): [number, number] {
+  let lo = Number.POSITIVE_INFINITY;
+  let hi = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i] as number;
+    if (!Number.isFinite(v)) continue;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  return lo <= hi ? [lo, hi] : [Number.NaN, Number.NaN];
 }
 
 /** Tooltip HTML for one point; the label is escaped. */
@@ -358,11 +452,9 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   // because regl-scatterplot leaves it transparent where there is no point.
   // The one over it holds the axes, the threshold lines and the labels.
   el.style.position = el.style.position || "relative";
-  // regl-scatterplot leaves the canvas transparent, so the theme background is
-  // painted on the element: the plot panel and the axis margins alike.
-  // destroy() puts back what the element had.
-  const priorBackground = el.style.backgroundColor;
-  el.style.backgroundColor = theme.background;
+  // regl-scatterplot leaves the canvas transparent. The plot's frame paints
+  // the theme background under it, over the whole element, the axis margins
+  // included, so the element's own background is left as it is.
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;display:block;";
   const under = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
@@ -394,14 +486,31 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     if (data.columns.x && isStartView(scatterplot)) applyData();
   }, 120);
 
-  scatterplot.subscribe("pointOver", (i: number) => showTip(i));
+  scatterplot.subscribe("pointOver", (i: number) => {
+    // A drag pans the view or draws a lasso: no tooltip until it ends.
+    if (pressed) forgetHover();
+    else showTip(i);
+  });
   scatterplot.subscribe("pointOut", () => tooltip.hide());
   scatterplot.subscribe("view", () => {
     // Domains were mutated in place by the scatterplot; redraw the overlay.
     xDomain = xScale.domain() as [number, number];
     yDomain = yScale.domain() as [number, number];
     renderOverlay();
+    // The point the tooltip names has moved with the view.
+    forgetHover();
   });
+  // A lasso stops the hover, and the tooltip would stay through it.
+  scatterplot.subscribe("lassoStart", () => forgetHover());
+
+  /**
+   * Hide the tooltip, and forget the hovered point, so the next move of
+   * the pointer names the point under it, also when that is the same one.
+   */
+  function forgetHover() {
+    tooltip.hide();
+    scatterplot.hover(-1, { preventEvent: true });
+  }
 
   // The points drawn last, in drawn order. regl-scatterplot reports drawn
   // indices, and rows with a missing value are not drawn, so map back here.
@@ -419,9 +528,12 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   }
 
   const lastPointer = { x: 0, y: 0 };
+  /** Whether a mouse button was down at the last move over the plot. */
+  let pressed = false;
   const onMove = (e: MouseEvent) => {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
+    pressed = e.buttons !== 0;
   };
   el.addEventListener("mousemove", onMove);
 
@@ -525,6 +637,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
             cols.x,
             cols.y,
             data.meta?.yInfinite as number[] | undefined,
+            -Math.log10(opts.pThreshold),
           )
         : preparePoints([], []);
     if (pts.rows.length === 0) {
@@ -535,9 +648,31 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     const fitW = innerW();
     const fitH = innerH();
     if (fit) {
-      xDomain = symmetricExtent(pts.x);
-      yDomain = paddedExtent(pts.yDraw);
-      yDomain[0] = Math.min(0, yDomain[0]);
+      // Each side keeps the radius of a point, and a pixel, past the
+      // outermost points, so a large point is not cut by the plot's edge.
+      const room = opts.pointSize / 2 + 1;
+      const [xLo, xHi] = finiteExtent(pts.x);
+      const [yLo, yHi] = finiteExtent(pts.yDraw);
+      const [x0, x1] = roomForPoints(
+        symmetricExtent(pts.x),
+        xLo,
+        xHi,
+        room,
+        fitW,
+      );
+      // The x range stays centred on 0.
+      const half = Math.max(Math.abs(x0), Math.abs(x1));
+      xDomain = [-half, half];
+      yDomain = roomForPoints(
+        yRange(
+          pts.yDraw,
+          opts.showThresholdLines ? -Math.log10(opts.pThreshold) : undefined,
+        ),
+        yLo,
+        yHi,
+        room,
+        fitH,
+      );
       [baseX, baseY] = baseDomains(xDomain, yDomain, fitW, fitH);
     }
     const [xBase, yBase] = [baseX, baseY];
@@ -888,9 +1023,9 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       applyData();
     },
     setOptions(next) {
+      const prevOpts = opts;
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
-      el.style.backgroundColor = theme.background;
       const prev = margin;
       const prevBase = baseMargin;
       const [prevW, prevH] = [width, height];
@@ -907,9 +1042,18 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         applyData(isStartView(scatterplot));
         return;
       }
-      // No other option changes the data range, so the current pan/zoom
-      // stays.
-      applyData(false);
+      // A new p threshold moves its line and the p = 0 genes above it, and
+      // the line, shown or hidden, joins or leaves the y range, so the plot
+      // fits again while the view is untouched. No other option changes the
+      // data range, so the current pan/zoom stays.
+      // A new point size changes the room kept for the points at the
+      // edges, so it fits again too.
+      applyData(
+        (opts.pThreshold !== prevOpts.pThreshold ||
+          opts.showThresholdLines !== prevOpts.showThresholdLines ||
+          opts.pointSize !== prevOpts.pointSize) &&
+          isStartView(scatterplot),
+      );
     },
     resize(w, h) {
       if (w === outerW && h === outerH) return;
@@ -966,7 +1110,6 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       tooltip.destroy();
       scatterplot.destroy();
       plot.remove();
-      el.style.backgroundColor = priorBackground;
     },
   };
 

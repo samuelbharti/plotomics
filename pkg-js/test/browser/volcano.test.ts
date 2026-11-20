@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { createVolcano } from "../../src/components/volcano.js";
 import { type PlotomicsInstance, darkTheme } from "../../src/core/index.js";
-import { canvasPNG, drawnPixels, type MarkBox, markBox } from "./helpers.js";
+import {
+  HOST_BACKGROUNDS,
+  canvasPNG,
+  drawnPixels,
+  gradientPixels,
+  type MarkBox,
+  markBox,
+} from "./helpers.js";
 
 // Volcano behaviour that needs a real browser: framing with p = 0 and missing
 // values, label placement, a theme change reaching the canvas, and the
@@ -159,17 +166,22 @@ describe("volcano in a browser", () => {
     }
   });
 
-  it("paints the theme background, also when the theme changes later", () => {
+  it("paints the theme background, also when the theme changes later", async () => {
     const el = container(600, 400);
     const v = createVolcano(el, {
       data: { columns: { x: spread(200, -3, 3, 8), y: spread(200, 0, 5, 9) } },
     });
     instances.push(v);
-    // regl-scatterplot leaves its canvas transparent, so the colour sits on
-    // the element behind it.
-    expect(getComputedStyle(el).backgroundColor).toBe("rgb(255, 255, 255)");
+    // regl-scatterplot leaves its canvas transparent; the plot's frame
+    // paints the colour behind it, over the whole element, here in the
+    // theme padding.
+    expect(await pngPixel(await screenPNG(el), 600, 3, 3)).toEqual([
+      255, 255, 255,
+    ]);
     v.setOptions({ theme: { background: "#000000" } });
-    expect(getComputedStyle(el).backgroundColor).toBe("rgb(0, 0, 0)");
+    expect(await pngPixel(await screenPNG(el), 600, 3, 3)).toEqual([0, 0, 0]);
+    // The element's own background is left as it is.
+    expect(el.style.backgroundColor).toBe("");
     v.destroy();
     instances = [];
     expect(el.style.backgroundColor).toBe("");
@@ -508,7 +520,8 @@ describe("volcano tick labels", () => {
             y: Array.from({ length: n }, (_, i) => (i / n) * 0.03),
           },
         },
-        options: { labelTopN: 0 },
+        // The y axis reaches a threshold line it draws, here at 1.3.
+        options: { labelTopN: 0, showThresholdLines: false },
       }),
     );
     const narrowX = container(800, 480);
@@ -750,6 +763,404 @@ describe("volcano zoomed past the precision of its numbers", () => {
       const b = t.getBoundingClientRect();
       expect(b.left, t.textContent ?? "").toBeGreaterThanOrEqual(plot.left);
       expect(b.top, t.textContent ?? "").toBeGreaterThanOrEqual(plot.top);
+    }
+  });
+});
+
+describe("volcano p = 0 and the threshold line", () => {
+  /** Where the up and down points, and the grey ones, sit on the canvas. */
+  async function pointRows(el: HTMLElement) {
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const png = (await canvasPNG(el)) as Blob;
+    const bitmap = await createImageBitmap(png);
+    const c = document.createElement("canvas");
+    c.width = bitmap.width;
+    c.height = bitmap.height;
+    const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    const ratio = c.height / canvas.clientHeight;
+    // Rows in CSS px from the top of the canvas.
+    const hit = { top: Number.POSITIVE_INFINITY, bottom: -1 };
+    const ns = { top: Number.POSITIVE_INFINITY, bottom: -1 };
+    for (let i = 0; i < d.length; i += 4) {
+      const [r, g, b, a] = [d[i], d[i + 1], d[i + 2], d[i + 3]] as number[];
+      if ((a as number) < 128) continue;
+      const y = Math.floor(i / 4 / c.width);
+      // Up points are orange and down points blue; the others grey, on
+      // the white background.
+      const box =
+        Math.abs((r as number) - (b as number)) > 60
+          ? hit
+          : Math.abs((r as number) - (g as number)) < 20 && (r as number) < 230
+            ? ns
+            : null;
+      if (!box) continue;
+      box.top = Math.min(box.top, y / ratio);
+      box.bottom = Math.max(box.bottom, (y + 1) / ratio);
+    }
+    return { hit, ns };
+  }
+
+  /** The y of the dashed threshold line from the top of the point canvas. */
+  function thresholdY(el: HTMLElement): number | null {
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const line = Array.from(
+      el.querySelectorAll("svg line[stroke-dasharray]"),
+    ).find((l) => l.getAttribute("y1") === l.getAttribute("y2"));
+    if (!line) return null;
+    return (
+      Number(line.getAttribute("y1")) - Number.parseFloat(canvas.style.top)
+    );
+  }
+
+  async function draw(y: number[]) {
+    const el = container(800, 480);
+    instances.push(
+      createVolcano(el, {
+        data: { columns: { x: [2, -2, 3], y, label: ["a", "b", "c"] } },
+      }),
+    );
+    await expect
+      .poll(async () => (await pointRows(el)).hit.bottom, poll)
+      .toBeGreaterThan(0);
+    await new Promise((r) => setTimeout(r, 300));
+    return { rows: await pointRows(el), line: thresholdY(el) };
+  }
+
+  it("draws p = 0 above the threshold line when every gene has it", async () => {
+    const { rows, line } = await draw([
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    ]);
+    // Before the fix the genes sat at y 1.0, under the line at 1.3.
+    expect(line).not.toBeNull();
+    expect(rows.hit.bottom).toBeLessThan(line as number);
+  });
+
+  it("keeps room above p = 0 next to a high finite y", async () => {
+    const { rows } = await draw([
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+      20,
+    ]);
+    // Before the fix p = 0 sat at 21 with the axis top at 21.04, so the
+    // top of the plot cut the points.
+    expect(rows.hit.top).toBeGreaterThan(6);
+  });
+
+  it("keeps the threshold line in view, between p = 0 and the finite genes", async () => {
+    const { rows, line } = await draw([
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+      0.5,
+    ]);
+    // Before the fix the y axis ended at about 0.54, so the line at 1.3
+    // was out of view and p = 0 sat at about 0.52.
+    expect(line).not.toBeNull();
+    expect(rows.hit.bottom).toBeLessThan(line as number);
+    expect(rows.ns.top).toBeGreaterThan(line as number);
+  });
+});
+
+describe("volcano tooltip after the view moves", () => {
+  /**
+   * A volcano whose middle gene sits at the centre of the plot (x is
+   * centred on 0, and y runs from 0 to 8 with the same room above and
+   * below), with the tooltip naming it.
+   */
+  async function hovered() {
+    const el = container(800, 400);
+    instances.push(
+      createVolcano(el, {
+        data: {
+          columns: { x: [-3, 0, 3], y: [0, 4, 8], label: ["G1", "G2", "G3"] },
+        },
+        options: { labelTopN: 0, pointSize: 8 },
+      }),
+    );
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(0);
+    await frame();
+    await frame();
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const r = canvas.getBoundingClientRect();
+    const centre = {
+      clientX: r.left + r.width / 2,
+      clientY: r.top + r.height / 2,
+    };
+    const tip = () =>
+      Array.from(el.children).find((c) => c.tagName === "DIV") as HTMLElement;
+    const move = async () => {
+      canvas.dispatchEvent(
+        new MouseEvent("mousemove", { ...centre, bubbles: true }),
+      );
+      await frame();
+      await frame();
+    };
+    await move();
+    expect(tip().style.opacity).toBe("1");
+    expect(tip().textContent).toContain("G2");
+    return { el, canvas, centre, tip, move };
+  }
+
+  /** Press at the centre, drag 80 px right and 40 px down, and let go. */
+  async function drag(
+    canvas: HTMLCanvasElement,
+    centre: { clientX: number; clientY: number },
+    extra: MouseEventInit = {},
+  ) {
+    const at = (dx: number) => ({
+      clientX: centre.clientX + dx,
+      clientY: centre.clientY + dx / 2,
+      bubbles: true,
+      buttons: 1,
+      ...extra,
+    });
+    canvas.dispatchEvent(new MouseEvent("mousedown", at(0)));
+    // The moves go to the canvas under the pointer, as a browser sends
+    // them, and reach the window the scatterplot listens on.
+    for (let k = 1; k <= 10; k += 1) {
+      canvas.dispatchEvent(new MouseEvent("mousemove", at(8 * k)));
+      await new Promise((res) => setTimeout(res, 20));
+    }
+    canvas.dispatchEvent(new MouseEvent("mouseup", { ...at(80), buttons: 0 }));
+  }
+
+  it("hides the tooltip after a zoom, and shows it again on a move", async () => {
+    const { el, canvas, centre, tip, move } = await hovered();
+    const start = yTicks(el).join(",");
+    for (let i = 0; i < 5; i += 1) {
+      canvas.dispatchEvent(
+        new WheelEvent("wheel", {
+          ...centre,
+          deltaY: -120,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await frame();
+    }
+    await expect.poll(() => yTicks(el).join(","), slow).not.toBe(start);
+    await new Promise((res) => setTimeout(res, 300));
+    // Before the fix the tooltip stayed until the pointer moved.
+    expect(tip().style.opacity).not.toBe("1");
+    // The gene is still under the pointer, and a move names it again. A
+    // slow machine can still be settling the view, which hides it again,
+    // so the move is made until the tooltip stays.
+    await expect
+      .poll(async () => {
+        await move();
+        return tip().style.opacity;
+      }, poll)
+      .toBe("1");
+    expect(tip().textContent).toContain("G2");
+  });
+
+  it("hides the tooltip after a drag pan, and shows it again on a move", async () => {
+    const { el, canvas, centre, tip } = await hovered();
+    const start = yTicks(el).join(",");
+    await drag(canvas, centre);
+    await expect.poll(() => yTicks(el).join(","), slow).not.toBe(start);
+    await new Promise((res) => setTimeout(res, 300));
+    // Before the fix the tooltip stayed where the drag began, naming G2.
+    expect(tip().style.opacity).not.toBe("1");
+    // The gene moved with the drag, to where it ended, and a move there
+    // names it again, once the view has settled.
+    await expect
+      .poll(async () => {
+        canvas.dispatchEvent(
+          new MouseEvent("mousemove", {
+            clientX: centre.clientX + 80,
+            clientY: centre.clientY + 40,
+            bubbles: true,
+          }),
+        );
+        await frame();
+        await frame();
+        return tip().style.opacity;
+      }, poll)
+      .toBe("1");
+    expect(tip().textContent).toContain("G2");
+  });
+
+  it("hides the tooltip when a lasso starts", async () => {
+    const { canvas, centre, tip } = await hovered();
+    // Shift and a drag draw a lasso, which stops the hover.
+    await drag(canvas, centre, { shiftKey: true });
+    await new Promise((res) => setTimeout(res, 300));
+    // Before the fix the tooltip stayed through the lasso.
+    expect(tip().style.opacity).not.toBe("1");
+  });
+});
+
+describe("volcano refit for a new threshold", () => {
+  /** The highest y tick. */
+  const top = (el: HTMLElement) => Math.max(...yTicks(el));
+
+  it("fits the threshold line at the start view and keeps a zoomed view", async () => {
+    const el = container(800, 400);
+    const v = createVolcano(el, {
+      data: { columns: { x: [-2, 1, 2], y: [0.1, 0.3, 0.5] } },
+      options: { labelTopN: 0 },
+    });
+    instances.push(v);
+    // The line at 1.3 is in view.
+    await expect.poll(() => top(el), slow).toBeGreaterThanOrEqual(1.2);
+    // Hidden lines leave the axis to the points.
+    v.setOptions({ showThresholdLines: false });
+    await expect.poll(() => top(el), slow).toBeLessThan(0.7);
+    v.setOptions({ showThresholdLines: true });
+    await expect.poll(() => top(el), slow).toBeGreaterThanOrEqual(1.2);
+    // Before the fix a new threshold kept the old range, and its line at 3
+    // was out of view.
+    v.setOptions({ pThreshold: 0.001 });
+    await expect.poll(() => top(el), slow).toBeGreaterThanOrEqual(3);
+
+    // A view the person zoomed stays as it is.
+    await frame();
+    await frame();
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const r = canvas.getBoundingClientRect();
+    const start = yTicks(el).join(",");
+    for (let i = 0; i < 4; i += 1) {
+      canvas.dispatchEvent(
+        new WheelEvent("wheel", {
+          clientX: r.left + r.width / 2,
+          clientY: r.top + r.height * 0.9,
+          deltaY: -120,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await frame();
+    }
+    await expect.poll(() => yTicks(el).join(","), slow).not.toBe(start);
+    await new Promise((res) => setTimeout(res, 300));
+    const zoomed = yTicks(el).join(",");
+    v.setOptions({ pThreshold: 0.05 });
+    await new Promise((res) => setTimeout(res, 300));
+    expect(yTicks(el).join(",")).toBe(zoomed);
+    v.setOptions({ showThresholdLines: false });
+    await new Promise((res) => setTimeout(res, 300));
+    expect(yTicks(el).join(",")).toBe(zoomed);
+  });
+});
+
+describe("volcano background", () => {
+  it("covers the element's own background, and leaves it as it was", async () => {
+    for (const [name, setup] of HOST_BACKGROUNDS) {
+      const el = container(600, 400);
+      setup(el);
+      const style = getComputedStyle(el);
+      const [image, colour] = [style.backgroundImage, style.backgroundColor];
+      const v = createVolcano(el, {
+        data: { columns: { x: [-0.5, 0.5], y: [0.5, 1] } },
+        options: { labelTopN: 0 },
+      });
+      await expect
+        .poll(async () => {
+          const png = await canvasPNG(el);
+          return png ? drawnPixels(png) : 0;
+        }, poll)
+        .toBeGreaterThan(0);
+      // The plot's frame paints the theme background over the element.
+      expect(await gradientPixels(el), name).toBeLessThan(50);
+      v.destroy();
+      // Before the fix a var() shorthand followed by a colour came back
+      // with no image: the browser reads such a shorthand back as empty.
+      expect(style.backgroundImage, name).toBe(image);
+      expect(style.backgroundColor, name).toBe(colour);
+      el.remove();
+    }
+  });
+});
+
+describe("volcano large points", () => {
+  it("fits a new point size at the start view, and keeps a zoomed view", async () => {
+    const el = container(600, 240);
+    const v = createVolcano(el, {
+      data: { columns: { x: [2, -2, 3], y: [5, 10, 20] } },
+      options: { pointSize: 3, labelTopN: 0 },
+    });
+    instances.push(v);
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(0);
+    await new Promise((r) => setTimeout(r, 300));
+    v.setOptions({ pointSize: 30 });
+    await new Promise((r) => setTimeout(r, 500));
+    const box = (await markBox((await canvasPNG(el)) as Blob)) as MarkBox;
+    // Before the fix the plot kept the room of 3 px points, and the 30 px
+    // points ran to the edges.
+    expect(box.top).toBeGreaterThan(0);
+    expect(box.left).toBeGreaterThan(0);
+    expect(box.bottom).toBeLessThan(1);
+    expect(box.right).toBeLessThan(1);
+
+    // A view the person zoomed stays as it is.
+    await frame();
+    await frame();
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const r = canvas.getBoundingClientRect();
+    const start = yTicks(el).join(",");
+    for (let i = 0; i < 4; i += 1) {
+      canvas.dispatchEvent(
+        new WheelEvent("wheel", {
+          clientX: r.left + r.width / 2,
+          clientY: r.top + r.height / 2,
+          deltaY: -120,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await frame();
+    }
+    await expect.poll(() => yTicks(el).join(","), slow).not.toBe(start);
+    await new Promise((res) => setTimeout(res, 300));
+    const zoomed = yTicks(el).join(",");
+    v.setOptions({ pointSize: 10 });
+    await new Promise((res) => setTimeout(res, 300));
+    expect(yTicks(el).join(",")).toBe(zoomed);
+  });
+
+  it("keeps a large point inside the plot at every side", async () => {
+    const inf = Number.POSITIVE_INFINITY;
+    for (const y of [
+      [inf, inf, 20],
+      [5, 10, 20],
+    ]) {
+      const el = container(600, 240);
+      instances.push(
+        createVolcano(el, {
+          data: { columns: { x: [2, -2, 3], y } },
+          options: { pointSize: 20, labelTopN: 0 },
+        }),
+      );
+      await expect
+        .poll(async () => {
+          const png = await canvasPNG(el);
+          return png ? drawnPixels(png) : 0;
+        }, poll)
+        .toBeGreaterThan(0);
+      await new Promise((r) => setTimeout(r, 300));
+      const box = (await markBox((await canvasPNG(el)) as Blob)) as MarkBox;
+      // Before the fix the top point touched row 0: the 4% of room above
+      // it was less than its radius of 10 px.
+      const at = JSON.stringify(y.map(String));
+      expect(box.top, at).toBeGreaterThan(0);
+      expect(box.left, at).toBeGreaterThan(0);
+      expect(box.bottom, at).toBeLessThan(1);
+      expect(box.right, at).toBeLessThan(1);
     }
   });
 });

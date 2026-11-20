@@ -32,6 +32,7 @@ import {
   ramp,
   type RampName,
   categoricalColors,
+  formatTick,
 } from "../core/index.js";
 import { guardDestroy, uniqueId } from "../core/dom.js";
 import {
@@ -737,7 +738,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
         ? `<br/>group: ${escapeHTML(group.data.label || group.data.id)}`
         : "";
       tooltip.show(
-        `<b>${escapeHTML(label)}</b>${groupLine}<br/>value: ${fmt(leaf.value ?? 0)}`,
+        `<b>${escapeHTML(label)}</b>${groupLine}<br/>value: ${tipValue(leaf.value ?? 0)}`,
         e.clientX,
         e.clientY,
       );
@@ -890,11 +891,27 @@ function svgText(
   return t;
 }
 
-function fmt(v: number): string {
+/**
+ * A value for the tooltip, as the profile tooltip prints it: a whole one
+ * in full, with thousands separators, as the UpSet tooltip prints a count;
+ * any other value to six significant digits, and to two decimals or more,
+ * so 0.00084 never reads 0.00 and 1234567.5 never reads 1234568. Below a
+ * millionth it takes the exponent form.
+ */
+function tipValue(v: number): string {
   if (v === 0) return "0";
+  if (Number.isInteger(v)) return v.toLocaleString();
   const a = Math.abs(v);
-  if (a >= 1000 || a < 0.01) return v.toExponential(1);
-  return Number(v.toFixed(2)).toString();
+  if (!(a >= 1e-6)) return formatTick(v, 0);
+  // Digits of the whole part: 7 for 1234567.5, none for 0.25.
+  const whole = a >= 1 ? Math.floor(Math.log10(a)) + 1 : 0;
+  const n = Number(v.toPrecision(Math.min(21, Math.max(6, whole + 2))));
+  const text = String(n);
+  const dot = text.indexOf(".");
+  const decimals = dot < 0 ? 0 : text.length - dot - 1;
+  return n.toLocaleString(undefined, {
+    maximumFractionDigits: Math.min(20, decimals),
+  });
 }
 
 /**

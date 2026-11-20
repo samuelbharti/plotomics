@@ -24,6 +24,12 @@
  * - `columns.color`   `string[]`         optional per-edge color (else defaultEdgeColor)
  * - `meta.nodeLabels` `string[]`         optional labels (default: id)
  * - `meta.nodeGroup`  `string[]`         optional categorical group -> palette color
+ * - `meta.nodeGroupLevels` `string[]`    optional order of the groups (an R
+ *                                        factor's levels, a pandas
+ *                                        Categorical's categories): colours
+ *                                        and legend rows follow it, unused
+ *                                        levels included; other groups come
+ *                                        after, in the order the nodes have them
  * - `meta.edges`      `[src,tgt][]`      alternative edge form (pairs of ids)
  */
 import {
@@ -68,9 +74,13 @@ import {
   type NetworkLayout,
   type EdgeDrops,
   type GroupLegendEntry,
+  type LabelBox,
+  type LabelCandidate,
   buildGraph,
+  clearLabels,
   groupColorResolver,
   groupLegend,
+  groupOrder,
   needsLayout,
   runForceAtlas2,
 } from "./network-core.js";
@@ -81,11 +91,16 @@ export {
   type EdgeSpec,
   type EdgeDrops,
   type GroupLegendEntry,
+  type LabelBox,
+  type LabelCandidate,
   type NetworkLayout,
+  LABEL_GAP,
   buildGraph,
+  clearLabels,
   extractEdges,
   groupColorResolver,
   groupLegend,
+  groupOrder,
   needsLayout,
   runForceAtlas2,
 } from "./network-core.js";
@@ -98,11 +113,16 @@ export interface NetworkOptions {
   iterations: number;
   /** Fallback node color when a node has no group. */
   defaultNodeColor: string;
-  /** Edge color. */
-  defaultEdgeColor: string;
+  /** Colour of an edge with no colour of its own. `null` (the default)
+   * takes the theme background with a fifth of the theme foreground mixed
+   * in, so edges stay quieter than the nodes and the labels on a light and
+   * on a dark background. */
+  defaultEdgeColor: string | null;
   /** Minimum node size (px) on screen for its label to render. At the
    * default of 4, nodes of the default size are labelled at the starting
-   * zoom, and sigma's label grid keeps the labels from crowding. */
+   * zoom, and sigma's label grid keeps the labels from crowding. Where
+   * the letters of two labels would run into each other, the label of the
+   * smaller node is left out. */
   labelThreshold: number;
   /** Default node radius (px) when `size` column is absent. */
   defaultNodeSize: number;
@@ -126,7 +146,7 @@ export const defaultNetworkOptions: NetworkOptions = {
   layout: "forceatlas2",
   iterations: 200,
   defaultNodeColor: "#7c8598",
-  defaultEdgeColor: "#d6dae1",
+  defaultEdgeColor: null,
   labelThreshold: 4,
   defaultNodeSize: 4,
   palette: null,
@@ -144,6 +164,14 @@ const LEGEND_MAX = 14;
 const MAX_LEGEND_SHARE = 0.35;
 /** Space left and right of the legend, in px. */
 const LEGEND_PAD = 8;
+/** Share of the theme foreground in the default edge colour. */
+const EDGE_MIX = 0.2;
+/**
+ * Hex colours sigma reads as they are: 3, 6 or 8 digits. It reads the 4
+ * digits of "#rgba" as the first digits of "#rrggbb", so those are read
+ * for it like any other colour.
+ */
+const SIGMA_HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 /** Room sigma keeps by default between the node centres and its edges. */
 const STAGE_PADDING = 30;
 /** Sigma's canvases, bottom first. A hovered node is redrawn on hoverNodes
@@ -204,6 +232,40 @@ export function hoverColours(
   return { label: bytesToColour(fg), box, dim };
 }
 
+/**
+ * The colour of an edge with no colour of its own, as hex or rgba(), the
+ * forms sigma reads. A `given` colour is used as it is, with var() and
+ * currentColor read inside `el`; one that paints nothing, or that cannot
+ * be read, is clear, as sigma draws any other form black. Without one it
+ * is the theme background with a fifth of the foreground mixed in, which
+ * stays quieter than the nodes and the labels on a light and on a dark
+ * background. A foreground that cannot be read is the default one for the
+ * background, as the labels take it. Over a background that paints
+ * nothing it is the foreground at a fifth.
+ */
+export function edgeColour(
+  theme: Pick<PlotomicsTheme, "foreground" | "background">,
+  given: string | null,
+  el?: Element,
+): string {
+  if (given) return plainColour(given, el) ?? "rgba(0, 0, 0, 0)";
+  const fg = colourBytes(theme.foreground, el) ??
+    colourBytes(textFallback("foreground", theme.background, el)) ?? [
+      0, 0, 0, 255,
+    ];
+  const bg = colourBytes(theme.background, el);
+  if (bg && bg[3] === 255) {
+    return bytesToColour(
+      [0, 1, 2].map((i) =>
+        Math.round(
+          (1 - EDGE_MIX) * (bg[i] as number) + EDGE_MIX * (fg[i] as number),
+        ),
+      ),
+    );
+  }
+  return `rgba(${fg[0]}, ${fg[1]}, ${fg[2]}, ${EDGE_MIX})`;
+}
+
 /** A legend row: a group and its colour, or the "+N more" line (no colour). */
 interface LegendRow {
   label: string;
@@ -215,31 +277,210 @@ type LabelArgs = Parameters<NodeLabelDrawingFunction>;
 /**
  * Which side of its node a label goes on, and its width. Sigma puts it on
  * the right; a label that would run past the right edge goes on the left.
- * Sets the label font on the context.
+ * A label that `wasLeft` in the frame before stays there while it fits
+ * there, so a zoom that moves its node away from the edge does not make it
+ * jump to the other side and back. Sets the label font on the context.
  */
 function labelSide(
   context: LabelArgs[0],
   data: LabelArgs[1],
   settings: LabelArgs[2],
-): { left: boolean; width: number } {
+  wasLeft = false,
+): { left: boolean; width: number; metrics: TextMetrics } {
   context.font = `${settings.labelWeight} ${settings.labelSize}px ${settings.labelFont}`;
-  const width = context.measureText(data.label ?? "").width;
+  const metrics = context.measureText(data.label ?? "");
+  const width = metrics.width;
   // The context is scaled by the pixel ratio; the edge is in CSS pixels.
   const edge = context.canvas.width / (context.getTransform().a || 1);
-  return { left: data.x + data.size + 3 + width > edge, width };
+  const past = data.x + data.size + 3 + width > edge;
+  const fitsLeft = data.x - data.size - 3 - width >= 0;
+  return { left: past || (wasLeft && fitsLeft), width, metrics };
 }
 
-/** A node label, on the side that {@link labelSide} picks. */
-const drawNodeLabel: NodeLabelDrawingFunction = (context, data, settings) => {
-  if (!data.label) return;
+/**
+ * Where a node label goes, on the side that {@link labelSide} picks: the x
+ * its text starts at, its baseline, and the box its letters fill.
+ */
+function labelPlace(
+  context: LabelArgs[0],
+  data: LabelArgs[1],
+  settings: LabelArgs[2],
+  wasLeft = false,
+): { x: number; baseline: number; box: LabelBox; left: boolean } {
   const size = settings.labelSize;
-  const { left, width } = labelSide(context, data, settings);
-  context.fillStyle = settings.labelColor.color ?? "#000";
+  const { left, width, metrics } = labelSide(context, data, settings, wasLeft);
   const x = left
     ? Math.max(0, data.x - data.size - 3 - width)
     : data.x + data.size + 3;
-  context.fillText(data.label, x, data.y + size / 3);
-};
+  const baseline = data.y + size / 3;
+  // A browser without the measures of the letters gets the advance width
+  // and most of the font size.
+  const ink = (v: number, fallback: number) =>
+    Number.isFinite(v) ? v : fallback;
+  return {
+    x,
+    baseline,
+    left,
+    box: {
+      left: x - ink(metrics.actualBoundingBoxLeft, 0),
+      right: x + ink(metrics.actualBoundingBoxRight, width),
+      top: baseline - ink(metrics.actualBoundingBoxAscent, size * 0.8),
+      bottom: baseline + ink(metrics.actualBoundingBoxDescent, size * 0.2),
+    },
+  };
+}
+
+/** A node label, on the side that {@link labelSide} picks. */
+function drawNodeLabel(
+  context: LabelArgs[0],
+  data: LabelArgs[1],
+  settings: LabelArgs[2],
+  wasLeft = false,
+): void {
+  if (!data.label) return;
+  const { x, baseline } = labelPlace(context, data, settings, wasLeft);
+  context.fillStyle = settings.labelColor.color ?? "#000";
+  context.fillText(data.label, x, baseline);
+}
+
+/** A node label sigma asks for in a frame: where it goes, and how. */
+interface FrameLabel extends LabelCandidate {
+  /** The node. */
+  key: string;
+  /** Whether the label went on the left of its node. */
+  left: boolean;
+  text: string;
+  x: number;
+  baseline: number;
+  font: string;
+  color: string;
+}
+
+/**
+ * Sigma's label grid, which its types leave out: per cell, the nodes in
+ * the order the grid ranks them.
+ */
+interface LabelGrid {
+  cells?: unknown;
+}
+
+/**
+ * The node labels of a frame. Sigma asks for each label in turn, cell by
+ * cell of its label grid; they are collected here and drawn when the frame
+ * is done, larger nodes first and with no label whose letters run into one
+ * already drawn (see {@link clearLabels}). Sigma's grid shows a set number
+ * of labels per cell, but labels in neighbouring cells can still overlap.
+ * The labels drawn in the frame before go first, so a zoom does not make a
+ * label blink out for a frame.
+ */
+class FrameLabels {
+  private labels: FrameLabel[] = [];
+  private context: CanvasRenderingContext2D | null = null;
+  /** The nodes whose labels the frame before drew. */
+  private shown = new Set<string>();
+  /** The nodes whose labels went on the left in the frame before. */
+  private left = new Set<string>();
+  /** The place of each node in its cell of sigma's label grid. */
+  private ranks = new Map<string, number>();
+  /** The cells the ranks were read from. */
+  private rankedCells: unknown = null;
+
+  /**
+   * Read the place of each node in its cell of sigma's label grid, once
+   * each time sigma builds the grid again. A sigma without the grid where
+   * this looks leaves the ranks out, and labels on screen then go by the
+   * size of their node.
+   */
+  private readRanks(renderer: Sigma): void {
+    // The grid is sigma's own, outside its types, so a cell that is not a
+    // list of nodes is passed over, and a read that throws leaves the
+    // ranks out; the labels on screen then go by the size of their node.
+    try {
+      const grid = (renderer as unknown as { labelGrid?: LabelGrid }).labelGrid;
+      const cells = grid?.cells;
+      if (cells === this.rankedCells) return;
+      this.rankedCells = cells;
+      this.ranks = new Map();
+      if (!cells || typeof cells !== "object") return;
+      for (const cell of Object.values(cells)) {
+        if (!Array.isArray(cell)) continue;
+        cell.forEach((c: unknown, i) => {
+          const key = (c as { key?: unknown } | null)?.key;
+          if (typeof key === "string") this.ranks.set(key, i);
+        });
+      }
+    } catch {
+      this.rankedCells = null;
+      this.ranks = new Map();
+    }
+  }
+
+  /** The drawing function sigma calls for each label. */
+  readonly collect: NodeLabelDrawingFunction = (context, data, settings) => {
+    if (!data.label) return;
+    // Sigma passes the node as `key`, which its type leaves out.
+    const key = (data as { key?: string }).key ?? data.label;
+    const { x, baseline, box, left } = labelPlace(
+      context,
+      data,
+      settings,
+      this.left.has(key),
+    );
+    this.context = context;
+    this.labels.push({
+      key,
+      left,
+      shown: this.shown.has(key),
+      text: data.label,
+      x,
+      baseline,
+      box,
+      size: data.size,
+      font: context.font,
+      color: settings.labelColor.color ?? "#000",
+    });
+  };
+
+  /** Forget the labels collected so far, as a new frame starts. */
+  clear(): void {
+    this.labels = [];
+  }
+
+  /** Whether the label of `key` went on the left in the frame before. */
+  wasLeft(key: string): boolean {
+    return this.left.has(key);
+  }
+
+  /**
+   * Draw the labels that keep clear of each other, and forget them all.
+   * With `remember`, the next frame lets them go first. A hover hides the
+   * labels of the nodes it fades, so a frame drawn under a hover is not
+   * remembered: the labels before it come back after it.
+   */
+  draw(remember: boolean, renderer: Sigma | null): void {
+    const context = this.context;
+    const drawn = new Set<string>();
+    // Sigma builds its grid again in the frame, before it asks for labels.
+    if (renderer) this.readRanks(renderer);
+    for (const label of this.labels) label.rank = this.ranks.get(label.key);
+    if (context) {
+      for (const i of clearLabels(this.labels)) {
+        const label = this.labels[i] as FrameLabel;
+        context.font = label.font;
+        context.fillStyle = label.color;
+        context.fillText(label.text, label.x, label.baseline);
+        drawn.add(label.key);
+      }
+    }
+    if (remember) {
+      this.shown = drawn;
+      this.left = new Set(
+        this.labels.filter((label) => label.left).map((label) => label.key),
+      );
+    }
+    this.labels = [];
+  }
+}
 
 /**
  * The hovered node: sigma's box with a shadow around the node and its
@@ -250,6 +491,7 @@ function drawNodeHover(
   data: LabelArgs[1],
   settings: LabelArgs[2],
   fill: string,
+  wasLeft = false,
 ): void {
   const size = settings.labelSize;
   const pad = 2;
@@ -259,7 +501,7 @@ function drawNodeHover(
   context.shadowBlur = 8;
   context.shadowColor = "#000";
   if (typeof data.label === "string") {
-    const { left, width } = labelSide(context, data, settings);
+    const { left, width } = labelSide(context, data, settings, wasLeft);
     const boxWidth = Math.round(width + 5);
     const boxHeight = Math.round(size + 2 * pad);
     const radius = Math.max(data.size, size / 2) + pad;
@@ -286,7 +528,7 @@ function drawNodeHover(
   context.shadowOffsetX = 0;
   context.shadowOffsetY = 0;
   context.shadowBlur = 0;
-  drawNodeLabel(context, data, settings);
+  drawNodeLabel(context, data, settings, wasLeft);
 }
 
 // ---------------------------------------------------------------------------
@@ -305,7 +547,9 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   let data: PlotomicsData = initial.data ?? { columns: {} };
 
   el.style.position = el.style.position || "relative";
-  el.style.background = theme.background;
+  // The plot's frame paints the theme background over the whole element,
+  // under sigma's transparent canvases, so the element's own background is
+  // left as it is.
   const host = document.createElement("div");
   host.style.cssText = "position:absolute;left:0;top:0;overflow:hidden;";
   // The legend, over the gutter right of the graph.
@@ -334,6 +578,8 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
 
   let graph: Graph = new Graph();
   let renderer: Sigma | null = null;
+  /** The node labels of the frame being drawn. */
+  const frameLabels = new FrameLabels();
   /**
    * The hover colours the renderer draws with (see hoverColours) and the
    * colour of the edges of a hovered node. The renderer reads them when it
@@ -351,22 +597,25 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   };
   el.addEventListener("mousemove", onMove);
 
+  /** The given levels of the node groups, as text. */
+  function groupLevels(): string[] {
+    const given = data.meta?.nodeGroupLevels as unknown[] | undefined;
+    return Array.isArray(given) ? groupOrder(undefined, given) : [];
+  }
+
+  /** The node groups in the order they take their colours. */
+  function groups(): string[] {
+    return groupOrder(
+      data.meta?.nodeGroup as unknown[] | undefined,
+      groupLevels(),
+    );
+  }
+
   /** The given palette, or the theme palette sized to the node groups. */
   function paletteColors(): string[] {
     if (opts.palette?.length) return opts.palette;
-    const groups = (data.meta?.nodeGroup as unknown[] | undefined) ?? [];
     // Missing groups (null, NaN, "") take the default node colour.
-    const n = new Set(
-      groups
-        .filter(
-          (g) =>
-            g != null &&
-            g !== "" &&
-            !(typeof g === "number" && Number.isNaN(g)),
-        )
-        .map((g) => String(g)),
-    ).size;
-    return categoricalColors(theme.categorical, n);
+    return categoricalColors(theme.categorical, groups().length);
   }
 
   /**
@@ -379,33 +628,87 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   }
 
   /**
+   * The colour of an edge with no colour of its own (see edgeColour). The
+   * build, the renderer, readColours and recolour all take it from here,
+   * so recolour finds the edges of the default colour by the one the last
+   * build gave them.
+   */
+  function defaultEdge(): string {
+    return edgeColour(theme, opts.defaultEdgeColor, el);
+  }
+
+  /** The colour of each node group, in the order of {@link groups}. */
+  function groupColours(): (group: string | undefined) => string {
+    return groupColorResolver(
+      paletteColors().map(sigmaColour),
+      sigmaColour(opts.defaultNodeColor),
+      groups(),
+    );
+  }
+
+  /**
+   * A reader of the colours of the `color` column, as sigma reads them:
+   * hex sigma reads as it is, and each other distinct colour once (see
+   * sigmaColour), so one that paints nothing is clear, not black.
+   */
+  function edgeColourReader(): (colour: string) => string {
+    const read = new Map<string, string>();
+    return (colour) => {
+      // Hex sigma reads goes as it is: a read takes a canvas, and a colour
+      // scale gives each of thousands of edges a colour of its own.
+      const given = colour.trim();
+      if (SIGMA_HEX.test(given)) return given;
+      let out = read.get(colour);
+      if (out === undefined) {
+        out = sigmaColour(colour);
+        read.set(colour, out);
+      }
+      return out;
+    };
+  }
+
+  /**
+   * The colours of the `color` column that depend on the page, var() and
+   * currentColor, as read now.
+   */
+  function pageEdgeColours(): string[] {
+    const given = data.columns.color as unknown;
+    if (!Array.isArray(given)) return [];
+    const page = new Set<string>();
+    for (const c of given) {
+      if (typeof c === "string" && /var\(|currentcolor/i.test(c)) page.add(c);
+    }
+    return [...page].map((c) => `${c}=${sigmaColour(c)}`);
+  }
+
+  /**
    * The colours the graph is drawn with, as read inside the element: the
-   * group palette, the default node and edge colours and the hover colours.
+   * group palette, the default node and edge colours, the hover colours
+   * and the edge colours that depend on the page.
    */
   function readColours(): string {
     return JSON.stringify([
       paletteColors().map(sigmaColour),
       sigmaColour(opts.defaultNodeColor),
-      sigmaColour(opts.defaultEdgeColor),
+      defaultEdge(),
       hoverColours(theme, el),
+      pageEdgeColours(),
     ]);
   }
   /** The colours of the last build or recolour, from readColours. */
   let drawnColours = "";
 
   /**
-   * Give the nodes, and the edges of the default colour, the colours read
-   * now, and the renderer its new default and hover colours, in place. The
+   * Give the nodes and the edges the colours read now, an edge with a
+   * colour of its own reading it again, and the renderer its new default
+   * and hover colours, in place. The
    * graph, its layout, the camera and a hover stay as they are. A new
    * renderer started at the first view, and never sent leaveNode for the
-   * node hovered in the old one, so its tooltip and dimming stayed.
+   * node hovered in the old one, so its tooltip and dimming stayed. The
+   * groups keep the order of their levels, in the colours and the legend.
    */
   function recolour(colours: string) {
-    const oldEdge = (JSON.parse(drawnColours || "[]") as unknown[])[2];
-    const colorFor = groupColorResolver(
-      paletteColors().map(sigmaColour),
-      sigmaColour(opts.defaultNodeColor),
-    );
+    const colorFor = groupColours();
     graph.forEachNode((node, attrs) => {
       graph.setNodeAttribute(
         node,
@@ -413,11 +716,24 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
         colorFor(attrs.group as string | undefined),
       );
     });
-    const edge = sigmaColour(opts.defaultEdgeColor);
+    // An edge with a colour of its own reads it again; any other takes
+    // the default colour.
+    const edge = defaultEdge();
+    const readEdge = edgeColourReader();
     graph.forEachEdge((key, attrs) => {
-      if (attrs.color === oldEdge) graph.setEdgeAttribute(key, "color", edge);
+      const raw = attrs.rawColor as string | undefined;
+      graph.setEdgeAttribute(
+        key,
+        "color",
+        raw === undefined ? edge : readEdge(raw),
+      );
     });
-    legend = groupLegend(graph, sigmaColour(opts.defaultNodeColor));
+    legend = groupLegend(
+      graph,
+      sigmaColour(opts.defaultNodeColor),
+      groupLevels(),
+      colorFor,
+    );
     drawnColours = colours;
     hover = hoverColours(theme, el);
     hoverEdge = sigmaColour(opts.defaultNodeColor);
@@ -429,20 +745,22 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     renderer?.setSetting("labelColor", { color: hover.label });
   }
 
-  function buildAndLayout(): { graph: Graph; dropped: EdgeDrops } {
-    const colorFor = groupColorResolver(
-      paletteColors().map(sigmaColour),
-      sigmaColour(opts.defaultNodeColor),
-    );
+  function buildAndLayout(): {
+    graph: Graph;
+    dropped: EdgeDrops;
+    colorFor: (group: string | undefined) => string;
+  } {
+    const colorFor = groupColours();
     const { graph: g, dropped } = buildGraph(data, {
       defaultNodeColor: sigmaColour(opts.defaultNodeColor),
-      defaultEdgeColor: sigmaColour(opts.defaultEdgeColor),
+      defaultEdgeColor: defaultEdge(),
+      readEdgeColor: edgeColourReader(),
       defaultNodeSize: opts.defaultNodeSize,
       directed: opts.directed,
       colorFor,
     });
     if (needsLayout(data, opts.layout)) runForceAtlas2(g, opts.iterations);
-    return { graph: g, dropped };
+    return { graph: g, dropped, colorFor };
   }
 
   /** Warn once per render when edges were left out, so a caller is not shown an
@@ -467,6 +785,10 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
 
   function makeRenderer() {
     renderer?.kill();
+    // Sigma draws its first frame while it is created, before the
+    // listeners below are on, so the labels of the old renderer go now,
+    // and those of the first frame are drawn once the listeners are on.
+    frameLabels.clear();
     const labelSize = textSizes(theme).label;
     hover = hoverColours(theme, el);
     hoverEdge = sigmaColour(opts.defaultNodeColor);
@@ -477,17 +799,25 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       // setting it draws 1 px canvases, which the host hides.
       allowInvalidContainer: true,
       defaultNodeColor: sigmaColour(opts.defaultNodeColor),
-      defaultEdgeColor: sigmaColour(opts.defaultEdgeColor),
+      defaultEdgeColor: defaultEdge(),
       labelColor: { color: hover.label },
       labelFont: theme.fontFamily,
       labelSize,
       // Sigma shows a set number of labels per grid cell, 100 px wide by
       // default. The cell grows with the labels, so larger text is not more
-      // crowded.
+      // crowded. A label whose letters would still run into those of
+      // another is left out, the label of the smaller node first.
       labelGridCellSize: Math.round((100 * labelSize) / 11),
-      defaultDrawNodeLabel: drawNodeLabel,
+      defaultDrawNodeLabel: frameLabels.collect,
+      // The hovered label goes on the side its label is on.
       defaultDrawNodeHover: (context, data, settings) =>
-        drawNodeHover(context, data, settings, hover.box),
+        drawNodeHover(
+          context,
+          data,
+          settings,
+          hover.box,
+          frameLabels.wasLeft((data as { key?: string }).key ?? ""),
+        ),
       labelRenderedSizeThreshold: opts.labelThreshold,
       renderLabels: true,
       // Directed graphs draw arrowheads via sigma's arrow edge program.
@@ -515,6 +845,9 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       },
     });
 
+    renderer.on("beforeRender", () => frameLabels.clear());
+    renderer.on("afterRender", () => frameLabels.draw(!hovered, renderer));
+    frameLabels.draw(!hovered, renderer);
     renderer.on("enterNode", ({ node }) => {
       hovered = node;
       neighborSet = new Set(graph.neighbors(node));
@@ -680,7 +1013,12 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     tooltip.hide();
     const built = buildAndLayout();
     graph = built.graph;
-    legend = groupLegend(graph, sigmaColour(opts.defaultNodeColor));
+    legend = groupLegend(
+      graph,
+      sigmaColour(opts.defaultNodeColor),
+      groupLevels(),
+      built.colorFor,
+    );
     drawnColours = readColours();
     reportDropped(built.dropped);
     // Sigma reads the size of its container when it is created.
@@ -703,7 +1041,6 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     setOptions(next) {
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
-      el.style.background = theme.background;
       fitBox();
       applyData();
     },

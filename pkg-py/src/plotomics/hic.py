@@ -200,7 +200,7 @@ class HiC(PlotomicsWidget):
                 "Provide a dense `matrix` or a sparse triplet (i, j, v)."
             )
 
-        buffer, schema = pack_columns(columns)
+        buffer, schema = pack_columns(columns, names={"values": "matrix"})
 
         meta: dict[str, Any] = {"n": int(n)}
         if bin_size is not None:

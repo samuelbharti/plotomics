@@ -1,9 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
+  type LabelBox,
   buildGraph,
+  clearLabels,
   extractEdges,
   groupColorResolver,
   groupLegend,
+  groupOrder,
   needsLayout,
   runForceAtlas2,
   edgeWidths,
@@ -188,6 +191,42 @@ describe("network helpers", () => {
     expect(graph.getEdgeAttribute("b", "c", "color")).toBe("#0f0");
   });
 
+  it("gives an edge with a missing colour the default colour", () => {
+    // R sends NA as null, and Python None and NaN as null; NaN and "" may
+    // come from other callers. Before the fix each became the text "null",
+    // "NaN" or "", which sigma draws black.
+    const color = ["#f00", null, Number.NaN, ""] as unknown as string[];
+    const parsed = extractEdges({
+      columns: {
+        source: ["a", "a", "a", "b"],
+        target: ["b", "c", "d", "c"],
+        color,
+      },
+    });
+    expect(parsed.map((e) => e.color)).toEqual([
+      "#f00",
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    const { graph } = buildFull({
+      columns: {
+        id: ["a", "b", "c", "d"],
+        source: ["a", "a", "a", "b"],
+        target: ["b", "c", "d", "c"],
+        color,
+      },
+    });
+    expect(graph.getEdgeAttribute("a", "b", "color")).toBe("#f00");
+    for (const [s, t] of [
+      ["a", "c"],
+      ["a", "d"],
+      ["b", "c"],
+    ] as const) {
+      expect(graph.getEdgeAttribute(s, t, "color")).toBe("#ccc");
+    }
+  });
+
   it("falls back to the builder default when no color column is present", () => {
     const { graph } = buildFull({
       columns: { id: ["a", "b"], source: ["a"], target: ["b"] },
@@ -309,5 +348,157 @@ describe("network group legend", () => {
       meta: { nodeGroup: [null] as unknown as string[] },
     });
     expect(groupLegend(g, "#000")).toEqual([]);
+  });
+});
+
+describe("network group levels", () => {
+  it("puts the given levels first, then the other groups as the nodes have them", () => {
+    expect(
+      groupOrder(["B", "C", null, "", "A", "C", Number.NaN], ["A", "B", "Z"]),
+    ).toEqual(["A", "B", "Z", "C"]);
+    // Without levels the groups go in the order the nodes have them.
+    expect(groupOrder(["T cell", "B cell", "T cell"])).toEqual([
+      "T cell",
+      "B cell",
+    ]);
+    // A level given twice, or as a number, comes once, as text.
+    expect(groupOrder(undefined, ["2", 2, "1"])).toEqual(["2", "1"]);
+  });
+
+  it("gives the levels the palette colours by their place", () => {
+    const color = groupColorResolver(["#a", "#b", "#c"], "#000", [
+      "High",
+      "Low",
+    ]);
+    // Before the fix "Low", met first, took the first colour.
+    expect(color("Low")).toBe("#b");
+    expect(color("High")).toBe("#a");
+    expect(color("Mid")).toBe("#c");
+  });
+
+  it("lists every level in the legend in order, the unused ones too", () => {
+    const levels = ["High", "Mid", "Low"];
+    const colorFor = groupColorResolver(["#a", "#b", "#c", "#d"], "#000", [
+      ...levels,
+    ]);
+    const { graph } = buildGraph(
+      {
+        columns: { id: ["a", "b", "c", "d"] },
+        meta: { nodeGroup: ["Low", "Other", "High", null] as string[] },
+      },
+      {
+        defaultNodeColor: "#000",
+        defaultEdgeColor: "#ccc",
+        defaultNodeSize: 4,
+        colorFor,
+      },
+    );
+    expect(groupLegend(graph, "#000", levels, colorFor)).toEqual([
+      { label: "High", color: "#a" },
+      { label: "Mid", color: "#b" },
+      { label: "Low", color: "#c" },
+      { label: "Other", color: "#d" },
+      { label: "NA", color: "#000", missing: true },
+    ]);
+    expect(graph.getNodeAttribute("a", "color")).toBe("#c");
+  });
+});
+
+describe("network labels that keep clear of each other", () => {
+  const box = (left: number, top: number, width = 40, height = 10) => ({
+    left,
+    right: left + width,
+    top,
+    bottom: top + height,
+  });
+
+  it("keeps two labels with room between their letters", () => {
+    // 8.6 px between the letters: before the fix the full height of the
+    // font made them collide.
+    expect(
+      clearLabels([
+        { box: box(0, 0), size: 4 },
+        { box: box(5, 18.6), size: 4 },
+      ]),
+    ).toEqual([0, 1]);
+  });
+
+  it("leaves out a label within 2 px of another, the smaller node's", () => {
+    // The hub's label is taken first, though sigma asked for it second.
+    // The label 1 px from it is left out; the one 3 px from it is drawn.
+    expect(
+      clearLabels([
+        { box: box(0, 9, 49), size: 4 },
+        { box: box(50, 20), size: 16 },
+        { box: box(93, 20, 30), size: 4 },
+      ]),
+    ).toEqual([1, 2]);
+  });
+
+  it("keeps a label drawn in the frame before, then the larger node's", () => {
+    // Before the fix the hub's label took the room of a label already on
+    // screen, which then blinked out as a zoom brought the hub in.
+    const labels = [
+      { box: box(0, 0), size: 4, shown: true },
+      { box: box(30, 5), size: 16 },
+      { box: box(100, 0), size: 4 },
+      { box: box(110, 5), size: 8 },
+    ];
+    expect(clearLabels(labels)).toEqual([0, 3]);
+  });
+
+  it("keeps two labels on screen that touch, and the lower ranked of two that overlap", () => {
+    // Letters 0.5 px into each other, both on screen: both stay.
+    expect(
+      clearLabels([
+        { box: box(0, 0), size: 4, shown: true },
+        { box: box(39.5, 9.5), size: 4, shown: true },
+      ]),
+    ).toEqual([0, 1]);
+    // 3 px into each other: the label with the lower place in its grid
+    // cell stays, as sigma's grid keeps it longest on a zoom out.
+    expect(
+      clearLabels([
+        { box: box(0, 0), size: 4, shown: true, rank: 3 },
+        { box: box(37, 7), size: 4, shown: true, rank: 0 },
+      ]),
+    ).toEqual([1]);
+  });
+
+  it("leaves out only labels that a drawn label is next to", () => {
+    let s = 7;
+    const rand = () => {
+      s = (s * 1103515245 + 12345) % 2147483648;
+      return s / 2147483648;
+    };
+    const labels = Array.from({ length: 400 }, () => ({
+      box: box(rand() * 800, rand() * 480, 20 + rand() * 60, 8 + rand() * 6),
+      size: 2 + Math.floor(rand() * 4) * 4,
+    }));
+    const gap = 2;
+    const near = (a: LabelBox, b: LabelBox) =>
+      a.left < b.right + gap &&
+      b.left < a.right + gap &&
+      a.top < b.bottom + gap &&
+      b.top < a.bottom + gap;
+    const at = (i: number) => labels[i] as { box: LabelBox; size: number };
+    const kept = clearLabels(labels, gap);
+    const drawn = new Set(kept);
+    for (const i of kept) {
+      for (const j of kept) {
+        if (i < j) expect(near(at(i).box, at(j).box)).toBe(false);
+      }
+    }
+    for (let i = 0; i < labels.length; i += 1) {
+      if (drawn.has(i)) continue;
+      // A label left out has a drawn label next to it, of a node at least
+      // as large.
+      const by = kept.filter((j) => near(at(i).box, at(j).box));
+      expect(by.length).toBeGreaterThan(0);
+      expect(Math.max(...by.map((j) => at(j).size))).toBeGreaterThanOrEqual(
+        at(i).size,
+      );
+    }
+    expect(kept.length).toBeGreaterThan(50);
   });
 });

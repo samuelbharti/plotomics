@@ -176,3 +176,25 @@ test_that("violin() sends the value axis option", {
               show_value_axis = FALSE)
   expect_false(w$x$options$showValueAxis)
 })
+
+test_that("violin() warns about a missing grid value and draws, as Python does", {
+  a <- make_args()
+  grid <- a$grid
+  grid[5] <- NA
+  # Before the fix the warning was followed by "missing value where
+  # TRUE/FALSE needed" from the ascending check.
+  warned <- testthat::capture_warnings(
+    w <- violin(a$data, grid = grid, density = a$density)
+  )
+  expect_equal(warned, paste(
+    "`grid` has 1 value(s) that are missing (NA or NaN) or infinite",
+    "(Inf or -Inf)."
+  ))
+  expect_s3_class(w, "htmlwidget")
+  # A step down between two values that are there is still an error.
+  grid[10] <- grid[2]
+  expect_error(
+    suppressWarnings(violin(a$data, grid = grid, density = a$density)),
+    "must be ascending"
+  )
+})

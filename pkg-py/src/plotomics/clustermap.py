@@ -168,7 +168,9 @@ class Clustermap(PlotomicsWidget):
             raise ValueError(
                 f"`matrix` must be numeric; got dtype {arr.dtype.name}"
             ) from None
-        buffer, schema = pack_columns({"values": values})
+        buffer, schema = pack_columns(
+            {"values": values}, names={"values": "matrix"}
+        )
 
         meta: dict[str, Any] = {"nrows": int(nrows), "ncols": int(ncols)}
         # A label list of the wrong length would make the browser drop every

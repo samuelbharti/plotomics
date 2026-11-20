@@ -93,7 +93,8 @@ export function extractEdges(data: PlotomicsData): EdgeSpec[] {
         target: String(tgt[i]),
         // null (R's JSON for NA) is a missing weight, not 0.
         ...(w ? { weight: w[i] == null ? Number.NaN : Number(w[i]) } : {}),
-        ...(c ? { color: String(c[i]) } : {}),
+        // A missing colour (null, NaN or "") takes the default edge colour.
+        ...(c && !missingGroup(c[i]) ? { color: String(c[i]) } : {}),
       };
     }
     return out;
@@ -107,13 +108,51 @@ export function extractEdges(data: PlotomicsData): EdgeSpec[] {
   return [];
 }
 
-/** Build a color-resolver for node groups from a palette. Nodes with no group
- * fall back to `defaultColor`. Colors are stable per group key. */
+/** Whether a node group or an edge colour is missing: null, NaN or "". */
+function missingGroup(v: unknown): boolean {
+  return v == null || v === "" || (typeof v === "number" && Number.isNaN(v));
+}
+
+/**
+ * The node groups in the order they take their colours and their legend
+ * rows: the given `levels` first, in their order (R sends a factor's
+ * levels, Python a Categorical's categories), then the groups outside them
+ * in the order the nodes have them. Each group comes once, as text; a
+ * missing group (null, NaN or "") is not a group.
+ */
+export function groupOrder(
+  groups: ArrayLike<unknown> | undefined,
+  levels?: ArrayLike<unknown> | null,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const col of [levels, groups]) {
+    if (!col) continue;
+    for (let i = 0; i < col.length; i += 1) {
+      const v = col[i];
+      if (missingGroup(v)) continue;
+      const key = String(v);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(key);
+    }
+  }
+  return out;
+}
+
+/**
+ * Build a color-resolver for node groups from a palette. Nodes with no group
+ * fall back to `defaultColor`. Colors are stable per group key. The groups
+ * in `order` take the palette colours by their place in it; any other group
+ * takes the next colour when first asked for.
+ */
 export function groupColorResolver(
   palette: string[],
   defaultColor: string,
+  order: readonly string[] = [],
 ): (group: string | undefined) => string {
   const scale = categoricalScale(palette);
+  for (const group of order) scale(group);
   return (group) =>
     group == null || group === "" ? defaultColor : scale(group);
 }
@@ -128,15 +167,27 @@ export interface GroupLegendEntry {
 
 /**
  * The node groups of a built graph, in the order they took their colours,
- * each with the colour of its nodes. When some nodes have a group and some
- * do not, an "NA" entry in `defaultColor` comes last. Empty when no node has
- * a group.
+ * each with the colour of its nodes. Given `levels` come first, in their
+ * order, also a level no node has, as a factor's unused levels stay in a
+ * ggplot2 legend with `drop = FALSE`; such a level takes its colour from
+ * `colorFor`, and is left out without it. When some nodes have a group and
+ * some do not, an "NA" entry in `defaultColor` comes last. Empty when no
+ * node has a group and no level is given.
  */
 export function groupLegend(
   graph: graphology.default,
   defaultColor: string,
+  levels: readonly string[] = [],
+  colorFor?: (group: string) => string,
 ): GroupLegendEntry[] {
   const seen = new Map<string, string>();
+  if (colorFor) {
+    for (const level of levels) {
+      if (!missingGroup(level) && !seen.has(level)) {
+        seen.set(level, colorFor(level));
+      }
+    }
+  }
   let ungrouped = false;
   graph.forEachNode((_, attrs) => {
     const group = attrs.group as string | undefined;
@@ -188,6 +239,11 @@ export function buildGraph(
     defaultNodeSize: number;
     colorFor: (group: string | undefined) => string;
     directed?: boolean;
+    /**
+     * Reads a colour of the `color` column for the renderer. The colour as
+     * given is kept on the edge as `rawColor`, to be read again later.
+     */
+    readEdgeColor?: (color: string) => string;
   },
 ): { graph: graphology.default; dropped: EdgeDrops } {
   const graph = new Graph({
@@ -274,8 +330,15 @@ export function buildGraph(
       dropped.duplicate += 1;
       continue;
     }
+    const read = opts.readEdgeColor;
     const edge = graph.addEdge(e.source, e.target, {
-      color: e.color ?? opts.defaultEdgeColor,
+      color:
+        e.color === undefined
+          ? opts.defaultEdgeColor
+          : read
+            ? read(e.color)
+            : e.color,
+      ...(e.color !== undefined && read ? { rawColor: e.color } : {}),
       // ForceAtlas2 reads `weight` as attraction, and a negative attraction
       // makes it diverge, so the layout gets |weight|. The signed value is kept
       // as `rawWeight`; a missing weight (NaN) falls back to the default of 1.
@@ -317,4 +380,107 @@ export function runForceAtlas2(
   const iters = Math.max(1, Math.min(Math.round(iterations), 2000));
   const settings = forceAtlas2.inferSettings(graph);
   forceAtlas2.assign(graph, { iterations: iters, settings });
+}
+
+/** A box on the canvas, in CSS pixels. */
+export interface LabelBox {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** A node label that {@link clearLabels} may draw. */
+export interface LabelCandidate {
+  /** The box the letters of the label fill. */
+  box: LabelBox;
+  /** The size of the node on screen. */
+  size: number;
+  /** Whether the frame before drew the label. */
+  shown?: boolean;
+  /** The place of the node in its cell of sigma's label grid, 0 first. */
+  rank?: number;
+}
+
+/** Least room between the letters of two node labels, in px. */
+export const LABEL_GAP = 2;
+/**
+ * How far, in px, the letters of two labels that were both on screen may
+ * run into each other before one goes: less than a pixel, which does not
+ * show as an overlap.
+ */
+const SHOWN_OVERLAP = 1;
+/** Side of the cells that file label boxes for the overlap check, in px. */
+const LABEL_CELL = 64;
+
+/**
+ * The node labels to draw in a frame, as indices into `labels`, so that
+ * their letters do not run into each other. Each box holds the letters of
+ * its label. A label is left out when its letters come within `gap` px of
+ * the letters of a label already taken, so every label left out has a
+ * drawn one next to it.
+ *
+ * The labels `shown` in the frame before go first, so a label on screen
+ * keeps its place while it still fits, and does not blink out for a frame
+ * as a zoom brings new labels in. Two of them go only when their letters
+ * overlap by {@link SHOWN_OVERLAP} px or more, so a zoom that brings them a
+ * hair closer for a frame does not make one blink. Of two such labels the
+ * one with the lower `rank` stays: the place of its node in its cell of
+ * sigma's label grid. As a zoom out thins the grid it keeps that label
+ * longest, so the other one does not come back for a frame when the grid
+ * drops the label that took its room. Then larger nodes go first, as
+ * sigma ranks the labels of one grid cell, and labels of nodes of one size
+ * go in the order given.
+ */
+export function clearLabels(
+  labels: readonly LabelCandidate[],
+  gap = LABEL_GAP,
+): number[] {
+  const at = (i: number) => labels[i] as LabelCandidate;
+  const rank = (i: number) =>
+    at(i).shown ? (at(i).rank ?? Number.POSITIVE_INFINITY) : 0;
+  const order = labels
+    .map((_, i) => i)
+    .sort(
+      (a, b) =>
+        Number(!!at(b).shown) - Number(!!at(a).shown) ||
+        rank(a) - rank(b) ||
+        at(b).size - at(a).size ||
+        a - b,
+    );
+  // The boxes taken so far, filed by cell, so a box is checked only
+  // against the boxes near it.
+  const cells = new Map<string, { box: LabelBox; shown: boolean }[]>();
+  const kept: number[] = [];
+  for (const i of order) {
+    const { box } = at(i);
+    const shown = !!at(i).shown;
+    const x0 = Math.floor((box.left - gap) / LABEL_CELL);
+    const x1 = Math.floor((box.right + gap) / LABEL_CELL);
+    const y0 = Math.floor((box.top - gap) / LABEL_CELL);
+    const y1 = Math.floor((box.bottom + gap) / LABEL_CELL);
+    const keys: string[] = [];
+    for (let cx = x0; cx <= x1; cx += 1) {
+      for (let cy = y0; cy <= y1; cy += 1) keys.push(`${cx},${cy}`);
+    }
+    const near = keys.some((key) =>
+      (cells.get(key) ?? []).some((o) => {
+        const g = shown && o.shown ? -SHOWN_OVERLAP : gap;
+        return (
+          box.left < o.box.right + g &&
+          o.box.left < box.right + g &&
+          box.top < o.box.bottom + g &&
+          o.box.top < box.bottom + g
+        );
+      }),
+    );
+    if (near) continue;
+    for (const key of keys) {
+      const cell = cells.get(key);
+      if (cell) cell.push({ box, shown });
+      else cells.set(key, [{ box, shown }]);
+    }
+    kept.push(i);
+  }
+  return kept;
 }

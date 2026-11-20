@@ -64,9 +64,9 @@ test_that("embedding() still allows a categorical color column", {
   expect_equal(w$x$data$columns$color, c("a", "b", "a"))
 })
 
-test_that("embedding() warns on non-finite coordinates", {
+test_that("embedding() warns on missing or infinite coordinates", {
   df <- data.frame(x = c(1, Inf), y = c(1, 2))
-  expect_warning(embedding(df), "`x` has 1 non-finite value")
+  expect_warning(embedding(df), "`x` has 1 value(s) that are", fixed = TRUE)
 })
 
 test_that("embedding() rejects empty input", {

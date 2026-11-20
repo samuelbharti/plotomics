@@ -135,6 +135,11 @@ spatial <- function(data,
     } else {
       as.character(data$color)
     }
+    # Numbers drawn on a colour ramp warn about a missing or infinite value,
+    # as in Python; numbers read as categories key it "NA".
+    if (is.numeric(data$color) && color_mode != "categorical") {
+      bv_check_finite(columns$color, "color")
+    }
     # Levels not given: a factor states them (as in embedding()), else the
     # browser takes the distinct values. `colors` then needs at least one
     # entry per level; extra entries are not used.

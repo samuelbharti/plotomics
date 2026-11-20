@@ -291,7 +291,9 @@ class Oncoplot(PlotomicsWidget):
         # burden is one per sample and the frequency one per gene. The schema
         # carries each column's own length and offset, so they share a buffer.
         buffer, schema = pack_columns(
-            {"codes": codes, "tmb": tmb, "freq": freq}, equal_length=False
+            {"codes": codes, "tmb": tmb, "freq": freq},
+            equal_length=False,
+            names={"tmb": "burden"},
         )
 
         meta: dict[str, Any] = {

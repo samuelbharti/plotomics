@@ -29,9 +29,9 @@ test_that("volcano() rejects a factor/character numeric column", {
   expect_error(volcano(df), "`x` must be numeric, not a factor/character")
 })
 
-test_that("volcano() warns (not errors) on non-finite values", {
+test_that("volcano() warns (not errors) on missing or infinite values", {
   df <- data.frame(x = c(1, NaN, Inf), y = c(1, 2, 3))
-  expect_warning(volcano(df), "`x` has 2 non-finite value")
+  expect_warning(volcano(df), "`x` has 2 value(s) that are", fixed = TRUE)
 })
 
 test_that("volcano() rejects empty input", {

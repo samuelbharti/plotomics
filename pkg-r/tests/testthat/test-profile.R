@@ -47,7 +47,8 @@ test_that("bioprofile() warns on values that are not finite and keeps their rows
   # leaves them out of the total, as it does for NaN from Python.
   expect_warning(
     w <- bioprofile(data.frame(value = c(3, NaN, Inf, 5)), as_fraction = TRUE),
-    "`value` has 2 non-finite value"
+    "`value` has 2 value(s) that are",
+    fixed = TRUE
   )
   json <- jsonlite::toJSON(
     w$preRenderHook(w)$x,

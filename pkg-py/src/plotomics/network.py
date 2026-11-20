@@ -8,6 +8,7 @@ from typing import Any
 from ._base import (
     STATIC,
     PlotomicsWidget,
+    _category_levels,
     _column,
     _text_or_none,
     _to_float32,
@@ -33,6 +34,10 @@ class Network(PlotomicsWidget):
         provide an ``id`` column. Optional columns: ``x``, ``y`` (precomputed
         coordinates), ``size`` (node radius in px), ``group`` (categorical,
         mapped to a palette color) and ``label`` (display name; defaults to id).
+        A pandas ``Categorical`` group fixes the order of the legend and the
+        colours to its categories, and keeps unused ones in the legend; other
+        groups go in the order the nodes have them. R does the same with a
+        factor.
     edges:
         A ``DataFrame`` or mapping with ``source`` and ``target`` columns of node
         ids, an optional numeric ``weight`` column and an optional ``color``
@@ -49,11 +54,16 @@ class Network(PlotomicsWidget):
     default_node_color:
         Fallback node color for nodes without a group.
     default_edge_color:
-        Edge color.
+        Colour of an edge with no colour of its own. ``None`` (the default)
+        takes the theme background with a fifth of the theme foreground mixed
+        in, so edges stay quieter than the nodes and the labels on a light and
+        on a dark background.
     label_threshold:
         Minimum node size (px) on screen for its label to render. At the
         default of 4, nodes of the default size are labelled at the starting
         zoom, and the renderer's label grid keeps the labels from crowding.
+        Where the letters of two labels would run into each other, the label
+        of the smaller node is left out.
     default_node_size:
         Node radius (px) used when ``size`` is absent.
     directed:
@@ -109,7 +119,7 @@ class Network(PlotomicsWidget):
         layout: str = "forceatlas2",
         iterations: int = 200,
         default_node_color: str = "#7c8598",
-        default_edge_color: str = "#d6dae1",
+        default_edge_color: str | None = None,
         label_threshold: float = 4.0,
         default_node_size: float = 4.0,
         directed: bool = False,
@@ -161,7 +171,9 @@ class Network(PlotomicsWidget):
         }
         edge_color = _column(edges, "color")
         if edge_color is not None:
-            color_list = [str(v) for v in edge_color]
+            # A missing colour crosses as null, as R sends NA, and the edge
+            # takes the default colour; str() would send "None" or "nan".
+            color_list = _text_or_none(edge_color)
             if len(color_list) != n_edges:
                 raise ValueError(
                     "`color` must match the number of edges; "
@@ -204,17 +216,23 @@ class Network(PlotomicsWidget):
         group = _column(nodes, "group")
         if group is not None:
             meta["nodeGroup"] = _text_or_none(group)
+            # A pandas Categorical states the order of its categories: the
+            # legend and the colours follow it, as they follow R's levels.
+            levels = _category_levels(group)
+            if levels is not None:
+                meta["nodeGroupLevels"] = levels
 
         options: dict[str, Any] = {
             "layout": layout,
             "iterations": iterations,
             "defaultNodeColor": default_node_color,
-            "defaultEdgeColor": default_edge_color,
             "labelThreshold": label_threshold,
             "defaultNodeSize": default_node_size,
             "directed": directed,
             "showLegend": show_legend,
         }
+        if default_edge_color is not None:
+            options["defaultEdgeColor"] = str(default_edge_color)
         if palette is not None:
             options["palette"] = list(palette)
         if theme is not None:

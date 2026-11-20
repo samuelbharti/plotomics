@@ -50,7 +50,7 @@ test_that("dotplot() validates its input", {
   # a NaN in one cell should not cost you the whole figure.
   bad2 <- make_df()
   bad2$value[1] <- NA_real_
-  expect_warning(dotplot(bad2), "non-finite")
+  expect_warning(dotplot(bad2), "missing (NA or NaN) or infinite", fixed = TRUE)
 
   expect_error(dotplot(make_df(), genes = "CD3D"), "not present in `genes`")
   expect_error(dotplot(make_df(), clusters = "T"), "not present in `clusters`")
@@ -60,7 +60,9 @@ test_that("dotplot() validates its input", {
 test_that("dotplot() warns, but draws, when pct is NA", {
   d <- data.frame(gene = c("A", "B"), cluster = "x", pct = c(NA, 50),
                   value = c(1, 2))
-  expect_warning(w <- dotplot(d), "non-finite")
+  expect_warning(
+    w <- dotplot(d), "missing (NA or NaN) or infinite", fixed = TRUE
+  )
   expect_s3_class(w, "htmlwidget")
 })
 

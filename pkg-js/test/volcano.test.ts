@@ -7,6 +7,8 @@ import {
   preparePoints,
   tooltipHtml,
   placeLabels,
+  roomForPoints,
+  yRange,
 } from "../src/components/volcano.js";
 
 describe("volcano helpers", () => {
@@ -102,5 +104,63 @@ describe("label placement", () => {
     const [spot] = placeLabels([{ x: 190, y: 50, width: 40 }], bounds, 11);
     expect(spot?.anchor).toBe("end");
     expect(spot?.x).toBe(186);
+  });
+});
+
+describe("volcano threshold line and p = 0", () => {
+  const inf = Number.POSITIVE_INFINITY;
+  const line = -Math.log10(0.05);
+
+  it("draws p = 0 above the threshold line when no finite y reaches it", () => {
+    // Before the fix p = 0 went to 1.0 with no finite y, and to 0.525 over
+    // a finite 0.5, both under the line at 1.3.
+    const all = preparePoints([2, -2, 3], [inf, inf, inf], undefined, line);
+    for (const y of all.yDraw) expect(y).toBeCloseTo(line * 1.05, 10);
+    const one = preparePoints([2, -2, 3], [inf, inf, 0.5], undefined, line);
+    expect(one.yDraw[0]).toBeCloseTo(line * 1.05, 10);
+    expect(one.yDraw[2]).toBe(0.5);
+    // Above the line already, p = 0 goes 5% above the highest finite y.
+    const high = preparePoints([1, 2], [inf, 6], undefined, line);
+    expect(high.yDraw[0]).toBeCloseTo(6.3, 10);
+  });
+
+  it("frames the threshold line with the points", () => {
+    const [lo, hi] = yRange([0.1, 0.5], line);
+    expect(lo).toBe(0);
+    expect(hi).toBeCloseTo(line * 1.04, 10);
+    // A line inside the data range leaves the range to the points: 4%
+    // of the axis above the highest one.
+    const [lo5, hi5] = yRange([0, 5], line);
+    expect(lo5).toBeCloseTo(-0.2, 10);
+    expect(hi5).toBeCloseTo(5 + 0.04 * 5.2, 10);
+    // No line: the points alone.
+    expect(yRange([0.1, 0.5])[1]).toBeCloseTo(0.52, 10);
+  });
+
+  it("keeps room above p = 0 next to a high finite y", () => {
+    const p = preparePoints([2, -2, 3], [inf, inf, 20], undefined, line);
+    expect(p.yDraw[0]).toBeCloseTo(21, 10);
+    // Before the fix the axis ended at 21.04, 4% of the spread of the
+    // drawn values above them, and the top cut the p = 0 points.
+    const [lo, hi] = yRange(p.yDraw, line);
+    expect(lo).toBe(0);
+    expect(hi).toBeCloseTo(21 * 1.04, 10);
+  });
+});
+
+describe("volcano room for large points", () => {
+  it("keeps the radius of a point free past the outermost points", () => {
+    // An axis 158 px long from 0 to 21.84 holds points from 20 to 21: 6 px
+    // above the top one. A point 20 px across needs 11 px.
+    const [lo, hi] = roomForPoints([0, 21.84], 20, 21, 11, 158);
+    const px = 158 / (hi - lo);
+    expect((hi - 21) * px).toBeGreaterThanOrEqual(11 - 1e-9);
+    expect((20 - lo) * px).toBeGreaterThanOrEqual(11 - 1e-9);
+    // Room that is there already stays as it is.
+    expect(roomForPoints([0, 100], 10, 90, 2, 500)).toEqual([0, 100]);
+    // Both ends of a range that is too short grow by the same share.
+    const [a, b] = roomForPoints([0, 1], 0, 1, 10, 100);
+    expect(-a).toBeCloseTo(b - 1, 10);
+    expect(-a * (100 / (b - a))).toBeCloseTo(10, 10);
   });
 });
