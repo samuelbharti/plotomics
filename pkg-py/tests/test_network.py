@@ -194,3 +194,29 @@ def test_network_leaves_the_edge_colour_to_the_theme_by_default():
     assert "defaultEdgeColor" not in Network(nodes, edges).options
     w = Network(nodes, edges, default_edge_color="#d62728")
     assert w.options["defaultEdgeColor"] == "#d62728"
+
+
+def test_network_sends_a_missing_edge_colour_as_null():
+    pd = pytest.importorskip("pandas")
+    nodes = {"id": ["a", "b", "c", "d"]}
+    edges = pd.DataFrame(
+        {
+            "source": ["a", "a", "a", "b"],
+            "target": ["b", "c", "d", "c"],
+            "color": pd.Series(["#d62728", None, pd.NA, "#1f77b4"], dtype="string"),
+        }
+    )
+    # Before the fix a missing colour went as the text "None", "nan" or
+    # "<NA>", which the browser drew black; null takes the default colour.
+    assert Network(nodes, edges).data["columns"]["color"] == [
+        "#d62728",
+        None,
+        None,
+        "#1f77b4",
+    ]
+    edges = {
+        "source": ["a", "a"],
+        "target": ["b", "c"],
+        "color": ["#d62728", float("nan")],
+    }
+    assert Network(nodes, edges).data["columns"]["color"] == ["#d62728", None]

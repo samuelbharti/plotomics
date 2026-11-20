@@ -93,7 +93,8 @@ export function extractEdges(data: PlotomicsData): EdgeSpec[] {
         target: String(tgt[i]),
         // null (R's JSON for NA) is a missing weight, not 0.
         ...(w ? { weight: w[i] == null ? Number.NaN : Number(w[i]) } : {}),
-        ...(c ? { color: String(c[i]) } : {}),
+        // A missing colour (null, NaN or "") takes the default edge colour.
+        ...(c && !missingGroup(c[i]) ? { color: String(c[i]) } : {}),
       };
     }
     return out;
@@ -107,7 +108,7 @@ export function extractEdges(data: PlotomicsData): EdgeSpec[] {
   return [];
 }
 
-/** Whether a node group is missing: null, NaN or "". */
+/** Whether a node group or an edge colour is missing: null, NaN or "". */
 function missingGroup(v: unknown): boolean {
   return v == null || v === "" || (typeof v === "number" && Number.isNaN(v));
 }
@@ -367,4 +368,68 @@ export function runForceAtlas2(
   const iters = Math.max(1, Math.min(Math.round(iterations), 2000));
   const settings = forceAtlas2.inferSettings(graph);
   forceAtlas2.assign(graph, { iterations: iters, settings });
+}
+
+/** A box on the canvas, in CSS pixels. */
+export interface LabelBox {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** Least room between the letters of two node labels, in px. */
+export const LABEL_GAP = 2;
+/** Side of the cells that file label boxes for the overlap check, in px. */
+const LABEL_CELL = 64;
+
+/**
+ * The node labels to draw in a frame, as indices into `labels`, so that no
+ * two drawn labels come within `gap` px of each other. Each box holds the
+ * letters of its label. Larger nodes go first, as sigma ranks the labels
+ * of one grid cell, and labels of nodes of one size go in the order given.
+ * A label is left out only when its letters come within `gap` of the
+ * letters of a label already taken, so every label left out has a drawn
+ * one next to it.
+ */
+export function clearLabels(
+  labels: readonly { box: LabelBox; size: number }[],
+  gap = LABEL_GAP,
+): number[] {
+  const size = (i: number) => (labels[i] as { size: number }).size;
+  const order = labels
+    .map((_, i) => i)
+    .sort((a, b) => size(b) - size(a) || a - b);
+  // The boxes taken so far, filed by cell, so a box is checked only
+  // against the boxes near it.
+  const cells = new Map<string, LabelBox[]>();
+  const kept: number[] = [];
+  for (const i of order) {
+    const box = (labels[i] as { box: LabelBox }).box;
+    const x0 = Math.floor((box.left - gap) / LABEL_CELL);
+    const x1 = Math.floor((box.right + gap) / LABEL_CELL);
+    const y0 = Math.floor((box.top - gap) / LABEL_CELL);
+    const y1 = Math.floor((box.bottom + gap) / LABEL_CELL);
+    const keys: string[] = [];
+    for (let cx = x0; cx <= x1; cx += 1) {
+      for (let cy = y0; cy <= y1; cy += 1) keys.push(`${cx},${cy}`);
+    }
+    const near = keys.some((key) =>
+      (cells.get(key) ?? []).some(
+        (o) =>
+          box.left < o.right + gap &&
+          o.left < box.right + gap &&
+          box.top < o.bottom + gap &&
+          o.top < box.bottom + gap,
+      ),
+    );
+    if (near) continue;
+    for (const key of keys) {
+      const cell = cells.get(key);
+      if (cell) cell.push(box);
+      else cells.set(key, [box]);
+    }
+    kept.push(i);
+  }
+  return kept;
 }

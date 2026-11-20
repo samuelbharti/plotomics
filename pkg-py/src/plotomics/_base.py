@@ -163,6 +163,7 @@ def pack_columns(
     *,
     equal_length: bool = True,
     quiet: Any = (),
+    names: Mapping[str, str] | None = None,
 ) -> tuple[bytes, dict]:
     """Pack named numeric columns into one buffer + a ``BufferSchema`` dict.
 
@@ -178,11 +179,16 @@ def pack_columns(
     quiet:
         Names of columns whose NaN/Inf values are not warned about here,
         because the caller warns about them in its own words.
+    names:
+        The name a warning or an error gives a column, where the user passed
+        it under another name, such as the ``matrix`` packed as ``values``.
+        A column not in it goes by its own name.
     """
+    names = names or {}
     converted: list[tuple[str, np.ndarray, str]] = []
     for name, values in numeric.items():
         arr, dtype = _to_transport(
-            np.asarray(values), name, warn=name not in quiet
+            np.asarray(values), names.get(name, name), warn=name not in quiet
         )
         converted.append((name, arr, dtype))
 

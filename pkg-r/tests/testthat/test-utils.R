@@ -180,3 +180,34 @@ test_that("the warning about missing or infinite values says what it counts", {
     "(Inf or -Inf)."
   ))
 })
+
+test_that("the warning names the argument the user passed, as Python does", {
+  text <- "value(s) that are missing (NA or NaN) or infinite (Inf or -Inf)."
+  # Before the fix oncoplot() did not warn about a missing burden, which
+  # Python does, and spatial() did not warn about a numeric colour.
+  alterations <- data.frame(
+    gene = c("TP53", "KRAS"), sample = c("s1", "s2"), class = "Missense"
+  )
+  expect_equal(
+    testthat::capture_warnings(oncoplot(alterations, burden = c(1, NA))),
+    paste("`burden` has 1", text)
+  )
+  spots <- data.frame(x = c(1, 2), y = c(1, 2), color = c(1, NA))
+  image <- list(image = "tissue.png", img_width = 600, img_height = 600)
+  expect_equal(
+    testthat::capture_warnings(do.call(spatial, c(list(spots), image))),
+    paste("`color` has 1", text)
+  )
+  # Numbers read as categories key a missing one "NA".
+  expect_equal(
+    testthat::capture_warnings(do.call(
+      spatial, c(list(spots, color_mode = "categorical"), image)
+    )),
+    character()
+  )
+  # R names its matrix argument `mat`, where Python names `matrix`.
+  expect_equal(
+    testthat::capture_warnings(bioheatmap(matrix(c(1, NaN, 2, 3), 2))),
+    paste("`mat` has 1", text)
+  )
+})

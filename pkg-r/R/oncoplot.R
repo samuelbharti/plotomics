@@ -179,6 +179,7 @@ oncoplot <- function(alterations,
     if (length(burden) != ncols) {
       stop("`burden` must have one value per sample.", call. = FALSE)
     }
+    bv_check_finite(burden, "burden")
   }
 
   columns <- list(

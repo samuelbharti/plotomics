@@ -40,6 +40,7 @@ import {
 } from "../core/index.js";
 import { fitAxisTicks } from "../core/ticks.js";
 import { scatterBackground } from "../core/paint.js";
+import { keepBackground } from "../core/dom.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
@@ -245,9 +246,10 @@ export function preparePoints(
 
 /**
  * The y range a fit shows: the drawn y values with 4% of their range above
- * and below, down to 0 at least, and up past the threshold line at
- * `yThreshold`, when the plot draws one, by 4% of its height, so the line
- * is always in view.
+ * and below, down to 0 at least. The highest point, or the threshold line
+ * at `yThreshold` when the plot draws one, keeps 4% of the axis above it,
+ * so the line is always in view and p = 0 drawn above a high finite y is
+ * not cut by the top of the plot.
  */
 export function yRange(
   yDraw: ArrayLike<number>,
@@ -255,8 +257,14 @@ export function yRange(
 ): [number, number] {
   const range = paddedExtent(yDraw as Column);
   range[0] = Math.min(0, range[0]);
-  if (shownThreshold(yThreshold)) {
-    const top = yThreshold + 0.04 * (yThreshold - range[0]);
+  let high = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i < yDraw.length; i += 1) {
+    const y = yDraw[i] as number;
+    if (Number.isFinite(y) && y > high) high = y;
+  }
+  if (shownThreshold(yThreshold) && yThreshold > high) high = yThreshold;
+  if (Number.isFinite(high)) {
+    const top = high + 0.04 * (high - range[0]);
     if (range[1] < top) range[1] = top;
   }
   return range;
@@ -385,9 +393,10 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   el.style.position = el.style.position || "relative";
   // regl-scatterplot leaves the canvas transparent, so the theme background is
   // painted on the element: the plot panel and the axis margins alike.
-  // destroy() puts back what the element had.
-  const priorBackground = el.style.backgroundColor;
-  el.style.backgroundColor = theme.background;
+  // It is the whole background, so an image or a gradient the element
+  // has does not show through. destroy() puts back what the element had.
+  const restoreBackground = keepBackground(el);
+  el.style.background = theme.background;
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:absolute;display:block;";
   const under = document.createElementNS(SVG_NS, "svg") as SVGSVGElement;
@@ -419,19 +428,31 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     if (data.columns.x && isStartView(scatterplot)) applyData();
   }, 120);
 
-  scatterplot.subscribe("pointOver", (i: number) => showTip(i));
+  scatterplot.subscribe("pointOver", (i: number) => {
+    // A drag pans the view or draws a lasso: no tooltip until it ends.
+    if (pressed) forgetHover();
+    else showTip(i);
+  });
   scatterplot.subscribe("pointOut", () => tooltip.hide());
   scatterplot.subscribe("view", () => {
     // Domains were mutated in place by the scatterplot; redraw the overlay.
     xDomain = xScale.domain() as [number, number];
     yDomain = yScale.domain() as [number, number];
     renderOverlay();
-    // The point the tooltip names has moved with the view. Hide the
-    // tooltip, and forget the hovered point, so the next move of the
-    // pointer names the point under it, also when that is the same one.
+    // The point the tooltip names has moved with the view.
+    forgetHover();
+  });
+  // A lasso stops the hover, and the tooltip would stay through it.
+  scatterplot.subscribe("lassoStart", () => forgetHover());
+
+  /**
+   * Hide the tooltip, and forget the hovered point, so the next move of
+   * the pointer names the point under it, also when that is the same one.
+   */
+  function forgetHover() {
     tooltip.hide();
     scatterplot.hover(-1, { preventEvent: true });
-  });
+  }
 
   // The points drawn last, in drawn order. regl-scatterplot reports drawn
   // indices, and rows with a missing value are not drawn, so map back here.
@@ -449,9 +470,12 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   }
 
   const lastPointer = { x: 0, y: 0 };
+  /** Whether a mouse button was down at the last move over the plot. */
+  let pressed = false;
   const onMove = (e: MouseEvent) => {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
+    pressed = e.buttons !== 0;
   };
   el.addEventListener("mousemove", onMove);
 
@@ -910,7 +934,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       const prevOpts = opts;
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
-      el.style.backgroundColor = theme.background;
+      el.style.background = theme.background;
       const prev = margin;
       const prevBase = baseMargin;
       const [prevW, prevH] = [width, height];
@@ -992,7 +1016,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       tooltip.destroy();
       scatterplot.destroy();
       plot.remove();
-      el.style.backgroundColor = priorBackground;
+      restoreBackground();
     },
   };
 

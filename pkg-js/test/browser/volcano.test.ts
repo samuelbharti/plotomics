@@ -755,7 +755,7 @@ describe("volcano zoomed past the precision of its numbers", () => {
   });
 });
 
-describe("volcano with no finite y above the threshold", () => {
+describe("volcano p = 0 and the threshold line", () => {
   /** Where the up and down points, and the grey ones, sit on the canvas. */
   async function pointRows(el: HTMLElement) {
     const canvas = el.querySelector("canvas") as HTMLCanvasElement;
@@ -828,6 +828,17 @@ describe("volcano with no finite y above the threshold", () => {
     expect(rows.hit.bottom).toBeLessThan(line as number);
   });
 
+  it("keeps room above p = 0 next to a high finite y", async () => {
+    const { rows } = await draw([
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+      20,
+    ]);
+    // Before the fix p = 0 sat at 21 with the axis top at 21.04, so the
+    // top of the plot cut the points.
+    expect(rows.hit.top).toBeGreaterThan(6);
+  });
+
   it("keeps the threshold line in view, between p = 0 and the finite genes", async () => {
     const { rows, line } = await draw([
       Number.POSITIVE_INFINITY,
@@ -842,11 +853,14 @@ describe("volcano with no finite y above the threshold", () => {
   });
 });
 
-describe("volcano tooltip after a zoom", () => {
-  it("hides the tooltip when the view moves, and shows it again on a move", async () => {
+describe("volcano tooltip after the view moves", () => {
+  /**
+   * A volcano whose middle gene sits at the centre of the plot (x is
+   * centred on 0, and y runs from 0 to 8 with the same room above and
+   * below), with the tooltip naming it.
+   */
+  async function hovered() {
     const el = container(800, 400);
-    // The middle gene sits at the centre of the plot: x is centred on 0
-    // and y runs from 0 to 8 with the same room above and below.
     instances.push(
       createVolcano(el, {
         data: {
@@ -881,7 +895,34 @@ describe("volcano tooltip after a zoom", () => {
     await move();
     expect(tip().style.opacity).toBe("1");
     expect(tip().textContent).toContain("G2");
+    return { el, canvas, centre, tip, move };
+  }
 
+  /** Press at the centre, drag 80 px right and 40 px down, and let go. */
+  async function drag(
+    canvas: HTMLCanvasElement,
+    centre: { clientX: number; clientY: number },
+    extra: MouseEventInit = {},
+  ) {
+    const at = (dx: number) => ({
+      clientX: centre.clientX + dx,
+      clientY: centre.clientY + dx / 2,
+      bubbles: true,
+      buttons: 1,
+      ...extra,
+    });
+    canvas.dispatchEvent(new MouseEvent("mousedown", at(0)));
+    // The moves go to the canvas under the pointer, as a browser sends
+    // them, and reach the window the scatterplot listens on.
+    for (let k = 1; k <= 10; k += 1) {
+      canvas.dispatchEvent(new MouseEvent("mousemove", at(8 * k)));
+      await new Promise((res) => setTimeout(res, 20));
+    }
+    canvas.dispatchEvent(new MouseEvent("mouseup", { ...at(80), buttons: 0 }));
+  }
+
+  it("hides the tooltip after a zoom, and shows it again on a move", async () => {
+    const { el, canvas, centre, tip, move } = await hovered();
     const start = yTicks(el).join(",");
     for (let i = 0; i < 5; i += 1) {
       canvas.dispatchEvent(
@@ -898,9 +939,127 @@ describe("volcano tooltip after a zoom", () => {
     await new Promise((res) => setTimeout(res, 300));
     // Before the fix the tooltip stayed until the pointer moved.
     expect(tip().style.opacity).not.toBe("1");
-    // The gene is still under the pointer, and a move names it again.
-    await move();
-    expect(tip().style.opacity).toBe("1");
+    // The gene is still under the pointer, and a move names it again. A
+    // slow machine can still be settling the view, which hides it again,
+    // so the move is made until the tooltip stays.
+    await expect
+      .poll(async () => {
+        await move();
+        return tip().style.opacity;
+      }, poll)
+      .toBe("1");
     expect(tip().textContent).toContain("G2");
+  });
+
+  it("hides the tooltip after a drag pan, and shows it again on a move", async () => {
+    const { el, canvas, centre, tip } = await hovered();
+    const start = yTicks(el).join(",");
+    await drag(canvas, centre);
+    await expect.poll(() => yTicks(el).join(","), slow).not.toBe(start);
+    await new Promise((res) => setTimeout(res, 300));
+    // Before the fix the tooltip stayed where the drag began, naming G2.
+    expect(tip().style.opacity).not.toBe("1");
+    // The gene moved with the drag, to where it ended, and a move there
+    // names it again, once the view has settled.
+    await expect
+      .poll(async () => {
+        canvas.dispatchEvent(
+          new MouseEvent("mousemove", {
+            clientX: centre.clientX + 80,
+            clientY: centre.clientY + 40,
+            bubbles: true,
+          }),
+        );
+        await frame();
+        await frame();
+        return tip().style.opacity;
+      }, poll)
+      .toBe("1");
+    expect(tip().textContent).toContain("G2");
+  });
+
+  it("hides the tooltip when a lasso starts", async () => {
+    const { canvas, centre, tip } = await hovered();
+    // Shift and a drag draw a lasso, which stops the hover.
+    await drag(canvas, centre, { shiftKey: true });
+    await new Promise((res) => setTimeout(res, 300));
+    // Before the fix the tooltip stayed through the lasso.
+    expect(tip().style.opacity).not.toBe("1");
+  });
+});
+
+describe("volcano refit for a new threshold", () => {
+  /** The highest y tick. */
+  const top = (el: HTMLElement) => Math.max(...yTicks(el));
+
+  it("fits the threshold line at the start view and keeps a zoomed view", async () => {
+    const el = container(800, 400);
+    const v = createVolcano(el, {
+      data: { columns: { x: [-2, 1, 2], y: [0.1, 0.3, 0.5] } },
+      options: { labelTopN: 0 },
+    });
+    instances.push(v);
+    // The line at 1.3 is in view.
+    await expect.poll(() => top(el), slow).toBeGreaterThanOrEqual(1.2);
+    // Hidden lines leave the axis to the points.
+    v.setOptions({ showThresholdLines: false });
+    await expect.poll(() => top(el), slow).toBeLessThan(0.7);
+    v.setOptions({ showThresholdLines: true });
+    await expect.poll(() => top(el), slow).toBeGreaterThanOrEqual(1.2);
+    // Before the fix a new threshold kept the old range, and its line at 3
+    // was out of view.
+    v.setOptions({ pThreshold: 0.001 });
+    await expect.poll(() => top(el), slow).toBeGreaterThanOrEqual(3);
+
+    // A view the person zoomed stays as it is.
+    await frame();
+    await frame();
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const r = canvas.getBoundingClientRect();
+    const start = yTicks(el).join(",");
+    for (let i = 0; i < 4; i += 1) {
+      canvas.dispatchEvent(
+        new WheelEvent("wheel", {
+          clientX: r.left + r.width / 2,
+          clientY: r.top + r.height * 0.9,
+          deltaY: -120,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await frame();
+    }
+    await expect.poll(() => yTicks(el).join(","), slow).not.toBe(start);
+    await new Promise((res) => setTimeout(res, 300));
+    const zoomed = yTicks(el).join(",");
+    v.setOptions({ pThreshold: 0.05 });
+    await new Promise((res) => setTimeout(res, 300));
+    expect(yTicks(el).join(",")).toBe(zoomed);
+    v.setOptions({ showThresholdLines: false });
+    await new Promise((res) => setTimeout(res, 300));
+    expect(yTicks(el).join(",")).toBe(zoomed);
+  });
+});
+
+describe("volcano background", () => {
+  it("covers a gradient on the element, and puts it back on destroy", () => {
+    for (const given of [
+      "linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255))",
+      "var(--host-bg)",
+    ]) {
+      const el = container(600, 400);
+      el.style.setProperty("--host-bg", "linear-gradient(red, blue)");
+      el.style.background = given;
+      const before = el.style.getPropertyValue("background");
+      const v = createVolcano(el, {
+        data: { columns: { x: [-1, 1], y: [1, 2] } },
+      });
+      // Before the fix only the colour was set, and the gradient showed
+      // through the transparent canvas.
+      expect(getComputedStyle(el).backgroundImage, given).toBe("none");
+      v.destroy();
+      expect(el.style.getPropertyValue("background"), given).toBe(before);
+      el.remove();
+    }
   });
 });

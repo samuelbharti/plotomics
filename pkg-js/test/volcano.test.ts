@@ -127,9 +127,22 @@ describe("volcano threshold line and p = 0", () => {
     const [lo, hi] = yRange([0.1, 0.5], line);
     expect(lo).toBe(0);
     expect(hi).toBeCloseTo(line * 1.04, 10);
-    // A line inside the data range leaves the range as it was.
-    expect(yRange([0, 5], line)).toEqual([-0.2, 5.2]);
+    // A line inside the data range leaves the range to the points: 4%
+    // of the axis above the highest one.
+    const [lo5, hi5] = yRange([0, 5], line);
+    expect(lo5).toBeCloseTo(-0.2, 10);
+    expect(hi5).toBeCloseTo(5 + 0.04 * 5.2, 10);
     // No line: the points alone.
-    expect(yRange([0.1, 0.5])[1]).toBeCloseTo(0.516, 10);
+    expect(yRange([0.1, 0.5])[1]).toBeCloseTo(0.52, 10);
+  });
+
+  it("keeps room above p = 0 next to a high finite y", () => {
+    const p = preparePoints([2, -2, 3], [inf, inf, 20], undefined, line);
+    expect(p.yDraw[0]).toBeCloseTo(21, 10);
+    // Before the fix the axis ended at 21.04, 4% of the spread of the
+    // drawn values above them, and the top cut the p = 0 points.
+    const [lo, hi] = yRange(p.yDraw, line);
+    expect(lo).toBe(0);
+    expect(hi).toBeCloseTo(21 * 1.04, 10);
   });
 });

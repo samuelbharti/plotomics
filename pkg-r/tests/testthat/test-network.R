@@ -180,3 +180,18 @@ test_that("network() leaves the edge colour to the theme by default", {
   w <- network(nodes, edges, default_edge_color = "#d62728")
   expect_equal(w$x$options$defaultEdgeColor, "#d62728")
 })
+
+test_that("network() sends a missing edge colour as null", {
+  nodes <- data.frame(id = c("a", "b", "c"))
+  edges <- data.frame(
+    source = c("a", "b"), target = c("b", "c"), color = c("#d62728", NA)
+  )
+  w <- network(nodes, edges)
+  # null, not the text "NA", with the NA setting htmlwidgets writes it
+  # with: the browser gives the edge the default colour.
+  json <- jsonlite::toJSON(
+    w$preRenderHook(w)$x,
+    na = "null", auto_unbox = TRUE
+  )
+  expect_match(json, '"color":["#d62728",null]', fixed = TRUE)
+})

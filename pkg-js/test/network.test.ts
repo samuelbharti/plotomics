@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  type LabelBox,
   buildGraph,
+  clearLabels,
   extractEdges,
   groupColorResolver,
   groupLegend,
@@ -189,6 +191,42 @@ describe("network helpers", () => {
     expect(graph.getEdgeAttribute("b", "c", "color")).toBe("#0f0");
   });
 
+  it("gives an edge with a missing colour the default colour", () => {
+    // R sends NA as null, and Python None and NaN as null; NaN and "" may
+    // come from other callers. Before the fix each became the text "null",
+    // "NaN" or "", which sigma draws black.
+    const color = ["#f00", null, Number.NaN, ""] as unknown as string[];
+    const parsed = extractEdges({
+      columns: {
+        source: ["a", "a", "a", "b"],
+        target: ["b", "c", "d", "c"],
+        color,
+      },
+    });
+    expect(parsed.map((e) => e.color)).toEqual([
+      "#f00",
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    const { graph } = buildFull({
+      columns: {
+        id: ["a", "b", "c", "d"],
+        source: ["a", "a", "a", "b"],
+        target: ["b", "c", "d", "c"],
+        color,
+      },
+    });
+    expect(graph.getEdgeAttribute("a", "b", "color")).toBe("#f00");
+    for (const [s, t] of [
+      ["a", "c"],
+      ["a", "d"],
+      ["b", "c"],
+    ] as const) {
+      expect(graph.getEdgeAttribute(s, t, "color")).toBe("#ccc");
+    }
+  });
+
   it("falls back to the builder default when no color column is present", () => {
     const { graph } = buildFull({
       columns: { id: ["a", "b"], source: ["a"], target: ["b"] },
@@ -363,5 +401,74 @@ describe("network group levels", () => {
       { label: "NA", color: "#000", missing: true },
     ]);
     expect(graph.getNodeAttribute("a", "color")).toBe("#c");
+  });
+});
+
+describe("network labels that keep clear of each other", () => {
+  const box = (left: number, top: number, width = 40, height = 10) => ({
+    left,
+    right: left + width,
+    top,
+    bottom: top + height,
+  });
+
+  it("keeps two labels with room between their letters", () => {
+    // 8.6 px between the letters: before the fix the full height of the
+    // font made them collide.
+    expect(
+      clearLabels([
+        { box: box(0, 0), size: 4 },
+        { box: box(5, 18.6), size: 4 },
+      ]),
+    ).toEqual([0, 1]);
+  });
+
+  it("leaves out a label within 2 px of another, the smaller node's", () => {
+    // The hub's label is taken first, though sigma asked for it second.
+    // The label 1 px from it is left out; the one 3 px from it is drawn.
+    expect(
+      clearLabels([
+        { box: box(0, 9, 49), size: 4 },
+        { box: box(50, 20), size: 16 },
+        { box: box(93, 20, 30), size: 4 },
+      ]),
+    ).toEqual([1, 2]);
+  });
+
+  it("leaves out only labels that a drawn label is next to", () => {
+    let s = 7;
+    const rand = () => {
+      s = (s * 1103515245 + 12345) % 2147483648;
+      return s / 2147483648;
+    };
+    const labels = Array.from({ length: 400 }, () => ({
+      box: box(rand() * 800, rand() * 480, 20 + rand() * 60, 8 + rand() * 6),
+      size: 2 + Math.floor(rand() * 4) * 4,
+    }));
+    const gap = 2;
+    const near = (a: LabelBox, b: LabelBox) =>
+      a.left < b.right + gap &&
+      b.left < a.right + gap &&
+      a.top < b.bottom + gap &&
+      b.top < a.bottom + gap;
+    const at = (i: number) => labels[i] as { box: LabelBox; size: number };
+    const kept = clearLabels(labels, gap);
+    const drawn = new Set(kept);
+    for (const i of kept) {
+      for (const j of kept) {
+        if (i < j) expect(near(at(i).box, at(j).box)).toBe(false);
+      }
+    }
+    for (let i = 0; i < labels.length; i += 1) {
+      if (drawn.has(i)) continue;
+      // A label left out has a drawn label next to it, of a node at least
+      // as large.
+      const by = kept.filter((j) => near(at(i).box, at(j).box));
+      expect(by.length).toBeGreaterThan(0);
+      expect(Math.max(...by.map((j) => at(j).size))).toBeGreaterThanOrEqual(
+        at(i).size,
+      );
+    }
+    expect(kept.length).toBeGreaterThan(50);
   });
 });

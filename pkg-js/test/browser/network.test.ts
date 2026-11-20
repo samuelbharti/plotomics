@@ -619,11 +619,12 @@ function recordLabelBoxes() {
 }
 
 describe("network labels in a crowded graph", () => {
-  it("never draws a node label over another", async () => {
+  it("never draws a node label over another, nor leaves out one with room", async () => {
     for (const [width, fontSize] of [
       [400, 12],
       [400, 16],
       [800, 12],
+      [800, 14],
       [800, 16],
     ] as const) {
       const rec = recordLabelBoxes();
@@ -652,11 +653,69 @@ describe("network labels in a crowded graph", () => {
         expect(hits, at).toEqual([]);
         // The labels that do not collide are still drawn.
         expect(boxes.length, at).toBeGreaterThan(3);
+        if (width === 800 && fontSize === 14) {
+          // Before the fix PROT109 was left out with 8.6 px between its
+          // letters and those of PROT103: the check took the full height
+          // of the font, not the letters.
+          expect(
+            boxes.map((b) => b.text),
+            at,
+          ).toContain("PROT109");
+        }
         net.destroy();
         el.remove();
       } finally {
         rec.restore();
       }
+    }
+  });
+});
+
+describe("network labels that collide", () => {
+  it("keeps the label of the larger node", async () => {
+    const rec = recordLabelBoxes();
+    try {
+      // A small node with a long label, and right of it, in the next cell
+      // of sigma's label grid, a hub whose label runs into it.
+      instances.push(
+        createNetwork(container(600, 400), {
+          data: {
+            columns: {
+              id: ["tiny", "HUB", "c1", "c2", "c3", "c4"],
+              x: [0, 3.2, -20, 20, -20, 20],
+              y: [0, 0.2, -10, -10, 10, 10],
+              size: [4, 16, 4, 4, 4, 4],
+            },
+            meta: {
+              nodeLabels: [
+                "small neighbour gene label",
+                "HUB GENE",
+                "c1",
+                "c2",
+                "c3",
+                "c4",
+              ],
+              edges: [
+                ["HUB", "tiny"],
+                ["HUB", "c1"],
+                ["HUB", "c2"],
+                ["HUB", "c3"],
+                ["HUB", "c4"],
+              ],
+            },
+          },
+          options: { layout: "precomputed" },
+        }),
+      );
+      await expect.poll(() => rec.boxes().length, poll).toBeGreaterThan(0);
+      await new Promise((r) => setTimeout(r, 300));
+      const shown = rec.boxes().map((b) => b.text);
+      // Before the fix only the small node's label was drawn: sigma asks
+      // for its cell first, and the first label drawn kept its room.
+      expect(shown).toContain("HUB GENE");
+      expect(shown).not.toContain("small neighbour gene label");
+    } finally {
+      rec.restore();
     }
   });
 });
@@ -734,5 +793,24 @@ describe("network destroy", () => {
     const bare = container();
     createNetwork(bare, { data: ring(), options }).destroy();
     expect(bare.getAttribute("style") ?? "").not.toContain("background");
+  });
+
+  it("covers a gradient on the element, and puts it back on destroy", () => {
+    for (const given of [
+      "linear-gradient(rgb(255, 0, 0), rgb(0, 0, 255))",
+      "var(--host-bg)",
+    ]) {
+      const el = container();
+      el.style.setProperty("--host-bg", "linear-gradient(red, blue)");
+      el.style.background = given;
+      const before = el.style.getPropertyValue("background");
+      const net = createNetwork(el, { data: ring() });
+      // Before the fix only the colour was set, and the gradient showed
+      // through sigma's transparent canvases.
+      expect(getComputedStyle(el).backgroundImage, given).toBe("none");
+      net.destroy();
+      expect(el.style.getPropertyValue("background"), given).toBe(before);
+      el.remove();
+    }
   });
 });

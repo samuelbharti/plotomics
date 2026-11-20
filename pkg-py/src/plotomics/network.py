@@ -62,7 +62,8 @@ class Network(PlotomicsWidget):
         Minimum node size (px) on screen for its label to render. At the
         default of 4, nodes of the default size are labelled at the starting
         zoom, and the renderer's label grid keeps the labels from crowding.
-        A label that would run into one already drawn is left out.
+        Where the letters of two labels would run into each other, the label
+        of the smaller node is left out.
     default_node_size:
         Node radius (px) used when ``size`` is absent.
     directed:
@@ -170,7 +171,9 @@ class Network(PlotomicsWidget):
         }
         edge_color = _column(edges, "color")
         if edge_color is not None:
-            color_list = [str(v) for v in edge_color]
+            # A missing colour crosses as null, as R sends NA, and the edge
+            # takes the default colour; str() would send "None" or "nan".
+            color_list = _text_or_none(edge_color)
             if len(color_list) != n_edges:
                 raise ValueError(
                     "`color` must match the number of edges; "

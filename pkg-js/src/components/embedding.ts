@@ -581,7 +581,11 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     if (data.columns.x && isStartView(scatterplot)) applyData(true);
   }, 120);
 
-  scatterplot.subscribe("pointOver", (k: number) => showTip(drawn[k] ?? k));
+  scatterplot.subscribe("pointOver", (k: number) => {
+    // A drag pans the view or draws a lasso: no tooltip until it ends.
+    if (pressed) forgetHover();
+    else showTip(drawn[k] ?? k);
+  });
   scatterplot.subscribe("pointOut", () => tooltip.hide());
   scatterplot.subscribe("select", ({ points }: { points: number[] }) => {
     // Report data rows, not the scatterplot's point numbers.
@@ -597,17 +601,28 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     xDomain = xScale.domain() as [number, number];
     yDomain = yScale.domain() as [number, number];
     renderOverlay();
-    // The point the tooltip names has moved with the view. Hide the
-    // tooltip, and forget the hovered point, so the next move of the
-    // pointer names the point under it, also when that is the same one.
+    // The point the tooltip names has moved with the view.
+    forgetHover();
+  });
+  // A lasso stops the hover, and the tooltip would stay through it.
+  scatterplot.subscribe("lassoStart", () => forgetHover());
+
+  /**
+   * Hide the tooltip, and forget the hovered point, so the next move of
+   * the pointer names the point under it, also when that is the same one.
+   */
+  function forgetHover() {
     tooltip.hide();
     scatterplot.hover(-1, { preventEvent: true });
-  });
+  }
 
   const lastPointer = { x: 0, y: 0 };
+  /** Whether a mouse button was down at the last move over the plot. */
+  let pressed = false;
   const onMove = (e: MouseEvent) => {
     lastPointer.x = e.clientX;
     lastPointer.y = e.clientY;
+    pressed = e.buttons !== 0;
   };
   el.addEventListener("mousemove", onMove);
 

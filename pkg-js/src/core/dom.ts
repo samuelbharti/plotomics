@@ -396,6 +396,40 @@ export function releaseContainer(el: HTMLElement): void {
   if (!el.getAttribute("style")) el.removeAttribute("style");
 }
 
+/**
+ * Keep the inline background of `el` to put back later, and return the
+ * function that puts it back. A plot paints its theme background with the
+ * `background` shorthand, so an image or a gradient the element has does
+ * not show through its transparent canvases.
+ */
+export function keepBackground(el: HTMLElement): () => void {
+  const style = el.style;
+  // A shorthand, also one with var(), holds every part; else the parts
+  // given one by one.
+  const whole = style.getPropertyValue("background");
+  const saved: [string, string, string][] = whole
+    ? [["background", whole, style.getPropertyPriority("background")]]
+    : [];
+  if (!whole) {
+    for (let i = 0; i < style.length; i += 1) {
+      const name = style.item(i);
+      if (name.startsWith("background")) {
+        saved.push([
+          name,
+          style.getPropertyValue(name),
+          style.getPropertyPriority(name),
+        ]);
+      }
+    }
+  }
+  return () => {
+    style.removeProperty("background");
+    for (const [name, value, priority] of saved) {
+      style.setProperty(name, value, priority);
+    }
+  };
+}
+
 /** A shadow root, also one from another window such as an iframe. */
 function isShadowRoot(node: Node): node is ShadowRoot {
   return node.nodeType === 11 && "host" in node;
