@@ -260,6 +260,22 @@ export function textWidth(
 }
 
 /**
+ * How far in px the letters of `text` reach below their baseline, set at
+ * `size` px in `fontFamily` as {@link textWidth} measures it: about 0 for
+ * "R158H", and more for a letter with a descender, such as "p". Null
+ * outside a browser, where nothing is measured.
+ */
+export function textDescent(
+  text: string,
+  size: number,
+  fontFamily: string,
+): number | null {
+  textWidth(text, size, fontFamily);
+  if (!measureCtx) return null;
+  return Math.max(0, measureCtx.measureText(text).actualBoundingBoxDescent);
+}
+
+/**
  * `text` cut with an ellipsis to at most `maxWidth` px, measured as
  * {@link textWidth} does. Text that fits comes back whole, and when not
  * even the ellipsis fits the result is empty.

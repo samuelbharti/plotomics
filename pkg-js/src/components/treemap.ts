@@ -34,7 +34,11 @@ import {
   categoricalColors,
 } from "../core/index.js";
 import { guardDestroy, uniqueId } from "../core/dom.js";
-import { canvasColours, plainColour } from "../core/paint.js";
+import {
+  canvasColours,
+  hideUnreadableColours,
+  plainColour,
+} from "../core/paint.js";
 import {
   stratify,
   treemap,
@@ -444,7 +448,17 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
     renderOverlay();
   }
 
-  function renderOverlay() {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, svg);
+  }
+
+  function drawOverlay() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     renderBreadcrumb();

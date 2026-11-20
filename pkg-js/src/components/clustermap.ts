@@ -71,6 +71,7 @@ import {
   zScoreByRow,
 } from "./clustermap-cluster.js";
 import { guardDestroy, uniqueId } from "../core/dom.js";
+import { hideUnreadableColours } from "../core/paint.js";
 
 export type { Linkage, Metric } from "./clustermap-cluster.js";
 
@@ -726,7 +727,17 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     renderOverlay();
   }
 
-  function renderOverlay() {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, svg);
+  }
+
+  function drawOverlay() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     if (nrows === 0 || ncols === 0) {

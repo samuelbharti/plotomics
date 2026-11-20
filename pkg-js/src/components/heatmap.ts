@@ -54,7 +54,7 @@ import {
 } from "../core/index.js";
 import { releaseRegl } from "../core/gl.js";
 import { guardDestroy, uniqueId } from "../core/dom.js";
-import { colourBytes } from "../core/paint.js";
+import { colourBytes, hideUnreadableColours } from "../core/paint.js";
 import createREGL from "regl";
 import type { Regl, Texture2D, DrawCommand } from "regl";
 
@@ -1075,7 +1075,17 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   }
 
   // --- overlay: frame + colorbar + tick labels ----------------------------
-  function renderOverlay() {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, svg);
+  }
+
+  function drawOverlay() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const x0 = margin.left;

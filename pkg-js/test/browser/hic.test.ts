@@ -593,12 +593,85 @@ describe("hic colour bar labels", () => {
       }),
     );
     expect(barLabels(el).map((t) => t.textContent)).toEqual([
-      "10000",
-      "1000",
+      "10k",
+      "1k",
       "100",
       "10",
       "1",
       "0",
     ]);
   });
+
+  // Before the fix a large log scale printed every power in full, and a
+  // narrow margin cut them: "10 | 1000 | 1000..." for vmax 1e5 at 300 x 225
+  // px and fontSize 20, where the cut "100000" read as a second 1000, and no
+  // label at all for vmax 1e9 or 1e15.
+  for (const vmax of [1e5, 1e6, 1e9, 1e15]) {
+    it(`labels a bar to ${vmax} whole and short at small sizes`, () => {
+      for (const transform of ["log", "linear"] as const) {
+        for (const [w, h, fontSize] of [
+          [300, 225, 16],
+          [300, 225, 20],
+          [400, 300, 16],
+          [300, 480, 8],
+          [600, 480, 12],
+        ] as const) {
+          const el = container(w, h);
+          const hic = createHic(el, {
+            data: {
+              columns: { values: decay(64) },
+              meta: { n: 64, binSize: 10_000 },
+            },
+            options: { transform, vmin: 0, vmax, theme: { fontSize } },
+          });
+          const labels = barLabels(el);
+          const texts = labels.map((t) => t.textContent ?? "");
+          const where = `${transform}, ${w} x ${h}, font ${fontSize}: ${texts.join(" | ")}`;
+          expect(labels.length, where).toBeGreaterThan(0);
+          // Whole, never cut, each in at most five characters.
+          for (const s of texts) {
+            expect(s, where).toMatch(
+              /^(0|\d+(\.\d+)?[kM]?|\d+(\.\d+)?e[+-]\d+)$/,
+            );
+          }
+          // One notation for the bar: all in the exponent form, or none.
+          const exponent = texts
+            .filter((s) => s !== "0")
+            .map((s) => /e/.test(s));
+          expect(new Set(exponent).size, where).toBeLessThanOrEqual(1);
+          // Each states its own value: inside the scale, falling downward.
+          const values = texts.map(valueStated);
+          for (const v of values) {
+            expect(v, where).toBeGreaterThanOrEqual(0);
+            expect(v, where).toBeLessThanOrEqual(vmax);
+          }
+          for (let i = 1; i < values.length; i += 1) {
+            expect(values[i] as number, where).toBeLessThan(
+              values[i - 1] as number,
+            );
+          }
+          // The top of the bar keeps its label: the top power of ten of a
+          // log scale, and a round value in its upper half for a linear one.
+          if (transform === "log") {
+            expect(values[0], where).toBe(10 ** Math.floor(Math.log10(vmax)));
+          } else {
+            expect(values[0] as number, where).toBeGreaterThanOrEqual(vmax / 2);
+          }
+          // Inside the widget and clear of each other.
+          const box = el.getBoundingClientRect();
+          const rects = labels.map((t) => t.getBoundingClientRect());
+          for (const r of rects) {
+            expect(r.right, where).toBeLessThanOrEqual(box.right + 0.5);
+          }
+          for (let i = 1; i < rects.length; i += 1) {
+            expect(rects[i]?.top as number, where).toBeGreaterThanOrEqual(
+              (rects[i - 1]?.bottom as number) - 0.5,
+            );
+          }
+          hic.destroy();
+          el.remove();
+        }
+      }
+    });
+  }
 });

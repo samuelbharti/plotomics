@@ -57,7 +57,12 @@ import {
   categoricalColors,
 } from "../core/index.js";
 import { guardDestroy } from "../core/dom.js";
-import { canvasColours, colourBytes, setCanvasColour } from "../core/paint.js";
+import {
+  canvasColours,
+  colourBytes,
+  hideUnreadableColours,
+  setCanvasColour,
+} from "../core/paint.js";
 import { tickStep } from "d3-array";
 
 export interface ProfileOptions {
@@ -599,7 +604,17 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
     return layout.baseline - ((val - axis.bottom) / span) * layout.plotH;
   }
 
-  function renderOverlay(axis: ValueAxis) {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, svg);
+  }
+
+  function drawOverlay(axis: ValueAxis) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const gcol = groupCol();

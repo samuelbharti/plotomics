@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { createDotplot } from "../../src/components/dotplot.js";
 import { createLollipop } from "../../src/components/lollipop.js";
@@ -17,10 +17,12 @@ import { PLOTS, settled } from "./plots.js";
 // read var(): given one as it is, a canvas keeps black or the colour it drew
 // before, regl-scatterplot paints white and sigma black. So each plot is
 // drawn twice, once with its colours given directly and once with the same
-// colours as var(), and the two must look the same. Before the fix the
-// UpSet bars, the profile bars and banner, the lollipop PTM track and heads,
-// the KM curves, the oncoplot cells, the violins, the spatial spots, the
-// treemap tiles, the embedding points and the network nodes differed.
+// colours as var(), and the two must look the same, on screen and in both
+// exports, with the custom properties set on the plot's element or on a
+// parent. Before the fix the UpSet bars, the profile bars and banner, the
+// lollipop PTM track and heads, the KM curves, the oncoplot cells, the
+// violins, the spatial spots, the treemap tiles, the embedding points and
+// the network nodes differed.
 
 const COLOURS = {
   background: "#fdf6e3",
@@ -119,6 +121,130 @@ async function drawn(
   return pixels;
 }
 
+/** The pixels of a PNG, as RGBA bytes. */
+async function pngPixels(png: Blob | null | undefined) {
+  if (!png) return new Uint8ClampedArray(0);
+  const bitmap = await createImageBitmap(png);
+  const c = document.createElement("canvas");
+  c.width = bitmap.width;
+  c.height = bitmap.height;
+  const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return ctx.getImageData(0, 0, c.width, c.height).data;
+}
+
+/** An exported SVG drawn `w` x `h` px, as RGBA bytes. */
+async function svgPixels(
+  text: string | null | undefined,
+  w: number,
+  h: number,
+) {
+  if (!text) return new Uint8ClampedArray(0);
+  const image = new Image();
+  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`;
+  await image.decode();
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+  ctx.drawImage(image, 0, 0, w, h);
+  return ctx.getImageData(0, 0, w, h).data;
+}
+
+/** Set the custom properties of the var() theme on `el`. */
+function setVars(
+  el: HTMLElement,
+  colours: Record<string, string>,
+  palette: string[],
+) {
+  for (const [k, v] of Object.entries(colours)) {
+    el.style.setProperty(`--t-${k}`, v);
+  }
+  palette.forEach((c, i) => {
+    el.style.setProperty(`--t-c${i}`, c);
+  });
+}
+
+/** What a plot shows: the screen and both exports, as pixels. */
+interface Views {
+  screen: Uint8ClampedArray;
+  png: Uint8ClampedArray;
+  svg: Uint8ClampedArray;
+}
+
+async function views(
+  name: string,
+  el: HTMLElement,
+  inst: PlotomicsInstance<unknown>,
+  height: number,
+): Promise<Views> {
+  await settled(name);
+  await settled(name);
+  return {
+    screen: await shot(el),
+    png: await pngPixels(await inst.exportPNG?.(1)),
+    svg: await svgPixels(inst.exportSVG?.(), 640, height),
+  };
+}
+
+/**
+ * Draw a plot with `theme` in an element inside a parent, the custom
+ * properties set on the element or on the parent, and take its views.
+ * `then`, when given, runs after the first views and the views are taken
+ * again.
+ */
+async function drawnIn(
+  plot: (typeof PLOTS)[number],
+  theme: Partial<PlotomicsTheme>,
+  on: "element" | "parent",
+  then?: (parent: HTMLElement, inst: PlotomicsInstance<unknown>) => void,
+): Promise<Views> {
+  const parent = document.createElement("div");
+  const el = document.createElement("div");
+  el.style.cssText = `width:640px;height:${plot.height}px;`;
+  parent.appendChild(el);
+  document.body.appendChild(parent);
+  setVars(on === "element" ? el : parent, COLOURS, PALETTE);
+  const inst = plot.make(el, theme);
+  instances.push(inst);
+  let out = await views(plot.name, el, inst, plot.height);
+  if (then) {
+    then(parent, inst);
+    out = await views(plot.name, el, inst, plot.height);
+  }
+  inst.destroy();
+  instances = instances.filter((i) => i !== inst);
+  parent.remove();
+  return out;
+}
+
+function expectSame(want: Views, got: Views) {
+  expect(got.screen.length, "screen").toBeGreaterThan(0);
+  expect(differing(want.screen, got.screen), "screen").toBe(0);
+  expect(differing(want.png, got.png), "PNG export").toBe(0);
+  expect(differing(want.svg, got.svg), "SVG export").toBe(0);
+}
+
+/** Other colours for the same theme fields, set after the first draw. */
+const COLOURS_2 = {
+  background: "#e6fffa",
+  foreground: "#1a365d",
+  muted: "#97266d",
+  grid: "#f6ad55",
+  axis: "#742a2a",
+};
+const PALETTE_2 = [
+  "#2f855a",
+  "#c53030",
+  "#d69e2e",
+  "#2b6cb0",
+  "#6b46c1",
+  "#b83280",
+  "#319795",
+  "#4a5568",
+];
+
 describe.each(PLOTS)("$name with theme colours given as var()", (plot) => {
   it("draws as it does with the colours given directly", async () => {
     const want = await drawn(plot.name, plot.height, (el) =>
@@ -128,6 +254,89 @@ describe.each(PLOTS)("$name with theme colours given as var()", (plot) => {
       plot.make(el, viaVar),
     );
     expect(differing(want, got)).toBe(0);
+  });
+
+  it("shows and exports the colours set on the element or on a parent", async () => {
+    const want = await drawnIn(plot, literal, "element");
+    expectSame(want, await drawnIn(plot, viaVar, "element"));
+    expectSame(want, await drawnIn(plot, viaVar, "parent"));
+  });
+
+  it("takes the new colours on resize() after the page changes them", async () => {
+    // Before the fix the network and the embedding kept the colours they
+    // read when they were built.
+    const want = await drawnIn(
+      plot,
+      { ...COLOURS_2, categorical: PALETTE_2 },
+      "element",
+    );
+    const got = await drawnIn(plot, viaVar, "parent", (parent, inst) => {
+      setVars(parent, COLOURS_2, PALETTE_2);
+      inst.resize(640, plot.height);
+    });
+    expectSame(want, got);
+  });
+});
+
+describe.each(PLOTS)("$name with a colour the page cannot read", (plot) => {
+  // An undefined custom property, or an R colour name CSS lacks such as
+  // "grey50", paints nothing on the canvas. Before the fix the legend keys
+  // and labels kept it, which the screen drew black and the SVG export left
+  // out: a KM legend key and risk table name in black for a curve that was
+  // not drawn.
+  const palette = (second: string) =>
+    PALETTE.map((c, i) => (i === 1 ? second : c));
+
+  // A warning names each colour once on the page, so each plot takes its
+  // own: an R grey from grey10 up, which CSS does not have.
+  const grey = `grey${10 + PLOTS.indexOf(plot)}`;
+  for (const unreadable of [`var(--nope-${plot.name})`, grey]) {
+    it(`leaves out what takes ${unreadable}, as for "none", and names it once`, async () => {
+      const warn = vi.spyOn(console, "warn");
+      try {
+        const none = await drawnIn(
+          plot,
+          { ...literal, categorical: palette("none") },
+          "element",
+        );
+        const named = () =>
+          warn.mock.calls.filter((c) => String(c[0]).includes(unreadable));
+        expect(named()).toEqual([]);
+        const got = await drawnIn(
+          plot,
+          { ...literal, categorical: palette(unreadable) },
+          "element",
+          (_, inst) => inst.resize(640, plot.height),
+        );
+        expectSame(none, got);
+        // Once at most, for the plots that use the second colour, however
+        // often it is read.
+        expect(named().length).toBeLessThanOrEqual(1);
+        const users = ["km", "oncoplot", "lollipop", "embedding", "spatial"];
+        if (users.includes(plot.name)) expect(named().length).toBe(1);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  }
+
+  it("does not warn about transparent or none", async () => {
+    const warn = vi.spyOn(console, "warn");
+    try {
+      for (const deliberate of ["transparent", "none"]) {
+        await drawnIn(
+          plot,
+          { ...literal, categorical: palette(deliberate) },
+          "element",
+        );
+      }
+      const colour = warn.mock.calls.filter((c) =>
+        String(c[0]).includes("cannot read the colour"),
+      );
+      expect(colour).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

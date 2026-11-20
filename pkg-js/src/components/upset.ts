@@ -53,7 +53,11 @@ import {
   fitText,
 } from "../core/index.js";
 import { guardDestroy } from "../core/dom.js";
-import { canvasColour, setCanvasColour } from "../core/paint.js";
+import {
+  canvasColour,
+  hideUnreadableColours,
+  setCanvasColour,
+} from "../core/paint.js";
 
 export interface UpsetOptions {
   /** Fraction of the height given to the intersection bars, in (0, 1). */
@@ -584,7 +588,17 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     return layout.barBaseline - (v / top) * (layout.barH - 6);
   }
 
-  function renderOverlay(axis: { ticks: number[]; top: number; step: number }) {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, svg);
+  }
+
+  function drawOverlay(axis: { ticks: number[]; top: number; step: number }) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const names = sets();

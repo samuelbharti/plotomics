@@ -54,7 +54,11 @@ import {
   isFlatRange,
 } from "../core/index.js";
 import { guardDestroy } from "../core/dom.js";
-import { canvasColour, setCanvasColour } from "../core/paint.js";
+import {
+  canvasColour,
+  hideUnreadableColours,
+  setCanvasColour,
+} from "../core/paint.js";
 
 export interface DotplotOptions {
   /** Sequential ramp for the expression channel. */
@@ -563,7 +567,17 @@ export const createDotplot: PlotomicsFactory<DotplotOptions> = (
     renderOverlay();
   }
 
-  function renderOverlay() {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, svg);
+  }
+
+  function drawOverlay() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const g = genes();

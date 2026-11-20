@@ -55,7 +55,11 @@ import {
   PALETTE_20,
 } from "../core/index.js";
 import { guardDestroy } from "../core/dom.js";
-import { canvasColours, setCanvasColour } from "../core/paint.js";
+import {
+  canvasColours,
+  hideUnreadableColours,
+  setCanvasColour,
+} from "../core/paint.js";
 
 export interface OncoplotOptions {
   /** Fraction of a cell's width left blank between columns, in [0, 0.5). */
@@ -751,7 +755,17 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     renderOverlay();
   }
 
-  function renderOverlay() {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, svg);
+  }
+
+  function drawOverlay() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const R = nrows();

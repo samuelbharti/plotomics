@@ -40,7 +40,11 @@ import {
 } from "../core/index.js";
 import { guardDestroy } from "../core/dom.js";
 import { fitAxisTicks } from "../core/ticks.js";
-import { scatterBackground, scatterColour } from "../core/paint.js";
+import {
+  hideUnreadableColours,
+  scatterBackground,
+  scatterColour,
+} from "../core/paint.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
@@ -589,7 +593,17 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   }
 
   // ---- overlay rendering (axes, thresholds, labels) ----
-  function renderOverlay() {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, under, svg);
+  }
+
+  function drawOverlay() {
     for (const layer of [under, svg]) {
       while (layer.firstChild) layer.removeChild(layer.firstChild);
     }

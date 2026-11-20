@@ -60,7 +60,11 @@ import {
   formatTicks,
   isFlatRange,
 } from "../core/index.js";
-import { canvasColours, setCanvasColour } from "../core/paint.js";
+import {
+  canvasColours,
+  hideUnreadableColours,
+  setCanvasColour,
+} from "../core/paint.js";
 import { guardDestroy, uniqueId } from "../core/dom.js";
 
 export type SpatialColorMode = "auto" | "categorical" | "continuous";
@@ -940,7 +944,17 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     };
   }
 
-  function renderOverlay(layout: LegendLayout) {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, svg);
+  }
+
+  function drawOverlay(layout: LegendLayout) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height || !layout) return;
     const fs = sizes.label;

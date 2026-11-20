@@ -42,7 +42,7 @@ describe("hic colour bar ticks", () => {
 
   it("labels powers of ten of a log scale, where the bar has room", () => {
     const tall = hicColorbarTicks(0, 12_345.6, "log", 400, gaps);
-    expect(labels(tall)).toEqual(["0", "1", "10", "100", "1000", "10000"]);
+    expect(labels(tall)).toEqual(["0", "1", "10", "100", "1k", "10k"]);
     for (const x of tall) {
       expect(x.at).toBeCloseTo(Math.log1p(x.value) / Math.log1p(12_345.6), 9);
     }
@@ -73,17 +73,48 @@ describe("hic colour bar ticks", () => {
       "100",
       "200",
       "500",
-      "1000",
-      "2000",
-      "5000",
-      "10000",
+      "1k",
+      "2k",
+      "5k",
+      "10k",
     ]);
     expect(labels(hicColorbarTicks(5, 12_345.6, "log", 150, gaps))).toEqual([
       "10",
       "100",
-      "1000",
-      "10000",
+      "1k",
+      "10k",
     ]);
+  });
+
+  it("labels the powers of a large log scale short, in one notation", () => {
+    // Before, every power printed in full, "1000000000", which a narrow
+    // margin cut or left out.
+    expect(labels(hicColorbarTicks(0, 1e6, "log", 80, gaps))).toEqual([
+      "1",
+      "100",
+      "10k",
+      "1M",
+    ]);
+    expect(labels(hicColorbarTicks(0, 5e8, "log", 400, gaps))).toContain(
+      "100M",
+    );
+    // From a billion up, every power takes the exponent form.
+    const billion = labels(hicColorbarTicks(0, 1e9, "log", 160, gaps));
+    expect(billion[billion.length - 1]).toBe("1e+9");
+    for (const s of billion) expect(s).toMatch(/^(0|[125]e\+\d+)$/);
+    const huge = labels(hicColorbarTicks(0, 1e15, "log", 120, gaps));
+    expect(huge[huge.length - 1]).toBe("1e+15");
+    for (const s of huge) expect(s.length).toBeLessThanOrEqual(5);
+  });
+
+  it("takes a coarser linear step when the labels are wider than the room", () => {
+    const width = (s: string) => 7 * s.length;
+    const t = hicColorbarTicks(0, 1e15, "linear", 400, {
+      ...gaps,
+      roomPx: 40,
+      labelPx: width,
+    });
+    expect(labels(t)).toEqual(["0", "1e+15"]);
   });
 
   it("takes round linear ticks where log1p is near linear", () => {

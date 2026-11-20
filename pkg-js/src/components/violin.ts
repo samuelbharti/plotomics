@@ -56,7 +56,12 @@ import {
   formatTicks,
 } from "../core/index.js";
 import { guardDestroy } from "../core/dom.js";
-import { canvasColours, plainColour, setCanvasColour } from "../core/paint.js";
+import {
+  canvasColours,
+  hideUnreadableColours,
+  plainColour,
+  setCanvasColour,
+} from "../core/paint.js";
 
 export interface ViolinOptions {
   /** Fraction of a cell's width the widest violin fills, in (0, 1].
@@ -661,7 +666,17 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     renderOverlay();
   }
 
-  function renderOverlay() {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, svg);
+  }
+
+  function drawOverlay() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const f = features();

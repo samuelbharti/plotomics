@@ -70,8 +70,12 @@ import {
   fitText,
   categoricalColors,
 } from "../core/index.js";
-import { guardDestroy } from "../core/dom.js";
-import { canvasColours, setCanvasColour } from "../core/paint.js";
+import { guardDestroy, textDescent } from "../core/dom.js";
+import {
+  canvasColours,
+  hideUnreadableColours,
+  setCanvasColour,
+} from "../core/paint.js";
 
 export interface LollipopOptions {
   /** Radius of the smallest stem head, in pixels. */
@@ -389,6 +393,12 @@ export interface LabelSpot {
 export interface LabelCandidate {
   width: number;
   spots: LabelSpot[];
+  /**
+   * How far the drawn letters reach below the baseline, in px, which
+   * `bounds.bottom` is checked against. A sixth of a row, the descent of
+   * the label box, when not given.
+   */
+  descent?: number;
 }
 
 /** The box a label of `width` takes at `spot`, in a row `labelH` tall. */
@@ -415,9 +425,9 @@ function labelBox(spot: LabelSpot, width: number, labelH: number): Box {
  * head. Labels are placed in the order given (most important first), each at
  * the first of its spots that is free and inside `bounds`; a centred label is
  * first moved sideways to fit the bounds. `bounds.bottom`, when given, is
- * the lowest a label may reach, such as the top of the domain band. A label
- * with no free spot is dropped (null). Deterministic, so a redraw and an
- * export agree.
+ * the lowest the drawn letters of a label may reach, such as the top of the
+ * domain band. A label with no free spot is dropped (null). Deterministic,
+ * so a redraw and an export agree.
  */
 export function placeLabels(
   candidates: LabelCandidate[],
@@ -444,9 +454,10 @@ export function placeLabels(
             }
           : s;
       const box = labelBox(spot, c.width, labelH);
+      const inkBottom = spot.y + (c.descent ?? labelH / 6);
       if (
         box.y0 < bounds.top ||
-        (bounds.bottom !== undefined && box.y1 > bounds.bottom + 0.5) ||
+        (bounds.bottom !== undefined && inkBottom > bounds.bottom + 0.5) ||
         box.x0 < bounds.left - 0.5 ||
         box.x1 > bounds.right + 0.5
       ) {
@@ -1027,7 +1038,17 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     renderOverlay();
   }
 
-  function renderOverlay() {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, svg);
+  }
+
+  function drawOverlay() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const L = plen();
@@ -1145,15 +1166,21 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
         }
         return {
           width: textWidth(labs[i] ?? "", sizes.label) + 4,
+          // The letters, not the font box, keep clear of the domain band:
+          // "P152fs" has no descender and sits on the band's top.
+          descent:
+            textDescent(labs[i] ?? "", sizes.label, theme.fontFamily) ??
+            undefined,
           spots: onTop
             ? [above[0] as LabelSpot, ...beside, ...above.slice(1)]
             : beside,
         };
       });
       // A label box starts five sixths of a row above its baseline, and
-      // the font box of the text reaches a little higher. No label reaches
-      // down into the band of the backbone and the domains: beside a head
-      // near the baseline of a short plot, it ran over a domain block.
+      // the font box of the text reaches a little higher. No drawn letter
+      // reaches down into the band of the backbone and the domains: beside
+      // a head near the baseline of a short plot, a label ran over a domain
+      // block.
       const spots = placeLabels(
         candidates,
         heads,

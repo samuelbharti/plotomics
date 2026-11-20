@@ -1226,55 +1226,90 @@ describe("lollipop labels at small sizes", () => {
     },
   };
 
+  /** The same hotspots, with every variant asked to be labelled. */
+  const everyLabel = {
+    ...tp53,
+    meta: { ...tp53.meta, labelIndex: labels.map((_, i) => i) },
+  };
+
   it("keeps every variant label clear of the domain blocks", () => {
-    for (const [w, h, fontSize] of [
-      [300, 200, 16],
-      [300, 200, 12],
-      [360, 240, 14],
-      [400, 260, 16],
-      [500, 300, 16],
-      [900, 440, 12],
+    for (const data of [tp53, everyLabel]) {
+      for (const [w, h, fontSize] of [
+        [300, 200, 16],
+        [300, 200, 12],
+        [360, 240, 14],
+        [400, 260, 16],
+        [500, 300, 16],
+        [900, 440, 12],
+        [900, 440, 20],
+        [250, 180, 8],
+        [1600, 300, 16],
+      ] as const) {
+        const el = container(w, h);
+        const plot = createLollipop(el, {
+          data,
+          options: { theme: { fontSize } },
+        });
+        const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+        const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+        const ratio = canvas.width / canvas.clientWidth;
+        const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        const magenta = (x: number, y: number) => {
+          const i = (y * canvas.width + x) * 4;
+          return d[i] === 255 && d[i + 1] === 0 && d[i + 2] === 255;
+        };
+        const origin = canvas.getBoundingClientRect();
+        const shown = svgTexts(el).filter((t) =>
+          labels.includes(t.textContent ?? ""),
+        );
+        const where = `${w} x ${h}, font ${fontSize}`;
+        expect(shown.length, where).toBeGreaterThan(0);
+        for (const t of shown) {
+          // The box of the label, trimmed to one em across its line, as the
+          // text size tests measure it.
+          const r = t.getBoundingClientRect();
+          const trim = 0.18 * Number(t.getAttribute("font-size"));
+          const x0 = Math.ceil((r.left - origin.left) * ratio);
+          const x1 = Math.floor((r.right - origin.left) * ratio);
+          const y0 = Math.ceil((r.top + trim - origin.top) * ratio);
+          const y1 = Math.floor((r.bottom - trim - origin.top) * ratio);
+          let hit = 0;
+          for (
+            let y = Math.max(0, y0);
+            y < Math.min(canvas.height, y1);
+            y += 1
+          ) {
+            for (
+              let x = Math.max(0, x0);
+              x < Math.min(canvas.width, x1);
+              x += 1
+            ) {
+              if (magenta(x, y)) hit += 1;
+            }
+          }
+          expect(hit, `${where}: "${t.textContent}"`).toBe(0);
+        }
+        plot.destroy();
+        el.remove();
+      }
+    }
+  });
+
+  it("shows a label whose letters clear the domain band", () => {
+    // The bound once counted the whole font box, with room for a
+    // descender: "P152fs" and "R158H" have none, and their letters cleared
+    // the band by 1.5 to 2 px, but they were left out.
+    for (const [w, h, fontSize, name] of [
+      [900, 440, 20, "P152fs"],
+      [400, 260, 16, "R158H"],
     ] as const) {
       const el = container(w, h);
       const plot = createLollipop(el, {
-        data: tp53,
+        data: everyLabel,
         options: { theme: { fontSize } },
       });
-      const canvas = el.querySelector("canvas") as HTMLCanvasElement;
-      const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
-      const ratio = canvas.width / canvas.clientWidth;
-      const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-      const magenta = (x: number, y: number) => {
-        const i = (y * canvas.width + x) * 4;
-        return d[i] === 255 && d[i + 1] === 0 && d[i + 2] === 255;
-      };
-      const origin = canvas.getBoundingClientRect();
-      const shown = svgTexts(el).filter((t) =>
-        labels.includes(t.textContent ?? ""),
-      );
-      const where = `${w} x ${h}, font ${fontSize}`;
-      expect(shown.length, where).toBeGreaterThan(0);
-      for (const t of shown) {
-        // The box of the label, trimmed to one em across its line, as the
-        // text size tests measure it.
-        const r = t.getBoundingClientRect();
-        const trim = 0.18 * Number(t.getAttribute("font-size"));
-        const x0 = Math.ceil((r.left - origin.left) * ratio);
-        const x1 = Math.floor((r.right - origin.left) * ratio);
-        const y0 = Math.ceil((r.top + trim - origin.top) * ratio);
-        const y1 = Math.floor((r.bottom - trim - origin.top) * ratio);
-        let hit = 0;
-        for (let y = Math.max(0, y0); y < Math.min(canvas.height, y1); y += 1) {
-          for (
-            let x = Math.max(0, x0);
-            x < Math.min(canvas.width, x1);
-            x += 1
-          ) {
-            if (magenta(x, y)) hit += 1;
-          }
-        }
-        expect(hit, `${where}: "${t.textContent}"`).toBe(0);
-      }
+      const shown = svgTexts(el).map((t) => t.textContent);
+      expect(shown, `${w} x ${h}, font ${fontSize}`).toContain(name);
       plot.destroy();
       el.remove();
     }

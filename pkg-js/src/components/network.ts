@@ -52,6 +52,7 @@ import { guardDestroy } from "../core/dom.js";
 import {
   bytesToColour,
   colourBytes,
+  hideUnreadableColours,
   luminance,
   plainColour,
   setCanvasColour,
@@ -365,6 +366,49 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     return plainColour(colour, el) ?? "rgba(0, 0, 0, 0)";
   }
 
+  /**
+   * The colours the graph is drawn with, as read inside the element: the
+   * group palette, the default node and edge colours and the hover colours.
+   */
+  function readColours(): string {
+    return JSON.stringify([
+      paletteColors().map(sigmaColour),
+      sigmaColour(opts.defaultNodeColor),
+      sigmaColour(opts.defaultEdgeColor),
+      hoverColours(theme, el),
+    ]);
+  }
+  /** The colours of the last build or recolour, from readColours. */
+  let drawnColours = "";
+
+  /**
+   * Give the nodes, and the edges of the default colour, the colours read
+   * now, keeping the graph and its layout, and build the renderer again for
+   * the hover colours.
+   */
+  function recolour(colours: string) {
+    const oldEdge = (JSON.parse(drawnColours || "[]") as unknown[])[2];
+    const colorFor = groupColorResolver(
+      paletteColors().map(sigmaColour),
+      sigmaColour(opts.defaultNodeColor),
+    );
+    graph.forEachNode((node, attrs) => {
+      graph.setNodeAttribute(
+        node,
+        "color",
+        colorFor(attrs.group as string | undefined),
+      );
+    });
+    const edge = sigmaColour(opts.defaultEdgeColor);
+    graph.forEachEdge((key, attrs) => {
+      if (attrs.color === oldEdge) graph.setEdgeAttribute(key, "color", edge);
+    });
+    legend = groupLegend(graph, sigmaColour(opts.defaultNodeColor));
+    drawnColours = colours;
+    layout();
+    makeRenderer();
+  }
+
   function buildAndLayout(): { graph: Graph; dropped: EdgeDrops } {
     const colorFor = groupColorResolver(
       paletteColors().map(sigmaColour),
@@ -596,6 +640,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       svg.appendChild(t);
       y += rowH;
     }
+    hideUnreadableColours(el, svg);
   }
 
   function showTip(node: string) {
@@ -616,6 +661,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     const built = buildAndLayout();
     graph = built.graph;
     legend = groupLegend(graph, sigmaColour(opts.defaultNodeColor));
+    drawnColours = readColours();
     reportDropped(built.dropped);
     // Sigma reads the size of its container when it is created.
     layout();
@@ -643,6 +689,14 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     },
     resize(w, h) {
       fitBox(w, h);
+      // Sigma cannot read var(), so its colours were read inside the
+      // element. A custom property the page changed since takes its new
+      // value here, as the canvas plots take it when they draw again.
+      const colours = readColours();
+      if (colours !== drawnColours) {
+        recolour(colours);
+        return;
+      }
       layout();
       renderer?.resize();
       renderer?.refresh();
