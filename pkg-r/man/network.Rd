@@ -10,7 +10,7 @@ network(
   layout = c("forceatlas2", "precomputed"),
   iterations = 200,
   default_node_color = "#7c8598",
-  default_edge_color = "#d6dae1",
+  default_edge_color = NULL,
   label_threshold = 4,
   default_node_size = 4,
   directed = FALSE,
@@ -26,7 +26,10 @@ network(
 \item{nodes}{A data frame of nodes. Must contain an \code{id} column (coerced to
 character). Optional columns: \code{x}, \code{y} (precomputed coordinates), \code{size}
 (node radius in px), \code{group} (categorical, mapped to a palette color) and
-\code{label} (display name; defaults to \code{id}).}
+\code{label} (display name; defaults to \code{id}). A \strong{factor} \code{group} fixes the
+order of the legend and the colours to its levels, and keeps unused
+levels in the legend, the way \code{drop = FALSE} does in ggplot2; other
+groups go in the order the nodes have them.}
 
 \item{edges}{A data frame of edges with columns \code{source} and \code{target} holding
 node ids, an optional numeric \code{weight} column, and an optional \code{color}
@@ -42,12 +45,15 @@ missing) or \code{"precomputed"} (require and use \code{x}/\code{y} from \code{n
 
 \item{default_node_color}{Fallback node color for nodes without a \code{group}.}
 
-\item{default_edge_color}{Edge color.}
+\item{default_edge_color}{Colour of an edge with no colour of its own.
+\code{NULL} (the default) takes the theme background with a fifth of the
+theme foreground mixed in, so edges stay quieter than the nodes and the
+labels on a light and on a dark background.}
 
 \item{label_threshold}{Minimum node size (px) on screen for its label to
 render. At the default of 4, nodes of the default size are labelled at
 the starting zoom, and the renderer's label grid keeps the labels from
-crowding.}
+crowding. A label that would run into one already drawn is left out.}
 
 \item{default_node_size}{Node radius (px) used when \code{size} is absent.}
 

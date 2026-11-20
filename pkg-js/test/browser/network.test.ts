@@ -4,6 +4,8 @@ import {
   DEFAULT_PADDING,
   OKABE_ITO,
   type PlotomicsInstance,
+  darkTheme,
+  defaultTheme,
 } from "../../src/core/index.js";
 import { drawnPixels } from "./helpers.js";
 
@@ -387,5 +389,350 @@ describe("network legend as the widget grows taller", () => {
       }
       expect(gaps, `${width} px`).toEqual([]);
     }
+  });
+});
+
+describe("network default edge colour", () => {
+  /** Two nodes on one line, joined by one edge 3.85 px wide. */
+  const pair = () => ({
+    columns: {
+      id: ["A", "B"],
+      x: [0, 10],
+      y: [0, 0],
+      source: ["A"],
+      target: ["B"],
+      weight: [1],
+    },
+  });
+
+  /** Red, green and blue bytes of a hex colour. */
+  const bytes = (hex: string) =>
+    [1, 3, 5].map((k) => Number.parseInt(hex.slice(k, k + 2), 16));
+
+  /** Relative luminance of red, green and blue bytes (WCAG 2). */
+  function luminance(rgb: readonly number[]): number {
+    const lin = (v: number) =>
+      v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4;
+    return (
+      0.2126 * lin(rgb[0] as number) +
+      0.7152 * lin(rgb[1] as number) +
+      0.0722 * lin(rgb[2] as number)
+    );
+  }
+  const contrast = (a: readonly number[], b: readonly number[]) => {
+    const [la, lb] = [luminance(a), luminance(b)];
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  };
+
+  /**
+   * The colour of the edge in the exported PNG: of the pixels in the middle
+   * column, which the edge crosses, the one furthest from the background.
+   */
+  async function edgePixel(
+    net: PlotomicsInstance<unknown>,
+    background: readonly number[],
+  ): Promise<number[]> {
+    await new Promise((r) => setTimeout(r, 300));
+    const png = (await net.exportPNG?.(1)) as Blob;
+    const bitmap = await createImageBitmap(png);
+    const c = document.createElement("canvas");
+    c.width = bitmap.width;
+    c.height = bitmap.height;
+    const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const d = ctx.getImageData(Math.floor(c.width / 2), 0, 1, c.height).data;
+    let best = [...background];
+    let far = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const px = [d[i], d[i + 1], d[i + 2]] as number[];
+      const dist = px.reduce(
+        (s, v, k) => s + Math.abs(v - (background[k] as number)),
+        0,
+      );
+      if (dist > far) {
+        far = dist;
+        best = px;
+      }
+    }
+    return best;
+  }
+
+  it("draws edges quieter than the nodes and the labels in both themes", async () => {
+    for (const theme of [defaultTheme, darkTheme]) {
+      const el = container();
+      const net = createNetwork(el, { data: pair(), options: { theme } });
+      instances.push(net);
+      const bg = bytes(theme.background);
+      const edge = await edgePixel(net, bg);
+      const node = bytes("#7c8598");
+      const label = bytes(theme.foreground);
+      const name = theme === darkTheme ? "dark" : "light";
+      // Before the fix the dark theme drew the edges in #d6dae1, at a
+      // contrast of 13.7 on the background, where the nodes have 5.2.
+      expect(contrast(edge, bg), name).toBeGreaterThan(1.2);
+      expect(contrast(edge, bg), name).toBeLessThan(contrast(node, bg));
+      expect(contrast(edge, bg), name).toBeLessThan(contrast(label, bg));
+    }
+  });
+
+  it("reads a theme given as var() for the edge colour", async () => {
+    const bg = bytes(darkTheme.background);
+    const literal = createNetwork(container(), {
+      data: pair(),
+      options: { theme: darkTheme },
+    });
+    instances.push(literal);
+    const want = await edgePixel(literal, bg);
+    const el = container();
+    el.style.setProperty("--net-bg", darkTheme.background);
+    el.style.setProperty("--net-fg", darkTheme.foreground);
+    const net = createNetwork(el, {
+      data: pair(),
+      options: {
+        theme: { background: "var(--net-bg)", foreground: "var(--net-fg)" },
+      },
+    });
+    instances.push(net);
+    const edge = await edgePixel(net, bg);
+    // The colours the page gives the properties draw the edge the same
+    // colours given directly draw.
+    for (const k of [0, 1, 2]) {
+      expect(Math.abs((edge[k] as number) - (want[k] as number))).toBeLessThan(
+        4,
+      );
+    }
+    expect(contrast(edge, bg)).toBeGreaterThan(1.2);
+    expect(contrast(edge, bg)).toBeLessThan(contrast(bytes("#7c8598"), bg));
+  });
+
+  it("keeps a given edge colour", async () => {
+    const el = container();
+    const net = createNetwork(el, {
+      data: pair(),
+      options: { theme: darkTheme, defaultEdgeColor: "#d62728" },
+    });
+    instances.push(net);
+    const edge = await edgePixel(net, bytes(darkTheme.background));
+    expect(edge[0]).toBeGreaterThan(190);
+    expect(edge[1]).toBeLessThan(70);
+  });
+});
+
+/** A seeded stream of numbers in [0, 1) (mulberry32). */
+function seeded(seed: number) {
+  let s = seed;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * 300 proteins in six groups with 900 edges, most of them inside a group,
+ * laid out by ForceAtlas2.
+ */
+function proteins() {
+  const rand = seeded(9);
+  const n = 300;
+  const groups = [
+    "Ribosome",
+    "Proteasome",
+    "Spliceosome",
+    "DNA replication",
+    "Cell cycle",
+    "mTOR signaling",
+  ];
+  const id = Array.from({ length: n }, (_, i) => `PROT${i + 1}`);
+  const source: string[] = [];
+  const target: string[] = [];
+  for (let e = 0; e < 900; e += 1) {
+    const a = Math.floor(rand() * n);
+    let b =
+      rand() < 0.7
+        ? (a + groups.length * (1 + Math.floor(rand() * 5))) % n
+        : Math.floor(rand() * n);
+    if (b === a) b = (a + 1) % n;
+    source.push(id[a] as string);
+    target.push(id[b] as string);
+    // A draw for a weight the graph does not use, so the layout matches
+    // the one the defect was found on.
+    rand();
+  }
+  return {
+    columns: { id, source, target },
+    meta: { nodeGroup: id.map((_, i) => groups[i % groups.length] as string) },
+  };
+}
+
+interface TextBox {
+  text: string;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** Record the boxes of the text in the last frame of sigma's labels canvas. */
+function recordLabelBoxes() {
+  const proto = CanvasRenderingContext2D.prototype;
+  const realText = proto.fillText;
+  const realClear = proto.clearRect;
+  let boxes: TextBox[] = [];
+  proto.clearRect = function (
+    this: CanvasRenderingContext2D,
+    ...args: Parameters<typeof realClear>
+  ) {
+    if (this.canvas.className === "sigma-labels") boxes = [];
+    return realClear.apply(this, args);
+  };
+  proto.fillText = function (
+    this: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    maxWidth?: number,
+  ) {
+    if (this.canvas.className === "sigma-labels") {
+      const m = this.measureText(text);
+      boxes.push({
+        text,
+        left: x - m.actualBoundingBoxLeft,
+        right: x + m.actualBoundingBoxRight,
+        top: y - m.actualBoundingBoxAscent,
+        bottom: y + m.actualBoundingBoxDescent,
+      });
+    }
+    return maxWidth === undefined
+      ? realText.call(this, text, x, y)
+      : realText.call(this, text, x, y, maxWidth);
+  };
+  return {
+    boxes: () => boxes,
+    restore() {
+      proto.fillText = realText;
+      proto.clearRect = realClear;
+    },
+  };
+}
+
+describe("network labels in a crowded graph", () => {
+  it("never draws a node label over another", async () => {
+    for (const [width, fontSize] of [
+      [400, 12],
+      [400, 16],
+      [800, 12],
+      [800, 16],
+    ] as const) {
+      const rec = recordLabelBoxes();
+      try {
+        const el = container(width, 480);
+        const net = createNetwork(el, {
+          data: proteins(),
+          options: { theme: { fontSize } },
+        });
+        await expect.poll(() => rec.boxes().length, poll).toBeGreaterThan(0);
+        await new Promise((r) => setTimeout(r, 300));
+        const boxes = rec.boxes();
+        const hits: string[] = [];
+        for (let i = 0; i < boxes.length; i += 1) {
+          for (let j = i + 1; j < boxes.length; j += 1) {
+            const a = boxes[i] as TextBox;
+            const b = boxes[j] as TextBox;
+            const ix = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+            const iy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+            if (ix > 0 && iy > 0) hits.push(`${a.text} on ${b.text}`);
+          }
+        }
+        const at = `${width} px, fontSize ${fontSize}`;
+        // Before the fix "PROT206" ran into "PROT281" at 400 px,
+        // fontSize 16.
+        expect(hits, at).toEqual([]);
+        // The labels that do not collide are still drawn.
+        expect(boxes.length, at).toBeGreaterThan(3);
+        net.destroy();
+        el.remove();
+      } finally {
+        rec.restore();
+      }
+    }
+  });
+});
+
+describe("network labels after a new render", () => {
+  it("draws the same labels again after new options and new data", async () => {
+    const rec = recordLabelBoxes();
+    const shown = () =>
+      rec
+        .boxes()
+        .map((b) => b.text)
+        .sort();
+    const settle = () => new Promise((r) => setTimeout(r, 300));
+    try {
+      const net = createNetwork(container(800, 480), {
+        data: proteins(),
+        options: { theme: { fontSize: 16 } },
+      });
+      instances.push(net);
+      await expect.poll(() => rec.boxes().length, poll).toBeGreaterThan(3);
+      await settle();
+      const first = shown();
+      // The new renderer draws its first frame as it is created. The
+      // labels of the old one's last frame must not keep room on it.
+      net.setOptions({ theme: { fontSize: 16 } });
+      await settle();
+      expect(shown()).toEqual(first);
+      net.setData(proteins());
+      await settle();
+      expect(shown()).toEqual(first);
+    } finally {
+      rec.restore();
+    }
+  });
+});
+
+describe("network group levels", () => {
+  it("orders the legend and the colours by the given levels", () => {
+    const el = container();
+    const groups = GENES.map((_, i) => (i % 2 ? "p53 pathway" : "Cell cycle"));
+    const data = ring(groups);
+    instances.push(
+      createNetwork(el, {
+        data: {
+          ...data,
+          meta: {
+            ...data.meta,
+            nodeGroupLevels: ["p53 pathway", "DNA repair", "Cell cycle"],
+          },
+        },
+      }),
+    );
+    // Before the fix the legend read "Cell cycle", "p53 pathway": the
+    // order the nodes have them, and the unused level was left out.
+    expect(legendTexts(el).map((t) => t.textContent)).toEqual([
+      "p53 pathway",
+      "DNA repair",
+      "Cell cycle",
+    ]);
+    const fills = Array.from(el.querySelectorAll("svg rect")).map((r) =>
+      r.getAttribute("fill")?.toLowerCase(),
+    );
+    expect(fills).toEqual(OKABE_ITO.slice(0, 3).map((c) => c.toLowerCase()));
+  });
+});
+
+describe("network destroy", () => {
+  it("puts back the background the element had", () => {
+    const options = { theme: { background: "#0b0f19" } };
+    const el = container();
+    el.style.backgroundColor = "rgb(250, 240, 230)";
+    createNetwork(el, { data: ring(), options }).destroy();
+    expect(el.style.backgroundColor).toBe("rgb(250, 240, 230)");
+    // Before the fix the element kept the theme background.
+    const bare = container();
+    createNetwork(bare, { data: ring(), options }).destroy();
+    expect(bare.getAttribute("style") ?? "").not.toContain("background");
   });
 });

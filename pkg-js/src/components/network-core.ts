@@ -107,13 +107,51 @@ export function extractEdges(data: PlotomicsData): EdgeSpec[] {
   return [];
 }
 
-/** Build a color-resolver for node groups from a palette. Nodes with no group
- * fall back to `defaultColor`. Colors are stable per group key. */
+/** Whether a node group is missing: null, NaN or "". */
+function missingGroup(v: unknown): boolean {
+  return v == null || v === "" || (typeof v === "number" && Number.isNaN(v));
+}
+
+/**
+ * The node groups in the order they take their colours and their legend
+ * rows: the given `levels` first, in their order (R sends a factor's
+ * levels, Python a Categorical's categories), then the groups outside them
+ * in the order the nodes have them. Each group comes once, as text; a
+ * missing group (null, NaN or "") is not a group.
+ */
+export function groupOrder(
+  groups: ArrayLike<unknown> | undefined,
+  levels?: ArrayLike<unknown> | null,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const col of [levels, groups]) {
+    if (!col) continue;
+    for (let i = 0; i < col.length; i += 1) {
+      const v = col[i];
+      if (missingGroup(v)) continue;
+      const key = String(v);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(key);
+    }
+  }
+  return out;
+}
+
+/**
+ * Build a color-resolver for node groups from a palette. Nodes with no group
+ * fall back to `defaultColor`. Colors are stable per group key. The groups
+ * in `order` take the palette colours by their place in it; any other group
+ * takes the next colour when first asked for.
+ */
 export function groupColorResolver(
   palette: string[],
   defaultColor: string,
+  order: readonly string[] = [],
 ): (group: string | undefined) => string {
   const scale = categoricalScale(palette);
+  for (const group of order) scale(group);
   return (group) =>
     group == null || group === "" ? defaultColor : scale(group);
 }
@@ -128,15 +166,27 @@ export interface GroupLegendEntry {
 
 /**
  * The node groups of a built graph, in the order they took their colours,
- * each with the colour of its nodes. When some nodes have a group and some
- * do not, an "NA" entry in `defaultColor` comes last. Empty when no node has
- * a group.
+ * each with the colour of its nodes. Given `levels` come first, in their
+ * order, also a level no node has, as a factor's unused levels stay in a
+ * ggplot2 legend with `drop = FALSE`; such a level takes its colour from
+ * `colorFor`, and is left out without it. When some nodes have a group and
+ * some do not, an "NA" entry in `defaultColor` comes last. Empty when no
+ * node has a group and no level is given.
  */
 export function groupLegend(
   graph: graphology.default,
   defaultColor: string,
+  levels: readonly string[] = [],
+  colorFor?: (group: string) => string,
 ): GroupLegendEntry[] {
   const seen = new Map<string, string>();
+  if (colorFor) {
+    for (const level of levels) {
+      if (!missingGroup(level) && !seen.has(level)) {
+        seen.set(level, colorFor(level));
+      }
+    }
+  }
   let ungrouped = false;
   graph.forEachNode((_, attrs) => {
     const group = attrs.group as string | undefined;

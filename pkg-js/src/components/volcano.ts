@@ -54,6 +54,8 @@ export interface VolcanoOptions {
   colors: { up: string; down: string; ns: string };
   xLabel: string;
   yLabel: string;
+  /** Draw the dashed fold-change and p-value threshold lines. The y axis
+   * then always reaches the p-value line. */
   showThresholdLines: boolean;
   /** Label the N most significant up- and down-regulated genes. */
   labelTopN: number;
@@ -177,18 +179,25 @@ export interface VolcanoPoints {
   yDraw: Float64Array;
 }
 
+/** Whether a y threshold is one the plot shows: finite and above 0. */
+function shownThreshold(y: number | undefined): y is number {
+  return y !== undefined && Number.isFinite(y) && y > 0;
+}
+
 /**
  * Read the x and y columns into the points that can be drawn. A row with a
  * missing x or y (null, which is how R's JSON sends NA, or NaN) is left out.
  * A y of +Infinity (p = 0, common in differential-expression tables) is kept:
- * it is classified as significant and drawn just above the highest finite y.
- * `infiniteRows` lists rows whose y is +Infinity even though the column holds
- * null there; R uses it, because JSON has no Infinity.
+ * it is classified as significant and drawn just above the highest finite y
+ * and the threshold line at `yThreshold`, so it sits with the significant
+ * genes. `infiniteRows` lists rows whose y is +Infinity even though the
+ * column holds null there; R uses it, because JSON has no Infinity.
  */
 export function preparePoints(
   xCol: Column,
   yCol: Column,
   infiniteRows?: ArrayLike<number>,
+  yThreshold?: number,
 ): VolcanoPoints {
   const n = Math.min(xCol.length, yCol.length);
   const inf = new Set<number>();
@@ -219,9 +228,11 @@ export function preparePoints(
       if (y > hi) hi = y;
     }
   }
-  // 5% of the drawn y range above the highest finite y. The axis starts at
-  // 0, so the range is measured from 0, which keeps p = 0 clear of the top
-  // finite point when the finite values sit in a narrow band.
+  // 5% of the drawn y range above the highest finite y and the threshold
+  // line. The axis starts at 0, so the range is measured from 0, which
+  // keeps p = 0 clear of the top finite point when the finite values sit
+  // in a narrow band.
+  if (shownThreshold(yThreshold) && yThreshold > hi) hi = yThreshold;
   const span = hi - Math.min(0, lo);
   const top = Number.isFinite(hi) ? hi + 0.05 * (span || 1) : 1;
   return {
@@ -230,6 +241,25 @@ export function preparePoints(
     y: Float64Array.from(ys),
     yDraw: Float64Array.from(ys, (y) => (y === Infinity ? top : y)),
   };
+}
+
+/**
+ * The y range a fit shows: the drawn y values with 4% of their range above
+ * and below, down to 0 at least, and up past the threshold line at
+ * `yThreshold`, when the plot draws one, by 4% of its height, so the line
+ * is always in view.
+ */
+export function yRange(
+  yDraw: ArrayLike<number>,
+  yThreshold?: number,
+): [number, number] {
+  const range = paddedExtent(yDraw as Column);
+  range[0] = Math.min(0, range[0]);
+  if (shownThreshold(yThreshold)) {
+    const top = yThreshold + 0.04 * (yThreshold - range[0]);
+    if (range[1] < top) range[1] = top;
+  }
+  return range;
 }
 
 /** Tooltip HTML for one point; the label is escaped. */
@@ -396,6 +426,11 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     xDomain = xScale.domain() as [number, number];
     yDomain = yScale.domain() as [number, number];
     renderOverlay();
+    // The point the tooltip names has moved with the view. Hide the
+    // tooltip, and forget the hovered point, so the next move of the
+    // pointer names the point under it, also when that is the same one.
+    tooltip.hide();
+    scatterplot.hover(-1, { preventEvent: true });
   });
 
   // The points drawn last, in drawn order. regl-scatterplot reports drawn
@@ -520,6 +555,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
             cols.x,
             cols.y,
             data.meta?.yInfinite as number[] | undefined,
+            -Math.log10(opts.pThreshold),
           )
         : preparePoints([], []);
     if (pts.rows.length === 0) {
@@ -531,8 +567,10 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     const fitH = innerH();
     if (fit) {
       xDomain = symmetricExtent(pts.x);
-      yDomain = paddedExtent(pts.yDraw);
-      yDomain[0] = Math.min(0, yDomain[0]);
+      yDomain = yRange(
+        pts.yDraw,
+        opts.showThresholdLines ? -Math.log10(opts.pThreshold) : undefined,
+      );
       [baseX, baseY] = baseDomains(xDomain, yDomain, fitW, fitH);
     }
     const [xBase, yBase] = [baseX, baseY];
@@ -869,6 +907,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       applyData();
     },
     setOptions(next) {
+      const prevOpts = opts;
       opts = mergeOptions(opts, next);
       theme = resolveTheme(opts.theme);
       el.style.backgroundColor = theme.background;
@@ -888,9 +927,15 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         applyData(isStartView(scatterplot));
         return;
       }
-      // No other option changes the data range, so the current pan/zoom
-      // stays.
-      applyData(false);
+      // A new p threshold moves its line and the p = 0 genes above it, and
+      // the line, shown or hidden, joins or leaves the y range, so the plot
+      // fits again while the view is untouched. No other option changes the
+      // data range, so the current pan/zoom stays.
+      applyData(
+        (opts.pThreshold !== prevOpts.pThreshold ||
+          opts.showThresholdLines !== prevOpts.showThresholdLines) &&
+          isStartView(scatterplot),
+      );
     },
     resize(w, h) {
       if (w === outerW && h === outerH) return;

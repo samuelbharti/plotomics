@@ -30,11 +30,11 @@ bv_require_numeric <- function(x, name) {
   as.numeric(x)
 }
 
-#' Warn (once) about non-finite values in a numeric column.
+#' Warn (once) about missing or infinite values in a numeric column.
 #'
-#' Counts `NaN`/`Inf` (and `NA`) entries and, if any, emits a single
-#' `warning()` naming the column and the count. Never errors: non-finite values
-#' are a data-quality issue, not a fatal one.
+#' Counts the `NA`, `NaN`, `Inf` and `-Inf` entries and, if any, emits a
+#' single `warning()` naming the column and the count, in the words Python
+#' uses. Never errors: such values are a data-quality issue, not a fatal one.
 #'
 #' @param x A numeric vector.
 #' @param name Column name used in the warning message.
@@ -44,9 +44,10 @@ bv_require_numeric <- function(x, name) {
 bv_check_finite <- function(x, name) {
   bad <- sum(!is.finite(x))
   if (bad > 0L) {
-    warning(sprintf(
-      "`%s` has %d non-finite value(s) (NaN/Inf).", name, bad
-    ), call. = FALSE)
+    warning(sprintf(paste0(
+      "`%s` has %d value(s) that are missing (NA or NaN) or infinite ",
+      "(Inf or -Inf)."
+    ), name, bad), call. = FALSE)
   }
   invisible(x)
 }

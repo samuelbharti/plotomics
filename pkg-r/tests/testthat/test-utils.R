@@ -162,3 +162,21 @@ test_that("each plot has one default height, as in Shiny and Python", {
   )
   expect_equal(formals(clustermapOutput)$height, "560px")
 })
+
+test_that("the warning about missing or infinite values says what it counts", {
+  # Before the fix 30 NA read "`x` has 30 non-finite value(s) (NaN/Inf).",
+  # and Python said "column 'x' contains ...". Both now say the same.
+  df <- data.frame(x = c(rep(NA, 30), 1, 2), y = seq_len(32))
+  warned <- testthat::capture_warnings(embedding(df))
+  expect_equal(warned, paste0(
+    "`x` has 30 value(s) that are missing (NA or NaN) or infinite ",
+    "(Inf or -Inf)."
+  ))
+  warned <- testthat::capture_warnings(
+    embedding(data.frame(x = c(NaN, Inf, -Inf, 1), y = 1:4))
+  )
+  expect_equal(warned, paste0(
+    "`x` has 3 value(s) that are missing (NA or NaN) or infinite ",
+    "(Inf or -Inf)."
+  ))
+})

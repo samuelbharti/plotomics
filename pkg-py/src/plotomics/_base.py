@@ -83,13 +83,18 @@ def _to_float64(values: Any, name: str) -> np.ndarray:
 
 
 def _warn_nonfinite(arr: np.ndarray, name: str) -> None:
-    """Emit exactly one warning if a float column carries NaN/Inf values."""
+    """Emit exactly one warning if a float column carries NaN/Inf values.
+
+    The count takes in missing values (None and NaN, which arrive here as
+    NaN) and infinite ones, and the words are the ones R uses.
+    """
     if arr.dtype.kind != "f":
         return
     count = int(np.count_nonzero(~np.isfinite(arr)))
     if count:
         warnings.warn(
-            f"column '{name}' contains {count} non-finite value(s) (NaN/Inf)",
+            f"`{name}` has {count} value(s) that are missing (NA or NaN) or "
+            "infinite (Inf or -Inf).",
             stacklevel=3,
         )
 

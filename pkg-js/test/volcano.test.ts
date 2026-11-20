@@ -7,6 +7,7 @@ import {
   preparePoints,
   tooltipHtml,
   placeLabels,
+  yRange,
 } from "../src/components/volcano.js";
 
 describe("volcano helpers", () => {
@@ -102,5 +103,33 @@ describe("label placement", () => {
     const [spot] = placeLabels([{ x: 190, y: 50, width: 40 }], bounds, 11);
     expect(spot?.anchor).toBe("end");
     expect(spot?.x).toBe(186);
+  });
+});
+
+describe("volcano threshold line and p = 0", () => {
+  const inf = Number.POSITIVE_INFINITY;
+  const line = -Math.log10(0.05);
+
+  it("draws p = 0 above the threshold line when no finite y reaches it", () => {
+    // Before the fix p = 0 went to 1.0 with no finite y, and to 0.525 over
+    // a finite 0.5, both under the line at 1.3.
+    const all = preparePoints([2, -2, 3], [inf, inf, inf], undefined, line);
+    for (const y of all.yDraw) expect(y).toBeCloseTo(line * 1.05, 10);
+    const one = preparePoints([2, -2, 3], [inf, inf, 0.5], undefined, line);
+    expect(one.yDraw[0]).toBeCloseTo(line * 1.05, 10);
+    expect(one.yDraw[2]).toBe(0.5);
+    // Above the line already, p = 0 goes 5% above the highest finite y.
+    const high = preparePoints([1, 2], [inf, 6], undefined, line);
+    expect(high.yDraw[0]).toBeCloseTo(6.3, 10);
+  });
+
+  it("frames the threshold line with the points", () => {
+    const [lo, hi] = yRange([0.1, 0.5], line);
+    expect(lo).toBe(0);
+    expect(hi).toBeCloseTo(line * 1.04, 10);
+    // A line inside the data range leaves the range as it was.
+    expect(yRange([0, 5], line)).toEqual([-0.2, 5.2]);
+    // No line: the points alone.
+    expect(yRange([0.1, 0.5])[1]).toBeCloseTo(0.516, 10);
   });
 });

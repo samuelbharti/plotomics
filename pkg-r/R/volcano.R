@@ -8,9 +8,10 @@
 #' @param data A data frame with numeric columns `x` (log2 fold change) and `y`
 #'   (`-log10` p-value). An optional `label` column supplies gene names for
 #'   tooltips and top-hit labels. A `y` of `Inf` (p = 0) is drawn just above
-#'   the highest finite value and counts as significant. Rows with `NA` or
-#'   `NaN` in `x` or `y`, or a `y` of `-Inf`, are not drawn, with a warning
-#'   that counts them; Python gives the same warning.
+#'   the highest finite value and the p-value threshold, and counts as
+#'   significant. Rows with `NA` or `NaN` in `x` or `y`, or a `y` of `-Inf`,
+#'   are not drawn, with a warning that counts them; Python gives the same
+#'   warning.
 #' @param fc_threshold Absolute log2 fold-change cutoff for calling a hit.
 #' @param p_threshold P-value cutoff (applied on the `-log10` scale).
 #' @param point_size Point radius in pixels.
@@ -20,6 +21,7 @@
 #'   component's built-in palette.
 #' @param x_label,y_label Axis titles.
 #' @param show_threshold_lines Draw the fold-change / p-value threshold guides.
+#'   The y axis then always reaches the p-value guide.
 #' @param label_top_n Number of top up- and down-regulated genes to label.
 #'   `Inf` labels every up- and down-regulated gene, as in [lollipop()]; `0`
 #'   labels none.

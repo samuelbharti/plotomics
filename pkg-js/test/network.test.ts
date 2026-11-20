@@ -4,6 +4,7 @@ import {
   extractEdges,
   groupColorResolver,
   groupLegend,
+  groupOrder,
   needsLayout,
   runForceAtlas2,
   edgeWidths,
@@ -309,5 +310,58 @@ describe("network group legend", () => {
       meta: { nodeGroup: [null] as unknown as string[] },
     });
     expect(groupLegend(g, "#000")).toEqual([]);
+  });
+});
+
+describe("network group levels", () => {
+  it("puts the given levels first, then the other groups as the nodes have them", () => {
+    expect(
+      groupOrder(["B", "C", null, "", "A", "C", Number.NaN], ["A", "B", "Z"]),
+    ).toEqual(["A", "B", "Z", "C"]);
+    // Without levels the groups go in the order the nodes have them.
+    expect(groupOrder(["T cell", "B cell", "T cell"])).toEqual([
+      "T cell",
+      "B cell",
+    ]);
+    // A level given twice, or as a number, comes once, as text.
+    expect(groupOrder(undefined, ["2", 2, "1"])).toEqual(["2", "1"]);
+  });
+
+  it("gives the levels the palette colours by their place", () => {
+    const color = groupColorResolver(["#a", "#b", "#c"], "#000", [
+      "High",
+      "Low",
+    ]);
+    // Before the fix "Low", met first, took the first colour.
+    expect(color("Low")).toBe("#b");
+    expect(color("High")).toBe("#a");
+    expect(color("Mid")).toBe("#c");
+  });
+
+  it("lists every level in the legend in order, the unused ones too", () => {
+    const levels = ["High", "Mid", "Low"];
+    const colorFor = groupColorResolver(["#a", "#b", "#c", "#d"], "#000", [
+      ...levels,
+    ]);
+    const { graph } = buildGraph(
+      {
+        columns: { id: ["a", "b", "c", "d"] },
+        meta: { nodeGroup: ["Low", "Other", "High", null] as string[] },
+      },
+      {
+        defaultNodeColor: "#000",
+        defaultEdgeColor: "#ccc",
+        defaultNodeSize: 4,
+        colorFor,
+      },
+    );
+    expect(groupLegend(graph, "#000", levels, colorFor)).toEqual([
+      { label: "High", color: "#a" },
+      { label: "Mid", color: "#b" },
+      { label: "Low", color: "#c" },
+      { label: "Other", color: "#d" },
+      { label: "NA", color: "#000", missing: true },
+    ]);
+    expect(graph.getNodeAttribute("a", "color")).toBe("#c");
   });
 });

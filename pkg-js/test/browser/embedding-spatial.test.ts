@@ -1442,3 +1442,69 @@ describe("embedding axes zoomed past the precision of their numbers", () => {
     }
   });
 });
+
+describe("embedding tooltip after a zoom", () => {
+  it("hides the tooltip when the view moves, and shows it again on a move", async () => {
+    const el = container(600, 400);
+    // The middle cell sits at the centre of the plot.
+    instances.push(
+      createEmbedding(el, {
+        data: {
+          columns: { x: [-3, 0, 3], y: [0, 4, 8], label: ["c1", "c2", "c3"] },
+        },
+        options: { showAxes: true, pointSize: 8, pointScaleMode: "constant" },
+      }),
+    );
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(0);
+    const frame = () =>
+      new Promise((r) => requestAnimationFrame(() => r(null)));
+    await frame();
+    await frame();
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const r = canvas.getBoundingClientRect();
+    const centre = {
+      clientX: r.left + r.width / 2,
+      clientY: r.top + r.height / 2,
+    };
+    const tip = () =>
+      Array.from(el.children).find((c) => c.tagName === "DIV") as HTMLElement;
+    const move = async () => {
+      canvas.dispatchEvent(
+        new MouseEvent("mousemove", { ...centre, bubbles: true }),
+      );
+      await frame();
+      await frame();
+    };
+    await move();
+    expect(tip().style.opacity).toBe("1");
+    expect(tip().textContent).toContain("c2");
+
+    const start = svgTexts(el).join(",");
+    for (let i = 0; i < 5; i += 1) {
+      canvas.dispatchEvent(
+        new WheelEvent("wheel", {
+          ...centre,
+          deltaY: -120,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await frame();
+    }
+    await expect
+      .poll(() => svgTexts(el).join(","), { timeout: 30_000, interval: 100 })
+      .not.toBe(start);
+    await new Promise((res) => setTimeout(res, 300));
+    // Before the fix the tooltip stayed until the pointer moved.
+    expect(tip().style.opacity).not.toBe("1");
+    // The cell is still under the pointer, and a move names it again.
+    await move();
+    expect(tip().style.opacity).toBe("1");
+    expect(tip().textContent).toContain("c2");
+  });
+});

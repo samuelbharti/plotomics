@@ -508,7 +508,8 @@ describe("volcano tick labels", () => {
             y: Array.from({ length: n }, (_, i) => (i / n) * 0.03),
           },
         },
-        options: { labelTopN: 0 },
+        // The y axis reaches a threshold line it draws, here at 1.3.
+        options: { labelTopN: 0, showThresholdLines: false },
       }),
     );
     const narrowX = container(800, 480);
@@ -751,5 +752,155 @@ describe("volcano zoomed past the precision of its numbers", () => {
       expect(b.left, t.textContent ?? "").toBeGreaterThanOrEqual(plot.left);
       expect(b.top, t.textContent ?? "").toBeGreaterThanOrEqual(plot.top);
     }
+  });
+});
+
+describe("volcano with no finite y above the threshold", () => {
+  /** Where the up and down points, and the grey ones, sit on the canvas. */
+  async function pointRows(el: HTMLElement) {
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const png = (await canvasPNG(el)) as Blob;
+    const bitmap = await createImageBitmap(png);
+    const c = document.createElement("canvas");
+    c.width = bitmap.width;
+    c.height = bitmap.height;
+    const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    const ratio = c.height / canvas.clientHeight;
+    // Rows in CSS px from the top of the canvas.
+    const hit = { top: Number.POSITIVE_INFINITY, bottom: -1 };
+    const ns = { top: Number.POSITIVE_INFINITY, bottom: -1 };
+    for (let i = 0; i < d.length; i += 4) {
+      const [r, g, b, a] = [d[i], d[i + 1], d[i + 2], d[i + 3]] as number[];
+      if ((a as number) < 128) continue;
+      const y = Math.floor(i / 4 / c.width);
+      // Up points are orange and down points blue; the others grey, on
+      // the white background.
+      const box =
+        Math.abs((r as number) - (b as number)) > 60
+          ? hit
+          : Math.abs((r as number) - (g as number)) < 20 && (r as number) < 230
+            ? ns
+            : null;
+      if (!box) continue;
+      box.top = Math.min(box.top, y / ratio);
+      box.bottom = Math.max(box.bottom, (y + 1) / ratio);
+    }
+    return { hit, ns };
+  }
+
+  /** The y of the dashed threshold line from the top of the point canvas. */
+  function thresholdY(el: HTMLElement): number | null {
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const line = Array.from(
+      el.querySelectorAll("svg line[stroke-dasharray]"),
+    ).find((l) => l.getAttribute("y1") === l.getAttribute("y2"));
+    if (!line) return null;
+    return (
+      Number(line.getAttribute("y1")) - Number.parseFloat(canvas.style.top)
+    );
+  }
+
+  async function draw(y: number[]) {
+    const el = container(800, 480);
+    instances.push(
+      createVolcano(el, {
+        data: { columns: { x: [2, -2, 3], y, label: ["a", "b", "c"] } },
+      }),
+    );
+    await expect
+      .poll(async () => (await pointRows(el)).hit.bottom, poll)
+      .toBeGreaterThan(0);
+    await new Promise((r) => setTimeout(r, 300));
+    return { rows: await pointRows(el), line: thresholdY(el) };
+  }
+
+  it("draws p = 0 above the threshold line when every gene has it", async () => {
+    const { rows, line } = await draw([
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    ]);
+    // Before the fix the genes sat at y 1.0, under the line at 1.3.
+    expect(line).not.toBeNull();
+    expect(rows.hit.bottom).toBeLessThan(line as number);
+  });
+
+  it("keeps the threshold line in view, between p = 0 and the finite genes", async () => {
+    const { rows, line } = await draw([
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+      0.5,
+    ]);
+    // Before the fix the y axis ended at about 0.54, so the line at 1.3
+    // was out of view and p = 0 sat at about 0.52.
+    expect(line).not.toBeNull();
+    expect(rows.hit.bottom).toBeLessThan(line as number);
+    expect(rows.ns.top).toBeGreaterThan(line as number);
+  });
+});
+
+describe("volcano tooltip after a zoom", () => {
+  it("hides the tooltip when the view moves, and shows it again on a move", async () => {
+    const el = container(800, 400);
+    // The middle gene sits at the centre of the plot: x is centred on 0
+    // and y runs from 0 to 8 with the same room above and below.
+    instances.push(
+      createVolcano(el, {
+        data: {
+          columns: { x: [-3, 0, 3], y: [0, 4, 8], label: ["G1", "G2", "G3"] },
+        },
+        options: { labelTopN: 0, pointSize: 8 },
+      }),
+    );
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(0);
+    await frame();
+    await frame();
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const r = canvas.getBoundingClientRect();
+    const centre = {
+      clientX: r.left + r.width / 2,
+      clientY: r.top + r.height / 2,
+    };
+    const tip = () =>
+      Array.from(el.children).find((c) => c.tagName === "DIV") as HTMLElement;
+    const move = async () => {
+      canvas.dispatchEvent(
+        new MouseEvent("mousemove", { ...centre, bubbles: true }),
+      );
+      await frame();
+      await frame();
+    };
+    await move();
+    expect(tip().style.opacity).toBe("1");
+    expect(tip().textContent).toContain("G2");
+
+    const start = yTicks(el).join(",");
+    for (let i = 0; i < 5; i += 1) {
+      canvas.dispatchEvent(
+        new WheelEvent("wheel", {
+          ...centre,
+          deltaY: -120,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await frame();
+    }
+    await expect.poll(() => yTicks(el).join(","), slow).not.toBe(start);
+    await new Promise((res) => setTimeout(res, 300));
+    // Before the fix the tooltip stayed until the pointer moved.
+    expect(tip().style.opacity).not.toBe("1");
+    // The gene is still under the pointer, and a move names it again.
+    await move();
+    expect(tip().style.opacity).toBe("1");
+    expect(tip().textContent).toContain("G2");
   });
 });

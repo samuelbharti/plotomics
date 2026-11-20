@@ -48,3 +48,24 @@ def test_a_polars_lazyframe_asks_for_collect():
     # Collected, the same frame works.
     w = Volcano(lazy.collect())
     assert {c["name"] for c in w.schema["columns"]} == {"x", "y"}
+
+
+def test_missing_or_infinite_values_are_counted_in_the_words_r_uses():
+    # Before the fix this read "column 'x' contains 30 non-finite value(s)
+    # (NaN/Inf)", and R said "`x` has 30 non-finite value(s) (NaN/Inf).".
+    arr = np.array([np.nan] * 30 + [1.0, 2.0], dtype=np.float32)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        pack_columns({"x": arr})
+    assert [str(w.message) for w in caught] == [
+        "`x` has 30 value(s) that are missing (NA or NaN) or infinite "
+        "(Inf or -Inf)."
+    ]
+    arr = np.array([np.nan, np.inf, -np.inf, 1.0], dtype=np.float32)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        pack_columns({"x": arr})
+    assert [str(w.message) for w in caught] == [
+        "`x` has 3 value(s) that are missing (NA or NaN) or infinite "
+        "(Inf or -Inf)."
+    ]

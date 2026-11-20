@@ -15,7 +15,10 @@
 #' @param nodes A data frame of nodes. Must contain an `id` column (coerced to
 #'   character). Optional columns: `x`, `y` (precomputed coordinates), `size`
 #'   (node radius in px), `group` (categorical, mapped to a palette color) and
-#'   `label` (display name; defaults to `id`).
+#'   `label` (display name; defaults to `id`). A **factor** `group` fixes the
+#'   order of the legend and the colours to its levels, and keeps unused
+#'   levels in the legend, the way `drop = FALSE` does in ggplot2; other
+#'   groups go in the order the nodes have them.
 #' @param edges A data frame of edges with columns `source` and `target` holding
 #'   node ids, an optional numeric `weight` column, and an optional `color`
 #'   column giving a per-edge color (else `default_edge_color`). Edge width
@@ -26,11 +29,14 @@
 #'   missing) or `"precomputed"` (require and use `x`/`y` from `nodes`).
 #' @param iterations Number of ForceAtlas2 iterations (bounded internally).
 #' @param default_node_color Fallback node color for nodes without a `group`.
-#' @param default_edge_color Edge color.
+#' @param default_edge_color Colour of an edge with no colour of its own.
+#'   `NULL` (the default) takes the theme background with a fifth of the
+#'   theme foreground mixed in, so edges stay quieter than the nodes and the
+#'   labels on a light and on a dark background.
 #' @param label_threshold Minimum node size (px) on screen for its label to
 #'   render. At the default of 4, nodes of the default size are labelled at
 #'   the starting zoom, and the renderer's label grid keeps the labels from
-#'   crowding.
+#'   crowding. A label that would run into one already drawn is left out.
 #' @param default_node_size Node radius (px) used when `size` is absent.
 #' @param directed Draw the graph as directed, with arrowheads. When `TRUE`,
 #'   `A -> B` and `B -> A` are kept as distinct edges; when `FALSE` (the default)
@@ -73,7 +79,7 @@ network <- function(nodes,
                     layout = c("forceatlas2", "precomputed"),
                     iterations = 200,
                     default_node_color = "#7c8598",
-                    default_edge_color = "#d6dae1",
+                    default_edge_color = NULL,
                     label_threshold = 4,
                     default_node_size = 4,
                     directed = FALSE,
@@ -156,18 +162,24 @@ network <- function(nodes,
   }
   if (!is.null(nodes$group)) {
     meta$nodeGroup <- as.character(nodes$group)
+    # A factor is someone stating the order they want. Send the levels along
+    # so the browser orders the legend and the colours by them, not by the
+    # group the first node happens to have.
+    if (is.factor(nodes$group)) meta$nodeGroupLevels <- levels(nodes$group)
   }
 
   options <- list(
     layout = layout,
     iterations = iterations,
     defaultNodeColor = default_node_color,
-    defaultEdgeColor = default_edge_color,
     labelThreshold = label_threshold,
     defaultNodeSize = default_node_size,
     directed = directed,
     showLegend = show_legend
   )
+  if (!is.null(default_edge_color)) {
+    options$defaultEdgeColor <- as.character(default_edge_color)[1]
+  }
   if (!is.null(palette)) {
     options$palette <- as.character(palette)
   }
@@ -178,7 +190,7 @@ network <- function(nodes,
     meta = meta,
     options = options,
     width = width, height = height, element_id = element_id,
-    array_meta = c("nodeLabels", "nodeGroup"),
+    array_meta = c("nodeLabels", "nodeGroup", "nodeGroupLevels"),
     array_options = "palette"
   )
 }

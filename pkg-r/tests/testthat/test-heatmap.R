@@ -59,9 +59,9 @@ test_that("bioheatmap() rejects an empty matrix", {
   )
 })
 
-test_that("bioheatmap() warns on non-finite cells", {
+test_that("bioheatmap() warns on missing or infinite cells", {
   m <- matrix(c(1, NaN, 2, 3), nrow = 2)
-  expect_warning(bioheatmap(m), "`mat` has 1 non-finite value")
+  expect_warning(bioheatmap(m), "`mat` has 1 value(s) that are", fixed = TRUE)
 })
 
 test_that("bioheatmap() forwards a theme override", {

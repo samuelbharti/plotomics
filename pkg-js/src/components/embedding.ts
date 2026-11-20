@@ -597,6 +597,11 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     xDomain = xScale.domain() as [number, number];
     yDomain = yScale.domain() as [number, number];
     renderOverlay();
+    // The point the tooltip names has moved with the view. Hide the
+    // tooltip, and forget the hovered point, so the next move of the
+    // pointer names the point under it, also when that is the same one.
+    tooltip.hide();
+    scatterplot.hover(-1, { preventEvent: true });
   });
 
   const lastPointer = { x: 0, y: 0 };
