@@ -8,32 +8,171 @@
  * drawn before it. A canvas also cannot read var(), and it draws
  * currentColor in black, where an SVG takes the custom property and the text
  * colour of the page.
+ *
+ * A colour the page cannot read at all, such as an undefined custom property
+ * or a name CSS lacks (R's "grey50"), paints nothing on a canvas, and an SVG
+ * draws it black. Such a colour paints nothing in either, and a console
+ * warning names it once, so a missing group can be traced to its colour.
  */
+
+import { type PlotomicsTheme, darkTheme, defaultTheme } from "./theme.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const CLEAR = "rgba(0, 0, 0, 0)";
+/**
+ * The stroke of the probe's parent. A colour the SVG cannot read leaves the
+ * probe line to inherit it, which separates such a colour from "none".
+ */
+const UNREAD = "rgba(1, 2, 3, 0.012)";
 
 /**
- * A colour as an SVG stroke inside `el` reads it: var() takes the custom
- * property of `el` or of the page above it, and currentColor the text colour
- * of `el`. A value the SVG draws nothing with reads "none". With `el` out of
- * the document, where nothing resolves, the colour comes back as given.
+ * A colour as an SVG stroke inside `el` reads it, as the computed stroke:
+ * "none" for a colour that paints nothing, null for one the SVG cannot
+ * read, and undefined with `el` out of the document, where nothing
+ * resolves.
  */
-export function resolveColour(colour: string, el: Element): string {
+function readColour(colour: string, el: Element): string | null | undefined {
   const probe = document.createElementNS(SVG_NS, "svg");
   probe.setAttribute("width", "0");
   probe.setAttribute("height", "0");
   probe.style.cssText =
-    "position:absolute;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none;";
+    "position:absolute;width:0;height:0;overflow:hidden;visibility:hidden;" +
+    `pointer-events:none;stroke:${UNREAD};`;
   const line = document.createElementNS(SVG_NS, "line");
   line.setAttribute("stroke", colour);
   probe.appendChild(line);
   el.appendChild(probe);
   try {
-    if (!line.isConnected) return colour;
-    return getComputedStyle(line).stroke || colour;
+    if (!line.isConnected) return undefined;
+    const stroke = getComputedStyle(line).stroke;
+    if (!stroke) return undefined;
+    return stroke === getComputedStyle(probe).stroke ? null : stroke;
   } finally {
     probe.remove();
+  }
+}
+
+/**
+ * A colour as an SVG stroke inside `el` reads it: var() takes the custom
+ * property of `el` or of the page above it, and currentColor the text colour
+ * of `el`. A value the SVG draws nothing with, or cannot read, reads
+ * "none". With `el` out of the document, where nothing resolves, the colour
+ * comes back as given.
+ */
+export function resolveColour(colour: string, el: Element): string {
+  const read = readColour(colour, el);
+  return read === undefined ? colour : (read ?? "none");
+}
+
+/** Colours already named in a warning, so each is named once. */
+const warned = new Set<string>();
+
+/**
+ * Warn once, naming `colour`, that the page cannot read it. "none",
+ * "transparent" and a clear colour are not warned about: they paint nothing
+ * on purpose.
+ */
+function warnUnreadable(colour: string): void {
+  if (warned.has(colour)) return;
+  warned.add(colour);
+  console.warn(
+    `plotomics: the page cannot read the colour ${JSON.stringify(colour)} ` +
+      "(an undefined custom property, or a colour name CSS does not have), " +
+      "so the marks, keys and labels in it are left out.",
+  );
+}
+
+/** The attributes of an SVG element that hold a colour. */
+const COLOUR_ATTRS = ["fill", "stroke", "stop-color", "flood-color"];
+/**
+ * Colours every page reads as they are, with nothing to check: well-formed
+ * hex of 3, 4, 6 or 8 digits, "none", "transparent", currentColor and a
+ * url() paint. Anything else, a malformed "#12345", "rgb(1, 2)" or
+ * "hsl(nope)" among them, is read through the probe.
+ */
+const PLAIN =
+  /^(?:#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|none|transparent|currentcolor|url\(.*\))$/i;
+
+/**
+ * Whether the page reads a colour that depends on nothing in it, such as a
+ * name or rgb(), from its first probe. var() and currentColor depend on the
+ * page and are read on every pass.
+ */
+const readsOnAnyPage = new Map<string, boolean>();
+
+/** The role a text colour has in a theme. */
+export type TextRole = "foreground" | "muted" | "axis";
+
+/**
+ * The colour text of `role` takes when its own colour cannot be read: that
+ * of the default theme, or of the dark default on a dark `background`, so
+ * the text stays readable on the plot. A background that paints nothing
+ * counts as light.
+ */
+export function textFallback(
+  role: TextRole,
+  background: string,
+  el?: Element,
+): string {
+  const bg = colourBytes(background, el);
+  const dark = !!bg && bg[3] === 255 && luminance(bg) < 0.18;
+  return (dark ? darkTheme : defaultTheme)[role];
+}
+
+/**
+ * Give every colour in the SVG `layers` that the page cannot read inside
+ * `el` another value, and warn once, naming it. A mark, a key or a fill
+ * takes "none", as the canvas leaves out the marks in such a colour, so a
+ * key never stands for marks that were not drawn. Text never disappears:
+ * its fill takes the colour of the default theme for its role (see
+ * {@link textFallback}), the muted or the axis colour when the colour is
+ * the theme's, else the foreground. An SVG drew such a colour black on
+ * screen, and the exports wrote "none"; now the screen and the exports
+ * agree. Colours that read, var() among them, stay as given.
+ */
+export function hideUnreadableColours(
+  el: Element,
+  theme: Pick<PlotomicsTheme, "background" | "muted" | "axis">,
+  ...layers: (Element | null | undefined)[]
+): void {
+  if (!el.isConnected) return;
+  const readable = new Map<string, boolean>();
+  const fallbacks = new Map<string, string>();
+  const textColour = (value: string) => {
+    let colour = fallbacks.get(value);
+    if (colour === undefined) {
+      const role: TextRole =
+        value === theme.muted?.trim()
+          ? "muted"
+          : value === theme.axis?.trim()
+            ? "axis"
+            : "foreground";
+      colour = textFallback(role, theme.background, el);
+      fallbacks.set(value, colour);
+    }
+    return colour;
+  };
+  for (const layer of layers) {
+    if (!layer) continue;
+    for (const node of [layer, ...Array.from(layer.querySelectorAll("*"))]) {
+      for (const name of COLOUR_ATTRS) {
+        const value = node.getAttribute(name)?.trim();
+        if (!value || PLAIN.test(value)) continue;
+        const fixed = !/var\(|currentcolor/i.test(value);
+        let ok =
+          readable.get(value) ??
+          (fixed ? readsOnAnyPage.get(value) : undefined);
+        if (ok === undefined) {
+          ok = readColour(value, el) !== null;
+          readable.set(value, ok);
+          if (fixed) readsOnAnyPage.set(value, ok);
+          if (!ok) warnUnreadable(value);
+        }
+        if (ok) continue;
+        const text = /^(text|tspan)$/i.test(node.tagName) && name === "fill";
+        node.setAttribute(name, text ? textColour(value) : "none");
+      }
+    }
   }
 }
 
@@ -60,6 +199,7 @@ export function colourAlpha(colour: string): number {
  * "none", an empty string, a colour that cannot be read and a fully
  * transparent colour paint nothing: the style is then set to a clear
  * colour, so no mark takes an older one, and the caller can skip the marks.
+ * A colour that cannot be read is named in a console warning, once.
  */
 export function setCanvasColour(
   ctx: CanvasRenderingContext2D,
@@ -67,8 +207,17 @@ export function setCanvasColour(
   colour: string | null | undefined,
   el?: Element,
 ): boolean {
-  let value = (colour ?? "").trim();
-  if (value && el) value = resolveColour(value, el).trim();
+  const given = (colour ?? "").trim();
+  let value = given;
+  if (value && el) {
+    const read = readColour(value, el);
+    if (read === null) {
+      ctx[style] = CLEAR;
+      warnUnreadable(given);
+      return false;
+    }
+    if (read !== undefined) value = read.trim();
+  }
   if (!value || value.toLowerCase() === "none") {
     ctx[style] = CLEAR;
     return false;
@@ -82,12 +231,14 @@ export function setCanvasColour(
   ctx[style] = "#ffffff";
   ctx[style] = value;
   const read = ctx[style];
-  if (
-    typeof read !== "string" ||
-    read !== first ||
-    colourAlpha(value) === 0 ||
-    colourAlpha(read) === 0
-  ) {
+  if (typeof read !== "string" || read !== first) {
+    ctx[style] = CLEAR;
+    // var() out of the page has nothing to read yet; the page may give it
+    // a value once the plot is in it.
+    if (!/var\(/i.test(given) || el?.isConnected) warnUnreadable(given);
+    return false;
+  }
+  if (colourAlpha(value) === 0 || colourAlpha(read) === 0) {
     ctx[style] = CLEAR;
     return false;
   }
@@ -129,6 +280,49 @@ export function colourBytes(
   return a === 0 ? null : [d[0] as number, d[1] as number, d[2] as number, a];
 }
 
+/** A hex colour, which needs no reading inside the page. */
+const HEX = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+/**
+ * `colour` as a 2D canvas reads it, with var() and currentColor read inside
+ * `el` as {@link setCanvasColour} reads them: a fill or stroke style to set
+ * as it is, or null for a colour that paints nothing, whose marks the
+ * caller leaves out. Outside a browser the colour comes back as given.
+ */
+export function canvasColour(
+  colour: string | null | undefined,
+  el?: Element,
+): string | null {
+  const ctx = pixelContext();
+  const given = (colour ?? "").trim();
+  if (!ctx) return given && given.toLowerCase() !== "none" ? given : null;
+  const where = HEX.test(given) ? undefined : el;
+  return setCanvasColour(ctx, "fillStyle", given, where)
+    ? String(ctx.fillStyle)
+    : null;
+}
+
+/**
+ * A reader of colours for one draw: {@link canvasColour} of each colour,
+ * read once and kept, so a colour that many marks share reads the page
+ * once. Take a new reader for each draw, as a page can change a custom
+ * property between draws.
+ */
+export function canvasColours(
+  el?: Element,
+): (colour: string | null | undefined) => string | null {
+  const seen = new Map<string, string | null>();
+  return (colour) => {
+    const key = colour ?? "";
+    let value = seen.get(key);
+    if (value === undefined) {
+      value = canvasColour(colour, el);
+      seen.set(key, value);
+    }
+    return value;
+  };
+}
+
 /**
  * Relative luminance of a colour given as bytes, from 0 for black to 1 for
  * white (WCAG 2).
@@ -165,6 +359,26 @@ export function scatterBackground(
   const fg = colourBytes(theme.foreground, el);
   // White and black read equally well on a luminance of about 0.18.
   return fg && luminance(fg) >= 0.18 ? [0, 0, 0, 1] : [1, 1, 1, 1];
+}
+
+/**
+ * A point colour for regl-scatterplot: red, green, blue and alpha, each from
+ * 0 to 1, after var() and currentColor are read inside `el`.
+ * regl-scatterplot reads hex and such arrays only, and paints any other
+ * colour, var() among them, white. A colour that paints nothing gives a
+ * clear colour.
+ */
+export function scatterColour(
+  colour: string | null | undefined,
+  el?: Element,
+): [number, number, number, number] {
+  const rgba = colourBytes(
+    colour,
+    HEX.test((colour ?? "").trim()) ? undefined : el,
+  );
+  return rgba
+    ? [rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255]
+    : [0, 0, 0, 0];
 }
 
 /** Bytes from {@link colourBytes} as a hex colour, or rgba() with an alpha. */

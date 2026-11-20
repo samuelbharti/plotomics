@@ -195,7 +195,9 @@ oncoplot <- function(alterations,
     samples = samples,
     classes = classes
   )
-  if (!is.null(class_colors)) meta$classColors <- as.character(class_colors)
+  if (!is.null(class_colors)) {
+    meta$classColors <- bv_colour(as.character(class_colors))
+  }
   if (!is.null(annotations)) {
     meta$annotations <- lapply(annotations, function(a) {
       if (is.null(a$name) || is.null(a$values)) {
@@ -246,7 +248,8 @@ oncoplot <- function(alterations,
         codes = I(ifelse(is.na(f), -1L, as.integer(f) - 1L))
       )
       if (!is.null(a$colors)) {
-        out$colors <- I(bv_level_colors(a$colors, levels(f), out$name))
+        cols <- bv_level_colors(a$colors, levels(f), out$name)
+        out$colors <- I(bv_colour(cols))
       }
       out
     })
@@ -257,9 +260,9 @@ oncoplot <- function(alterations,
     showFrequency = show_frequency,
     showAnnotations = show_annotations,
     showLegend = show_legend,
-    emptyColor = empty_color,
-    burdenColor = burden_color,
-    frequencyColor = frequency_color,
+    emptyColor = bv_colour(empty_color),
+    burdenColor = bv_colour(burden_color),
+    frequencyColor = bv_colour(frequency_color),
     xLabel = x_label,
     burdenLabel = burden_label,
     cellGapX = cell_gap_x,

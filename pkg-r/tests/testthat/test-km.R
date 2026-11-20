@@ -181,6 +181,35 @@ test_that("km() takes censoring ticks as a data frame, as Python's Km does", {
                "`censor` must be a data frame with `time` and `surv`")
 })
 
+test_that("km() leaves out a censor mark with a missing time or surv, as Python does", {
+  df <- data.frame(time = c(0, 5, 10, 20), surv = c(1, 0.9, 0.7, 0.5))
+  censor <- data.frame(
+    time = c(7, NA, 12, 15, Inf),
+    surv = c(0.9, 0.8, NaN, 0.6, 0.5),
+    group = c("a", "b", "c", "d", "e")
+  )
+  # Before the fix the marks were sent with no warning, as null, and the
+  # browser drew them at 0.
+  warned <- testthat::capture_warnings(w <- km(df, censor = censor))
+  expect_equal(
+    warned,
+    "Left out 3 censor mark(s) with a missing or infinite `time` or `surv`."
+  )
+  meta <- w$x$data$meta
+  expect_equal(as.numeric(meta$censorTime), c(7, 15))
+  expect_equal(as.numeric(meta$censorSurv), c(0.9, 0.6))
+  expect_equal(as.character(meta$censorGroup), c("a", "d"))
+  json <- as.character(htmlwidgets:::toJSON(w$preRenderHook(w)$x))
+  expect_false(grepl("null", json, fixed = TRUE))
+
+  # No mark left: no censoring ticks are sent.
+  none <- suppressWarnings(
+    km(df, censor = data.frame(time = NA_real_, surv = 0.5))
+  )
+  expect_null(none$x$data$meta$censorTime)
+  expect_silent(km(df, censor = data.frame(time = 7, surv = 0.9)))
+})
+
 test_that("km() uses the given censor ticks over those of a survfit", {
   skip_if_not_installed("survival")
   d <- data.frame(t = c(5, 8, 12, 20), e = c(1, 0, 1, 0))

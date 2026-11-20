@@ -14,6 +14,7 @@ from ._base import (
     _column,
     _text_or_none,
     _to_float32,
+    _to_float64,
     pack_columns,
 )
 
@@ -50,7 +51,9 @@ class Km(PlotomicsWidget):
     censor:
         Optional mapping with ``time`` and ``surv`` arrays, and an optional
         ``group`` array, marking censoring ticks. R's ``km(censor =)`` takes
-        the same columns.
+        the same columns. A tick with a missing or infinite ``time`` or
+        ``surv`` has no place on the plot and is left out with a warning, as
+        in R.
     risk_times:
         Times for the at-risk table, also used as the x-axis ticks.
     risk_counts:
@@ -232,12 +235,36 @@ class Km(PlotomicsWidget):
                 raise ValueError(
                     "`censor` must provide `time` and `surv` columns."
                 )
-            meta["censorTime"] = [float(v) for v in ct]
-            meta["censorSurv"] = [float(v) for v in cs]
+            ct_arr = _to_float64(ct, "time")
+            cs_arr = _to_float64(cs, "surv")
             cg = _column(censor, "group")
-            if cg is not None:
-                # A tick with no group is left out, like its curve.
-                meta["censorGroup"] = _text_or_none(cg)
+            # A tick with no group is left out, like its curve.
+            cg_list = _text_or_none(cg) if cg is not None else None
+            lengths = {"time": int(ct_arr.size), "surv": int(cs_arr.size)}
+            if cg_list is not None:
+                lengths["group"] = len(cg_list)
+            if len(set(lengths.values())) > 1:
+                detail = ", ".join(f"{k}={n}" for k, n in lengths.items())
+                raise ValueError(
+                    f"`censor` columns must all have the same length; got {detail}"
+                )
+            # A tick with no time or no survival has no place on the plot;
+            # sent, NaN made the widget data invalid JSON. R leaves it out
+            # with the same warning.
+            keep = np.isfinite(ct_arr) & np.isfinite(cs_arr)
+            if not keep.all():
+                warnings.warn(
+                    f"Left out {int(keep.size - keep.sum())} censor mark(s) "
+                    "with a missing or infinite `time` or `surv`.",
+                    stacklevel=2,
+                )
+            if keep.any():
+                meta["censorTime"] = [float(v) for v in ct_arr[keep]]
+                meta["censorSurv"] = [float(v) for v in cs_arr[keep]]
+                if cg_list is not None:
+                    meta["censorGroup"] = [
+                        g for g, k in zip(cg_list, keep) if k
+                    ]
 
         if risk_times is not None:
             times = [float(v) for v in risk_times]

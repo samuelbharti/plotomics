@@ -98,6 +98,11 @@ for (ex in shiny_examples) {
       expect_length(tag, 1L)
       expect_match(tag, sprintf('class="%s html-widget', class(w)[1]),
                    fixed = TRUE)
+      # An image file named in the example would be a 404 when the app
+      # runs as written, so the spatial example builds its own image.
+      if (inherits(w, "spatial")) {
+        expect_match(w$x$data$meta$image, "^data:image/")
+      }
     }
   })
 }

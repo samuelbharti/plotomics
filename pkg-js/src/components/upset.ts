@@ -52,7 +52,12 @@ import {
   textWidth as measureText,
   fitText,
 } from "../core/index.js";
-import { setCanvasColour } from "../core/paint.js";
+import { guardDestroy } from "../core/dom.js";
+import {
+  canvasColour,
+  hideUnreadableColours,
+  setCanvasColour,
+} from "../core/paint.js";
 
 export interface UpsetOptions {
   /** Fraction of the height given to the intersection bars, in (0, 1). */
@@ -479,13 +484,19 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     const max = axis.top;
     const bw = Math.max(1, layout.colW * 0.68);
     const mem = membership();
+    // The bar colour as the canvas reads it, var() and currentColor
+    // included; null when it paints nothing, which leaves the bars, the
+    // filled dots, their spines and the set totals out.
+    const bar = canvasColour(barFill(), el);
 
     // Intersection bars.
-    ctx.fillStyle = barFill();
-    for (let i = 0; i < s.length; i += 1) {
-      const h = ((s[i] as number) / max) * (layout.barH - 6);
-      const x = layout.left + i * layout.colW + (layout.colW - bw) / 2;
-      ctx.fillRect(x, layout.barBaseline - h, bw, h);
+    if (bar) {
+      ctx.fillStyle = bar;
+      for (let i = 0; i < s.length; i += 1) {
+        const h = ((s[i] as number) / max) * (layout.barH - 6);
+        const x = layout.left + i * layout.colW + (layout.colW - bw) / 2;
+        ctx.fillRect(x, layout.barBaseline - h, bw, h);
+      }
     }
 
     // Membership matrix: alternating row bands, then the dots and the spine
@@ -523,8 +534,8 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
         if (first < 0) first = k;
         last = k;
       }
-      if (first >= 0 && last > first) {
-        ctx.strokeStyle = barFill();
+      if (bar && first >= 0 && last > first) {
+        ctx.strokeStyle = bar;
         ctx.lineWidth = Math.max(1.5, r * 0.4);
         ctx.beginPath();
         ctx.moveTo(cx, layout.barBaseline + (first + 0.5) * layout.rowH);
@@ -532,8 +543,10 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
         ctx.stroke();
       }
       for (let k = 0; k < names.length; k += 1) {
-        if (row[k]) ctx.fillStyle = barFill();
-        else if (emptyColour !== null) ctx.fillStyle = emptyColour;
+        if (row[k]) {
+          if (!bar) continue;
+          ctx.fillStyle = bar;
+        } else if (emptyColour !== null) ctx.fillStyle = emptyColour;
         else continue;
         ctx.beginPath();
         ctx.arc(
@@ -549,9 +562,9 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
 
     // Set totals, drawn leftwards from the matrix so they read against it.
     const ss = setSizes();
-    if (opts.showSetSizes && ss) {
+    if (bar && opts.showSetSizes && ss) {
       const smax = zeroTicks(finiteMax(ss), 4, { integer: true }).top;
-      ctx.fillStyle = barFill();
+      ctx.fillStyle = bar;
       ctx.globalAlpha = 0.55;
       for (let k = 0; k < names.length; k += 1) {
         const w = ((ss[k] as number) / smax) * (layout.setPanelW - 10);
@@ -575,7 +588,17 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     return layout.barBaseline - (v / top) * (layout.barH - 6);
   }
 
-  function renderOverlay(axis: { ticks: number[]; top: number; step: number }) {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, theme, svg);
+  }
+
+  function drawOverlay(axis: { ticks: number[]; top: number; step: number }) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const names = sets();
@@ -779,7 +802,7 @@ export const createUpset: PlotomicsFactory<UpsetOptions> = (el, initial) => {
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----

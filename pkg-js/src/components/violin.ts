@@ -50,8 +50,18 @@ import {
   padSVG,
   compositePNG,
   categoricalColors,
+  domainTicks,
+  fitDomainTicks,
+  formatTick,
+  formatTicks,
 } from "../core/index.js";
-import { plainColour, setCanvasColour } from "../core/paint.js";
+import { guardDestroy } from "../core/dom.js";
+import {
+  canvasColours,
+  hideUnreadableColours,
+  plainColour,
+  setCanvasColour,
+} from "../core/paint.js";
 
 export interface ViolinOptions {
   /** Fraction of a cell's width the widest violin fills, in (0, 1].
@@ -283,6 +293,59 @@ export function gridForRow(
 }
 
 /**
+ * The value axis of a violin row whose grid runs from `lo` at the bottom of
+ * the row to `hi` at its top over `lengthPx`, for labels `labelSize` px:
+ * round values, as many as keep a line and a half of text between their
+ * labels, all labelled in one format, with the place of each along the
+ * row, 0 at the bottom and 1 at the top. A label at an end of the row is
+ * drawn inside it (see the overlay), so two labels need a line and a half
+ * and 2 px between them even then. A row too short for two labels takes
+ * the round value nearest its middle, and a flat grid its one value, at
+ * the middle.
+ */
+export function violinValueTicks(
+  lo: number,
+  hi: number,
+  lengthPx: number,
+  labelSize: number,
+): { ticks: number[]; labels: string[]; at: number[] } {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+    return { ticks: [], labels: [], at: [] };
+  }
+  if (!(hi > lo)) {
+    return { ticks: [lo], labels: [formatTick(lo, 0)], at: [0.5] };
+  }
+  const span = hi - lo;
+  const place = (ticks: number[]) => ticks.map((v) => (v - lo) / span);
+  const gap = 1.6 * labelSize;
+  if (lengthPx >= gap + 2) {
+    const t = fitDomainTicks(lo, hi, lengthPx, {
+      maxCount: 4,
+      minGapPx: gap,
+      endGapPx: gap + 2,
+    });
+    if (t.step > 0 && t.ticks.length > 1) {
+      return {
+        ticks: t.ticks,
+        labels: formatTicks(t.ticks, t.step),
+        at: place(t.ticks),
+      };
+    }
+  }
+  const t = domainTicks(lo, hi, 1);
+  const mid = lo + span / 2;
+  let best = t.ticks[0] ?? mid;
+  for (const v of t.ticks) {
+    if (Math.abs(v - mid) < Math.abs(best - mid)) best = v;
+  }
+  return {
+    ticks: [best],
+    labels: formatTicks([best], t.step),
+    at: place([best]),
+  };
+}
+
+/**
  * Largest density in a set of rows, used to put every violin in a row on one
  * scale. Returns 1 for empty or degenerate input so nothing divides by zero.
  */
@@ -384,21 +447,25 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     }
     return lo > 0 ? `${s.slice(0, lo)}\u2026` : "";
   }
-  /** Width of the widest value axis label. */
-  function valueLabelWidth(nFeatures: number): number {
-    const gr = grid();
-    if (!opts.showValueAxis || !gr.length) return 0;
-    const grs = grids();
+  /**
+   * The value axis of row `r` in rows `rowH` px tall: its round values,
+   * their labels and their places along the row's grid (see
+   * violinValueTicks).
+   */
+  function valueAxis(r: number, rowH: number) {
+    const rowGrid = gridForRow(grid(), grids(), r);
+    const lo = rowGrid[0] as number;
+    const hi = rowGrid[rowGrid.length - 1] as number;
+    return violinValueTicks(lo, hi, rowH - 4, sizes.label);
+  }
+  /** Width of the widest value axis label, in rows `rowH` px tall. */
+  function valueLabelWidth(nFeatures: number, rowH: number): number {
+    if (!opts.showValueAxis || !grid().length) return 0;
     let w = 0;
     for (let r = 0; r < nFeatures; r += 1) {
-      const rowGrid = gridForRow(gr, grs, r);
-      const lo = rowGrid[0] as number;
-      const hi = rowGrid[rowGrid.length - 1] as number;
-      w = Math.max(
-        w,
-        tw(fmtAxis(lo), sizes.label),
-        tw(fmtAxis(hi), sizes.label),
-      );
+      for (const s of valueAxis(r, rowH).labels) {
+        w = Math.max(w, tw(s, sizes.label));
+      }
     }
     return w;
   }
@@ -476,11 +543,20 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     const gr = grid();
     const longest = (labels: string[]) =>
       labels.reduce((m, s) => Math.max(m, tw(s, sizes.label)), 0);
-    layout = layoutViolin(width, height, f.length, g.length, opts, {
+    const gutters = {
       sizes,
       rowLabel: opts.showFeatureLabels ? longest(f) : 0,
       colLabel: longest(g),
-      valueLabel: valueLabelWidth(f.length),
+    };
+    // The row height does not depend on the value labels, which widen only
+    // the right gutter, so the rows come first and the labels fit them.
+    const rows = layoutViolin(width, height, f.length, g.length, opts, {
+      ...gutters,
+      valueLabel: 0,
+    });
+    layout = layoutViolin(width, height, f.length, g.length, opts, {
+      ...gutters,
+      valueLabel: valueLabelWidth(f.length, rows.rowH),
     });
 
     ctx.clearRect(0, 0, width, height);
@@ -497,6 +573,9 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
 
     const dens = density();
     const cols = groupColors();
+    // Each colour as the canvas reads it, var() and currentColor included;
+    // null for one that paints nothing, whose violins are left out.
+    const read = canvasColours(el);
     const med = medians();
     const grs = grids();
     const halfW =
@@ -556,10 +635,13 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
           else ctx.lineTo(px, py);
         }
         ctx.closePath();
-        ctx.fillStyle = cols[c] ?? theme.foreground;
-        ctx.globalAlpha = 0.85;
-        ctx.fill();
-        ctx.globalAlpha = 1;
+        const fill = read(cols[c] ?? theme.foreground);
+        if (fill) {
+          ctx.fillStyle = fill;
+          ctx.globalAlpha = 0.85;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
 
         const i = idx[c] as number;
         if (
@@ -584,7 +666,17 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     renderOverlay();
   }
 
-  function renderOverlay() {
+  /**
+   * Draw the overlay, then give every colour in it that the page cannot
+   * read the value "none", as the canvas leaves such marks out (see
+   * hideUnreadableColours), so the screen and the exports agree.
+   */
+  function renderOverlay(...args: Parameters<typeof drawOverlay>) {
+    drawOverlay(...args);
+    hideUnreadableColours(el, theme, svg);
+  }
+
+  function drawOverlay() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     if (!width || !height) return;
     const f = features();
@@ -608,47 +700,40 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     }
 
     // A value axis per row on the right: each row can have its own range, so
-    // each gets its own lowest and highest value. The lowest is left out when
-    // the row is too short for both labels, and on rows tighter than the
-    // labels, only every k-th row is labelled, as with the feature labels.
-    const gr = grid();
-    if (opts.showValueAxis && gr.length) {
-      const grs = grids();
+    // each gets its own round values, labelled in one format and placed
+    // where the violins put them. On rows tighter than the labels, only
+    // every k-th row is labelled, as with the feature labels.
+    if (opts.showValueAxis && grid().length) {
       const x = layout.left + layout.plotW + 4;
       const step = Math.max(1, Math.ceil(label / layout.rowH));
       for (let r = 0; r < f.length; r += step) {
-        const rowGrid = gridForRow(gr, grs, r);
-        const lo = rowGrid[0] as number;
-        const hi = rowGrid[rowGrid.length - 1] as number;
         const yTop = layout.top + r * layout.rowH + 2;
         const yBot = layout.top + (r + 1) * layout.rowH - 2;
         svg.appendChild(line(x, yTop, x, yBot, theme.axis));
-        svg.appendChild(line(x, yTop, x + 3, yTop, theme.axis));
-        svg.appendChild(
-          text(
-            x + 5,
-            yTop + 0.75 * label,
-            fmtAxis(hi),
-            theme.muted,
-            "start",
-            label,
-          ),
-        );
-        if (yBot - yTop >= 2 * label + 2) {
-          // Large text sits a little higher, clear of the next row's top
-          // label 4 px under it.
-          svg.appendChild(line(x, yBot, x + 3, yBot, theme.axis));
+        const axis = valueAxis(r, layout.rowH);
+        axis.ticks.forEach((_, k) => {
+          const y = yBot - (axis.at[k] as number) * (yBot - yTop);
+          svg.appendChild(line(x, y, x + 3, y, theme.axis));
+          // A label reaches about 0.4 of its size above and below its
+          // middle. A label at an end of the row moves inside it, so it
+          // never meets the label of the next row.
+          const lowest = yTop + 0.4 * label;
+          const highest = yBot - 0.4 * label;
+          const middle =
+            lowest <= highest
+              ? Math.min(Math.max(y, lowest), highest)
+              : (yTop + yBot) / 2;
           svg.appendChild(
             text(
               x + 5,
-              yBot - Math.max(0, 0.3 * label - 3.5),
-              fmtAxis(lo),
+              middle + 0.35 * label,
+              axis.labels[k] ?? "",
               theme.muted,
               "start",
               label,
             ),
           );
-        }
+        });
       }
     }
 
@@ -774,23 +859,10 @@ export const createViolin: PlotomicsFactory<ViolinOptions> = (el, initial) => {
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----
-/**
- * An axis value short enough for the right gutter: whole numbers below
- * 100,000 as they are, very large or very small values in exponent form,
- * and the rest to three significant digits.
- */
-function fmtAxis(v: number): string {
-  if (!Number.isFinite(v)) return "";
-  const a = Math.abs(v);
-  if (a >= 1e5 || (a > 0 && a < 1e-3)) return v.toExponential(1);
-  if (Number.isInteger(v)) return String(v);
-  if (a >= 100) return String(Math.round(v));
-  return String(Number(v.toPrecision(3)));
-}
 function uniq(col: readonly string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];

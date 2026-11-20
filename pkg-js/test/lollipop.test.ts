@@ -257,6 +257,27 @@ describe("lollipop label placement", () => {
     expect(spots[1]?.leader).toBeDefined();
   });
 
+  it("keeps a label above the bottom bound, or leaves it out", () => {
+    // A label beside a head near the baseline reached down into the domain
+    // band of a short plot. The box of a label runs 2 px under its baseline.
+    const beside = (y: number) => ({
+      width: 30,
+      spots: [{ x: 100, y, anchor: "start" as const }],
+    });
+    const low = { ...bounds, bottom: 90 };
+    expect(placeLabels([beside(95)], [], low)).toEqual([null]);
+    expect(placeLabels([beside(88)], [], low)[0]?.y).toBe(88);
+    // With a spot above as well, the label takes that one.
+    const both = {
+      width: 30,
+      spots: [
+        { x: 100, y: 95, anchor: "start" as const },
+        { x: 100, y: 70, anchor: "middle" as const },
+      ],
+    };
+    expect(placeLabels([both], [], low)[0]?.y).toBe(70);
+  });
+
   it("never covers a head", () => {
     const head = { x0: 90, y0: 88, x1: 110, y1: 108 };
     const spots = placeLabels(

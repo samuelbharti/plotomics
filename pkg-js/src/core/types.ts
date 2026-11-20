@@ -39,7 +39,11 @@ export interface PlotomicsInstance<TOptions = Record<string, unknown>> {
    * supported.
    */
   exportPNG?(scale?: number): Promise<Blob | null>;
-  /** Release all GPU/DOM/listener resources. Idempotent. */
+  /**
+   * Release all GPU/DOM/listener resources. Idempotent: a second call does
+   * nothing, and so does every other method after it, the exports giving
+   * null.
+   */
   destroy(): void;
 }
 

@@ -100,7 +100,7 @@ and exercised for, not a benchmark and not a ceiling.
 | Protein domain lollipop | Lollipop, also called a mutation needle plot, over Pfam/InterPro domains | canvas 2-D + SVG | hundreds to thousands of variants |
 | Kaplan-Meier curve | KM survival curves, censoring ticks, CI bands, number-at-risk table | canvas 2-D + SVG; fit from `survival` / `lifelines` | a handful of strata |
 | Categorical profile | SBS96 mutational signature profile, six substitution-class blocks | canvas 2-D + SVG | 96 contexts, up to a few thousand bins |
-| UpSet plot | UpSet: intersection bars over a membership matrix | canvas 2-D + SVG; exclusive intersections computed in R | dozens of sets |
+| UpSet plot | UpSet: intersection bars over a membership matrix | canvas 2-D + SVG; exclusive intersections computed in R or Python | dozens of sets |
 | Gene treemap | Treemap of gene sets and pathway composition | canvas 2-D + `d3-hierarchy` (squarified layout) | 60k leaves |
 | Network graph | Force-directed PPI, co-expression and regulatory graphs | `sigma` v3 (WebGL) + `graphology` + `graphology-layout-forceatlas2` | 5k nodes |
 | Hi-C contact matrix | Hi-C / Micro-C contact maps | `regl` (WebGL) with a level-of-detail pyramid, no tile server | 1024 × 1024 ≈ 1M bins |
@@ -111,9 +111,11 @@ Note that `clustermap` and `heatmap` look alike and are built differently: the
 first is a scaled 2-D canvas, the second a WebGL texture. Not every large figure
 needs a shader, and what actually matters is that no component uses per-datum DOM.
 
-Three components ship data helpers that run the statistics in R, where you can
-see them, rather than inside the renderer: `oncoplot_memo_sort()`,
-`upset_intersections()` and `violin_density()`.
+Three components ship data helpers that run the statistics in the wrapper,
+where you can see them, and not inside the renderer: in R
+`oncoplot_memo_sort()`, `upset_intersections()` and `violin_density()`, and in
+Python `plotomics.oncoplot.memo_sort()`, `upset_intersections()` and
+`violin_density()`.
 
 ### A worked example
 
@@ -145,8 +147,11 @@ win.
 
 ```text
 pkg-js/
-  core/         plotomics/core        contract, theme, color, binary transport, export
-  components/   plotomics  the headless viz factories + adapters + dev harness
+  src/core/        plotomics/core     instance interface, theme, color, binary transport, export
+  src/components/  plotomics/<name>   the headless viz factories
+  src/lib/         plotomics          the package entry, and the bindings the entry points share
+  src/entries/     the htmlwidgets (UMD) and anywidget entry points
+  dev/             the dev harness
 pkg-r/          R package (htmlwidgets)
 pkg-py/         Python package (anywidget)
 docs/           landing page, architecture notes, motivation

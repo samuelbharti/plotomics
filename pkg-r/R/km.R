@@ -59,8 +59,9 @@
 #'   and `surv` columns and an optional `group` column naming each tick's
 #'   stratum, as Python's `Km(censor=)` takes. Column names must match
 #'   exactly. With a `survfit` object the ticks are read off the fit unless
-#'   `censor` is given. It comes last so the arguments before it keep their
-#'   positions.
+#'   `censor` is given. A tick with a missing or infinite `time` or `surv`
+#'   has no place on the plot and is left out with a warning, as in Python.
+#'   It comes last so the arguments before it keep their positions.
 #' @return An `htmlwidget` object.
 #' @examples
 #' df <- data.frame(
@@ -177,7 +178,7 @@ km <- function(data,
     if (length(group_colors) != n_strata) {
       stop("`group_colors` must have one entry per stratum.", call. = FALSE)
     }
-    meta$groupColors <- I(as.character(group_colors))
+    meta$groupColors <- I(bv_colour(as.character(group_colors)))
   }
 
   if (!is.null(censor)) {
@@ -189,11 +190,26 @@ km <- function(data,
            call. = FALSE)
     }
     if (nrow(censor) > 0L) {
-      meta$censorTime <- I(bv_require_numeric(censor[["time"]], "censor$time"))
-      meta$censorSurv <- I(bv_require_numeric(censor[["surv"]], "censor$surv"))
+      ct <- bv_require_numeric(censor[["time"]], "censor$time")
+      cs <- bv_require_numeric(censor[["surv"]], "censor$surv")
       # A tick without a group belongs to the only curve, as in Python.
-      if (!is.null(censor[["group"]])) {
-        meta$censorGroup <- I(as.character(censor[["group"]]))
+      cg <- if (!is.null(censor[["group"]])) as.character(censor[["group"]])
+      # A tick with no time or no survival has no place on the plot; sent,
+      # it was drawn at 0. Python leaves it out with the same warning.
+      gone <- !is.finite(ct) | !is.finite(cs)
+      if (any(gone)) {
+        warning(sprintf(paste0(
+          "Left out %d censor mark(s) with a missing or infinite ",
+          "`time` or `surv`."
+        ), sum(gone)), call. = FALSE)
+        ct <- ct[!gone]
+        cs <- cs[!gone]
+        if (!is.null(cg)) cg <- cg[!gone]
+      }
+      if (length(ct) > 0L) {
+        meta$censorTime <- I(ct)
+        meta$censorSurv <- I(cs)
+        if (!is.null(cg)) meta$censorGroup <- I(cg)
       }
     }
   }
