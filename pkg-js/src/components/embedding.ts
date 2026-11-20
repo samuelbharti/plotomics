@@ -533,7 +533,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   };
 
   /** The point colours regl-scatterplot reads, from pointColours. */
-  function glColours(): (string | number[])[] {
+  function glColours(): (string | [number, number, number, number])[] {
     const { colours, ramp } = pointColours;
     return ramp ? colours : colours.map((c) => scatterColour(c, el));
   }
