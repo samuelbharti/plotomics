@@ -166,6 +166,12 @@ const MAX_LEGEND_SHARE = 0.35;
 const LEGEND_PAD = 8;
 /** Share of the theme foreground in the default edge colour. */
 const EDGE_MIX = 0.2;
+/**
+ * Hex colours sigma reads as they are: 3, 6 or 8 digits. It reads the 4
+ * digits of "#rgba" as the first digits of "#rrggbb", so those are read
+ * for it like any other colour.
+ */
+const SIGMA_HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 /** Room sigma keeps by default between the node centres and its edges. */
 const STAGE_PADDING = 30;
 /** Sigma's canvases, bottom first. A hovered node is redrawn on hoverNodes
@@ -642,12 +648,16 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
 
   /**
    * A reader of the colours of the `color` column, as sigma reads them:
-   * each distinct colour is read once (see sigmaColour), so one that paints
-   * nothing is clear, not black.
+   * hex sigma reads as it is, and each other distinct colour once (see
+   * sigmaColour), so one that paints nothing is clear, not black.
    */
   function edgeColourReader(): (colour: string) => string {
     const read = new Map<string, string>();
     return (colour) => {
+      // Hex sigma reads goes as it is: a read takes a canvas, and a colour
+      // scale gives each of thousands of edges a colour of its own.
+      const given = colour.trim();
+      if (SIGMA_HEX.test(given)) return given;
       let out = read.get(colour);
       if (out === undefined) {
         out = sigmaColour(colour);

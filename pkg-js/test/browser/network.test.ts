@@ -1283,6 +1283,78 @@ describe("network colours of the color column", () => {
     return { rgb: best, far };
   }
 
+  it("passes hex sigma reads unread, and draws each hex form right", async () => {
+    // Each colour read takes a 1 x 1 canvas; count those reads.
+    const proto = CanvasRenderingContext2D.prototype;
+    const realRead = proto.getImageData;
+    let reads = 0;
+    proto.getImageData = function (
+      this: CanvasRenderingContext2D,
+      ...args: Parameters<typeof realRead>
+    ) {
+      if (this.canvas.width === 1 && this.canvas.height === 1) reads += 1;
+      return realRead.apply(this, args);
+    } as typeof realRead;
+    const ring = (color?: string[]) => {
+      const n = 300;
+      const id = Array.from({ length: n }, (_, i) => `N${i}`);
+      return {
+        columns: {
+          id,
+          x: id.map((_, i) => Math.cos(i / 10) * i),
+          y: id.map((_, i) => Math.sin(i / 10) * i),
+          source: id,
+          target: id.map((_, i) => id[(i + 1) % n] as string),
+          ...(color ? { color } : {}),
+        },
+      };
+    };
+    const hex = (i: number) =>
+      `#${(((i * 2654435761) >>> 8) & 0xffffff).toString(16).padStart(6, "0")}`;
+    try {
+      const count = (color?: string[]) => {
+        reads = 0;
+        instances.push(
+          createNetwork(container(), {
+            data: ring(color),
+            options: { layout: "precomputed" },
+          }),
+        );
+        return reads;
+      };
+      const none = count();
+      // 300 distinct hex colours of 3, 6 and 8 digits, as a colour scale
+      // on the edge weight gives. Before the fix each was read on a canvas.
+      const forms = Array.from({ length: 300 }, (_, i) =>
+        i % 3 === 0
+          ? `#${hex(i).slice(1, 4)}`
+          : i % 3 === 1
+            ? hex(i)
+            : `${hex(i)}cc`,
+      );
+      expect(count(forms)).toBe(none);
+    } finally {
+      proto.getImageData = realRead;
+    }
+    // Sigma reads 6 and 8 digits as they are; 4 digits are read for it.
+    for (const [given, red] of [
+      ["#d62728", true],
+      ["#d62728ff", true],
+      ["#f00f", true],
+      ["#d6272800", false],
+    ] as const) {
+      const net = createNetwork(container(), { data: pair(given) });
+      instances.push(net);
+      const { rgb, far } = await edgePixel(net);
+      if (red) {
+        expect(rgb[0], given).toBeGreaterThan(190);
+        expect(rgb[1], given).toBeLessThan(70);
+      } else {
+        expect(far, given).toBeLessThan(30);
+      }
+    }
+  });
+
   it("reads var() and leaves a colour that paints nothing undrawn", async () => {
     const el = container();
     el.style.setProperty("--edge", "#d62728");
