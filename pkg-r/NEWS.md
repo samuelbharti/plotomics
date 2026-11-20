@@ -2,6 +2,10 @@
 
 ## Changes
 
+* `igv()` and `gosling()`, with their Shiny bindings, are not in the R package;
+  the r-universe build of 0.2.0 had them. Their bundles put the installed
+  package past the 5 MB limit that CRAN sets. The Python and JavaScript packages
+  keep both.
 * Chart text takes its size from `theme$fontSize`. At the default of 12,
   labels are 11 px, axis and legend titles 13 px and plot titles 14 px; text
   was fixed at 7 to 13 px, mostly 9 px. Layouts measure their labels, end long
@@ -27,8 +31,8 @@
 * `theme = list(padding = )` puts room around every plot: one number for all
   four sides, or `top`, `right`, `bottom` and `left`, 10 px by default. Axes,
   labels and legends stay inside it.
-* Gridlines sit under the data in every plot. A `theme$grid` of "none", a
-  transparent colour or an R colour name such as "grey90" draws no grid.
+* Gridlines sit under the data in every plot. A `theme$grid` of "none" or a
+  transparent colour draws no grid.
 * Axes and colour bars label round values in one unit per axis (a `hic()` log
   colour bar writes each power of ten in its own unit), and keep fewer labels on
   a short plot so that no two overlap.
@@ -61,18 +65,21 @@
   the locale, so the colours match Python's.
 * `km()` draws its legend above the panel, thins time labels and risk counts to
   fit, keeps the risk table ahead of the legend, and labels strata without the
-  variable names. A Cox fit with several `newdata` rows draws one curve per row,
-  and rows with a missing `time` or `surv` are left out with a warning.
+  variable names where it can cut them safely. With `y_from_zero = FALSE` the y
+  labels sit on round percentages. A Cox fit with several `newdata` rows draws
+  one curve per row, a multi-state fit stops with a clear message, and rows with
+  a missing `time` or `surv` are left out with a warning.
 * `oncoplot()` annotation levels follow factor order, and named colours are
   matched by level. Rows with a missing gene or sample are left out.
-* `volcano(label_top_n = Inf)` labels every up- and down-regulated gene.
+* `volcano(label_top_n = Inf)` asks for a label on every up- and down-regulated
+  gene; a label with no room is left out.
 * `hic()` checks `vmin`, `vmax`, `vmax_percentile`, `bin_size` and `symmetric`.
-* `lollipop()` takes any data frame for `domains` and `ptms`, a Bioconductor
-  `DataFrame` included.
+* `lollipop()` stops with a clear error when `domains` or `ptms` is not a data
+  frame.
 * Colour bars and axes label round, exact values, the `hic()` colour bar and
-  axes and the `violin()` value axis included; very small ranges use one
-  exponent form. The `treemap()` key labels its two ends. Tooltips stay inside
-  the widget.
+  axes and the `violin()` value axis included; very large or very small ranges
+  use one exponent form. The `treemap()` key labels its two ends in one format.
+  Tooltips stay inside the widget.
 * Any theme colour or colour argument may be a CSS variable. R colour names that
   CSS lacks, such as "grey50" or "steelblue4", are sent as hex, so every R
   colour name works; a name CSS knows, such as "green", keeps its CSS colour. A
@@ -138,8 +145,9 @@
   with a warning.
 * `hic()` with sparse input stops with a clear message when `i` or `j` is
   missing.
-* `volcano()` draws p = 0 genes above the threshold line, and the `volcano()`
-  and `embedding()` tooltips hide when the view moves.
+* `volcano()` draws p = 0 genes above the threshold line and keeps the line and
+  large points in view, and the `volcano()` and `embedding()` tooltips hide when
+  the view moves.
 * `violin()` draws with a missing `grid` value, where it stopped with an error.
 * `lollipop()` labels stay clear of domains at small sizes, a one-sample
   `oncoplot()` reads "1 sample", `treemap()` tooltips print values in full, and

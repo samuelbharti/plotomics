@@ -143,12 +143,13 @@ be behind the tag.
   edges, stay inside the widget where they fit, wrap long text, and never cover
   the pointer. (#214)
 - The clustermap, spatial and Hi-C colour bars and the volcano, embedding, Hi-C
-  and violin axes label round, exact values in one unit; very small or very
-  narrow ranges use one exponent form for the whole bar or axis. A Hi-C log
-  colour bar writes each power of ten in its own short unit ("100", "10k",
+  and violin axes label round, exact values in one unit; very large, very small
+  or very narrow ranges use one exponent form for the whole bar or axis. A Hi-C
+  log colour bar writes each power of ten in its own short unit ("100", "10k",
   "1M"), and the exponent form from a billion up. A bar with little room takes a
-  coarser step or shorter end labels, and leaves a label out before it would cut
-  it or show two equal ones. The treemap key labels its two ends in one format.
+  coarser step or shorter end labels; the Hi-C bar then leaves a label out
+  before it would cut it, and the clustermap bar leaves its labels out before it
+  would show two equal ones. The treemap key labels its two ends in one format.
   The volcano and embedding margins widen to fit long labels deep in a zoom.
   (#218, #219, #221)
 - R `km()` labels strata without the variable names ("1, FALSE" where survfit
@@ -161,19 +162,18 @@ be behind the tag.
   named colours (a named vector in R, a dict or Series in Python) are matched by
   level name. Rows with a missing gene or sample are left out before anything is
   counted. (#216)
-- `volcano(label_top_n = Inf)` labels every up- and down-regulated gene, in R
-  and Python. The y warning counts missing values only, so p = 0 is not
-  reported. (#216)
+- `volcano(label_top_n = Inf)` asks for a label on every up- and down-regulated
+  gene, in R and Python; a label with no room is left out. The y warning leaves
+  out +Inf, so p = 0 is not reported. (#216)
 - R and Python check the Hi-C `vmin`, `vmax`, `vmax_percentile`, `bin_size` and
   `symmetric` arguments, with the same errors. (#213)
-- R and Python take a data frame (pandas, polars, a tibble or a Bioconductor
-  DataFrame) for lollipop `domains` and `ptms`. (#214)
+- Python takes a data frame (pandas or polars) for lollipop `domains` and
+  `ptms`, as R does, and R stops with a clear error when they are not a data
+  frame. (#214)
 - Every theme colour and every colour option may be a CSS variable or
-  `currentColor` in every plot, on screen and in the exports, and a canvas reads
-  the new value when the page changes it and the plot draws again or resizes. A
-  colour the page cannot read leaves out the marks and keys that take it, text
-  in it takes the default theme's colour, and the browser console names it once.
-  (#221)
+  `currentColor` in every plot, on screen and in the exports. A colour the page
+  cannot read leaves out the marks and keys that take it, text in it takes the
+  default theme's colour, and the browser console names it once. (#221)
 - R sends colour names that CSS lacks, such as "grey50" or "steelblue4", as
   their hex values, so every R colour name works; a name CSS knows, such as
   "green", keeps its CSS colour. (#221)
@@ -263,7 +263,8 @@ be behind the tag.
 - The spatial PNG export with an image from another site without CORS headers
   holds the spots and the legend. (#213)
 - Missing names read "NA" in the violin, dot plot, UpSet, lollipop and oncoplot
-  tooltips; the violin and lollipop threw. (#214)
+  tooltips; the violin, UpSet and oncoplot threw on hover, and the lollipop
+  while drawing a domain with no name. (#214)
 - A theme background given as a CSS variable paints the plot and its exports in
   that colour; canvases were black or white. Network hover stays readable with a
   grid colour of "none" and in the dark theme. (#214)
@@ -291,11 +292,11 @@ be behind the tag.
   keeps a drawn threshold line in view, and keeps large points clear of the plot
   edges. The volcano and embedding tooltips hide when the view zooms or pans or
   a lasso starts. (#222)
-- Treemap tooltips print values in full; 45678 read 4.6e+4. Per-edge network
-  colours resolve var() and take the default colour when missing; they drew
-  black. The network and the volcano leave the element's own background as it
-  was. R `violin()` draws with a missing `grid` value, as Python does; it
-  stopped with an error. (#222)
+- Treemap tooltips print whole numbers in full and other values to six
+  significant digits; 45678 read 4.6e+4. Per-edge network colours resolve var()
+  and take the default colour when missing; they drew black. The network and the
+  volcano leave the element's own background as it was. R `violin()` draws with
+  a missing `grid` value, as Python does; it stopped with an error. (#222)
 - The R reference site links each source file in `pkg-r/`, where its links were
   404s, and the spatial Shiny help example builds its own image. (#220)
 
