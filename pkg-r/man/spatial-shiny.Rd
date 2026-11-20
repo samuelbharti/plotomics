@@ -32,8 +32,17 @@ and interactive R Markdown / Quarto documents.
 }
 \examples{
 if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
-  # The browser fetches the image, so put tissue.png in the app's www/
-  # folder. Without it the spots are drawn on a blank background.
+  # The image is a drawn stand-in, built as a data URI so the app needs
+  # no file. A real app passes the path of an image in its www/ folder.
+  svg <- paste0(
+    "<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600'>",
+    "<rect width='600' height='600' fill='#F4ECF0'/>",
+    "<ellipse cx='300' cy='260' rx='230' ry='190' fill='#D9A9C4'/>",
+    "</svg>"
+  )
+  tissue <- paste0(
+    "data:image/svg+xml,", utils::URLencode(svg, reserved = TRUE)
+  )
   ui <- shiny::fluidPage(spatialOutput("sp"))
   server <- function(input, output) {
     output$sp <- renderSpatial({
@@ -42,7 +51,7 @@ if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
         y = runif(50, 0, 600),
         color = rnorm(50)
       )
-      spatial(spots, image = "tissue.png", img_width = 600,
+      spatial(spots, image = tissue, img_width = 600,
               img_height = 600, spot_diameter = 12)
     })
   }

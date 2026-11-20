@@ -21,7 +21,7 @@ import { createEmbedding } from "plotomics/embedding";
 ```
 
 The `/embedding` subpath (plus `sideEffects:false`) means your esbuild bundle
-pulls only the embedding + `regl-scatterplot` (~255 KB), not the other sixteen
+pulls only the embedding + `regl-scatterplot` (about 280 KB minified), not the other sixteen
 components' engines (gosling/igv/pixi/sigma). The ~60-line
 [`srcts/Embedding.tsx`](srcts/Embedding.tsx) wrapper, a `useRef` container plus
 `useEffect`s calling `setData`/`setOptions`/`destroy`, is the entire
@@ -56,14 +56,17 @@ uses React, but npm checks that range on every install, so in a React 19 app
 `legacy-peer-deps=true` in `.npmrc`), as the
 [plotomics README](../../pkg-js/README.md#react-19) shows.
 
-To run it against a local build rather than the published package, build the
-library first and link it:
+To run it against a local build of plotomics, build the library first and
+install it from its folder:
 
 ```bash
 pnpm dist                        # from the repository root
 cd examples/shiny-react-embedding
-pnpm link ../../pkg-js
+npm install --no-save ../../pkg-js
 ```
+
+npm links the folder, so `npm run build` bundles the local build. A later
+plain `npm install` puts the published package back.
 
 ## The large-data caveat
 

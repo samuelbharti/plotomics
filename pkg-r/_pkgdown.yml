@@ -1,5 +1,14 @@
 url: https://www.samuelbharti.com/plotomics/r
 
+# The package sits in pkg-r/, so source links name that folder. Without
+# this, pkgdown links files at the repository root, which do not exist.
+repo:
+  url:
+    home: https://github.com/samuelbharti/plotomics/
+    source: https://github.com/samuelbharti/plotomics/blob/HEAD/pkg-r/
+    issue: https://github.com/samuelbharti/plotomics/issues/
+    user: https://github.com/
+
 template:
   bootstrap: 5
   bslib:

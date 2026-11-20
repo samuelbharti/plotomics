@@ -111,9 +111,11 @@ Note that `clustermap` and `heatmap` look alike and are built differently: the
 first is a scaled 2-D canvas, the second a WebGL texture. Not every large figure
 needs a shader, and what actually matters is that no component uses per-datum DOM.
 
-Three components ship data helpers that run the statistics in R, where you can
-see them, rather than inside the renderer: `oncoplot_memo_sort()`,
-`upset_intersections()` and `violin_density()`.
+Three components ship data helpers that run the statistics in the wrapper,
+where you can see them, and not inside the renderer: in R
+`oncoplot_memo_sort()`, `upset_intersections()` and `violin_density()`, and in
+Python `plotomics.oncoplot.memo_sort()`, `upset_intersections()` and
+`violin_density()`.
 
 ### A worked example
 
@@ -145,8 +147,11 @@ win.
 
 ```text
 pkg-js/
-  core/         plotomics/core        contract, theme, color, binary transport, export
-  components/   plotomics  the headless viz factories + adapters + dev harness
+  src/core/        plotomics/core  instance interface, theme, color, binary transport, export
+  src/components/  plotomics       the headless viz factories
+  src/entries/     the htmlwidgets (UMD) and anywidget entry points
+  src/lib/         the bindings those entry points share
+  dev/             the dev harness
 pkg-r/          R package (htmlwidgets)
 pkg-py/         Python package (anywidget)
 docs/           landing page, architecture notes, motivation
