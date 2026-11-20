@@ -606,7 +606,7 @@ describe("hic colour bar labels", () => {
   // narrow margin cut them: "10 | 1000 | 1000..." for vmax 1e5 at 300 x 225
   // px and fontSize 20, where the cut "100000" read as a second 1000, and no
   // label at all for vmax 1e9 or 1e15.
-  for (const vmax of [1e5, 1e6, 1e9, 1e15]) {
+  for (const vmax of [1e5, 1e6, 1e9, 1e10, 1e15]) {
     it(`labels a bar to ${vmax} whole and short at small sizes`, () => {
       for (const transform of ["log", "linear"] as const) {
         for (const [w, h, fontSize] of [

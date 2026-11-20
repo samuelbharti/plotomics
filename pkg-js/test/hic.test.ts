@@ -107,6 +107,24 @@ describe("hic colour bar ticks", () => {
     for (const s of huge) expect(s.length).toBeLessThanOrEqual(5);
   });
 
+  it("takes the exponent form when the unit form is wider than the room", () => {
+    // Before, "10000M" did not fit a narrow bar, and only "0" was left.
+    const width = (s: string) => 7 * s.length;
+    const t = hicColorbarTicks(0, 1e10, "linear", 400, {
+      ...gaps,
+      roomPx: width("1e+10"),
+      labelPx: width,
+    });
+    expect(labels(t)).toEqual(["0", "1e+10"]);
+    // With room, the unit form stays.
+    const wide = hicColorbarTicks(0, 1e10, "linear", 400, {
+      ...gaps,
+      roomPx: 100,
+      labelPx: width,
+    });
+    expect(labels(wide)).toContain("10000M");
+  });
+
   it("takes a coarser linear step when the labels are wider than the room", () => {
     const width = (s: string) => 7 * s.length;
     const t = hicColorbarTicks(0, 1e15, "linear", 400, {

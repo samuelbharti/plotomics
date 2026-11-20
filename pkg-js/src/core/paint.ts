@@ -84,9 +84,21 @@ function warnUnreadable(colour: string): void {
 
 /** The attributes of an SVG element that hold a colour. */
 const COLOUR_ATTRS = ["fill", "stroke", "stop-color", "flood-color"];
-/** Colours every page reads as they are, with nothing to check. */
+/**
+ * Colours every page reads as they are, with nothing to check: well-formed
+ * hex of 3, 4, 6 or 8 digits, "none", "transparent", currentColor and a
+ * url() paint. Anything else, a malformed "#12345", "rgb(1, 2)" or
+ * "hsl(nope)" among them, is read through the probe.
+ */
 const PLAIN =
-  /^(?:#[0-9a-f]{3,8}|(?:rgba?|hsla?)\([^)]*\)|none|transparent|currentcolor|url\(.*\))$/i;
+  /^(?:#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|none|transparent|currentcolor|url\(.*\))$/i;
+
+/**
+ * Whether the page reads a colour that depends on nothing in it, such as a
+ * name or rgb(), from its first probe. var() and currentColor depend on the
+ * page and are read on every pass.
+ */
+const readsOnAnyPage = new Map<string, boolean>();
 
 /** The role a text colour has in a theme. */
 export type TextRole = "foreground" | "muted" | "axis";
@@ -146,10 +158,14 @@ export function hideUnreadableColours(
       for (const name of COLOUR_ATTRS) {
         const value = node.getAttribute(name)?.trim();
         if (!value || PLAIN.test(value)) continue;
-        let ok = readable.get(value);
+        const fixed = !/var\(|currentcolor/i.test(value);
+        let ok =
+          readable.get(value) ??
+          (fixed ? readsOnAnyPage.get(value) : undefined);
         if (ok === undefined) {
           ok = readColour(value, el) !== null;
           readable.set(value, ok);
+          if (fixed) readsOnAnyPage.set(value, ok);
           if (!ok) warnUnreadable(value);
         }
         if (ok) continue;

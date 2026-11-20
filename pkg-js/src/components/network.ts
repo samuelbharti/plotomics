@@ -334,6 +334,13 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
 
   let graph: Graph = new Graph();
   let renderer: Sigma | null = null;
+  /**
+   * The hover colours the renderer draws with (see hoverColours) and the
+   * colour of the edges of a hovered node. The renderer reads them when it
+   * draws, so a recolour changes them in place.
+   */
+  let hover = { label: "#000000", box: "#ffffff", dim: "#e5e7eb" };
+  let hoverEdge = "#000000";
   let hovered: string | null = null;
   let neighborSet: Set<string> = new Set();
 
@@ -388,8 +395,10 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
 
   /**
    * Give the nodes, and the edges of the default colour, the colours read
-   * now, keeping the graph and its layout, and build the renderer again for
-   * the hover colours.
+   * now, and the renderer its new default and hover colours, in place. The
+   * graph, its layout, the camera and a hover stay as they are. A new
+   * renderer started at the first view, and never sent leaveNode for the
+   * node hovered in the old one, so its tooltip and dimming stayed.
    */
   function recolour(colours: string) {
     const oldEdge = (JSON.parse(drawnColours || "[]") as unknown[])[2];
@@ -410,8 +419,14 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     });
     legend = groupLegend(graph, sigmaColour(opts.defaultNodeColor));
     drawnColours = colours;
-    layout();
-    makeRenderer();
+    hover = hoverColours(theme, el);
+    hoverEdge = sigmaColour(opts.defaultNodeColor);
+    renderer?.setSetting(
+      "defaultNodeColor",
+      sigmaColour(opts.defaultNodeColor),
+    );
+    renderer?.setSetting("defaultEdgeColor", edge);
+    renderer?.setSetting("labelColor", { color: hover.label });
   }
 
   function buildAndLayout(): { graph: Graph; dropped: EdgeDrops } {
@@ -453,8 +468,8 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   function makeRenderer() {
     renderer?.kill();
     const labelSize = textSizes(theme).label;
-    const colours = hoverColours(theme, el);
-    const hoverEdge = sigmaColour(opts.defaultNodeColor);
+    hover = hoverColours(theme, el);
+    hoverEdge = sigmaColour(opts.defaultNodeColor);
     renderer = new Sigma(graph, host, {
       stagePadding: stagePadding(),
       // The padding can take the whole element, which leaves sigma's
@@ -463,7 +478,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       allowInvalidContainer: true,
       defaultNodeColor: sigmaColour(opts.defaultNodeColor),
       defaultEdgeColor: sigmaColour(opts.defaultEdgeColor),
-      labelColor: { color: colours.label },
+      labelColor: { color: hover.label },
       labelFont: theme.fontFamily,
       labelSize,
       // Sigma shows a set number of labels per grid cell, 100 px wide by
@@ -472,7 +487,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       labelGridCellSize: Math.round((100 * labelSize) / 11),
       defaultDrawNodeLabel: drawNodeLabel,
       defaultDrawNodeHover: (context, data, settings) =>
-        drawNodeHover(context, data, settings, colours.box),
+        drawNodeHover(context, data, settings, hover.box),
       labelRenderedSizeThreshold: opts.labelThreshold,
       renderLabels: true,
       // Directed graphs draw arrowheads via sigma's arrow edge program.
@@ -488,7 +503,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
         if (node === hovered || neighborSet.has(node)) {
           return { ...attrs, zIndex: 1 };
         }
-        return { ...attrs, color: colours.dim, label: "", zIndex: 0 };
+        return { ...attrs, color: hover.dim, label: "", zIndex: 0 };
       },
       edgeReducer: (edge, attrs) => {
         if (!hovered) return attrs;
@@ -698,10 +713,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       // element. A custom property the page changed since takes its new
       // value here, as the canvas plots take it when they draw again.
       const colours = readColours();
-      if (colours !== drawnColours) {
-        recolour(colours);
-        return;
-      }
+      if (colours !== drawnColours) recolour(colours);
       layout();
       renderer?.resize();
       renderer?.refresh();

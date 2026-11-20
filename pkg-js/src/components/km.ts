@@ -672,6 +672,13 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
   let width = 0;
   let height = 0;
   let layout = layoutKm(0, 0, 0, opts);
+  /**
+   * The colour each stratum's curve was drawn in, and that of a curve with
+   * no stratum, as the canvas read them; null for one that paints nothing,
+   * which has no curve, legend key or tooltip row.
+   */
+  let shownColours: (string | null)[] = [];
+  let shownForeground: string | null = null;
 
   el.style.position = el.style.position || "relative";
   const canvas = document.createElement("canvas");
@@ -917,7 +924,6 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     // Per stratum, the estimate in force at time t is the last step at or
     // before it. That is what the curve is showing at the cursor.
     const rows: string[] = [];
-    const cols = groupColors();
     const gl = groups();
     for (const sl of strata()) {
       let idx = -1;
@@ -929,8 +935,10 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
       // Past the end of the curve there is no estimate to show.
       const last = sl.rows[sl.rows.length - 1] as number;
       if (t > curveEnd(sl.group, tArr[last] as number)) continue;
+      // A stratum whose colour paints nothing has no curve to describe.
       const gi = gl.indexOf(sl.group);
-      const col = gi >= 0 ? (cols[gi] as string) : theme.foreground;
+      const col = gi >= 0 ? shownColours[gi] : shownForeground;
+      if (!col) continue;
       rows.push(
         `<span style="color:${col}">&#9632;</span> ${esc(sl.group)} ` +
           `<b>${(100 * (sArr[idx] as number)).toFixed(0)}%</b>`,
@@ -1018,6 +1026,8 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     const read = canvasColours(el);
     const colourOf = (gi: number) =>
       read(gi >= 0 ? (cols[gi] as string) : theme.foreground);
+    shownColours = gl.map((_, gi) => colourOf(gi));
+    shownForeground = colourOf(-1);
     const lower = lowers();
     const upper = uppers();
     const sArr = survs();

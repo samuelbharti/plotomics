@@ -1065,3 +1065,23 @@ describe("km censoring ticks with a missing time or survival", () => {
     }
   });
 });
+
+describe("km tooltip with a colour that paints nothing", () => {
+  it("leaves out the stratum whose curve is left out", () => {
+    // "grey50" is R's name, which CSS lacks. Before the fix the tooltip
+    // listed its stratum with a white square, though its curve and legend
+    // key were left out.
+    const km = PLOTS.find((p) => p.name === "km");
+    if (!km) throw new Error("no km plot");
+    for (const second of ["grey50", "none", "#12345"]) {
+      const el = container(640, km.height);
+      instances.push(
+        km.make(el, { categorical: ["#e6194b", second, "#4363d8"] }),
+      );
+      const tip = hoverAt(el, tickX(el, "10"), tickY(el, "75%"));
+      expect(tip, second).toContain("low risk");
+      expect(tip, second).toContain("high risk");
+      expect(tip, second).not.toContain("intermediate risk");
+    }
+  });
+});

@@ -514,8 +514,9 @@ function logColorbarLabels(
  * labels in one format and their places along the bar. The labels keep
  * `minGapPx` between them (`endGapPx` for a linear bar left with its two
  * ends). A linear bar takes round ticks as the heatmap and clustermap colour
- * bars do, with a coarser step and shorter labels when those of a finer one
- * are wider than `roomPx`, as `labelPx` measures them. A log bar takes
+ * bars do. When their labels are wider than `roomPx`, as `labelPx`
+ * measures them, it takes the exponent form, then a coarser step with
+ * shorter labels. A log bar takes
  * powers of ten, with 2 and 5 times them when the bar has room, and 0 at
  * the bottom of a scale that starts there, keeping the top power when it
  * thins them; below two powers of ten above 1, where log1p is near linear,
@@ -551,15 +552,17 @@ export function hicColorbarTicks(
         minGapPx: opts.minGapPx,
         endGapPx: opts.endGapPx,
       });
-      const labels = formatTicks(ticks, step);
-      best = ticksOf(ticks, labels);
-      if (
+      const fit = (labels: string[]) =>
         roomPx === undefined ||
         !labelPx ||
-        labels.every((label) => labelPx(label) <= roomPx)
-      ) {
-        break;
-      }
+        labels.every((label) => labelPx(label) <= roomPx);
+      const labels = formatTicks(ticks, step);
+      best = ticksOf(ticks, labels);
+      if (fit(labels)) break;
+      // Labels in their unit can be wider than the exponent form, such as
+      // "10000M" for "1e+10": the exponent form goes before a coarser step.
+      const exponent = formatTicks(ticks, step, { exponent: true });
+      if (fit(exponent)) return ticksOf(ticks, exponent);
     }
     return best;
   }

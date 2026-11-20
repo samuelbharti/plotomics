@@ -167,19 +167,26 @@ function exponentLabels(
  * power of ten of the largest tick: "2e-9, 3e-9". A narrow range far from
  * 0, such as 1000.00002 to 1000.00008, keeps its fixed-point labels, which
  * no exponent form shortens. `percent` is as for {@link formatTick}, and
- * percentages stay in fixed point.
+ * percentages stay in fixed point. `exponent` asks for the exponent form
+ * whatever the length, as for a colour bar whose room is narrower than
+ * the labels in their unit: "1e+10" for "10000M".
  */
 export function formatTicks(
   ticks: readonly number[],
   step: number,
-  opts: { percent?: boolean } = {},
+  opts: { percent?: boolean; exponent?: boolean } = {},
 ): string[] {
   let maxAbs = 0;
   for (const v of ticks) {
     if (Number.isFinite(v)) maxAbs = Math.max(maxAbs, Math.abs(v));
   }
+  if (opts.exponent && !opts.percent && step > 0 && maxAbs > 0) {
+    return exponentLabels(ticks, step, maxAbs);
+  }
   const unit = tickUnit(maxAbs, step);
-  const fixed = ticks.map((v) => formatTick(v, step, { ...opts, unit }));
+  const fixed = ticks.map((v) =>
+    formatTick(v, step, { percent: opts.percent, unit }),
+  );
   if (opts.percent || !(step > 0) || !(maxAbs > 0)) return fixed;
   const longest = (labels: string[]) =>
     labels.reduce((n, s) => Math.max(n, s.length), 0);

@@ -297,6 +297,52 @@ describe.each(PLOTS)("$name with a colour the page cannot read", (plot) => {
   const palette = (second: string) =>
     PALETTE.map((c, i) => (i === 1 ? second : c));
 
+  /**
+   * The plot with "none" as its second colour, and text in that colour in
+   * the default foreground, as text in a colour that cannot be read takes.
+   */
+  const noneReference = () =>
+    drawnIn(
+      plot,
+      { ...literal, categorical: palette("none") },
+      "element",
+      undefined,
+      (el) => {
+        for (const t of Array.from(el.querySelectorAll("text, tspan"))) {
+          if (t.getAttribute("fill") === "none") {
+            t.setAttribute("fill", defaultTheme.foreground);
+          }
+        }
+      },
+    );
+
+  // Colours that look like hex or rgb() but are malformed went past the
+  // check: the canvas left their marks out, while the legend key stayed
+  // black on screen and the export kept the raw value.
+  if (
+    ["km", "oncoplot", "lollipop", "spatial", "embedding"].includes(plot.name)
+  ) {
+    it("leaves out what takes a malformed colour, as for none", async () => {
+      const none = await noneReference();
+      for (const bad of [
+        "#12345",
+        "#1234567",
+        "rgb(1, 2)",
+        "rgb(300 garbage)",
+        "hsl(nope)",
+      ]) {
+        const got = await drawnIn(
+          plot,
+          { ...literal, categorical: palette(bad) },
+          "element",
+        );
+        expect(differing(none.screen, got.screen), `${bad}: screen`).toBe(0);
+        expect(differing(none.png, got.png), `${bad}: PNG`).toBe(0);
+        expect(differing(none.svg, got.svg), `${bad}: SVG`).toBe(0);
+      }
+    });
+  }
+
   // A warning names each colour once on the page, so each plot takes its
   // own: an R grey from grey10 up, which CSS does not have.
   const grey = `grey${10 + PLOTS.indexOf(plot)}`;
@@ -307,19 +353,7 @@ describe.each(PLOTS)("$name with a colour the page cannot read", (plot) => {
         // Marks and keys in such a colour are left out, as for "none", but
         // text in it takes the default foreground, as on the light
         // background of this theme, so the KM risk table name stays.
-        const none = await drawnIn(
-          plot,
-          { ...literal, categorical: palette("none") },
-          "element",
-          undefined,
-          (el) => {
-            for (const t of Array.from(el.querySelectorAll("text, tspan"))) {
-              if (t.getAttribute("fill") === "none") {
-                t.setAttribute("fill", defaultTheme.foreground);
-              }
-            }
-          },
-        );
+        const none = await noneReference();
         const named = () =>
           warn.mock.calls.filter((c) => String(c[0]).includes(unreadable));
         expect(named()).toEqual([]);
@@ -406,6 +440,143 @@ describe.each(PLOTS)("$name with a colour the page cannot read", (plot) => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe("network recolour on resize()", () => {
+  // A ring of 12 nodes in two groups, coloured var(--a) and var(--b).
+  const ring = () => {
+    const id = Array.from({ length: 12 }, (_, i) => `N${i}`);
+    return {
+      columns: {
+        id,
+        x: id.map((_, i) => Math.cos((2 * Math.PI * i) / 12) * 10),
+        y: id.map((_, i) => Math.sin((2 * Math.PI * i) / 12) * 10),
+        size: id.map(() => 18),
+      },
+      meta: {
+        edges: id.map((s, i) => [s, id[(i + 1) % 12] as string]),
+        nodeGroup: id.map((_, i) => (i % 2 ? "b" : "a")),
+      },
+    };
+  };
+  const make = (el: HTMLElement) =>
+    createNetwork(el, {
+      data: ring(),
+      options: {
+        showLegend: false,
+        theme: { categorical: ["var(--a)", "var(--b)"] },
+      },
+    });
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const tip = (el: HTMLElement) =>
+    Array.from(el.children).find((c) => c.tagName === "DIV") as HTMLElement;
+
+  /** Where the pixels of one colour are: their number and centre. */
+  function where(pixels: Uint8ClampedArray, w: number, rgb: number[]) {
+    let n = 0;
+    let sx = 0;
+    let sy = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (
+        Math.abs((pixels[i] as number) - (rgb[0] as number)) <= 2 &&
+        Math.abs((pixels[i + 1] as number) - (rgb[1] as number)) <= 2 &&
+        Math.abs((pixels[i + 2] as number) - (rgb[2] as number)) <= 2
+      ) {
+        n += 1;
+        sx += (i / 4) % w;
+        sy += Math.floor(i / 4 / w);
+      }
+    }
+    return { n, x: n ? sx / n : 0, y: n ? sy / n : 0 };
+  }
+
+  it("keeps the zoom", async () => {
+    // Before the fix a recolour built a new renderer, at the first view.
+    const el = container(640, 480);
+    el.style.setProperty("--a", "#e6194b");
+    el.style.setProperty("--b", "#3cb44b");
+    const inst = make(el);
+    instances.push(inst);
+    await settled("network");
+    const mouse = el.querySelector(".sigma-mouse") as HTMLElement;
+    const r = mouse.getBoundingClientRect();
+    const green = [0x3c, 0xb4, 0x4b];
+    const start = where(await shot(el), 640, green);
+    mouse.dispatchEvent(
+      new WheelEvent("wheel", {
+        deltaY: 200,
+        clientX: r.left + r.width / 2,
+        clientY: r.top + r.height / 2,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await wait(400);
+    const zoomed = where(await shot(el), 640, green);
+    // Zoomed out, the nodes are smaller.
+    expect(zoomed.n).toBeLessThan(0.8 * start.n);
+    el.style.setProperty("--a", "#4363d8");
+    inst.resize(640, 480);
+    await settled("network");
+    await wait(200);
+    const after = await shot(el);
+    // The new colour reached the nodes of group a.
+    expect(where(after, 640, [0x43, 0x63, 0xd8]).n).toBeGreaterThan(100);
+    // The nodes of group b are where the zoom put them.
+    const kept = where(after, 640, green);
+    expect(kept.n).toBeGreaterThan(100);
+    expect(Math.abs(kept.n - zoomed.n)).toBeLessThan(0.05 * zoomed.n);
+    expect(Math.abs(kept.x - zoomed.x)).toBeLessThan(2);
+    expect(Math.abs(kept.y - zoomed.y)).toBeLessThan(2);
+  });
+
+  it("clears a hover when the pointer leaves the node", async () => {
+    // Before the fix the new renderer never heard of the node hovered in
+    // the old one: moving off it left the tooltip and the dimming.
+    const el = container(640, 480);
+    el.style.setProperty("--a", "#e6194b");
+    el.style.setProperty("--b", "#3cb44b");
+    const inst = make(el);
+    instances.push(inst);
+    await settled("network");
+    const mouse = el.querySelector(".sigma-mouse") as HTMLElement;
+    const r = mouse.getBoundingClientRect();
+    let hovered = "";
+    for (let j = 0; j < 24 && !hovered; j += 1) {
+      for (let i = 0; i < 32 && !hovered; i += 1) {
+        const at = {
+          clientX: r.left + ((i + 0.5) / 32) * r.width,
+          clientY: r.top + ((j + 0.5) / 24) * r.height,
+          bubbles: true,
+        };
+        mouse.dispatchEvent(new MouseEvent("mousemove", at));
+        if (tip(el).style.opacity === "1") hovered = tip(el).textContent ?? "";
+      }
+    }
+    expect(hovered).not.toBe("");
+    el.style.setProperty("--b", "#4363d8");
+    inst.resize(640, 480);
+    await settled("network");
+    // Off the nodes: the middle of the ring.
+    mouse.dispatchEvent(
+      new MouseEvent("mousemove", {
+        clientX: r.left + r.width / 2,
+        clientY: r.top + r.height / 2,
+        bubbles: true,
+      }),
+    );
+    await settled("network");
+    expect(tip(el).style.opacity).not.toBe("1");
+    // No node is faded: the plot matches one drawn in the new colours.
+    const got = await shot(el);
+    const fresh = container(640, 480);
+    fresh.style.setProperty("--a", "#e6194b");
+    fresh.style.setProperty("--b", "#4363d8");
+    instances.push(make(fresh));
+    await settled("network");
+    const want = await shot(fresh);
+    expect(differing(want, got)).toBeLessThan(50);
   });
 });
 
