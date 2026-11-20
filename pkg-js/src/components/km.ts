@@ -57,7 +57,8 @@ import {
   fitText,
   categoricalColors,
 } from "../core/index.js";
-import { setCanvasColour } from "../core/paint.js";
+import { guardDestroy } from "../core/dom.js";
+import { canvasColours, setCanvasColour } from "../core/paint.js";
 
 export interface KmOptions {
   /** Shade the pointwise confidence band when `lower`/`upper` are present. */
@@ -732,6 +733,16 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     return groupRows(kept as string[], groups(), t);
   }
   /**
+   * Whether censoring tick `i` has a place on the plot: a finite time and
+   * survival. A tick with a missing one (null, as R's JSON sends NA, or
+   * NaN) or an infinite one is left out, where it would be drawn at 0.
+   */
+  function censorShown(i: number): boolean {
+    const ct = data.meta?.censorTime as (number | null)[] | undefined;
+    const cs = data.meta?.censorSurv as (number | null)[] | undefined;
+    return Number.isFinite(ct?.[i]) && Number.isFinite(cs?.[i]);
+  }
+  /**
    * Where a stratum's curve ends: its last given point, or its last
    * censoring tick when that comes later. A table of event times alone stops
    * at the last event, while follow-up runs on to the last censored subject.
@@ -744,6 +755,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     if (ct && (cg || strata().length === 1)) {
       for (let i = 0; i < ct.length; i += 1) {
         if (cg && cg[i] !== group) continue;
+        if (!censorShown(i)) continue;
         if ((ct[i] as number) > end) end = ct[i] as number;
       }
     }
@@ -763,7 +775,11 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     const risk = data.meta?.riskTimes as number[] | undefined;
     if (risk) for (const r of risk) if (r > m) m = r;
     const ct = data.meta?.censorTime as number[] | undefined;
-    if (ct) for (const c of ct) if (c > m) m = c;
+    if (ct) {
+      for (let i = 0; i < ct.length; i += 1) {
+        if (censorShown(i) && (ct[i] as number) > m) m = ct[i] as number;
+      }
+    }
     return m > 0 ? m : 1;
   }
   function yMin(): number {
@@ -992,6 +1008,12 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     }
     const tmax = maxTime();
     const cols = groupColors();
+    // Each colour as the canvas reads it, var() and currentColor included;
+    // null for one that paints nothing, whose band, curve and ticks are
+    // left out.
+    const read = canvasColours(el);
+    const colourOf = (gi: number) =>
+      read(gi >= 0 ? (cols[gi] as string) : theme.foreground);
     const lower = lowers();
     const upper = uppers();
     const sArr = survs();
@@ -1035,8 +1057,8 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     // a missing bound pulled the band down to 0 or across the gap.
     if (opts.showCI && lower && upper) {
       for (const sr of series) {
-        const gi = gl.indexOf(sr.group);
-        const col = gi >= 0 ? (cols[gi] as string) : theme.foreground;
+        const col = colourOf(gl.indexOf(sr.group));
+        if (!col) continue;
         const lows = sr.lo as number[];
         const ups = sr.up as number[];
         type Stretch = { t: number[]; lo: number[]; up: number[] };
@@ -1085,10 +1107,10 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     ctx.lineWidth = opts.lineWidth;
     ctx.lineJoin = "round";
     for (const sr of series) {
-      const gi = gl.indexOf(sr.group);
-      ctx.strokeStyle = gi >= 0 ? (cols[gi] as string) : theme.foreground;
+      const col = colourOf(gl.indexOf(sr.group));
       const pts = stepPoints(sr.t, sr.s);
-      if (!pts.length) continue;
+      if (!col || !pts.length) continue;
+      ctx.strokeStyle = col;
       ctx.beginPath();
       ctx.moveTo(sx(pts[0] as number, tmax), sy(pts[1] as number, lo));
       for (let i = 2; i < pts.length; i += 2) {
@@ -1104,10 +1126,13 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     if (opts.showCensors && ct && cs) {
       ctx.lineWidth = 1;
       for (let i = 0; i < ct.length; i += 1) {
-        // A tick with a missing group belongs to no curve.
+        // A tick with a missing group belongs to no curve, and one with a
+        // missing time or survival has no place on the plot.
         if (cg && cg[i] == null) continue;
-        const gi = cg ? gl.indexOf(cg[i] as string) : 0;
-        ctx.strokeStyle = gi >= 0 ? (cols[gi] as string) : theme.foreground;
+        if (!censorShown(i)) continue;
+        const col = colourOf(cg ? gl.indexOf(cg[i] as string) : 0);
+        if (!col) continue;
+        ctx.strokeStyle = col;
         const x = sx(ct[i] as number, tmax);
         const y = sy(cs[i] as number, lo);
         ctx.beginPath();
@@ -1434,7 +1459,7 @@ export const createKm: PlotomicsFactory<KmOptions> = (el, initial) => {
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----

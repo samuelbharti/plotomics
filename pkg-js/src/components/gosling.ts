@@ -26,6 +26,7 @@ import type {
   PlotomicsInstance,
 } from "../core/index.js";
 import { canvasToPNG, themePadding } from "../core/index.js";
+import { guardDestroy } from "../core/dom.js";
 import { GoslingComponent } from "gosling.js";
 import { createElement, createRef } from "react";
 import { type Root, createRoot } from "react-dom/client";
@@ -162,5 +163,5 @@ export const createGosling: PlotomicsFactory<GoslingOptions> = (
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };

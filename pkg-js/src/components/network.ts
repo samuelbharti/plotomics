@@ -48,6 +48,7 @@ import {
   releaseContainer,
   categoricalColors,
 } from "../core/index.js";
+import { guardDestroy } from "../core/dom.js";
 import {
   bytesToColour,
   colourBytes,
@@ -355,11 +356,23 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     return categoricalColors(theme.categorical, n);
   }
 
+  /**
+   * `colour` as sigma reads it: hex or rgba(), with var() and currentColor
+   * read inside the element. Sigma draws any other colour black; one that
+   * paints nothing comes back clear.
+   */
+  function sigmaColour(colour: string): string {
+    return plainColour(colour, el) ?? "rgba(0, 0, 0, 0)";
+  }
+
   function buildAndLayout(): { graph: Graph; dropped: EdgeDrops } {
-    const colorFor = groupColorResolver(paletteColors(), opts.defaultNodeColor);
+    const colorFor = groupColorResolver(
+      paletteColors().map(sigmaColour),
+      sigmaColour(opts.defaultNodeColor),
+    );
     const { graph: g, dropped } = buildGraph(data, {
-      defaultNodeColor: opts.defaultNodeColor,
-      defaultEdgeColor: opts.defaultEdgeColor,
+      defaultNodeColor: sigmaColour(opts.defaultNodeColor),
+      defaultEdgeColor: sigmaColour(opts.defaultEdgeColor),
       defaultNodeSize: opts.defaultNodeSize,
       directed: opts.directed,
       colorFor,
@@ -392,14 +405,15 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     renderer?.kill();
     const labelSize = textSizes(theme).label;
     const colours = hoverColours(theme, el);
+    const hoverEdge = sigmaColour(opts.defaultNodeColor);
     renderer = new Sigma(graph, host, {
       stagePadding: stagePadding(),
       // The padding can take the whole element, which leaves sigma's
       // container no width or height. Sigma would throw there; with this
       // setting it draws 1 px canvases, which the host hides.
       allowInvalidContainer: true,
-      defaultNodeColor: opts.defaultNodeColor,
-      defaultEdgeColor: opts.defaultEdgeColor,
+      defaultNodeColor: sigmaColour(opts.defaultNodeColor),
+      defaultEdgeColor: sigmaColour(opts.defaultEdgeColor),
       labelColor: { color: colours.label },
       labelFont: theme.fontFamily,
       labelSize,
@@ -431,7 +445,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
         if (!hovered) return attrs;
         const [s, t] = graph.extremities(edge);
         if (s === hovered || t === hovered) {
-          return { ...attrs, color: opts.defaultNodeColor, zIndex: 1 };
+          return { ...attrs, color: hoverEdge, zIndex: 1 };
         }
         return { ...attrs, hidden: true };
       },
@@ -601,7 +615,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     tooltip.hide();
     const built = buildAndLayout();
     graph = built.graph;
-    legend = groupLegend(graph, opts.defaultNodeColor);
+    legend = groupLegend(graph, sigmaColour(opts.defaultNodeColor));
     reportDropped(built.dropped);
     // Sigma reads the size of its container when it is created.
     layout();
@@ -729,7 +743,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     return out;
   }
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----

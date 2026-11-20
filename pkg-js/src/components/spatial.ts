@@ -60,8 +60,8 @@ import {
   formatTicks,
   isFlatRange,
 } from "../core/index.js";
-import { setCanvasColour } from "../core/paint.js";
-import { uniqueId } from "../core/dom.js";
+import { canvasColours, setCanvasColour } from "../core/paint.js";
+import { guardDestroy, uniqueId } from "../core/dom.js";
 
 export type SpatialColorMode = "auto" | "categorical" | "continuous";
 
@@ -739,11 +739,15 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     const r = spotRadius(spotD(), fit.scale, opts.spotScale);
 
     ctx.globalAlpha = opts.spotOpacity;
+    // Each palette and theme colour as the canvas reads it, var() and
+    // currentColor included; null for one that paints nothing, whose spots
+    // are left out. The ramp gives hex, read as it is.
+    const read = canvasColours(el);
     // A spot with a missing coordinate is not drawn; one with a missing colour
     // value is drawn grey and keyed "NA".
-    const dot = (i: number, fill: string) => {
+    const dot = (i: number, fill: string | null) => {
       const at = spotAt(i);
-      if (!at) return;
+      if (!at || !fill) return;
       ctx.fillStyle = fill;
       ctx.beginPath();
       ctx.arc(at[0], at[1], r, 0, Math.PI * 2);
@@ -763,7 +767,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
           continue;
         }
         const li = idx.get(String(v));
-        dot(i, li === undefined ? theme.muted : (cols[li] as string));
+        dot(i, read(li === undefined ? theme.muted : (cols[li] as string)));
       }
     } else if (legendState?.kind === "continuous" && col) {
       const nums = col as unknown as ArrayLike<number>;
@@ -781,7 +785,8 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
         dot(i, fn(flat ? 0.5 : (v - lo) / (hi - lo)));
       }
     } else {
-      for (let i = 0; i < x.length; i += 1) dot(i, theme.foreground);
+      const fill = read(theme.foreground);
+      for (let i = 0; i < x.length; i += 1) dot(i, fill);
     }
     ctx.globalAlpha = 1;
 
@@ -1152,7 +1157,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 /** Colour of a spot whose colour value is missing. */

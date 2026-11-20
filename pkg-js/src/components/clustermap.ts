@@ -70,7 +70,7 @@ import {
   toRowVectors,
   zScoreByRow,
 } from "./clustermap-cluster.js";
-import { uniqueId } from "../core/dom.js";
+import { guardDestroy, uniqueId } from "../core/dom.js";
 
 export type { Linkage, Metric } from "./clustermap-cluster.js";
 
@@ -1141,7 +1141,7 @@ export const createClustermap: PlotomicsFactory<ClustermapOptions> = (
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----

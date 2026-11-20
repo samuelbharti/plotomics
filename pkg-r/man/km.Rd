@@ -88,8 +88,9 @@ or render it again.}
 and \code{surv} columns and an optional \code{group} column naming each tick's
 stratum, as Python's \code{Km(censor=)} takes. Column names must match
 exactly. With a \code{survfit} object the ticks are read off the fit unless
-\code{censor} is given. It comes last so the arguments before it keep their
-positions.}
+\code{censor} is given. A tick with a missing or infinite \code{time} or \code{surv}
+has no place on the plot and is left out with a warning, as in Python.
+It comes last so the arguments before it keep their positions.}
 }
 \value{
 An \code{htmlwidget} object.

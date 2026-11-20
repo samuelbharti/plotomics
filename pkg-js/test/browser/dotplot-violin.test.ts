@@ -459,9 +459,94 @@ describe("violin value axis and missing medians", () => {
     const el = container();
     instances.push(createViolin(el, { data }));
     const texts = svgTexts(el);
+    // Round values of each row, in the format its step needs.
     expect(texts).toContain("10");
     expect(texts).toContain("2.5");
-    expect(texts.filter((t) => t === "0")).toHaveLength(2);
+    expect(texts).toContain("0");
+    expect(texts).toContain("0.0");
+  });
+
+  it("labels round values of a row in one format, each at its value", () => {
+    // Before the fix the axis printed its raw ends, each in its own
+    // format: "4.02" over "-2.9".
+    const el = container(800, 700);
+    instances.push(
+      createViolin(el, {
+        data: {
+          columns: { feature: ["CD3D", "CD3D"], group: ["T", "B"] },
+          meta: {
+            grid: [-2.9, 0.56, 4.02],
+            density: [0.2, 1, 0.1, 0.1, 1, 0.2],
+          },
+        },
+      }),
+    );
+    const labels = Array.from(
+      el.querySelectorAll('svg text[text-anchor="start"]'),
+    ) as SVGTextElement[];
+    const texts = labels.map((t) => t.textContent ?? "");
+    expect(texts).toEqual(["-2", "0", "2", "4"]);
+    // Each value has a short tick at its place: evenly spaced, the highest
+    // at the top, and its label beside it.
+    const ticks = (
+      Array.from(el.querySelectorAll("svg line")) as SVGLineElement[]
+    )
+      .filter(
+        (l) =>
+          Number(l.getAttribute("x2")) - Number(l.getAttribute("x1")) === 3,
+      )
+      .map((l) => Number(l.getAttribute("y1")));
+    expect(ticks).toHaveLength(4);
+    const steps = ticks.slice(1).map((y, i) => (ticks[i] as number) - y);
+    for (const s of steps) expect(s).toBeCloseTo(steps[0] as number, 6);
+    expect(steps[0]).toBeGreaterThan(0);
+    // 0 sits 2.9 / 6.92 of the way up the row's grid.
+    const top = Number(
+      (el.querySelector("svg line") as SVGLineElement).getAttribute("y1"),
+    );
+    labels.forEach((t, i) => {
+      const middle = Number(t.getAttribute("y")) - 0.35 * 11;
+      expect(Math.abs(middle - (ticks[i] as number))).toBeLessThanOrEqual(
+        0.4 * 11,
+      );
+    });
+    expect(top).toBeLessThan(ticks[3] as number);
+    // A label at an end of a row stays inside it.
+    const tight = container(400, 260);
+    instances.push(
+      createViolin(tight, {
+        data: {
+          columns: {
+            feature: ["A", "A", "B", "B"],
+            group: ["T", "B", "T", "B"],
+          },
+          meta: {
+            grid: [0, 5, 10],
+            density: [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0],
+          },
+        },
+        options: { theme: { fontSize: 16 } },
+      }),
+    );
+    // The box of a label, trimmed to one em across its line, as the text
+    // size tests measure it.
+    const boxes = (
+      Array.from(
+        tight.querySelectorAll('svg text[text-anchor="start"]'),
+      ) as SVGTextElement[]
+    )
+      .map((t) => {
+        const r = t.getBoundingClientRect();
+        const trim = 0.18 * Number(t.getAttribute("font-size"));
+        return { top: r.top + trim, bottom: r.bottom - trim };
+      })
+      .sort((a, b) => a.top - b.top);
+    expect(boxes.length).toBeGreaterThan(2);
+    for (let i = 1; i < boxes.length; i += 1) {
+      expect(boxes[i]?.top as number).toBeGreaterThanOrEqual(
+        (boxes[i - 1]?.bottom as number) - 0.5,
+      );
+    }
   });
 
   it("says no data for a missing median and does not throw", () => {
@@ -496,7 +581,10 @@ describe("violin value axis and missing medians", () => {
     const svg = el.querySelector("svg") as SVGSVGElement;
     const labels = Array.from(svg.querySelectorAll("text"));
     const b = labels.find((n) => n.textContent === "B") as SVGTextElement;
-    const zero = labels.find((n) => n.textContent === "0") as SVGTextElement;
+    // The label of the lowest value, 0, sits on the bottom of the row.
+    const zero = labels.find((n) =>
+      /^0(\.0+)?$/.test(n.textContent ?? ""),
+    ) as SVGTextElement;
     const yBot = Number(zero.getAttribute("y"));
     const xb = Number(b.getAttribute("x"));
     const inside = pixel(el, xb, yBot - 20);
@@ -523,9 +611,9 @@ describe("violin value axis and missing medians", () => {
         },
       }),
     );
-    const axis = Array.from(el.querySelectorAll("svg text")).filter((t) =>
-      /e[+-]/.test(t.textContent ?? ""),
-    ) as SVGTextElement[];
+    const axis = Array.from(
+      el.querySelectorAll('svg text[text-anchor="start"]'),
+    ).filter((t) => t.textContent) as SVGTextElement[];
     expect(axis.length).toBeGreaterThan(0);
     for (const t of axis) {
       const b = t.getBBox();

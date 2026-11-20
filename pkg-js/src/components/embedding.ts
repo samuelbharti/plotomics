@@ -55,8 +55,8 @@ import {
   categoricalColors,
 } from "../core/index.js";
 import { fitAxisTicks } from "../core/ticks.js";
-import { scatterBackground } from "../core/paint.js";
-import { uniqueId } from "../core/dom.js";
+import { scatterBackground, scatterColour } from "../core/paint.js";
+import { guardDestroy, uniqueId } from "../core/dom.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
@@ -828,10 +828,15 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       await fitView(scatterplot, xScale, yScale, xBase, yBase);
       if (destroyed) return;
     }
-    // Colours go in just before the points they belong to.
+    // Colours go in just before the points they belong to. regl-scatterplot
+    // reads hex and RGBA arrays only, so a palette colour is read first,
+    // var() and currentColor included. The ramp gives hex, read as it is.
     scatterplot.set({
       colorBy,
-      pointColor,
+      pointColor:
+        mode === "continuous"
+          ? pointColor
+          : pointColor.map((c) => scatterColour(c, el)),
       pointSize: opts.pointSize,
       pointScaleMode: opts.pointScaleMode,
       opacity: opts.opacity,
@@ -1413,7 +1418,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----

@@ -573,7 +573,9 @@ const HARD: Hard[] = [
     width: 800,
     height: 560,
     make: (el) => createViolin(el, { data: wideViolin(), options: themed(16) }),
-    shows: ["-0.0123", "12346"],
+    // Round values inside -0.0123 to 12345.6 and -0.0615 to 61728, each
+    // row in one unit.
+    shows: ["10k", "60k"],
   },
 ];
 

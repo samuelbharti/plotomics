@@ -70,7 +70,8 @@ import {
   fitText,
   categoricalColors,
 } from "../core/index.js";
-import { setCanvasColour } from "../core/paint.js";
+import { guardDestroy } from "../core/dom.js";
+import { canvasColours, setCanvasColour } from "../core/paint.js";
 
 export interface LollipopOptions {
   /** Radius of the smallest stem head, in pixels. */
@@ -413,13 +414,15 @@ function labelBox(spot: LabelSpot, width: number, labelH: number): Box {
  * Place variant labels so none overlaps another label, a leader line or any
  * head. Labels are placed in the order given (most important first), each at
  * the first of its spots that is free and inside `bounds`; a centred label is
- * first moved sideways to fit the bounds. A label with no free spot is
- * dropped (null). Deterministic, so a redraw and an export agree.
+ * first moved sideways to fit the bounds. `bounds.bottom`, when given, is
+ * the lowest a label may reach, such as the top of the domain band. A label
+ * with no free spot is dropped (null). Deterministic, so a redraw and an
+ * export agree.
  */
 export function placeLabels(
   candidates: LabelCandidate[],
   obstacles: Box[],
-  bounds: { left: number; right: number; top: number },
+  bounds: { left: number; right: number; top: number; bottom?: number },
   /** Height of a label box; see {@link labelBox}. */
   labelH = LABEL_H,
 ): (LabelSpot | null)[] {
@@ -443,6 +446,7 @@ export function placeLabels(
       const box = labelBox(spot, c.width, labelH);
       if (
         box.y0 < bounds.top ||
+        (bounds.bottom !== undefined && box.y1 > bounds.bottom + 0.5) ||
         box.x0 < bounds.left - 0.5 ||
         box.x1 > bounds.right + 0.5
       ) {
@@ -937,11 +941,18 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       ctx.stroke();
     }
 
+    // Each colour as the canvas reads it, var() and currentColor included;
+    // null for one that paints nothing, whose marks are left out.
+    const read = canvasColours(el);
+
     // Backbone.
     const bandH = layout.backboneBottom - layout.backboneTop;
     const midY = layout.backboneTop + bandH / 2;
-    ctx.fillStyle = opts.backboneColor;
-    ctx.fillRect(layout.left, midY - 4, layout.innerW, 8);
+    const backbone = read(opts.backboneColor);
+    if (backbone) {
+      ctx.fillStyle = backbone;
+      ctx.fillRect(layout.left, midY - 4, layout.innerW, 8);
+    }
 
     // Domain rectangles.
     if (opts.showDomains) {
@@ -958,10 +969,11 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     }
 
     // PTM ticks.
-    if (opts.showPtms) {
-      ctx.strokeStyle = theme.muted;
+    const ptm = read(theme.muted);
+    if (opts.showPtms && ptm) {
+      ctx.strokeStyle = ptm;
       ctx.lineWidth = 1;
-      ctx.fillStyle = theme.muted;
+      ctx.fillStyle = ptm;
       for (const p of ptms()) {
         const x = px(p.position);
         ctx.beginPath();
@@ -981,16 +993,19 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     const ccols = classColors();
     const mc = maxCount();
 
-    ctx.strokeStyle = opts.stemColor;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (const i of stack.order) {
-      if (missing(i)) continue;
-      const x = px(pos[i] as number);
-      ctx.moveTo(x, py(stack.base[i] as number));
-      ctx.lineTo(x, py(stack.top[i] as number));
+    const stem = read(opts.stemColor);
+    if (stem) {
+      ctx.strokeStyle = stem;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const i of stack.order) {
+        if (missing(i)) continue;
+        const x = px(pos[i] as number);
+        ctx.moveTo(x, py(stack.base[i] as number));
+        ctx.lineTo(x, py(stack.top[i] as number));
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
 
     // Bottom head first, so a stacked head is drawn over the one below.
     for (const i of stack.order) {
@@ -999,7 +1014,9 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
       const y = py(stack.top[i] as number);
       const r = radius(i, mc);
       const ci = clsList.indexOf(cls[i] ?? "");
-      ctx.fillStyle = ci >= 0 ? (ccols[ci] as string) : theme.foreground;
+      const head = read(ci >= 0 ? (ccols[ci] as string) : theme.foreground);
+      if (!head) continue;
+      ctx.fillStyle = head;
       ctx.globalAlpha = 0.92;
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -1134,7 +1151,9 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
         };
       });
       // A label box starts five sixths of a row above its baseline, and
-      // the font box of the text reaches a little higher.
+      // the font box of the text reaches a little higher. No label reaches
+      // down into the band of the backbone and the domains: beside a head
+      // near the baseline of a short plot, it ran over a domain block.
       const spots = placeLabels(
         candidates,
         heads,
@@ -1145,6 +1164,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
             2,
             Math.ceil(ASCENT * sizes.label - (tx.labelH * 5) / 6),
           ),
+          bottom: layout.backboneTop,
         },
         tx.labelH,
       );
@@ -1352,7 +1372,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----

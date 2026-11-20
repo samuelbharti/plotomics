@@ -54,7 +54,8 @@ import {
   categoricalColors,
   PALETTE_20,
 } from "../core/index.js";
-import { setCanvasColour } from "../core/paint.js";
+import { guardDestroy } from "../core/dom.js";
+import { canvasColours, setCanvasColour } from "../core/paint.js";
 
 export interface OncoplotOptions {
   /** Fraction of a cell's width left blank between columns, in [0, 0.5). */
@@ -73,7 +74,11 @@ export interface OncoplotOptions {
   emptyColor: string;
   burdenColor: string;
   frequencyColor: string;
-  /** Axis label under the grid. */
+  /**
+   * Axis label under the grid, after the number of samples: "20 samples".
+   * The default "samples" reads "1 sample" for one; a label set here is
+   * written as given.
+   */
   xLabel: string;
   /** Label for the burden axis. */
   burdenLabel: string;
@@ -660,13 +665,20 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     const w = Math.max(1, cellW - gapX);
     const h = Math.max(1, cellH - gapY);
 
+    // Each colour as the canvas reads it, var() and currentColor included;
+    // null for one that paints nothing, whose cells and bars are left out.
+    const read = canvasColours(el);
+    const empty = read(opts.emptyColor);
+
     // Grid. Painting every cell's background first and overpainting the altered
     // ones keeps the common case (a mostly-empty matrix) to one fill style.
-    ctx.fillStyle = opts.emptyColor;
-    for (let r = 0; r < R; r += 1) {
-      const y = top + r * cellH + gapY / 2;
-      for (let c = 0; c < C; c += 1) {
-        ctx.fillRect(left + c * cellW + gapX / 2, y, w, h);
+    if (empty) {
+      ctx.fillStyle = empty;
+      for (let r = 0; r < R; r += 1) {
+        const y = top + r * cellH + gapY / 2;
+        for (let c = 0; c < C; c += 1) {
+          ctx.fillRect(left + c * cellW + gapX / 2, y, w, h);
+        }
       }
     }
     if (codes) {
@@ -675,7 +687,9 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
         for (let c = 0; c < C; c += 1) {
           const code = codes[r * C + c] as number;
           if (!code) continue;
-          ctx.fillStyle = cols[code - 1] ?? theme.foreground;
+          const fill = read(cols[code - 1] ?? theme.foreground);
+          if (!fill) continue;
+          ctx.fillStyle = fill;
           ctx.fillRect(left + c * cellW + gapX / 2, y, w, h);
         }
       }
@@ -684,10 +698,11 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     // Top burden barplot, one bar per sample column.
     if (opts.showBurden && layout.burdenH > 0) {
       const tmb = data.columns.tmb as ArrayLike<number> | undefined;
-      if (tmb) {
+      const burden = read(opts.burdenColor);
+      if (tmb && burden) {
         const max = columnMax(tmb);
         const usable = layout.burdenH - 10;
-        ctx.fillStyle = opts.burdenColor;
+        ctx.fillStyle = burden;
         for (let c = 0; c < C; c += 1) {
           const v = (tmb[c] as number) ?? 0;
           const bh = (v / max) * usable;
@@ -699,11 +714,12 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     // Right frequency barplot, one bar per gene row.
     if (opts.showFrequency && layout.freqW > 0) {
       const freq = data.columns.freq as ArrayLike<number> | undefined;
-      if (freq) {
+      const frequency = read(opts.frequencyColor);
+      if (freq && frequency) {
         const max = columnMax(freq);
         const x0 = left + layout.gridW + 6;
         const usable = freqUsable(freq);
-        ctx.fillStyle = opts.frequencyColor;
+        ctx.fillStyle = frequency;
         for (let r = 0; r < R; r += 1) {
           const v = (freq[r] as number) ?? 0;
           ctx.fillRect(x0, top + r * cellH + gapY / 2, (v / max) * usable, h);
@@ -720,11 +736,12 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
         const palette = palettes[k] as string[];
         for (let c = 0; c < C; c += 1) {
           const code = (a.codes[c] as number) ?? -1;
-          if (code < 0 || code >= a.levels.length) {
-            ctx.fillStyle = opts.emptyColor;
-          } else {
-            ctx.fillStyle = palette[code % palette.length] as string;
-          }
+          const fill =
+            code < 0 || code >= a.levels.length
+              ? empty
+              : read(palette[code % palette.length] as string);
+          if (!fill) continue;
+          ctx.fillStyle = fill;
           ctx.fillRect(left + c * cellW + gapX / 2, y, w, layout.annRowH - 2);
         }
         y += layout.annRowH;
@@ -836,14 +853,19 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
       }
     }
 
-    // Sample count under the grid.
+    // Sample count under the grid. The default label is plural, so one
+    // sample reads "1 sample"; a label the caller set is written as given.
     const countCx = left + layout.gridW / 2;
+    const unit =
+      C === 1 && opts.xLabel === defaultOncoplotOptions.xLabel
+        ? "sample"
+        : opts.xLabel;
     svg.appendChild(
       text(
         countCx,
         top + layout.gridH + layout.annH + tx.countY,
         fit(
-          `${C.toLocaleString()} ${opts.xLabel}`,
+          `${C.toLocaleString()} ${unit}`,
           2 * Math.min(countCx, width - countCx) - 4,
           sizes.axisTitle,
         ),
@@ -975,7 +997,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----

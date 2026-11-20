@@ -38,8 +38,9 @@ import {
   createRenderLoop,
   afterQuiet,
 } from "../core/index.js";
+import { guardDestroy } from "../core/dom.js";
 import { fitAxisTicks } from "../core/ticks.js";
-import { scatterBackground } from "../core/paint.js";
+import { scatterBackground, scatterColour } from "../core/paint.js";
 import createScatterplot from "regl-scatterplot";
 import { scaleLinear } from "d3-scale";
 import { ticks as d3ticks } from "d3-array";
@@ -576,7 +577,11 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   function applyColors() {
     scatterplot.set({
       colorBy: "category",
-      pointColor: [opts.colors.down, opts.colors.ns, opts.colors.up],
+      // regl-scatterplot reads hex and RGBA arrays only, so each colour is
+      // read first, var() and currentColor included.
+      pointColor: [opts.colors.down, opts.colors.ns, opts.colors.up].map((c) =>
+        scatterColour(c, el),
+      ),
       pointSize: opts.pointSize,
       opacity: opts.opacity,
       backgroundColor: scatterBackground(theme, el),
@@ -951,7 +956,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ----

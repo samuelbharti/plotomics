@@ -129,6 +129,49 @@ export function colourBytes(
   return a === 0 ? null : [d[0] as number, d[1] as number, d[2] as number, a];
 }
 
+/** A hex colour, which needs no reading inside the page. */
+const HEX = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+/**
+ * `colour` as a 2D canvas reads it, with var() and currentColor read inside
+ * `el` as {@link setCanvasColour} reads them: a fill or stroke style to set
+ * as it is, or null for a colour that paints nothing, whose marks the
+ * caller leaves out. Outside a browser the colour comes back as given.
+ */
+export function canvasColour(
+  colour: string | null | undefined,
+  el?: Element,
+): string | null {
+  const ctx = pixelContext();
+  const given = (colour ?? "").trim();
+  if (!ctx) return given && given.toLowerCase() !== "none" ? given : null;
+  const where = HEX.test(given) ? undefined : el;
+  return setCanvasColour(ctx, "fillStyle", given, where)
+    ? String(ctx.fillStyle)
+    : null;
+}
+
+/**
+ * A reader of colours for one draw: {@link canvasColour} of each colour,
+ * read once and kept, so a colour that many marks share reads the page
+ * once. Take a new reader for each draw, as a page can change a custom
+ * property between draws.
+ */
+export function canvasColours(
+  el?: Element,
+): (colour: string | null | undefined) => string | null {
+  const seen = new Map<string, string | null>();
+  return (colour) => {
+    const key = colour ?? "";
+    let value = seen.get(key);
+    if (value === undefined) {
+      value = canvasColour(colour, el);
+      seen.set(key, value);
+    }
+    return value;
+  };
+}
+
 /**
  * Relative luminance of a colour given as bytes, from 0 for black to 1 for
  * white (WCAG 2).
@@ -165,6 +208,26 @@ export function scatterBackground(
   const fg = colourBytes(theme.foreground, el);
   // White and black read equally well on a luminance of about 0.18.
   return fg && luminance(fg) >= 0.18 ? [0, 0, 0, 1] : [1, 1, 1, 1];
+}
+
+/**
+ * A point colour for regl-scatterplot: red, green, blue and alpha, each from
+ * 0 to 1, after var() and currentColor are read inside `el`.
+ * regl-scatterplot reads hex and such arrays only, and paints any other
+ * colour, var() among them, white. A colour that paints nothing gives a
+ * clear colour.
+ */
+export function scatterColour(
+  colour: string | null | undefined,
+  el?: Element,
+): [number, number, number, number] {
+  const rgba = colourBytes(
+    colour,
+    HEX.test((colour ?? "").trim()) ? undefined : el,
+  );
+  return rgba
+    ? [rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255]
+    : [0, 0, 0, 0];
 }
 
 /** Bytes from {@link colourBytes} as a hex colour, or rgba() with an alpha. */

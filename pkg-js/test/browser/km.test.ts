@@ -1015,3 +1015,53 @@ describe("km risk table before the legend", () => {
     expect(shared).toBeGreaterThanOrEqual((2 / 3) * alone - 0.5);
   });
 });
+
+describe("km censoring ticks with a missing time or survival", () => {
+  // R's JSON sends a missing value as null. Before the fix a tick with a
+  // null time was drawn at time 0, one with a null survival at 0%, and one
+  // at an infinite time stretched the time axis until no curve was drawn.
+  /** The canvas pixels of a curve with the censoring ticks given. */
+  function canvasPixels(censorTime: unknown[], censorSurv: unknown[]) {
+    const el = container();
+    instances.push(
+      createKm(el, {
+        data: {
+          columns: { time: [0, 5, 10, 20], surv: [1, 0.9, 0.7, 0.5] },
+          meta: {
+            censorTime: censorTime as number[],
+            censorSurv: censorSurv as number[],
+          },
+        },
+        options: { showCI: false },
+      }),
+    );
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+    return Array.from(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+  }
+
+  it("draws no tick for it, as if it were not given", () => {
+    const want = canvasPixels([7], [0.9]);
+    const cases: [unknown[], unknown[]][] = [
+      [
+        [7, null],
+        [0.9, 0.6],
+      ],
+      [
+        [7, 12],
+        [0.9, null],
+      ],
+      [
+        [7, Number.NaN],
+        [0.9, 0.6],
+      ],
+      [
+        [7, Number.POSITIVE_INFINITY],
+        [0.9, 0.6],
+      ],
+    ];
+    for (const [ct, cs] of cases) {
+      expect(canvasPixels(ct, cs), JSON.stringify([ct, cs])).toEqual(want);
+    }
+  });
+});

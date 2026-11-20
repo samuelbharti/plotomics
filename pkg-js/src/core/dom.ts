@@ -590,3 +590,47 @@ export function uniqueId(prefix: string): string {
   idSeq += 1;
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${idSeq}`;
 }
+
+/**
+ * `instance` with a destroy() that runs once, and every other method a
+ * no-op after it: a second destroy(), and a setData(), setOptions() or
+ * resize() after destroy(), return at once, and the exports give null. A
+ * host may call any of them after the plot is gone, as when a Shiny output
+ * or a notebook cell is removed while a resize or an update is on its way.
+ * Getters, such as the selection of an embedding, read as before.
+ */
+export function guardDestroy<T extends { destroy(): void }>(instance: T): T {
+  let destroyed = false;
+  const out = {} as T;
+  for (const key of Object.keys(instance)) {
+    const d = Object.getOwnPropertyDescriptor(
+      instance,
+      key,
+    ) as PropertyDescriptor;
+    if (typeof d.value === "function") {
+      const fn = d.value as (...args: unknown[]) => unknown;
+      if (key === "destroy") {
+        d.value = () => {
+          if (destroyed) return;
+          destroyed = true;
+          fn.call(instance);
+        };
+      } else {
+        const gone =
+          key === "exportPNG"
+            ? () => Promise.resolve(null)
+            : key === "exportSVG"
+              ? () => null
+              : () => undefined;
+        d.value = (...args: unknown[]) =>
+          destroyed ? gone() : fn.apply(instance, args);
+      }
+    } else if (d.get || d.set) {
+      const { get, set } = d;
+      if (get) d.get = () => get.call(instance);
+      if (set) d.set = (v: unknown) => set.call(instance, v);
+    }
+    Object.defineProperty(out, key, d);
+  }
+  return out;
+}

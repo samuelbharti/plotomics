@@ -53,7 +53,7 @@ import {
   isFlatRange,
 } from "../core/index.js";
 import { releaseRegl } from "../core/gl.js";
-import { uniqueId } from "../core/dom.js";
+import { guardDestroy, uniqueId } from "../core/dom.js";
 import { colourBytes } from "../core/paint.js";
 import createREGL from "regl";
 import type { Regl, Texture2D, DrawCommand } from "regl";
@@ -1489,7 +1489,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     },
   };
 
-  return instance;
+  return guardDestroy(instance);
 };
 
 // ---- small utilities ------------------------------------------------------
