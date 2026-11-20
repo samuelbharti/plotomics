@@ -99,9 +99,11 @@ upset <- function(data,
     dotRadius = dot_radius,
     yLabel = y_label
   )
-  if (!is.null(bar_color)) options$barColor <- as.character(bar_color)[1]
+  if (!is.null(bar_color)) {
+    options$barColor <- bv_colour(as.character(bar_color)[1])
+  }
   if (!is.null(empty_dot_color)) {
-    options$emptyDotColor <- as.character(empty_dot_color)[1]
+    options$emptyDotColor <- bv_colour(as.character(empty_dot_color)[1])
   }
   if (!is.null(theme)) options$theme <- theme
 

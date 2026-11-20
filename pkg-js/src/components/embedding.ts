@@ -878,7 +878,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
    */
   function renderOverlay(...args: Parameters<typeof drawOverlay>) {
     drawOverlay(...args);
-    hideUnreadableColours(el, under, svg);
+    hideUnreadableColours(el, theme, under, svg);
   }
 
   function drawOverlay() {

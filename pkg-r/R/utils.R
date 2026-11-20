@@ -13,6 +13,102 @@ plotomics_height <- function(name) {
   if (is.na(h)) 480 else unname(h)
 }
 
+# The named colours of CSS (CSS Color Module Level 4), in lower case. The
+# browser reads these names as CSS defines them. Every other colour name R
+# knows, such as "grey20" or "steelblue4", is sent as its hex value; see
+# bv_colour().
+bv_css_colours <- c(
+  "aliceblue", "antiquewhite", "aqua", "aquamarine", "azure", "beige",
+  "bisque", "black", "blanchedalmond", "blue", "blueviolet", "brown",
+  "burlywood", "cadetblue", "chartreuse", "chocolate", "coral",
+  "cornflowerblue", "cornsilk", "crimson", "cyan", "darkblue", "darkcyan",
+  "darkgoldenrod", "darkgray", "darkgreen", "darkgrey", "darkkhaki",
+  "darkmagenta", "darkolivegreen", "darkorange", "darkorchid", "darkred",
+  "darksalmon", "darkseagreen", "darkslateblue", "darkslategray",
+  "darkslategrey", "darkturquoise", "darkviolet", "deeppink", "deepskyblue",
+  "dimgray", "dimgrey", "dodgerblue", "firebrick", "floralwhite",
+  "forestgreen", "fuchsia", "gainsboro", "ghostwhite", "gold", "goldenrod",
+  "gray", "green", "greenyellow", "grey", "honeydew", "hotpink", "indianred",
+  "indigo", "ivory", "khaki", "lavender", "lavenderblush", "lawngreen",
+  "lemonchiffon", "lightblue", "lightcoral", "lightcyan",
+  "lightgoldenrodyellow", "lightgray", "lightgreen", "lightgrey", "lightpink",
+  "lightsalmon", "lightseagreen", "lightskyblue", "lightslategray",
+  "lightslategrey", "lightsteelblue", "lightyellow", "lime", "limegreen",
+  "linen", "magenta", "maroon", "mediumaquamarine", "mediumblue",
+  "mediumorchid", "mediumpurple", "mediumseagreen", "mediumslateblue",
+  "mediumspringgreen", "mediumturquoise", "mediumvioletred", "midnightblue",
+  "mintcream", "mistyrose", "moccasin", "navajowhite", "navy", "oldlace",
+  "olive", "olivedrab", "orange", "orangered", "orchid", "palegoldenrod",
+  "palegreen", "paleturquoise", "palevioletred", "papayawhip", "peachpuff",
+  "peru", "pink", "plum", "powderblue", "purple", "rebeccapurple", "red",
+  "rosybrown", "royalblue", "saddlebrown", "salmon", "sandybrown", "seagreen",
+  "seashell", "sienna", "silver", "skyblue", "slateblue", "slategray",
+  "slategrey", "snow", "springgreen", "steelblue", "tan", "teal", "thistle",
+  "tomato", "turquoise", "violet", "wheat", "white", "whitesmoke", "yellow",
+  "yellowgreen"
+)
+
+#' Colours as the browser reads them
+#'
+#' R knows colour names that CSS does not, such as "grey20", "grey50",
+#' "steelblue4" and "firebrick3". The browser cannot read them, so the plot
+#' left out the marks in such a colour. Each such name is sent as its hex
+#' value from [grDevices::col2rgb()], with its alpha when it has one, as
+#' "#RRGGBBAA". Everything else is kept as given: hex colours, the names
+#' CSS knows (so "green" stays the CSS green, #008000, where R's is
+#' #00FF00), `var()`, `rgb()`, `hsl()` and the other colour functions,
+#' "none", "transparent", `NA` and `NULL`. A name neither knows is kept too,
+#' and the browser names it in a console warning.
+#'
+#' @param x A character vector, a factor or a list of colours. Names and
+#'   `NA` are kept, and any other value comes back as given.
+#' @return `x`, each R colour name CSS lacks replaced by its hex value.
+#' @keywords internal
+#' @noRd
+bv_colour <- function(x) {
+  if (is.null(x)) return(x)
+  if (is.list(x)) return(lapply(x, bv_colour))
+  if (is.factor(x)) x <- as.character(x)
+  if (!is.character(x)) return(x)
+  keep <- c(bv_css_colours, "none", "transparent", "currentcolor")
+  word <- !is.na(x) & grepl("^[A-Za-z][A-Za-z0-9 ]*$", x) &
+    !(tolower(x) %in% keep)
+  for (i in which(word)) {
+    rgba <- tryCatch(
+      grDevices::col2rgb(x[[i]], alpha = TRUE),
+      error = function(e) NULL
+    )
+    if (is.null(rgba)) next
+    hex <- grDevices::rgb(rgba[1L], rgba[2L], rgba[3L], maxColorValue = 255)
+    if (rgba[4L] < 255) hex <- paste0(hex, sprintf("%02X", rgba[4L]))
+    x[[i]] <- hex
+  }
+  x
+}
+
+#' The colours of a theme as the browser reads them
+#'
+#' Applies [bv_colour()] to every entry of a theme but `fontFamily`,
+#' `fontSize` and `padding`: the background, foreground, muted, grid and
+#' axis colours, and each colour of a palette such as `categorical`.
+#'
+#' @param theme The `theme` option: a list or a named vector, or `NULL`.
+#' @return `theme`, its colours converted.
+#' @keywords internal
+#' @noRd
+bv_theme_colours <- function(theme) {
+  if (is.null(theme) || is.null(names(theme))) return(theme)
+  keys <- setdiff(names(theme), c("", "fontFamily", "fontSize", "padding"))
+  if (is.atomic(theme)) {
+    theme[keys] <- bv_colour(theme[keys])
+    return(theme)
+  }
+  for (k in keys) {
+    if (!is.null(theme[[k]])) theme[[k]] <- bv_colour(theme[[k]])
+  }
+  theme
+}
+
 #' Construct a plotomics htmlwidget
 #'
 #' Internal helper shared by every component constructor. It assembles the
@@ -39,6 +135,10 @@ plotomics_widget <- function(name, columns, meta = list(), options = list(),
                           width = NULL, height = NULL, element_id = NULL,
                           array_meta = character(),
                           array_options = character()) {
+  # A colour name R knows and CSS lacks, such as "grey20", is sent as hex.
+  if (!is.null(options$theme)) {
+    options$theme <- bv_theme_colours(options$theme)
+  }
   x <- list(
     data = list(columns = columns, meta = meta),
     options = bv_theme_padding(options)

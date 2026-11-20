@@ -762,7 +762,7 @@ export const createOncoplot: PlotomicsFactory<OncoplotOptions> = (
    */
   function renderOverlay(...args: Parameters<typeof drawOverlay>) {
     drawOverlay(...args);
-    hideUnreadableColours(el, svg);
+    hideUnreadableColours(el, theme, svg);
   }
 
   function drawOverlay() {

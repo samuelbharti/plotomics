@@ -178,7 +178,7 @@ km <- function(data,
     if (length(group_colors) != n_strata) {
       stop("`group_colors` must have one entry per stratum.", call. = FALSE)
     }
-    meta$groupColors <- I(as.character(group_colors))
+    meta$groupColors <- I(bv_colour(as.character(group_colors)))
   }
 
   if (!is.null(censor)) {

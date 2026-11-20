@@ -147,7 +147,7 @@ network <- function(nodes,
     columns$weight <- weight
   }
   if (!is.null(edges$color)) {
-    columns$color <- as.character(edges$color)
+    columns$color <- bv_colour(as.character(edges$color))
   }
 
   meta <- list()
@@ -161,15 +161,15 @@ network <- function(nodes,
   options <- list(
     layout = layout,
     iterations = iterations,
-    defaultNodeColor = default_node_color,
-    defaultEdgeColor = default_edge_color,
+    defaultNodeColor = bv_colour(default_node_color),
+    defaultEdgeColor = bv_colour(default_edge_color),
     labelThreshold = label_threshold,
     defaultNodeSize = default_node_size,
     directed = directed,
     showLegend = show_legend
   )
   if (!is.null(palette)) {
-    options$palette <- as.character(palette)
+    options$palette <- bv_colour(as.character(palette))
   }
   if (!is.null(theme)) options$theme <- theme
 

@@ -56,6 +56,7 @@ import {
   luminance,
   plainColour,
   setCanvasColour,
+  textFallback,
 } from "../core/paint.js";
 import Graph from "graphology";
 import Sigma from "sigma";
@@ -161,7 +162,8 @@ const LAYER_ORDER = [
  * sigma reads: any other colour, such as "none", "grey90" or var(), it
  * draws black.
  *
- * - `label`: the label text, in the theme foreground.
+ * - `label`: the label text, in the theme foreground, or, when that
+ *   cannot be read, the default foreground for the background.
  * - `box`: the box behind a hovered label. It is the theme background when
  *   the label reads on it (a contrast of 4.5 or more), else white behind a
  *   dark label and near black behind a light one.
@@ -173,7 +175,10 @@ export function hoverColours(
   theme: Pick<PlotomicsTheme, "foreground" | "background" | "grid">,
   el?: Element,
 ): { label: string; box: string; dim: string } {
-  const fg = colourBytes(theme.foreground, el) ?? [0, 0, 0, 255];
+  const fg = colourBytes(theme.foreground, el) ??
+    colourBytes(textFallback("foreground", theme.background, el)) ?? [
+      0, 0, 0, 255,
+    ];
   const bg = colourBytes(theme.background, el);
   const opaque = bg && bg[3] === 255 ? bg : null;
   const lf = luminance(fg);
@@ -640,7 +645,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       svg.appendChild(t);
       y += rowH;
     }
-    hideUnreadableColours(el, svg);
+    hideUnreadableColours(el, theme, svg);
   }
 
   function showTip(node: string) {

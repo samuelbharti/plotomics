@@ -106,7 +106,7 @@ volcano <- function(data,
     showThresholdLines = show_threshold_lines,
     labelTopN = label_top_n
   )
-  if (!is.null(colors)) options$colors <- colors
+  if (!is.null(colors)) options$colors <- bv_colour(colors)
   if (!is.null(theme)) options$theme <- theme
 
   plotomics_widget(

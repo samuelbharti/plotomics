@@ -600,7 +600,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
    */
   function renderOverlay(...args: Parameters<typeof drawOverlay>) {
     drawOverlay(...args);
-    hideUnreadableColours(el, under, svg);
+    hideUnreadableColours(el, theme, under, svg);
   }
 
   function drawOverlay() {

@@ -15,6 +15,8 @@
  * warning names it once, so a missing group can be traced to its colour.
  */
 
+import { type PlotomicsTheme, darkTheme, defaultTheme } from "./theme.js";
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 const CLEAR = "rgba(0, 0, 0, 0)";
 /**
@@ -86,19 +88,58 @@ const COLOUR_ATTRS = ["fill", "stroke", "stop-color", "flood-color"];
 const PLAIN =
   /^(?:#[0-9a-f]{3,8}|(?:rgba?|hsla?)\([^)]*\)|none|transparent|currentcolor|url\(.*\))$/i;
 
+/** The role a text colour has in a theme. */
+export type TextRole = "foreground" | "muted" | "axis";
+
+/**
+ * The colour text of `role` takes when its own colour cannot be read: that
+ * of the default theme, or of the dark default on a dark `background`, so
+ * the text stays readable on the plot. A background that paints nothing
+ * counts as light.
+ */
+export function textFallback(
+  role: TextRole,
+  background: string,
+  el?: Element,
+): string {
+  const bg = colourBytes(background, el);
+  const dark = !!bg && bg[3] === 255 && luminance(bg) < 0.18;
+  return (dark ? darkTheme : defaultTheme)[role];
+}
+
 /**
  * Give every colour in the SVG `layers` that the page cannot read inside
- * `el` the value "none", and warn once, naming it, as the canvas leaves out
- * the marks in such a colour. An SVG draws such a colour black on screen,
- * and the exports wrote "none", so a legend key or a label stood for marks
- * that were not drawn. Colours that read, var() among them, stay as given.
+ * `el` another value, and warn once, naming it. A mark, a key or a fill
+ * takes "none", as the canvas leaves out the marks in such a colour, so a
+ * key never stands for marks that were not drawn. Text never disappears:
+ * its fill takes the colour of the default theme for its role (see
+ * {@link textFallback}), the muted or the axis colour when the colour is
+ * the theme's, else the foreground. An SVG drew such a colour black on
+ * screen, and the exports wrote "none"; now the screen and the exports
+ * agree. Colours that read, var() among them, stay as given.
  */
 export function hideUnreadableColours(
   el: Element,
+  theme: Pick<PlotomicsTheme, "background" | "muted" | "axis">,
   ...layers: (Element | null | undefined)[]
 ): void {
   if (!el.isConnected) return;
   const readable = new Map<string, boolean>();
+  const fallbacks = new Map<string, string>();
+  const textColour = (value: string) => {
+    let colour = fallbacks.get(value);
+    if (colour === undefined) {
+      const role: TextRole =
+        value === theme.muted?.trim()
+          ? "muted"
+          : value === theme.axis?.trim()
+            ? "axis"
+            : "foreground";
+      colour = textFallback(role, theme.background, el);
+      fallbacks.set(value, colour);
+    }
+    return colour;
+  };
   for (const layer of layers) {
     if (!layer) continue;
     for (const node of [layer, ...Array.from(layer.querySelectorAll("*"))]) {
@@ -111,7 +152,9 @@ export function hideUnreadableColours(
           readable.set(value, ok);
           if (!ok) warnUnreadable(value);
         }
-        if (!ok) node.setAttribute(name, "none");
+        if (ok) continue;
+        const text = /^(text|tspan)$/i.test(node.tagName) && name === "fill";
+        node.setAttribute(name, text ? textColour(value) : "none");
       }
     }
   }

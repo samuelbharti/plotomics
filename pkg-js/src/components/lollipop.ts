@@ -1045,7 +1045,7 @@ export const createLollipop: PlotomicsFactory<LollipopOptions> = (
    */
   function renderOverlay(...args: Parameters<typeof drawOverlay>) {
     drawOverlay(...args);
-    hideUnreadableColours(el, svg);
+    hideUnreadableColours(el, theme, svg);
   }
 
   function drawOverlay() {

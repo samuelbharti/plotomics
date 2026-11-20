@@ -455,7 +455,7 @@ export const createTreemap: PlotomicsFactory<TreemapOptions> = (
    */
   function renderOverlay(...args: Parameters<typeof drawOverlay>) {
     drawOverlay(...args);
-    hideUnreadableColours(el, svg);
+    hideUnreadableColours(el, theme, svg);
   }
 
   function drawOverlay() {

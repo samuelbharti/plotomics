@@ -62,6 +62,7 @@ import {
   colourBytes,
   hideUnreadableColours,
   setCanvasColour,
+  textFallback,
 } from "../core/paint.js";
 import { tickStep } from "d3-array";
 
@@ -611,7 +612,7 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
    */
   function renderOverlay(...args: Parameters<typeof drawOverlay>) {
     drawOverlay(...args);
-    hideUnreadableColours(el, svg);
+    hideUnreadableColours(el, theme, svg);
   }
 
   function drawOverlay(axis: ValueAxis) {
@@ -670,7 +671,10 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
               (x0 + x1) / 2,
               layout.headerTop + tx.headerH / 2 + midline(sizes.label),
               run.group,
-              readableOn(colourBytes(bg, el)),
+              readableOn(
+                colourBytes(bg, el),
+                textFallback("foreground", theme.background, el),
+              ),
               "middle",
               sizes.label,
             ),
@@ -814,10 +818,11 @@ export const createProfile: PlotomicsFactory<ProfileOptions> = (
 /**
  * Black or white, whichever reads better on a background given as bytes
  * (see colourBytes), so a named or var() colour counts as the colour it
- * shows. White on a background that paints nothing.
+ * shows. `bare` on a block that paints nothing, where the name sits on the
+ * plot itself: the foreground for the plot's background.
  */
-function readableOn(rgba: readonly number[] | null): string {
-  if (!rgba) return "#FFFFFF";
+function readableOn(rgba: readonly number[] | null, bare: string): string {
+  if (!rgba) return bare;
   const [r = 0, g = 0, b = 0] = rgba;
   // Rec. 601 luma; the SBS palette spans near-black to pale pink, so a fixed
   // colour would be unreadable on one end or the other.

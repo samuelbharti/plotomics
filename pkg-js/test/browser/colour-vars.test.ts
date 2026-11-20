@@ -1,15 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { createDotplot } from "../../src/components/dotplot.js";
+import { type KmOptions, createKm } from "../../src/components/km.js";
 import { createLollipop } from "../../src/components/lollipop.js";
-import { createNetwork } from "../../src/components/network.js";
+import { createNetwork, hoverColours } from "../../src/components/network.js";
 import { createOncoplot } from "../../src/components/oncoplot.js";
 import { createUpset } from "../../src/components/upset.js";
 import { createVolcano } from "../../src/components/volcano.js";
-import type {
-  PlotomicsInstance,
-  PlotomicsTheme,
+import {
+  type PlotomicsData,
+  type PlotomicsInstance,
+  type PlotomicsTheme,
+  darkTheme,
+  defaultTheme,
 } from "../../src/core/index.js";
+import rPayload from "./fixtures/r-km-grey50.json";
 import { PLOTS, settled } from "./plots.js";
 
 // Every theme colour may be a CSS custom property, var(--name), which takes
@@ -199,6 +204,7 @@ async function drawnIn(
   theme: Partial<PlotomicsTheme>,
   on: "element" | "parent",
   then?: (parent: HTMLElement, inst: PlotomicsInstance<unknown>) => void,
+  before?: (el: HTMLElement) => void,
 ): Promise<Views> {
   const parent = document.createElement("div");
   const el = document.createElement("div");
@@ -208,6 +214,10 @@ async function drawnIn(
   setVars(on === "element" ? el : parent, COLOURS, PALETTE);
   const inst = plot.make(el, theme);
   instances.push(inst);
+  if (before) {
+    await settled(plot.name);
+    before(el);
+  }
   let out = await views(plot.name, el, inst, plot.height);
   if (then) {
     then(parent, inst);
@@ -294,10 +304,21 @@ describe.each(PLOTS)("$name with a colour the page cannot read", (plot) => {
     it(`leaves out what takes ${unreadable}, as for "none", and names it once`, async () => {
       const warn = vi.spyOn(console, "warn");
       try {
+        // Marks and keys in such a colour are left out, as for "none", but
+        // text in it takes the default foreground, as on the light
+        // background of this theme, so the KM risk table name stays.
         const none = await drawnIn(
           plot,
           { ...literal, categorical: palette("none") },
           "element",
+          undefined,
+          (el) => {
+            for (const t of Array.from(el.querySelectorAll("text, tspan"))) {
+              if (t.getAttribute("fill") === "none") {
+                t.setAttribute("fill", defaultTheme.foreground);
+              }
+            }
+          },
         );
         const named = () =>
           warn.mock.calls.filter((c) => String(c[0]).includes(unreadable));
@@ -320,6 +341,54 @@ describe.each(PLOTS)("$name with a colour the page cannot read", (plot) => {
     });
   }
 
+  it("writes text in an unreadable theme colour in the default one", async () => {
+    // Before the fix the axis text, titles and labels in such a colour were
+    // left out. Text never disappears: it takes the colour of the default
+    // theme for its role, the dark default on a dark background.
+    const i = PLOTS.indexOf(plot);
+    for (const [background, base] of [
+      [literal.background as string, defaultTheme],
+      [darkTheme.background, darkTheme],
+    ] as const) {
+      const theme = {
+        ...literal,
+        background,
+        foreground: `grey${40 + i}`,
+        muted: `grey${60 + i}`,
+        axis: `grey${80 + i}`,
+      };
+      const el = container(640, plot.height);
+      const inst = plot.make(el, theme);
+      instances.push(inst);
+      await settled(plot.name);
+      await settled(plot.name);
+      const where = `${plot.name} on ${background}`;
+      const texts = Array.from(el.querySelectorAll("text, tspan")).filter(
+        (t) => t.textContent,
+      );
+      // The network without groups draws its labels on sigma's canvas,
+      // where hoverColours takes the same fallback.
+      expect(texts.length > 0 || plot.name === "network", where).toBe(true);
+      const fills = new Set(texts.map((t) => t.getAttribute("fill") ?? ""));
+      for (const fill of fills) {
+        expect(fill, where).not.toBe("none");
+        expect(fill, where).not.toMatch(/^grey/);
+      }
+      const fallbacks = [base.foreground, base.muted, base.axis];
+      expect(
+        !texts.length || fallbacks.some((c) => fills.has(c)),
+        `${where}: ${[...fills].join(", ")}`,
+      ).toBe(true);
+      // The SVG export writes them so too.
+      const svg = inst.exportSVG?.() ?? "";
+      expect(svg, where).not.toMatch(/<text[^>]*fill="none"/);
+      expect(svg, where).not.toMatch(/fill="grey/);
+      inst.destroy();
+      instances = instances.filter((x) => x !== inst);
+      el.remove();
+    }
+  });
+
   it("does not warn about transparent or none", async () => {
     const warn = vi.spyOn(console, "warn");
     try {
@@ -337,6 +406,92 @@ describe.each(PLOTS)("$name with a colour the page cannot read", (plot) => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe("network labels in an unreadable foreground", () => {
+  it("take the default foreground for the background", () => {
+    // Sigma draws the labels on its canvas. Before the fix they were black
+    // in such a colour, on a dark background too.
+    const el = container(100, 100);
+    expect(
+      hoverColours(
+        { foreground: "grey97", background: darkTheme.background, grid: "" },
+        el,
+      ).label,
+    ).toBe(darkTheme.foreground);
+    expect(
+      hoverColours(
+        { foreground: "var(--nope-label)", background: "#ffffff", grid: "" },
+        el,
+      ).label,
+    ).toBe(defaultTheme.foreground);
+  });
+});
+
+describe("profile banner names over a block that paints nothing", () => {
+  it("take the foreground for the background, not white", async () => {
+    // A group colour that paints nothing, or cannot be read, leaves its
+    // banner block out, and its name sits on the plot. Before the fix it
+    // was white, which a light background hid.
+    const profile = PLOTS.find((p) => p.name === "profile");
+    if (!profile) throw new Error("no profile plot");
+    for (const first of ["none", "grey98"]) {
+      const el = container(640, profile.height);
+      const inst = profile.make(el, {
+        categorical: [first, ...PALETTE.slice(1)],
+      });
+      instances.push(inst);
+      await settled("profile");
+      const name = Array.from(el.querySelectorAll("text")).find(
+        (t) => t.textContent === "C>A",
+      );
+      expect(name?.getAttribute("fill"), first).toBe(defaultTheme.foreground);
+    }
+  });
+});
+
+describe("a colour R knows and CSS lacks", () => {
+  // The payload R's km() sends for theme = list(categorical = c("#e6194b",
+  // "grey50", "#4363d8")), written by R into the fixture. R sends "grey50"
+  // as #7F7F7F, which the browser draws; given as it is, the browser cannot
+  // read it and leaves out the curve of the second group.
+  type Payload = {
+    data: PlotomicsData;
+    options: Partial<KmOptions>;
+  };
+  const payload = rPayload as unknown as Payload;
+
+  /** Pixels of the KM canvas in R's grey50, #7F7F7F. */
+  function grey50(el: HTMLElement): number {
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+    const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i] === 127 && d[i + 1] === 127 && d[i + 2] === 127) n += 1;
+    }
+    return n;
+  }
+
+  it("draws the curve of an R grey50 group", () => {
+    expect(payload.options.theme?.categorical?.[1]).toBe("#7F7F7F");
+    const el = container(640, 520);
+    instances.push(createKm(el, payload));
+    expect(grey50(el)).toBeGreaterThan(50);
+    // The name as given draws nothing, which is why R converts it.
+    const raw = container(640, 520);
+    const theme = {
+      ...payload.options.theme,
+      categorical: ["#e6194b", "grey50", "#4363d8"],
+    };
+    instances.push(
+      createKm(raw, {
+        data: payload.data,
+        options: { ...payload.options, theme },
+      }),
+    );
+    expect(grey50(raw)).toBe(0);
   });
 });
 

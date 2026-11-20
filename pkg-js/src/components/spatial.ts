@@ -951,7 +951,7 @@ export const createSpatial: PlotomicsFactory<SpatialOptions> = (
    */
   function renderOverlay(...args: Parameters<typeof drawOverlay>) {
     drawOverlay(...args);
-    hideUnreadableColours(el, svg);
+    hideUnreadableColours(el, theme, svg);
   }
 
   function drawOverlay(layout: LegendLayout) {
