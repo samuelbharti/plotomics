@@ -179,7 +179,10 @@ network <- function(nodes,
     showLegend = show_legend
   )
   if (!is.null(default_edge_color)) {
-    options$defaultEdgeColor <- as.character(default_edge_color)[1]
+    # An R colour name CSS lacks, such as "grey85", goes as hex.
+    options$defaultEdgeColor <- bv_colour(
+      as.character(default_edge_color)[1]
+    )
   }
   if (!is.null(palette)) {
     options$palette <- bv_colour(as.character(palette))

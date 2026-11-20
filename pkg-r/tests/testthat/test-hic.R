@@ -78,7 +78,8 @@ test_that("hic() names a sparse index column with a missing value, as Python doe
   # A missing value is still a warning, and a missing cell.
   expect_warning(
     hic(data.frame(i = c(0, 1), j = c(1, 1), v = c(1, NA))),
-    "`v` has 1 non-finite value"
+    "`v` has 1 value(s) that are missing (NA or NaN) or infinite",
+    fixed = TRUE
   )
 })
 

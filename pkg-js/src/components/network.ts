@@ -229,18 +229,24 @@ export function hoverColours(
 /**
  * The colour of an edge with no colour of its own, as hex or rgba(), the
  * forms sigma reads. A `given` colour is used as it is, with var() and
- * currentColor read inside `el`. Without one it is the theme background
- * with a fifth of the foreground mixed in, which stays quieter than the
- * nodes and the labels on a light and on a dark background. Over a
- * background that paints nothing it is the foreground at a fifth.
+ * currentColor read inside `el`; one that paints nothing, or that cannot
+ * be read, is clear, as sigma draws any other form black. Without one it
+ * is the theme background with a fifth of the foreground mixed in, which
+ * stays quieter than the nodes and the labels on a light and on a dark
+ * background. A foreground that cannot be read is the default one for the
+ * background, as the labels take it. Over a background that paints
+ * nothing it is the foreground at a fifth.
  */
 export function edgeColour(
   theme: Pick<PlotomicsTheme, "foreground" | "background">,
   given: string | null,
   el?: Element,
 ): string {
-  if (given) return plainColour(given, el) ?? given;
-  const fg = colourBytes(theme.foreground, el) ?? [0, 0, 0, 255];
+  if (given) return plainColour(given, el) ?? "rgba(0, 0, 0, 0)";
+  const fg = colourBytes(theme.foreground, el) ??
+    colourBytes(textFallback("foreground", theme.background, el)) ?? [
+      0, 0, 0, 255,
+    ];
   const bg = colourBytes(theme.background, el);
   if (bg && bg[3] === 255) {
     return bytesToColour(
@@ -605,6 +611,25 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
   }
 
   /**
+   * The colour of an edge with no colour of its own (see edgeColour). The
+   * build, the renderer, readColours and recolour all take it from here,
+   * so recolour finds the edges of the default colour by the one the last
+   * build gave them.
+   */
+  function defaultEdge(): string {
+    return edgeColour(theme, opts.defaultEdgeColor, el);
+  }
+
+  /** The colour of each node group, in the order of {@link groups}. */
+  function groupColours(): (group: string | undefined) => string {
+    return groupColorResolver(
+      paletteColors().map(sigmaColour),
+      sigmaColour(opts.defaultNodeColor),
+      groups(),
+    );
+  }
+
+  /**
    * The colours the graph is drawn with, as read inside the element: the
    * group palette, the default node and edge colours and the hover colours.
    */
@@ -612,7 +637,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     return JSON.stringify([
       paletteColors().map(sigmaColour),
       sigmaColour(opts.defaultNodeColor),
-      sigmaColour(opts.defaultEdgeColor),
+      defaultEdge(),
       hoverColours(theme, el),
     ]);
   }
@@ -624,14 +649,12 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
    * now, and the renderer its new default and hover colours, in place. The
    * graph, its layout, the camera and a hover stay as they are. A new
    * renderer started at the first view, and never sent leaveNode for the
-   * node hovered in the old one, so its tooltip and dimming stayed.
+   * node hovered in the old one, so its tooltip and dimming stayed. The
+   * groups keep the order of their levels, in the colours and the legend.
    */
   function recolour(colours: string) {
     const oldEdge = (JSON.parse(drawnColours || "[]") as unknown[])[2];
-    const colorFor = groupColorResolver(
-      paletteColors().map(sigmaColour),
-      sigmaColour(opts.defaultNodeColor),
-    );
+    const colorFor = groupColours();
     graph.forEachNode((node, attrs) => {
       graph.setNodeAttribute(
         node,
@@ -639,11 +662,16 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
         colorFor(attrs.group as string | undefined),
       );
     });
-    const edge = sigmaColour(opts.defaultEdgeColor);
+    const edge = defaultEdge();
     graph.forEachEdge((key, attrs) => {
       if (attrs.color === oldEdge) graph.setEdgeAttribute(key, "color", edge);
     });
-    legend = groupLegend(graph, sigmaColour(opts.defaultNodeColor));
+    legend = groupLegend(
+      graph,
+      sigmaColour(opts.defaultNodeColor),
+      groupLevels(),
+      colorFor,
+    );
     drawnColours = colours;
     hover = hoverColours(theme, el);
     hoverEdge = sigmaColour(opts.defaultNodeColor);
@@ -660,14 +688,10 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     dropped: EdgeDrops;
     colorFor: (group: string | undefined) => string;
   } {
-    const colorFor = groupColorResolver(
-      paletteColors().map(sigmaColour),
-      sigmaColour(opts.defaultNodeColor),
-      groups(),
-    );
+    const colorFor = groupColours();
     const { graph: g, dropped } = buildGraph(data, {
       defaultNodeColor: sigmaColour(opts.defaultNodeColor),
-      defaultEdgeColor: edgeColour(theme, opts.defaultEdgeColor, el),
+      defaultEdgeColor: defaultEdge(),
       defaultNodeSize: opts.defaultNodeSize,
       directed: opts.directed,
       colorFor,
@@ -712,7 +736,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       // setting it draws 1 px canvases, which the host hides.
       allowInvalidContainer: true,
       defaultNodeColor: sigmaColour(opts.defaultNodeColor),
-      defaultEdgeColor: edgeColour(theme, opts.defaultEdgeColor, el),
+      defaultEdgeColor: defaultEdge(),
       labelColor: { color: hover.label },
       labelFont: theme.fontFamily,
       labelSize,

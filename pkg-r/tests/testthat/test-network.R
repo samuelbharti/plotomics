@@ -195,3 +195,13 @@ test_that("network() sends a missing edge colour as null", {
   )
   expect_match(json, '"color":["#d62728",null]', fixed = TRUE)
 })
+
+test_that("network() sends an R colour name for the edges as hex", {
+  nodes <- data.frame(id = c("a", "b"))
+  edges <- data.frame(source = "a", target = "b")
+  # Before the fix "grey85" went as it was, which the browser cannot read.
+  w <- network(nodes, edges, default_edge_color = "grey85")
+  expect_equal(w$x$options$defaultEdgeColor, "#D9D9D9")
+  w <- network(nodes, edges, default_edge_color = "#d62728")
+  expect_equal(w$x$options$defaultEdgeColor, "#d62728")
+})

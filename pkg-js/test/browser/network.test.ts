@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createNetwork } from "../../src/components/network.js";
+import { createNetwork, edgeColour } from "../../src/components/network.js";
 import {
   DEFAULT_PADDING,
   OKABE_ITO,
@@ -908,6 +908,188 @@ describe("network labels after a new render", () => {
       net.setData(proteins());
       await settle();
       expect(shown()).toEqual(first);
+    } finally {
+      rec.restore();
+    }
+  });
+});
+
+describe("network edge colour that cannot be read", () => {
+  it("mixes the default foreground, and leaves a colour that paints nothing clear", () => {
+    const el = container(100, 100);
+    // A foreground the page cannot read takes the default one for the
+    // background, as the labels do. Before the fix it was black, and the
+    // edges were #090c14 on the background #0b0f19.
+    const dark = edgeColour(
+      { foreground: "var(--nope)", background: darkTheme.background },
+      null,
+      el,
+    );
+    expect(dark).toBe(edgeColour(darkTheme, null, el));
+    expect(dark).not.toBe("#090c14");
+    // A given colour that paints nothing, or cannot be read, is clear.
+    // Before the fix it went to sigma as it was, which draws it black.
+    for (const given of ["none", "grey85", "var(--nope)"]) {
+      expect(edgeColour(defaultTheme, given, el), given).toBe(
+        "rgba(0, 0, 0, 0)",
+      );
+    }
+    expect(edgeColour(defaultTheme, "#d62728", el)).toBe("#d62728");
+  });
+});
+
+describe("network recolour on resize()", () => {
+  /** Twelve genes in two groups, with three levels, in var() colours. */
+  function levelled(el: HTMLElement) {
+    el.style.setProperty("--a", "#e6194b");
+    el.style.setProperty("--b", "#3cb44b");
+    el.style.setProperty("--c", "#4363d8");
+    const data = ring(GENES.map((_, i) => (i % 2 ? "High" : "Low")));
+    return createNetwork(el, {
+      data: {
+        ...data,
+        meta: { ...data.meta, nodeGroupLevels: ["High", "Mid", "Low"] },
+      },
+      options: {
+        theme: { categorical: ["var(--a)", "var(--b)", "var(--c)"] },
+      },
+    });
+  }
+  const fills = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll("svg rect")).map((r) =>
+      r.getAttribute("fill")?.toLowerCase(),
+    );
+
+  it("keeps the order and the colours of the group levels", () => {
+    const el = container();
+    const net = levelled(el);
+    instances.push(net);
+    expect(legendTexts(el).map((t) => t.textContent)).toEqual([
+      "High",
+      "Mid",
+      "Low",
+    ]);
+    expect(fills(el)).toEqual(["#e6194b", "#3cb44b", "#4363d8"]);
+    // The page changes a colour, and the plot reads it again on a resize.
+    el.style.setProperty("--a", "#123456");
+    net.resize(600, 400);
+    // Before the fix the recolour lost the levels: the legend read the
+    // groups in the order the nodes have them, and Low took High's colour.
+    expect(legendTexts(el).map((t) => t.textContent)).toEqual([
+      "High",
+      "Mid",
+      "Low",
+    ]);
+    expect(fills(el)).toEqual(["#123456", "#3cb44b", "#4363d8"]);
+  });
+
+  it("gives the edges the theme edge colour again", async () => {
+    const el = container();
+    el.style.setProperty("--bg", darkTheme.background);
+    el.style.setProperty("--fg", darkTheme.foreground);
+    // Two nodes on one line, joined by one edge 3.85 px wide.
+    const net = createNetwork(el, {
+      data: {
+        columns: {
+          id: ["A", "B"],
+          x: [0, 10],
+          y: [0, 0],
+          source: ["A"],
+          target: ["B"],
+          weight: [1],
+        },
+      },
+      options: { theme: { background: "var(--bg)", foreground: "var(--fg)" } },
+    });
+    instances.push(net);
+    await new Promise((r) => setTimeout(r, 300));
+    // The page turns light, and a resize reads the colours again.
+    el.style.setProperty("--bg", defaultTheme.background);
+    el.style.setProperty("--fg", defaultTheme.foreground);
+    net.resize(600, 400);
+    await new Promise((r) => setTimeout(r, 300));
+    const png = (await net.exportPNG?.(1)) as Blob;
+    const bitmap = await createImageBitmap(png);
+    const c = document.createElement("canvas");
+    c.width = bitmap.width;
+    c.height = bitmap.height;
+    const ctx = c.getContext("2d") as CanvasRenderingContext2D;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    // The edge crosses the middle column: its pixel furthest from white.
+    const d = ctx.getImageData(Math.floor(c.width / 2), 0, 1, c.height).data;
+    let edge = [255, 255, 255];
+    let far = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const px = [d[i], d[i + 1], d[i + 2]] as number[];
+      const dist = px.reduce((sum, v) => sum + (255 - v), 0);
+      if (dist > far) {
+        far = dist;
+        edge = px;
+      }
+    }
+    const want = edgeColour(defaultTheme, null, el);
+    const rgb = [1, 3, 5].map((k) => Number.parseInt(want.slice(k, k + 2), 16));
+    // Before the fix the recolour looked for the edges by the colour the
+    // option gave, not the one the build used, and left them dark.
+    for (const k of [0, 1, 2]) {
+      expect(Math.abs((edge[k] as number) - (rgb[k] as number))).toBeLessThan(
+        5,
+      );
+    }
+  });
+
+  it("keeps the labels and the hub rule after a recolour", async () => {
+    const rec = recordLabelBoxes();
+    try {
+      const el = container(600, 400);
+      el.style.setProperty("--fg", "#1a1a1a");
+      const net = createNetwork(el, {
+        data: {
+          columns: {
+            id: ["tiny", "HUB", "c1", "c2", "c3", "c4"],
+            x: [0, 3.2, -20, 20, -20, 20],
+            y: [0, 0.2, -10, -10, 10, 10],
+            size: [4, 16, 4, 4, 4, 4],
+          },
+          meta: {
+            nodeLabels: [
+              "small neighbour gene label",
+              "HUB GENE",
+              "c1",
+              "c2",
+              "c3",
+              "c4",
+            ],
+            edges: [
+              ["HUB", "tiny"],
+              ["HUB", "c1"],
+            ],
+          },
+        },
+        options: { layout: "precomputed", theme: { foreground: "var(--fg)" } },
+      });
+      instances.push(net);
+      await expect.poll(() => rec.boxes().length, poll).toBeGreaterThan(0);
+      await new Promise((r) => setTimeout(r, 300));
+      const before = rec
+        .boxes()
+        .map((b) => b.text)
+        .sort();
+      expect(before).toContain("HUB GENE");
+      el.style.setProperty("--fg", "#7a1f1f");
+      net.resize(600, 400);
+      await new Promise((r) => setTimeout(r, 300));
+      // The recolour keeps the renderer, its label drawer and the labels.
+      expect(
+        rec
+          .boxes()
+          .map((b) => b.text)
+          .sort(),
+      ).toEqual(before);
+      expect(rec.boxes().map((b) => b.text)).not.toContain(
+        "small neighbour gene label",
+      );
     } finally {
       rec.restore();
     }
