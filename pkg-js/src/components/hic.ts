@@ -20,6 +20,10 @@
  * so multi-resolution / binned tiles could later feed the same renderer — it
  * consumes a dense row-major matrix (or a sparse i/j/v triplet that is filled
  * symmetric into a dense buffer) and needs no tile server (no HiGlass).
+ *
+ * The view always stays inside the map, down to a window of a few bins. A
+ * double-click or the reset button in the top right corner of the map goes
+ * back to the whole map (see core/view.ts).
  */
 import {
   type PlotomicsData,
@@ -45,6 +49,7 @@ import {
   fitDomainTicks,
   formatTick,
   formatTicks,
+  createResetButton,
 } from "../core/index.js";
 import { releaseRegl } from "../core/gl.js";
 import { guardDestroy, uniqueId } from "../core/dom.js";
@@ -80,6 +85,15 @@ export interface HicOptions {
   /** Axis title / chromosome label. */
   label: string;
   theme: Partial<PlotomicsTheme>;
+}
+
+/** The handle {@link createHic} returns. */
+export interface HicInstance extends PlotomicsInstance<HicOptions> {
+  /**
+   * Go back to the view of the whole map, as a double-click or the reset
+   * button does. Does nothing after `destroy()`.
+   */
+  resetView(): void;
 }
 
 export const defaultHicOptions: HicOptions = {
@@ -656,7 +670,10 @@ interface Level {
   texture: Texture2D | null;
 }
 
-export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
+export const createHic: PlotomicsFactory<HicOptions, HicInstance> = (
+  el,
+  initial,
+) => {
   let opts: HicOptions = mergeOptions(defaultHicOptions, initial.options);
   let theme = resolveTheme(opts.theme);
   let sizes = textSizes(theme);
@@ -695,6 +712,8 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   }
   plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
+  // Over the map, in its top right corner.
+  const resetButton = createResetButton(plot.box, el, () => resetView());
 
   let regl: Regl | null = null;
   let draw: DrawCommand | null = null;
@@ -1093,6 +1112,18 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   function render() {
     initGL();
     fitMargins();
+    // The reset button sits in the top right corner of the map, and shows
+    // while the view is not the whole map.
+    resetButton.place(
+      {
+        left: plotLeft(),
+        top: plotTop(),
+        width: plotSize(),
+        height: plotSize(),
+      },
+      theme,
+    );
+    resetButton.show(n > 0 && (viewLo > 0 || viewHi < n));
     drawMatrix();
     renderOverlay();
   }
@@ -1243,7 +1274,16 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       );
     }
     if (title && titleOn.left) {
-      const tx = 2 + 1.1 * titleSize;
+      // The title takes the room fitMargins made for it, just left of the
+      // room of the tick labels: the widest label since the last change
+      // (tickRoom) and 10 px. A map narrower than the space it has is
+      // centred in it, and the title follows the map, as the bottom title
+      // does, where it sat at the edge of the widget before.
+      const room = 1.4 * titleSize + 4;
+      const tx = Math.max(
+        2 + 1.1 * titleSize,
+        left - 10 - tickRoom - room + 2 + 1.1 * titleSize,
+      );
       const cy = top + size / 2;
       // No longer than the map is high, so it stays clear of the bottom
       // title under the map.
@@ -1379,8 +1419,9 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
       return;
     }
     // Hover tooltip, only over the plot square: when zoomed, the margins map to
-    // bins outside the view that are not on screen.
-    if (n === 0 || !dense) {
+    // bins outside the view that are not on screen. The reset button covers
+    // the cell under it.
+    if (n === 0 || !dense || resetButton.element.contains(e.target as Node)) {
       tooltip.hide();
       return;
     }
@@ -1432,8 +1473,19 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
   };
 
   const onLeave = () => tooltip.hide();
+  // A double-click goes back to the whole map.
+  const onDblClick = () => resetView();
+
+  /** Show the whole map, the home view, unless it is shown. */
+  function resetView() {
+    if (n === 0 || (viewLo === 0 && viewHi === n)) return;
+    viewLo = 0;
+    viewHi = n;
+    render();
+  }
 
   canvas.addEventListener("mousedown", onDown);
+  canvas.addEventListener("dblclick", onDblClick);
   window.addEventListener("mouseup", onUp);
   el.addEventListener("mousemove", onMove);
   el.addEventListener("mouseleave", onLeave);
@@ -1508,7 +1560,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     if (dense == null && (data.columns.values || data.columns.v)) applyData();
   }
 
-  const instance: PlotomicsInstance<HicOptions> = {
+  const instance: HicInstance = {
     setData(next) {
       data = next;
       applyData();
@@ -1547,6 +1599,9 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     },
     resize(w, h) {
       doResize(w, h);
+    },
+    resetView() {
+      resetView();
     },
     exportSVG() {
       // Hybrid figure: rasterized GPU matrix + vector axes/colorbar.
@@ -1599,6 +1654,7 @@ export const createHic: PlotomicsFactory<HicOptions> = (el, initial) => {
     destroy() {
       releaseContainer(el);
       canvas.removeEventListener("mousedown", onDown);
+      canvas.removeEventListener("dblclick", onDblClick);
       window.removeEventListener("mouseup", onUp);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);

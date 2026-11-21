@@ -46,6 +46,11 @@
 #'   categorical palette used for node groups.
 #' @param show_legend Draw a legend of the node groups, in a gutter on the
 #'   right, when `nodes` has a `group` column.
+#' @param bounded_view Keep pan and zoom inside the graph: zooming out
+#'   stops at the view that shows all of it, a pan stops at its edges, and
+#'   zooming in stops at 1/10,000 of its range. `FALSE` lets the view move
+#'   freely. Either way a double-click, or the reset button in the top
+#'   right corner of the plot, goes back to the view of the whole graph.
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
 #'   merged over the component defaults in the browser. `NULL` uses the default
 #'   theme.
@@ -86,6 +91,7 @@ network <- function(nodes,
                     directed = FALSE,
                     palette = NULL,
                     show_legend = TRUE,
+                    bounded_view = TRUE,
                     theme = NULL,
                     width = NULL,
                     height = NULL,
@@ -96,6 +102,7 @@ network <- function(nodes,
   if (!is.data.frame(edges)) {
     stop("`edges` must be a data frame.", call. = FALSE)
   }
+  bounded_view <- bv_require_flag(bounded_view, "bounded_view")
   if (!"id" %in% names(nodes)) {
     stop("`nodes` must contain an `id` column.", call. = FALSE)
   }
@@ -176,7 +183,8 @@ network <- function(nodes,
     labelThreshold = label_threshold,
     defaultNodeSize = default_node_size,
     directed = directed,
-    showLegend = show_legend
+    showLegend = show_legend,
+    boundedView = bounded_view
   )
   if (!is.null(default_edge_color)) {
     # An R colour name CSS lacks, such as "grey85", goes as hex.

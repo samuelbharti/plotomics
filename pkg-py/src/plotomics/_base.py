@@ -509,6 +509,19 @@ def _check_labels(labels: Any, n: int, name: str) -> list[str | None] | None:
     return out
 
 
+def _require_flag(value: Any, name: str) -> bool:
+    """``value`` as one plain ``bool``, or a clear error, as R checks it.
+
+    A numpy bool and a 0-d array of one count. Anything else, ``None``, a
+    number, a string or a longer array, stops with the message R gives.
+    """
+    if isinstance(value, np.ndarray) and value.ndim == 0:
+        value = value.item()
+    if not isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"`{name}` must be a single true or false value.")
+    return bool(value)
+
+
 def _check_choice(value: Any, name: str, choices: tuple[str, ...]) -> str:
     """Stop with a clear message when ``value`` is not one of ``choices``.
 

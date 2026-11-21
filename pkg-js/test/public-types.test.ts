@@ -34,14 +34,29 @@ import type {
   AnyModel,
   ClustermapOptions,
   EmbeddingColorMode,
+  EmbeddingInstance,
   EmbeddingOptions,
+  HeatmapInstance,
+  HicInstance,
   Linkage,
   Metric,
+  NetworkInstance,
   NetworkLayout,
   NetworkOptions,
+  VolcanoInstance,
+  createEmbedding,
+  createHeatmap,
+  createHic,
+  createNetwork,
+  createVolcano,
   makeAnywidget,
   registerComponent,
 } from "plotomics";
+import type { EmbeddingInstance as EmbeddingHandle } from "plotomics/embedding";
+import type { HeatmapInstance as HeatmapHandle } from "plotomics/heatmap";
+import type { HicInstance as HicHandle } from "plotomics/hic";
+import type { NetworkInstance as NetworkHandle } from "plotomics/network";
+import type { VolcanoInstance as VolcanoHandle } from "plotomics/volcano";
 import type {
   DomainScale,
   TypedArray,
@@ -84,6 +99,22 @@ export type Checks = [
   Assert<Same<DomainScale, Parameters<typeof fitView>[1]>>,
   Assert<Same<typeof ltc, typeof viridis>>,
   Assert<Same<typeof ltcdiv, typeof viridis>>,
+  // The plots that zoom return a handle with resetView().
+  Assert<Same<ReturnType<typeof createVolcano>, VolcanoInstance>>,
+  Assert<Same<ReturnType<typeof createEmbedding>, EmbeddingInstance>>,
+  Assert<Same<ReturnType<typeof createNetwork>, NetworkInstance>>,
+  Assert<Same<ReturnType<typeof createHeatmap>, HeatmapInstance>>,
+  Assert<Same<ReturnType<typeof createHic>, HicInstance>>,
+  Assert<Same<VolcanoHandle, VolcanoInstance>>,
+  Assert<Same<EmbeddingHandle, EmbeddingInstance>>,
+  Assert<Same<NetworkHandle, NetworkInstance>>,
+  Assert<Same<HeatmapHandle, HeatmapInstance>>,
+  Assert<Same<HicHandle, HicInstance>>,
+  Assert<Same<VolcanoInstance["resetView"], () => void>>,
+  Assert<Same<EmbeddingInstance["resetView"], () => void>>,
+  Assert<Same<NetworkInstance["resetView"], () => void>>,
+  Assert<Same<HeatmapInstance["resetView"], () => void>>,
+  Assert<Same<HicInstance["resetView"], () => void>>,
 ];
 `;
 

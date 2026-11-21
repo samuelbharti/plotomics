@@ -99,10 +99,23 @@ export {
   fitView,
   resizeView,
   isStartView,
+  type ViewMatrix,
+  boundView,
+  type CameraBounds,
+  boundCamera,
   type RenderLoop,
   createRenderLoop,
   afterQuiet,
 } from "./scatter.js";
+
+export {
+  MIN_VIEW_SHARE,
+  type ViewArea,
+  type ResetButton,
+  resetButtonSize,
+  resetButtonBox,
+  createResetButton,
+} from "./view.js";
 
 export {
   stepDecimals,

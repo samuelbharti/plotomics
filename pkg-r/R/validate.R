@@ -84,6 +84,27 @@ bv_require_nonempty <- function(n, what) {
   invisible(n)
 }
 
+#' Require one TRUE or FALSE.
+#'
+#' Refuses `NA`, `NULL`, a number, a string and a vector longer than one,
+#' with the message Python gives, and returns a plain `TRUE` or `FALSE`: a
+#' name or a dim on the value would reach the browser as an object or an
+#' array, which reads as true.
+#'
+#' @param x The value given.
+#' @param name Argument name used in the error message.
+#' @return `TRUE` or `FALSE`.
+#' @keywords internal
+#' @noRd
+bv_require_flag <- function(x, name) {
+  if (!is.logical(x) || length(x) != 1L || is.na(x)) {
+    stop(sprintf("`%s` must be a single true or false value.", name),
+      call. = FALSE
+    )
+  }
+  isTRUE(x)
+}
+
 #' Validate a precomputed clustermap leaf order / dendrogram.
 #'
 #' Accepts either a bare integer leaf order (a length-`n` permutation of

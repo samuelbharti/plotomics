@@ -105,6 +105,22 @@ describe("label placement", () => {
     expect(spot?.anchor).toBe("end");
     expect(spot?.x).toBe(186);
   });
+
+  it("keeps labels clear of a box already taken, such as the reset button", () => {
+    // The button over the right of the point takes its first corner, so
+    // the label goes to its left.
+    const button = { left: 100, right: 130, top: 30, bottom: 60 };
+    const [spot] = placeLabels([{ x: 100, y: 50, width: 20 }], bounds, 11, [
+      button,
+    ]);
+    expect(spot?.anchor).toBe("end");
+    expect(spot?.x).toBe(96);
+    // With every corner taken there is no label.
+    const all = { left: 0, right: 200, top: 0, bottom: 100 };
+    expect(
+      placeLabels([{ x: 100, y: 50, width: 20 }], bounds, 11, [all]),
+    ).toEqual([null]);
+  });
 });
 
 describe("volcano threshold line and p = 0", () => {

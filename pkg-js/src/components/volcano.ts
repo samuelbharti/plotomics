@@ -10,6 +10,10 @@
  *
  * The gridlines sit in a second SVG under the points, so no line crosses a
  * point.
+ *
+ * Pan and zoom stay inside the data unless `boundedView` is false, and a
+ * double-click or the reset button in the top right corner of the plot
+ * area goes back to the view of all the data (see core/view.ts).
  */
 import {
   type PlotomicsData,
@@ -35,6 +39,8 @@ import {
   fitView,
   resizeView,
   isStartView,
+  boundCamera,
+  createResetButton,
   createRenderLoop,
   afterQuiet,
 } from "../core/index.js";
@@ -64,7 +70,25 @@ export interface VolcanoOptions {
   showThresholdLines: boolean;
   /** Label the N most significant up- and down-regulated genes. */
   labelTopN: number;
+  /**
+   * Keep pan and zoom inside the data: zooming out stops at the view that
+   * shows all of it, a pan stops at its edges, and zooming in stops at
+   * 1/10,000 of its range on each axis. `false` lets the view move freely.
+   * Either way a double-click, the reset button in the top right corner of
+   * the plot area, or `resetView()` goes back to the view of all the data.
+   */
+  boundedView: boolean;
   theme: Partial<PlotomicsTheme>;
+}
+
+/** The handle {@link createVolcano} returns. */
+export interface VolcanoInstance extends PlotomicsInstance<VolcanoOptions> {
+  /**
+   * Go back to the home view, the one that shows all the data, as a
+   * double-click or the reset button does. Does nothing at the home view,
+   * and nothing after `destroy()`.
+   */
+  resetView(): void;
 }
 
 export const defaultVolcanoOptions: VolcanoOptions = {
@@ -77,6 +101,7 @@ export const defaultVolcanoOptions: VolcanoOptions = {
   yLabel: "-log10 p-value",
   showThresholdLines: true,
   labelTopN: 10,
+  boundedView: true,
   theme: {},
 };
 
@@ -348,16 +373,18 @@ export interface LabelBox {
 /**
  * Place labels next to their points without overlap. Each label tries the
  * four corners around its point (right-above first) and takes the first one
- * that stays inside `bounds` and clears every label placed before it; a label
- * with no free corner is left out. Labels are placed in the order given, so
- * pass the most important first.
+ * that stays inside `bounds` and clears every label placed before it, and
+ * every box in `taken`, such as the reset button; a label with no free
+ * corner is left out. Labels are placed in the order given, so pass the
+ * most important first.
  */
 export function placeLabels(
   items: { x: number; y: number; width: number }[],
   bounds: LabelBox,
   fontSize: number,
+  taken: readonly LabelBox[] = [],
 ): ({ x: number; y: number; anchor: "start" | "end" } | null)[] {
-  const placed: LabelBox[] = [];
+  const placed: LabelBox[] = [...taken];
   const gap = 4;
   // Baseline offsets: above the point, or below it.
   const above = -gap;
@@ -410,10 +437,10 @@ export function niceTicks(domain: [number, number], count = 6): number[] {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
-  el,
-  initial,
-) => {
+export const createVolcano: PlotomicsFactory<
+  VolcanoOptions,
+  VolcanoInstance
+> = (el, initial) => {
   let opts: VolcanoOptions = mergeOptions(
     defaultVolcanoOptions,
     initial.options,
@@ -443,6 +470,8 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   // the current zoom converts the points with this one.
   let baseX: [number, number] = [-1, 1];
   let baseY: [number, number] = [0, 1];
+  // The plot area at the last fit, in px, which the home view fills.
+  let fitSize: [number, number] = [0, 0];
 
   const xScale = scaleLinear().domain(xDomain);
   const yScale = scaleLinear().domain(yDomain);
@@ -466,6 +495,8 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   const plot = createPlotBox(el);
   plot.box.append(under, canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
+  // Over the layers, in the top right corner of the plot area.
+  const resetButton = createResetButton(plot.box, el, () => resetView());
 
   // GPU scatter. It draws points in [-1, 1], and keeps the d3 scales in sync
   // with pan/zoom once fitView() has handed them over. See core/scatter.ts.
@@ -477,6 +508,14 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     opacity: opts.opacity,
     backgroundColor: scatterBackground(theme, el),
     lassoInitiator: false,
+  });
+  // The camera stays inside the view of all the data, the one the last
+  // fit made, unless boundedView is false.
+  const cameraBounds = boundCamera(scatterplot, {
+    bounded: () => opts.boundedView !== false,
+    aspect: () => innerW() / innerH(),
+    homeAspect: () =>
+      fitSize[0] > 0 && fitSize[1] > 0 ? fitSize[0] / fitSize[1] : 1,
   });
   const loop = createRenderLoop((fit) => render(fit));
   let destroyed = false;
@@ -493,9 +532,14 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
   });
   scatterplot.subscribe("pointOut", () => tooltip.hide());
   scatterplot.subscribe("view", () => {
+    // A view published after destroy() has no camera to read.
+    if (destroyed) return;
     // Domains were mutated in place by the scatterplot; redraw the overlay.
     xDomain = xScale.domain() as [number, number];
     yDomain = yScale.domain() as [number, number];
+    // The reset button shows while the view is away from home, and the
+    // labels the overlay places keep clear of it.
+    resetButton.show(!isStartView(scatterplot));
     renderOverlay();
     // The point the tooltip names has moved with the view.
     forgetHover();
@@ -536,6 +580,27 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
     pressed = e.buttons !== 0;
   };
   el.addEventListener("mousemove", onMove);
+  // A double-click goes back to the view of all the data. regl-scatterplot
+  // also clears the selection on it.
+  const onDblClick = () => resetView();
+  canvas.addEventListener("dblclick", onDblClick);
+
+  /**
+   * Go back to the home view: fit all the data again, at the plot area and
+   * the options of now. At the home view of a fit at this size there is
+   * nothing to do.
+   */
+  function resetView() {
+    if (destroyed || !data.columns.x) return;
+    if (
+      isStartView(scatterplot) &&
+      innerW() === fitSize[0] &&
+      innerH() === fitSize[1]
+    ) {
+      return;
+    }
+    applyData(true);
+  }
 
   // ---- pixel mapping (overlay) ----
   const innerW = () => Math.max(1, width - margin.left - margin.right);
@@ -619,6 +684,15 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       layer.setAttribute("width", String(width));
       layer.setAttribute("height", String(height));
     }
+    placeReset();
+  }
+
+  /** Put the reset button in the top right corner of the plot area. */
+  function placeReset() {
+    resetButton.place(
+      { left: margin.left, top: margin.top, width: innerW(), height: innerH() },
+      theme,
+    );
   }
 
   // Every change asks the loop for a render. Renders run one at a time and
@@ -674,6 +748,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         fitH,
       );
       [baseX, baseY] = baseDomains(xDomain, yDomain, fitW, fitH);
+      fitSize = [fitW, fitH];
     }
     const [xBase, yBase] = [baseX, baseY];
 
@@ -933,7 +1008,19 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
         label,
       });
     }
-    const spots = placeLabels(items, bounds, sizes.label);
+    // No label goes under the reset button.
+    const button = resetButton.box;
+    const taken = button
+      ? [
+          {
+            left: button.left,
+            right: button.left + button.width,
+            top: button.top,
+            bottom: button.top + button.height,
+          },
+        ]
+      : [];
+    const spots = placeLabels(items, bounds, sizes.label, taken);
     items.forEach((it, k) => {
       const spot = spots[k];
       if (!spot) return;
@@ -1012,12 +1099,13 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
 
   // Initial sizing from the container (or sensible defaults when detached).
   {
+    cameraBounds.update();
     const m = measure(el);
     doResize(m.width, m.height);
     if (data.columns.x) applyData();
   }
 
-  const instance: PlotomicsInstance<VolcanoOptions> = {
+  const instance: VolcanoInstance = {
     setData(next) {
       data = next;
       applyData();
@@ -1035,6 +1123,11 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       // widens them as its tick labels need.
       if (!sameSides(baseMargin, prevBase)) margin = baseMargin;
       ({ width, height } = plot.fit(outerW, outerH, theme));
+      // The reset button takes the colours and size of the new theme.
+      placeReset();
+      if ((opts.boundedView !== false) !== (prevOpts.boundedView !== false)) {
+        cameraBounds.update();
+      }
       if (!sameSides(margin, prev) || width !== prevW || height !== prevH) {
         // A new text size or padding changes the plot area, which refits
         // while the view is untouched, as a resize does.
@@ -1059,6 +1152,9 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       if (w === outerW && h === outerH) return;
       doResize(w, h);
       refitAfterResize();
+    },
+    resetView() {
+      resetView();
     },
     exportSVG() {
       // Hybrid figure: rasterized GPU layer + vector axes/labels.
@@ -1107,6 +1203,7 @@ export const createVolcano: PlotomicsFactory<VolcanoOptions> = (
       loop.stop();
       refitAfterResize.cancel();
       el.removeEventListener("mousemove", onMove);
+      canvas.removeEventListener("dblclick", onDblClick);
       tooltip.destroy();
       scatterplot.destroy();
       plot.remove();

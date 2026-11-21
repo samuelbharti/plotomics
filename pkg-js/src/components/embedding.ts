@@ -10,6 +10,9 @@
  * labels → discrete legend) or continuous (numeric → sequential colormap +
  * colorbar). Lasso selection is enabled and the selected indices are exposed
  * via the `onSelect` option and the returned instance's `selectedIndices`.
+ * Pan and zoom stay inside the data unless `boundedView` is false, and a
+ * double-click or the reset button in the top right corner of the plot
+ * area goes back to the view of all the data (see core/view.ts).
  * Mirrors the volcano structure: exported pure helpers plus a factory
  * returning a PlotomicsInstance.
  *
@@ -50,6 +53,8 @@ import {
   fitView,
   resizeView,
   isStartView,
+  boundCamera,
+  createResetButton,
   createRenderLoop,
   afterQuiet,
   categoricalColors,
@@ -122,6 +127,15 @@ export interface EmbeddingOptions {
   /** Called with the point indices after a lasso select / deselect. JS-only —
    * callbacks do not cross the R/Python bridge. */
   onSelect: ((indices: number[]) => void) | null;
+  /**
+   * Keep pan and zoom inside the data: zooming out stops at the view that
+   * shows all of it, a pan stops at its edges, and zooming in stops at
+   * 1/10,000 of its range on each axis. `false` lets the view move freely.
+   * Either way a double-click, the reset button in the top right corner of
+   * the plot area, or `resetView()` goes back to the view of all the data.
+   * A double-click also clears the lasso selection.
+   */
+  boundedView: boolean;
   theme: Partial<PlotomicsTheme>;
 }
 
@@ -140,6 +154,7 @@ export const defaultEmbeddingOptions: EmbeddingOptions = {
   aspect: "fill",
   mouseMode: "panZoom",
   onSelect: null,
+  boundedView: true,
   theme: {},
 };
 
@@ -147,6 +162,12 @@ export const defaultEmbeddingOptions: EmbeddingOptions = {
 export interface EmbeddingInstance extends PlotomicsInstance<EmbeddingOptions> {
   /** Point indices currently selected via lasso (empty when none). */
   readonly selectedIndices: number[];
+  /**
+   * Go back to the home view, the one that shows all the data, as a
+   * double-click or the reset button does. Does nothing at the home view,
+   * and nothing after `destroy()`. The selection stays.
+   */
+  resetView(): void;
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -485,10 +506,10 @@ type LegendState =
   | { mode: "continuous"; domain: [number, number] }
   | null;
 
-export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
-  el,
-  initial,
-) => {
+export const createEmbedding: PlotomicsFactory<
+  EmbeddingOptions,
+  EmbeddingInstance
+> = (el, initial) => {
   let opts: EmbeddingOptions = mergeOptions(
     defaultEmbeddingOptions,
     initial.options,
@@ -516,6 +537,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   // always converted with this one, so a redraw at the current zoom lines up.
   let baseX: [number, number] = [0, 1];
   let baseY: [number, number] = [0, 1];
+  // The plot area at the last fit, in px, which the home view fills.
+  let fitSize: [number, number] = [0, 0];
   let legend: LegendState = null;
   let selected: number[] = [];
   // The data rows that are drawn, in drawing order: the scatterplot's point k
@@ -571,6 +594,8 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
   }
   plot.box.append(under, canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
+  // Over the layers, in the top right corner of the plot area.
+  const resetButton = createResetButton(plot.box, el, () => resetView());
 
   // GPU scatter. It draws points in [-1, 1], and keeps the d3 scales in sync
   // with pan/zoom once fitView() has handed them over. See core/scatter.ts.
@@ -588,6 +613,14 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     // appears, or press-and-hold then drag (touch-friendly).
     lassoInitiator: true,
     lassoOnLongPress: true,
+  });
+  // The camera stays inside the view of all the data, the one the last
+  // fit made, unless boundedView is false.
+  const cameraBounds = boundCamera(scatterplot, {
+    bounded: () => opts.boundedView !== false,
+    aspect: () => innerW() / innerH(),
+    homeAspect: () =>
+      fitSize[0] > 0 && fitSize[1] > 0 ? fitSize[0] / fitSize[1] : 1,
   });
   const loop = createRenderLoop((fit) => render(fit));
   let destroyed = false;
@@ -615,9 +648,13 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     opts.onSelect?.([]);
   });
   scatterplot.subscribe("view", () => {
+    // A view published after destroy() has no camera to read.
+    if (destroyed) return;
     // Domains were mutated in place by the scatterplot; redraw the overlay.
     xDomain = xScale.domain() as [number, number];
     yDomain = yScale.domain() as [number, number];
+    // The reset button shows while the view is away from home.
+    resetButton.show(!isStartView(scatterplot));
     renderOverlay();
     // The point the tooltip names has moved with the view.
     forgetHover();
@@ -643,6 +680,27 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     pressed = e.buttons !== 0;
   };
   el.addEventListener("mousemove", onMove);
+  // A double-click goes back to the view of all the data. regl-scatterplot
+  // also clears the lasso selection on it.
+  const onDblClick = () => resetView();
+  canvas.addEventListener("dblclick", onDblClick);
+
+  /**
+   * Go back to the home view: fit all the data again, at the plot area and
+   * the options of now. At the home view of a fit at this size there is
+   * nothing to do.
+   */
+  function resetView() {
+    if (destroyed || !data.columns.x) return;
+    if (
+      isStartView(scatterplot) &&
+      innerW() === fitSize[0] &&
+      innerH() === fitSize[1]
+    ) {
+      return;
+    }
+    applyData(true);
+  }
 
   function showTip(i: number) {
     const cols = data.columns;
@@ -753,6 +811,12 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       layer.setAttribute("width", String(width));
       layer.setAttribute("height", String(height));
     }
+    // The reset button goes in the top right corner of the plot area, left
+    // of the legend gutter.
+    resetButton.place(
+      { left: m.left, top: m.top, width: innerW(), height: innerH() },
+      theme,
+    );
   }
 
   /** One colour per category index, from the theme palette. */
@@ -855,6 +919,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       // scatterplot, so domains that "equal" has matched to the plot area's
       // shape keep equal data units per pixel through every pan and zoom.
       [baseX, baseY] = baseDomains(xDomain, yDomain, fitW, fitH);
+      fitSize = [fitW, fitH];
     }
     const [xBase, yBase] = [baseX, baseY];
     const px = toNdc(x, xBase);
@@ -1345,6 +1410,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
 
   // Initial sizing from the container (or sensible defaults when detached).
   {
+    cameraBounds.update();
     const m = measure(el);
     doResize(m.width, m.height);
     if (data.columns.x) applyData();
@@ -1391,6 +1457,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
         opts.aspect !== prev.aspect ||
         opts.padding !== prev.padding ||
         (areaChanged && isStartView(scatterplot));
+      if ((opts.boundedView !== false) !== (prev.boundedView !== false)) {
+        cameraBounds.update();
+      }
       scatterplot.set({
         backgroundColor: scatterBackground(theme, el),
         mouseMode: opts.mouseMode,
@@ -1423,6 +1492,9 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
     },
     get selectedIndices() {
       return selected.slice();
+    },
+    resetView() {
+      resetView();
     },
     exportSVG() {
       // Hybrid figure: rasterized GPU layer + vector legend/axes.
@@ -1467,6 +1539,7 @@ export const createEmbedding: PlotomicsFactory<EmbeddingOptions> = (
       loop.stop();
       refitAfterResize.cancel();
       el.removeEventListener("mousemove", onMove);
+      canvas.removeEventListener("dblclick", onDblClick);
       tooltip.destroy();
       scatterplot.destroy();
       plot.remove();

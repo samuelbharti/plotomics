@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   afterQuiet,
   baseDomains,
+  boundView,
   createRenderLoop,
   isStartView,
   toNdc,
@@ -123,5 +124,100 @@ describe("scatter helpers", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("boundView", () => {
+  /** A camera view that scales by `s` and moves by (tx, ty). */
+  const view = (s: number, tx = 0, ty = 0) => {
+    const v = new Float32Array(16);
+    v[0] = s;
+    v[5] = s;
+    v[10] = 1;
+    v[15] = 1;
+    v[12] = tx;
+    v[13] = ty;
+    return v;
+  };
+  const home = Array.from(view(1));
+
+  it("leaves the home view and a view inside it as they are", () => {
+    const v = view(1);
+    expect(boundView(v, 2, 2)).toBe(false);
+    expect(Array.from(v)).toEqual(home);
+    // Zoomed in 4 times and moved, still inside the home view.
+    const w = view(4, 1.5, -2);
+    expect(boundView(w, 2, 2)).toBe(false);
+    expect(w[12]).toBe(1.5);
+    expect(w[13]).toBe(-2);
+  });
+
+  it("takes a view zoomed out past home back to home, exactly", () => {
+    for (const s of [0.5, 0.99999994, 1.0000001]) {
+      const v = view(s, 0.3, -0.2);
+      expect(boundView(v, 1.5, 1.5)).toBe(true);
+      // Before the fix nothing kept the camera from zooming out.
+      expect(
+        isStartView({ get: () => v, set: async () => {}, reset() {} }),
+      ).toBe(true);
+    }
+  });
+
+  it("stops zooming in at 10,000 times the home view", () => {
+    const v = view(1e6, 0, 0);
+    expect(boundView(v, 1, 1)).toBe(true);
+    expect(v[0]).toBe(1e4);
+    expect(v[5]).toBe(1e4);
+  });
+
+  it("stops a pan at each edge of the home view", () => {
+    // At 4 times, a plot area 2 wide per unit of height shows half a unit
+    // each side of its centre in x, and a quarter in y, of a home view
+    // from -2 to 2 and -1 to 1: the centre stays within 1.5 and 0.75.
+    const s = 4;
+    for (const [cx, cy, wantX, wantY] of [
+      [-10, 0, -1.5, 0],
+      [10, 0, 1.5, 0],
+      [0, -10, 0, -0.75],
+      [0, 10, 0, 0.75],
+    ] as const) {
+      const v = view(s, -cx * s, -cy * s);
+      expect(boundView(v, 2, 2)).toBe(true);
+      expect(-(v[12] as number) / s).toBeCloseTo(wantX, 6);
+      expect(-(v[13] as number) / s).toBeCloseTo(wantY, 6);
+      expect(v[0]).toBe(s);
+      // A second pass finds it in place.
+      expect(boundView(v, 2, 2)).toBe(false);
+    }
+  });
+
+  it("centres an axis that shows more than the home view", () => {
+    // After a resize to a plot area three times as wide as the one the
+    // data was fitted to, x at 1.2 times shows more than all of it.
+    const v = view(1.2, 0.5, 0.1);
+    expect(boundView(v, 3, 1)).toBe(true);
+    expect(v[12]).toBe(0);
+    expect(v[13]).toBeCloseTo(0.1, 6);
+  });
+
+  it("takes out a turn of the view", () => {
+    const v = view(2);
+    const a = 0.3;
+    v[0] = 2 * Math.cos(a);
+    v[1] = 2 * Math.sin(a);
+    v[4] = -2 * Math.sin(a);
+    v[5] = 2 * Math.cos(a);
+    expect(boundView(v, 1, 1)).toBe(true);
+    expect(v[1]).toBe(0);
+    expect(v[4]).toBe(0);
+    expect(v[0]).toBeCloseTo(2, 6);
+    expect(v[5]).toBeCloseTo(2, 6);
+  });
+
+  it("leaves a view it cannot read as it is", () => {
+    const v = view(0);
+    expect(boundView(v, 1, 1)).toBe(false);
+    expect(boundView(view(2), 0, 1)).toBe(false);
+    expect(boundView(view(2), 1, Number.NaN)).toBe(false);
   });
 });

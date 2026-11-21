@@ -25,6 +25,11 @@
 #' @param label_top_n Number of top up- and down-regulated genes to label.
 #'   `Inf` labels every up- and down-regulated gene, as in [lollipop()]; `0`
 #'   labels none.
+#' @param bounded_view Keep pan and zoom inside the data: zooming out
+#'   stops at the view that shows all of it, a pan stops at its edges, and
+#'   zooming in stops at 1/10,000 of its range. `FALSE` lets the view move
+#'   freely. Either way a double-click, or the reset button in the top
+#'   right corner of the plot, goes back to the view of all the data.
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
 #'   merged over the component defaults in the browser. `NULL` uses the default
 #'   theme.
@@ -59,6 +64,7 @@ volcano <- function(data,
                     y_label = "-log10 p-value",
                     show_threshold_lines = TRUE,
                     label_top_n = 10,
+                    bounded_view = TRUE,
                     theme = NULL,
                     width = NULL,
                     height = NULL,
@@ -70,6 +76,7 @@ volcano <- function(data,
     stop("`data` must contain columns `x` and `y`.", call. = FALSE)
   }
   bv_require_nonempty(nrow(data), "data")
+  bounded_view <- bv_require_flag(bounded_view, "bounded_view")
 
   x <- bv_require_numeric(data$x, "x")
   bv_check_finite(x, "x")
@@ -106,7 +113,8 @@ volcano <- function(data,
     xLabel = x_label,
     yLabel = y_label,
     showThresholdLines = show_threshold_lines,
-    labelTopN = label_top_n
+    labelTopN = label_top_n,
+    boundedView = bounded_view
   )
   if (!is.null(colors)) options$colors <- bv_colour(colors)
   if (!is.null(theme)) options$theme <- theme

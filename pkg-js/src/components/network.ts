@@ -7,8 +7,12 @@
  * graph out; otherwise the provided x/y are used verbatim. Categorical node
  * groups are colored from the shared `plotomics/core` palette. Hovering a node
  * highlights it and its neighbors and shows a tooltip; zoom/pan are sigma's
- * built-in camera controls. When the nodes have groups, a legend of the groups
- * sits in a gutter on the right, so it never covers a node.
+ * built-in camera controls. Unless `boundedView` is false, zooming out stops
+ * at the view of the whole graph, a pan stops at its edges and zooming in
+ * stops at 1/10,000 of its range; a double-click or the reset button in the
+ * top right corner goes back to the whole graph (see core/view.ts). When the
+ * nodes have groups, a legend of the groups sits in a gutter on the right, so
+ * it never covers a node.
  *
  * Mirrors the volcano reference: pure helpers (in `network-core.ts`, unit-tested
  * without a GPU) plus a factory returning a PlotomicsInstance. Sigma touches WebGL
@@ -53,6 +57,8 @@ import {
   compositePNG,
   releaseContainer,
   categoricalColors,
+  MIN_VIEW_SHARE,
+  createResetButton,
 } from "../core/index.js";
 import { guardDestroy } from "../core/dom.js";
 import {
@@ -140,6 +146,24 @@ export interface NetworkOptions {
    * canvas is clicked. In a Shiny app the runtime injects a handler that pushes
    * the value to `input$<outputId>_selected`. */
   onSelect: ((node: string | null) => void) | null;
+  /**
+   * Keep pan and zoom inside the graph: zooming out stops at the view that
+   * shows all of it, a pan stops at its edges, and zooming in stops at
+   * 1/10,000 of its range. `false` lets the view move freely. Either way a
+   * double-click, the reset button in the top right corner of the graph,
+   * or `resetView()` goes back to the view of the whole graph.
+   */
+  boundedView: boolean;
+}
+
+/** The handle {@link createNetwork} returns. */
+export interface NetworkInstance extends PlotomicsInstance<NetworkOptions> {
+  /**
+   * Go back to the home view, the one that shows the whole graph, as a
+   * double-click or the reset button does: the camera moves there over
+   * 150 ms. Does nothing at the home view, and nothing after `destroy()`.
+   */
+  resetView(): void;
 }
 
 export const defaultNetworkOptions: NetworkOptions = {
@@ -154,10 +178,30 @@ export const defaultNetworkOptions: NetworkOptions = {
   showLegend: true,
   theme: {},
   onSelect: null,
+  boundedView: true,
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
+/** Sigma's camera at the view of the whole graph, where it starts. */
+const HOME = { x: 0.5, y: 0.5, angle: 0, ratio: 1 };
+/** How long the camera takes to go back to the home view, in ms. */
+const RESET_MS = 150;
+
+/**
+ * Whether a camera state is the home view, give or take rounding. Sigma
+ * bounds a pan through its float32 matrices, which leaves the camera up to
+ * about 1e-7 off home after a drag at home: a millionth of the graph, far
+ * below a pixel.
+ */
+function atHome(state: typeof HOME): boolean {
+  return (
+    Math.abs(state.x - HOME.x) < 1e-6 &&
+    Math.abs(state.y - HOME.y) < 1e-6 &&
+    Math.abs(state.ratio - HOME.ratio) < 1e-6 &&
+    Math.abs(state.angle - HOME.angle) < 1e-6
+  );
+}
 /** Cap on legend rows before the rest go into a "+N more" line. */
 const LEGEND_MAX = 14;
 /** The largest share of the widget's width that the legend gutter takes. */
@@ -535,10 +579,10 @@ function drawNodeHover(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createNetwork: PlotomicsFactory<NetworkOptions> = (
-  el,
-  initial,
-) => {
+export const createNetwork: PlotomicsFactory<
+  NetworkOptions,
+  NetworkInstance
+> = (el, initial) => {
   let opts: NetworkOptions = mergeOptions(
     defaultNetworkOptions,
     initial.options,
@@ -569,6 +613,8 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     ({ width, height } = plot.fit(w, h, theme));
   }
   const tooltip: Tooltip = createTooltip(el, theme);
+  // Over the graph, in its top right corner, clear of the legend gutter.
+  const resetButton = createResetButton(plot.box, el, () => resetView());
 
   let width = 0;
   let height = 0;
@@ -845,6 +891,22 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       },
     });
 
+    applyBounds();
+    // The reset button shows while the camera is away from home. A new
+    // renderer starts at home.
+    resetButton.show(false);
+    renderer.getCamera().on("updated", (state) => {
+      resetButton.show(!atHome(state));
+    });
+    // A double-click goes back to the whole graph, in place of sigma's
+    // zoom in.
+    const onDoubleClick = (e: { preventSigmaDefault(): void }) => {
+      e.preventSigmaDefault();
+      resetView();
+    };
+    renderer.on("doubleClickStage", onDoubleClick);
+    renderer.on("doubleClickNode", onDoubleClick);
+
     renderer.on("beforeRender", () => frameLabels.clear());
     renderer.on("afterRender", () => frameLabels.draw(!hovered, renderer));
     frameLabels.draw(!hovered, renderer);
@@ -870,6 +932,50 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     renderer.on("clickStage", () => {
       opts.onSelect?.(null);
     });
+  }
+
+  /**
+   * The box in graph coordinates that the home view shows, which a bounded
+   * pan keeps the view inside, or null while sigma's container has no size.
+   * It follows the size of the container, so a resize reads it again.
+   */
+  function homeBox(): { x: [number, number]; y: [number, number] } | null {
+    if (!renderer) return null;
+    const { width: w, height: h } = renderer.getDimensions();
+    if (!(w > 0 && h > 0)) return null;
+    const a = renderer.viewportToGraph({ x: 0, y: 0 }, { cameraState: HOME });
+    const b = renderer.viewportToGraph({ x: w, y: h }, { cameraState: HOME });
+    if (![a.x, a.y, b.x, b.y].every(Number.isFinite)) return null;
+    return {
+      x: [Math.min(a.x, b.x), Math.max(a.x, b.x)],
+      y: [Math.min(a.y, b.y), Math.max(a.y, b.y)],
+    };
+  }
+
+  /**
+   * Sigma's camera bounds, from boundedView: the ratio of the camera stays
+   * from MIN_VIEW_SHARE (zoomed in) to 1 (the home view), and its pan
+   * boundaries keep the view inside the box the home view shows. Sigma
+   * applies them to every camera state, a wheel zoom, a drag and its
+   * glide included, so the view never leaves them. With boundedView false
+   * the camera moves freely, as sigma's defaults let it.
+   */
+  function applyBounds() {
+    if (!renderer) return;
+    const on = opts.boundedView !== false;
+    const box = on ? homeBox() : null;
+    renderer.setSettings({
+      minCameraRatio: on ? MIN_VIEW_SHARE : null,
+      maxCameraRatio: on ? 1 : null,
+      cameraPanBoundaries: box ? { boundaries: box, tolerance: 0 } : null,
+    });
+  }
+
+  /** Move the camera back to the home view, unless it is there. */
+  function resetView() {
+    const camera = renderer?.getCamera();
+    if (!camera || atHome(camera.getState())) return;
+    void camera.animate(HOME, { duration: RESET_MS });
   }
 
   /**
@@ -960,6 +1066,10 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     svg.setAttribute("width", String(width));
     svg.setAttribute("height", String(height));
     drawLegend(rows);
+    resetButton.place(
+      { left: 0, top: 0, width: Math.max(0, width - gutter), height },
+      theme,
+    );
   }
 
   function drawLegend(rows: LegendRow[]) {
@@ -1033,7 +1143,7 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
     applyData();
   }
 
-  const instance: PlotomicsInstance<NetworkOptions> = {
+  const instance: NetworkInstance = {
     setData(next) {
       data = next;
       applyData();
@@ -1053,7 +1163,12 @@ export const createNetwork: PlotomicsFactory<NetworkOptions> = (
       if (colours !== drawnColours) recolour(colours);
       layout();
       renderer?.resize();
+      // The box the home view shows follows the size of the graph.
+      applyBounds();
       renderer?.refresh();
+    },
+    resetView() {
+      resetView();
     },
     exportSVG() {
       // Sigma is WebGL; a true vector export is not available. Embed the

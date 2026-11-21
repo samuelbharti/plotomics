@@ -11,6 +11,8 @@
  * regl-scatterplot README.
  */
 
+import { MIN_VIEW_SHARE } from "./view.js";
+
 /** Map values onto [-1, 1], where `domain[0]` is -1 and `domain[1]` is 1. */
 export function toNdc(
   values: ArrayLike<number>,
@@ -185,6 +187,147 @@ export function resizeView(
 }
 
 const START_VIEW = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+/** A 4 x 4 matrix in column order, as regl-scatterplot keeps its camera. */
+export interface ViewMatrix {
+  [index: number]: number;
+  readonly length: number;
+}
+
+/**
+ * Keep `view`, a camera view of regl-scatterplot, inside the home view, and
+ * change it in place. Returns whether it changed.
+ *
+ * The view scales the points by s and moves them by (tx, ty): its entries
+ * 0 and 5, and 12 and 13. The home view is the start view, s = 1 with no
+ * move, which shows x from -homeAspect to homeAspect and y from -1 to 1:
+ * all the data, as {@link fitView} fitted it to a plot area homeAspect
+ * times as wide as it is high. A plot area `aspect` times as wide as it is
+ * high shows x from (-aspect - tx) / s to (aspect - tx) / s, and y from
+ * (-1 - ty) / s to (1 - ty) / s.
+ *
+ * s stays from 1, the home view, to 1 / MIN_VIEW_SHARE, and on each axis
+ * the view stays inside the home view. An axis that shows more than the
+ * home view, as after a resize to a wider plot area, is centred on it. A
+ * turn of the view is taken out, as a turned view does not fit the home
+ * view. A scale within a millionth of 1 is the home view itself, written
+ * exactly, so a zoom back out ends at the start view.
+ */
+export function boundView(
+  view: ViewMatrix,
+  aspect: number,
+  homeAspect: number,
+): boolean {
+  const scale = Math.hypot(view[0] as number, view[1] as number);
+  if (!(scale > 0) || !(aspect > 0) || !(homeAspect > 0)) return false;
+  let s = Math.min(1 / MIN_VIEW_SHARE, Math.max(1, scale));
+  if (s - 1 < 1e-6) s = 1;
+  // The centre of the view in point coordinates, kept where the view,
+  // `half` across from it, stays inside the home view, `edge` across. An
+  // axis that shows the home view whole is centred.
+  const keep = (centre: number, half: number, edge: number) =>
+    half >= edge * (1 - 1e-9)
+      ? 0
+      : Math.min(edge - half, Math.max(half - edge, centre));
+  const cx = keep(-(view[12] as number) / scale, aspect / s, homeAspect);
+  const cy = keep(-(view[13] as number) / scale, 1 / s, 1);
+  const tx = cx === 0 ? 0 : -cx * s;
+  const ty = cy === 0 ? 0 : -cy * s;
+  // The home view and a centred axis are written exactly; other values
+  // keep the float32 rounding of the camera.
+  const close = (a: number, b: number) =>
+    b === 0 || b === 1 ? a === b : Math.abs(a - b) <= 1e-6 * s;
+  const turned = view[1] !== 0 || view[4] !== 0;
+  if (
+    !turned &&
+    close(view[0] as number, s) &&
+    close(view[5] as number, s) &&
+    close(view[12] as number, tx) &&
+    close(view[13] as number, ty)
+  ) {
+    return false;
+  }
+  for (let i = 0; i < 16; i += 1) view[i] = i % 5 === 0 ? 1 : 0;
+  view[0] = s;
+  view[5] = s;
+  view[12] = tx;
+  view[13] = ty;
+  return true;
+}
+
+/** The camera of regl-scatterplot, a dom-2d-camera, as the bounds use it. */
+interface ScatterCamera {
+  /** The view, which the camera changes in place on each pan and zoom. */
+  readonly view: ViewMatrix;
+  /** Apply the pan and zoom of the last frame; whether the view moved. */
+  tick(): boolean;
+  setScaleBounds(bounds: [[number, number], [number, number]]): void;
+  config(settings: { isRotate?: boolean }): void;
+}
+
+/** What {@link boundCamera} reads from the plot, each time it is needed. */
+export interface CameraBounds {
+  /** Whether the view is bounded now: the plot's `boundedView` option. */
+  bounded(): boolean;
+  /** The width of the plot area over its height, now. */
+  aspect(): number;
+  /** The width of the plot area over its height at the last fit. */
+  homeAspect(): number;
+}
+
+/**
+ * Keep the camera of `scatterplot` inside its home view while
+ * `bounds.bounded()` is true (see {@link boundView}): zooming out stops at
+ * the home view, a pan stops at its edges, and zooming in stops at
+ * MIN_VIEW_SHARE of its range.
+ *
+ * The camera's scale bounds stop the zoom at the wheel, about the pointer.
+ * Its translation bounds are kept but not applied by dom-2d-camera, and
+ * the room a pan has depends on the zoom, so each frame's view is bounded
+ * as the camera applies its pan and zoom, before the frame is drawn: the
+ * view never leaves the bounds, so it does not jump back, and no view
+ * event fires for a view the plot did not draw. Turning the view (alt and
+ * a drag) is off while bounded.
+ *
+ * Call `update()` once the scatterplot is made and again when `bounded()`
+ * changes. A scatterplot with no camera to read is left as it is.
+ */
+export function boundCamera(
+  scatterplot: ScatterplotView,
+  bounds: CameraBounds,
+): { update(): void } {
+  const camera = scatterplot.get("camera") as ScatterCamera | undefined;
+  if (!camera || typeof camera.tick !== "function") return { update() {} };
+  const tick = camera.tick;
+  camera.tick = () => {
+    const moved = tick();
+    if (moved && bounds.bounded()) {
+      boundView(camera.view, bounds.aspect(), bounds.homeAspect());
+    }
+    return moved;
+  };
+  return {
+    update() {
+      const on = bounds.bounded();
+      const most = 1 / MIN_VIEW_SHARE;
+      camera.setScaleBounds(
+        on
+          ? [
+              [1, most],
+              [1, most],
+            ]
+          : [
+              [0, Number.POSITIVE_INFINITY],
+              [0, Number.POSITIVE_INFINITY],
+            ],
+      );
+      camera.config({ isRotate: !on });
+      if (on && boundView(camera.view, bounds.aspect(), bounds.homeAspect())) {
+        void scatterplot.set({ cameraView: camera.view });
+      }
+    },
+  };
+}
 
 /**
  * True while the camera is still at its starting view, so the person has not

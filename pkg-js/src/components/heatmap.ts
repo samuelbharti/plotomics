@@ -13,6 +13,11 @@
  * This mirrors the Volcano reference component's structure: exported pure
  * helpers plus a `PlotomicsFactory` returning a `PlotomicsInstance`.
  *
+ * The view always stays inside the matrix: zooming out stops at the whole
+ * matrix and zooming in at 1/10,000 of it. A double-click or the reset
+ * button in the top right corner of the matrix goes back to the whole
+ * matrix (see core/view.ts).
+ *
  * A missing cell (NaN from Python, null from R) is drawn in a neutral grey and
  * left out of the colour range and the z-score. A matrix with more rows or
  * columns than the GPU's texture limit, or than the plot has pixels, is
@@ -51,6 +56,8 @@ import {
   fitDomainTicks,
   formatTicks,
   isFlatRange,
+  MIN_VIEW_SHARE,
+  createResetButton,
 } from "../core/index.js";
 import { releaseRegl } from "../core/gl.js";
 import { guardDestroy, uniqueId } from "../core/dom.js";
@@ -76,6 +83,15 @@ export interface HeatmapOptions {
   /** Colour bar title. `null` gives "value", or "z-score" with `zScore` on. */
   legendTitle: string | null;
   theme: Partial<PlotomicsTheme>;
+}
+
+/** The handle {@link createHeatmap} returns. */
+export interface HeatmapInstance extends PlotomicsInstance<HeatmapOptions> {
+  /**
+   * Go back to the view of the whole matrix, as a double-click or the
+   * reset button does. Does nothing after `destroy()`.
+   */
+  resetView(): void;
 }
 
 export const defaultHeatmapOptions: HeatmapOptions = {
@@ -433,10 +449,10 @@ export function tickIndices(n: number, max: number): number[] {
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
-  el,
-  initial,
-) => {
+export const createHeatmap: PlotomicsFactory<
+  HeatmapOptions,
+  HeatmapInstance
+> = (el, initial) => {
   let opts: HeatmapOptions = mergeOptions(
     defaultHeatmapOptions,
     initial.options,
@@ -517,6 +533,8 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   }
   plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
+  // Over the matrix, in its top right corner.
+  const resetButton = createResetButton(plot.box, el, () => resetView());
 
   // --- regl setup ---------------------------------------------------------
   // luminance uint8 is core WebGL1 (no float-texture extension needed).
@@ -736,6 +754,10 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     canvas.height = Math.round(innerH() * ratio);
     svg.setAttribute("width", String(width));
     svg.setAttribute("height", String(height));
+    resetButton.place(
+      { left: margin.left, top: margin.top, width: innerW(), height: innerH() },
+      theme,
+    );
   }
 
   function computeScaled(): Float32Array {
@@ -1026,6 +1048,10 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
    * moves the view, which then draws from textures already built.
    */
   function render(moving = false) {
+    // The reset button shows while the view is not the whole matrix.
+    resetButton.show(
+      !!shape.ncols && (viewX > 0 || viewY > 0 || viewW < 1 || viewH < 1),
+    );
     if (!regl || reglBroken || !draw || !valueTex) {
       // Nothing to draw on the GPU (no data, a refused matrix, or no WebGL):
       // clear what an earlier matrix left, then draw the overlay only.
@@ -1309,8 +1335,8 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   }
 
   function clampView() {
-    viewW = Math.min(1, Math.max(1e-4, viewW));
-    viewH = Math.min(1, Math.max(1e-4, viewH));
+    viewW = Math.min(1, Math.max(MIN_VIEW_SHARE, viewW));
+    viewH = Math.min(1, Math.max(MIN_VIEW_SHARE, viewH));
     viewX = Math.min(1 - viewW, Math.max(0, viewX));
     viewY = Math.min(1 - viewH, Math.max(0, viewY));
   }
@@ -1361,9 +1387,26 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       tooltip.hide();
       return;
     }
+    // The reset button covers the cell under it.
+    if (resetButton.element.contains(e.target as Node | null)) {
+      tooltip.hide();
+      return;
+    }
     showTip(e.clientX, e.clientY);
   };
   const onLeave = () => tooltip.hide();
+  // A double-click goes back to the whole matrix.
+  const onDblClick = () => resetView();
+
+  /** Show the whole matrix, the home view, unless it is shown. */
+  function resetView() {
+    if (viewX === 0 && viewY === 0 && viewW === 1 && viewH === 1) return;
+    viewX = 0;
+    viewY = 0;
+    viewW = 1;
+    viewH = 1;
+    render();
+  }
 
   function showTip(clientX: number, clientY: number) {
     if (!shape.ncols || !shape.nrows) return;
@@ -1391,6 +1434,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
   canvas.style.pointerEvents = "auto";
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("mousedown", onDown);
+  canvas.addEventListener("dblclick", onDblClick);
   window.addEventListener("mouseup", onUp);
   el.addEventListener("mousemove", onMove);
   el.addEventListener("mouseleave", onLeave);
@@ -1410,7 +1454,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     if (data.columns.values) applyData();
   }
 
-  const instance: PlotomicsInstance<HeatmapOptions> = {
+  const instance: HeatmapInstance = {
     setData(next) {
       data = next;
       applyData();
@@ -1440,6 +1484,9 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
     },
     resize(w, h) {
       doResize(w, h);
+    },
+    resetView() {
+      resetView();
     },
     exportSVG() {
       // Hybrid figure: rasterized GPU matrix as an <image> + vector overlay.
@@ -1486,6 +1533,7 @@ export const createHeatmap: PlotomicsFactory<HeatmapOptions> = (
       releaseContainer(el);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("mousedown", onDown);
+      canvas.removeEventListener("dblclick", onDblClick);
       window.removeEventListener("mouseup", onUp);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
