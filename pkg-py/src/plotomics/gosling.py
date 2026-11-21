@@ -36,13 +36,13 @@ class Gosling(PlotomicsWidget):
     theme:
         Optional Gosling theme: a built-in name such as ``"light"``,
         ``"dark"`` or ``"ggplot"``, or a Gosling theme dict. This is
-        Gosling's own theme, not the plotomics theme that every other widget
-        takes. Gosling draws its own tracks, so no plotomics theme field
-        applies: ``background``, ``foreground``, ``muted``, ``grid``,
-        ``axis``, ``fontFamily``, ``fontSize``, ``categorical`` and
-        ``padding`` are not read. Set colours and fonts in the Gosling theme
-        or in the spec; the widget keeps the default padding of 10 px around
-        Gosling.
+        Gosling's own theme, not the plotomics theme that the other plotting
+        widgets take (IGV takes no theme). Gosling draws its own tracks, so
+        no plotomics theme field applies: ``background``, ``foreground``,
+        ``muted``, ``grid``, ``axis``, ``fontFamily``, ``fontSize``,
+        ``categorical`` and ``padding`` are not read. Set colours and fonts
+        in the Gosling theme or in the spec; the widget keeps the default
+        padding of 10 px around Gosling.
     height:
         Initial widget height in CSS pixels.
 

@@ -32,12 +32,13 @@ export interface GoslingOptions {
   /**
    * Gosling's own theme, passed to Gosling as is: a built-in name such as
    * `"light"`, `"dark"` or `"ggplot"`, or a Gosling theme object. It is not
-   * a plotomics theme. Every other component takes a
-   * `Partial<PlotomicsTheme>` here, but Gosling draws its own tracks, so no
-   * plotomics theme field applies: `background`, `foreground`, `muted`,
-   * `grid`, `axis`, `fontFamily`, `fontSize`, `categorical` and `padding`
-   * are not read. Set colours and fonts in the Gosling theme or in the
-   * spec; the host keeps the default padding of 10 px around Gosling.
+   * a plotomics theme. The other plotting components take a
+   * `Partial<PlotomicsTheme>` here (IGV takes no theme), but Gosling draws
+   * its own tracks, so no plotomics theme field applies: `background`,
+   * `foreground`, `muted`, `grid`, `axis`, `fontFamily`, `fontSize`,
+   * `categorical` and `padding` are not read. Set colours and fonts in the
+   * Gosling theme or in the spec; the host keeps the default padding of
+   * 10 px around Gosling.
    */
   theme?: unknown;
 }
