@@ -13,10 +13,10 @@
 
 <img src="assets/logo.png" align="right" width="150" alt="plotomics" />
 
-> **[Plotomics Live](https://github.com/samuelbharti/plotomics-live)** is a gallery app of 26 biological
+> **[Plotomics Live](https://posit-plotomics-live.share.connect.posit.cloud/)** is a live gallery of 26 biological
 > visualizations, most of them drawn with plotomics and shown next to the same
 > plot made with ggplot2. The app is built with
-> [shinyreact](https://github.com/posit-dev/shinyreact).
+> [shinyreact](https://github.com/posit-dev/shinyreact) ([source](https://github.com/samuelbharti/plotomics-live)).
 
 **Lightweight, GPU-accelerated bioinformatics visualization components for JavaScript, R and Python.**
 
