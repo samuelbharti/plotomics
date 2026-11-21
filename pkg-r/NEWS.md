@@ -91,6 +91,11 @@
 * The warning about missing or infinite values reads the same in R and Python
   and names the argument. `oncoplot()` warns about a missing `burden`, and
   `spatial()` about missing values in a numeric `color` column.
+* `volcano()`, `embedding()` and `network()` stop zooming out at the view that
+  fits all the data, keep a pan inside it, and stop zooming in at 1/10,000 of
+  its range; `bounded_view = FALSE` turns the limits off. A "Reset view" button
+  on these and on `bioheatmap()` and `hic()` brings back the whole plot, as a
+  double-click does.
 
 ## Bug fixes
 

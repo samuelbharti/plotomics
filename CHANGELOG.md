@@ -52,6 +52,11 @@ be behind the tag.
   `DomainScale`) are exported by name. (#90, #110, #203, #210)
 - JavaScript: `ltc` and `ltcdiv` are exported from `plotomics/core`, next to
   `viridis` and `rdbu`, and `DOMAIN_PALETTE` from `plotomics`. (#217)
+- A "Reset view" button in the top right corner of the volcano, embedding,
+  network, heatmap and Hi-C plots shows once the view is zoomed or panned and
+  brings back the whole plot; it works from the keyboard and stays out of the
+  exports. A double-click and a new JavaScript `resetView()` method do the same.
+  In the network the double-click no longer zooms in. (#224)
 
 ### Changed
 
@@ -188,6 +193,14 @@ be behind the tag.
   and names the argument the user passed. R `oncoplot()` warns about a missing
   `burden`, and R `spatial()` about missing values in a numeric `color` column,
   as Python does. (#222)
+- The volcano, embedding and network stop zooming out at the view that fits all
+  the data, keep a pan inside it, and stop zooming in at 1/10,000 of its range,
+  as the heatmap and Hi-C map already did. A resize or an option change while
+  zoomed keeps the view's centre and scale. `bounded_view = FALSE` in R,
+  `bounded_view=False` in Python and `boundedView: false` in JavaScript turn the
+  limits off. (#224)
+- The Hi-C y axis title sits next to its tick labels, where in a wide widget it
+  sat at the left edge. (#224)
 
 ### Removed
 
