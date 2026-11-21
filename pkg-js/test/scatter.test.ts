@@ -5,7 +5,8 @@ import {
   boundView,
   createRenderLoop,
   isStartView,
-  regionView,
+  atView,
+  frameView,
   toNdc,
 } from "../src/core/scatter.js";
 
@@ -144,11 +145,11 @@ describe("boundView", () => {
 
   it("leaves the home view and a view inside it as they are", () => {
     const v = view(1);
-    expect(boundView(v, 2, 2)).toBe(false);
+    expect(boundView(v, 2)).toBe(false);
     expect(Array.from(v)).toEqual(home);
     // Zoomed in 4 times and moved, still inside the home view.
     const w = view(4, 1.5, -2);
-    expect(boundView(w, 2, 2)).toBe(false);
+    expect(boundView(w, 2)).toBe(false);
     expect(w[12]).toBe(1.5);
     expect(w[13]).toBe(-2);
   });
@@ -156,7 +157,7 @@ describe("boundView", () => {
   it("takes a view zoomed out past home back to home, exactly", () => {
     for (const s of [0.5, 0.99999994, 1.0000001]) {
       const v = view(s, 0.3, -0.2);
-      expect(boundView(v, 1.5, 1.5)).toBe(true);
+      expect(boundView(v, 1.5)).toBe(true);
       // Before the fix nothing kept the camera from zooming out.
       expect(
         isStartView({ get: () => v, set: async () => {}, reset() {} }),
@@ -166,7 +167,7 @@ describe("boundView", () => {
 
   it("stops zooming in at 10,000 times the home view", () => {
     const v = view(1e6, 0, 0);
-    expect(boundView(v, 1, 1)).toBe(true);
+    expect(boundView(v, 1)).toBe(true);
     expect(v[0]).toBe(1e4);
     expect(v[5]).toBe(1e4);
   });
@@ -183,22 +184,52 @@ describe("boundView", () => {
       [0, 10, 0, 0.75],
     ] as const) {
       const v = view(s, -cx * s, -cy * s);
-      expect(boundView(v, 2, 2)).toBe(true);
+      expect(boundView(v, 2)).toBe(true);
       expect(-(v[12] as number) / s).toBeCloseTo(wantX, 6);
       expect(-(v[13] as number) / s).toBeCloseTo(wantY, 6);
       expect(v[0]).toBe(s);
       // A second pass finds it in place.
-      expect(boundView(v, 2, 2)).toBe(false);
+      expect(boundView(v, 2)).toBe(false);
     }
   });
 
-  it("centres an axis that shows more than the home view", () => {
-    // After a resize to a plot area three times as wide as the one the
-    // data was fitted to, x at 1.2 times shows more than all of it.
-    const v = view(1.2, 0.5, 0.1);
-    expect(boundView(v, 3, 1)).toBe(true);
+  it("centres an axis that shows all of the home view", () => {
+    // A home view that shows x from -1 to 1 in a plot area three times as
+    // wide as high: at an x scale of 3, the view shows all of it.
+    const home = view(1);
+    home[0] = 3;
+    const v = view(3, 0.5, 0.1);
+    expect(boundView(v, 3, home)).toBe(true);
     expect(v[12]).toBe(0);
     expect(v[13]).toBeCloseTo(0.1, 6);
+  });
+
+  it("bounds each axis by a home view that scales x and y each by its own factor", () => {
+    // The home view shows x from 2 to 6 and y from -0.5 to 0.5 at aspect 1.
+    const home = frameView([2, 6], [-0.5, 0.5], [-10, 10], [-1, 1], 1);
+    // Zoomed out past it on both axes, the view stops at it on each.
+    const out = view(0.1, 0, 0);
+    expect(boundView(out, 1, home)).toBe(true);
+    expect(atView(out, home)).toBe(true);
+    // Zoomed in, a pan far left stops with the view's left edge at 2.
+    const v = view(10, 0, 0);
+    v[5] = 4;
+    v[12] = 1000;
+    expect(boundView(v, 1, home)).toBe(true);
+    const left = (-1 - (v[12] as number)) / (v[0] as number);
+    expect(left * 10).toBeCloseTo(2, 5);
+    // The zoom on each axis stays.
+    expect(v[0]).toBe(10);
+    expect(v[5]).toBe(4);
+  });
+
+  it("leaves a view inside the bounds exactly as it is", () => {
+    const home = frameView([2, 6], [-0.5, 0.5], [-10, 10], [-1, 1], 1);
+    const v = view(10, -4, 0.1);
+    v[5] = 4;
+    const before = Array.from(v);
+    expect(boundView(v, 1, home)).toBe(false);
+    expect(Array.from(v)).toEqual(before);
   });
 
   it("takes out a turn of the view", () => {
@@ -208,7 +239,7 @@ describe("boundView", () => {
     v[1] = 2 * Math.sin(a);
     v[4] = -2 * Math.sin(a);
     v[5] = 2 * Math.cos(a);
-    expect(boundView(v, 1, 1)).toBe(true);
+    expect(boundView(v, 1)).toBe(true);
     expect(v[1]).toBe(0);
     expect(v[4]).toBe(0);
     expect(v[0]).toBeCloseTo(2, 6);
@@ -217,47 +248,43 @@ describe("boundView", () => {
 
   it("leaves a view it cannot read as it is", () => {
     const v = view(0);
-    expect(boundView(v, 1, 1)).toBe(false);
-    expect(boundView(view(2), 0, 1)).toBe(false);
-    expect(boundView(view(2), 1, Number.NaN)).toBe(false);
+    expect(boundView(v, 1)).toBe(false);
+    expect(boundView(view(2), 0)).toBe(false);
+    expect(boundView(view(2), 1, view(Number.NaN))).toBe(false);
   });
 });
 
-describe("regionView", () => {
-  it("shows exactly a region of the same share on both axes", () => {
-    // Base x 0 to 10 and y 0 to 4, on a plot area twice as wide as high.
-    // x 2.5 to 5 is -0.5 to 0 in [-1, 1], half 0.25 of the 2 a unit of
-    // height holds across, so a scale of 8; y 1 to 1.5 is -0.5 to -0.25,
-    // half 0.125 of 1, a scale of 8 too.
-    const v = regionView([2.5, 5], [1, 1.5], [0, 10], [0, 4], 2);
-    expect(v[0]).toBeCloseTo(8, 6);
-    expect(v[5]).toBeCloseTo(8, 6);
-    expect(-(v[12] as number) / 8).toBeCloseTo(-0.25, 6);
-    expect(-(v[13] as number) / 8).toBeCloseTo(-0.375, 6);
+describe("frameView", () => {
+  it("is the start view right after a fit to the plot area", () => {
+    const xShow: [number, number] = [-4, 4];
+    const yShow: [number, number] = [0, 20];
+    const [xBase, yBase] = baseDomains(xShow, yShow, 600, 400);
+    const v = frameView(xShow, yShow, xBase, yBase, 1.5);
+    expect(atView(v, view1())).toBe(true);
   });
 
-  it("keeps all of the region in view, centred where it is", () => {
-    const v = regionView([2, 4], [1, 2], [0, 10], [0, 4], 1);
-    // x: -0.6 to -0.2 in [-1, 1], half 0.2, so s = 1 / 0.2 = 5 from x;
-    // y: -0.5 to 0, half 0.25, so s = 4 from y. The smaller is 4.
-    expect(v[0]).toBeCloseTo(4, 6);
-    expect(v[5]).toBeCloseTo(4, 6);
-    expect(-(v[12] as number) / 4).toBeCloseTo(-0.4, 6);
-    expect(-(v[13] as number) / 4).toBeCloseTo(-0.25, 6);
-    // What it shows holds the region on both axes.
-    const s = v[0] as number;
-    const cx = -(v[12] as number) / s;
-    const cy = -(v[13] as number) / s;
-    expect(cx - 1 / s).toBeLessThanOrEqual(-0.6 + 1e-6);
-    expect(cx + 1 / s).toBeGreaterThanOrEqual(-0.2 - 1e-6);
-    expect(cy - 1 / s).toBeLessThanOrEqual(-0.5 + 1e-6);
-    expect(cy + 1 / s).toBeGreaterThanOrEqual(0 - 1e-6);
+  it("frames the fit of a new plot area over the old base domains", () => {
+    // Fitted at 600 x 400; the plot area is now 300 x 400, and the fit
+    // shows the same data, so x takes twice the scale of y.
+    const xShow: [number, number] = [-4, 4];
+    const yShow: [number, number] = [0, 20];
+    const [xBase, yBase] = baseDomains(xShow, yShow, 600, 400);
+    const v = frameView(xShow, yShow, xBase, yBase, 0.75);
+    expect(v[0]).toBeCloseTo(0.5, 6);
+    expect(v[5]).toBeCloseTo(1, 6);
+    // It shows x from -4 to 4: (-a - tx) / sx, mapped back through xBase.
+    const ndc = (-0.75 - (v[12] as number)) / (v[0] as number);
+    const left = xBase[0] + ((ndc + 1) / 2) * (xBase[1] - xBase[0]);
+    expect(left).toBeCloseTo(-4, 6);
   });
 
-  it("gives the home view for a region with no width", () => {
-    const v = regionView([3, 3], [1, 2], [0, 10], [0, 4], 1);
-    expect(isStartView({ get: () => v, set: async () => {}, reset() {} })).toBe(
-      true,
-    );
+  it("gives the start view for a range with no width", () => {
+    const v = frameView([3, 3], [1, 2], [0, 10], [0, 4], 1);
+    expect(Array.from(v)).toEqual(view1());
   });
 });
+
+/** The start view, as a list. */
+function view1(): number[] {
+  return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+}

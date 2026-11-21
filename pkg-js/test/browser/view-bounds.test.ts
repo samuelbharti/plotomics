@@ -401,10 +401,11 @@ describe.each(SCATTERS)("$name view limits", (c) => {
     await wait(300);
     const v = scatterView(el);
     // Long labels deep in a zoom widen the margins, which narrows the
-    // plot area: x shows that much less at the same scale.
-    const width = Number.parseFloat(canvas.style.width);
-    const share = 1e-4 * (width / homeWidth);
-    expect(span(v.x) / span(home.x) / share).toBeCloseTo(1, 2);
+    // plot area, and the home view follows it: x stops at 1/10,000 of it.
+    expect(Number.parseFloat(canvas.style.width)).toBeLessThanOrEqual(
+      homeWidth,
+    );
+    expect(span(v.x) / span(home.x) / 1e-4).toBeCloseTo(1, 2);
     expect(span(v.y) / span(home.y) / 1e-4).toBeCloseTo(1, 2);
     expect(inside(v, home)).toBe(true);
   });
@@ -462,89 +463,298 @@ describe.each(SCATTERS)("$name view limits", (c) => {
   });
 });
 
-describe("scatter plot home view after a change while zoomed", () => {
-  /** Whether `a` holds all of `b`, to `tol` of the range of `home`. */
-  const holds = (a: View, b: View, home: View, tol = 1e-3) =>
-    (["x", "y"] as const).every(
-      (k) =>
-        a[k][0] <= b[k][0] + tol * span(home[k]) &&
-        a[k][1] >= b[k][1] - tol * span(home[k]),
-    );
+describe.each(["volcano", "embedding"])(
+  "%s view through a change while zoomed",
+  (name) => {
+    /** The volcano genes, with three at p = 0. */
+    function withZeroP() {
+      const d = volcanoData();
+      const x = [...d.columns.x, 3, -3, 2.5];
+      const y = [...d.columns.y, 0, 0, 0];
+      return {
+        columns: { x, y, label: x.map((_, i) => `G${i}`) },
+        meta: { yInfinite: [2000, 2001, 2002] },
+      };
+    }
 
-  /** The volcano genes, with three at p = 0. */
-  function withZeroP() {
-    const d = volcanoData();
-    const x = [...d.columns.x, 3, -3, 2.5];
-    const y = [...d.columns.y, 0, 0, 0];
-    return {
-      columns: { x, y, label: x.map((_, i) => `G${i}`) },
-      meta: { yInfinite: [2000, 2001, 2002] },
-    };
-  }
+    const make = (el: HTMLElement, o: Record<string, unknown>) =>
+      (name === "volcano"
+        ? createVolcano(el, {
+            data: withZeroP(),
+            options: { labelTopN: 0, ...o },
+          })
+        : createEmbedding(el, {
+            data: embeddingData(true),
+            options: { showAxes: true, showLegend: false, ...o },
+          })) as unknown as Handle;
 
-  type Make = (
-    el: HTMLElement,
-    options: Record<string, unknown>,
-  ) => PlotomicsInstance<unknown>;
-  const volcano: Make = (el, o) =>
-    createVolcano(el, {
-      data: withZeroP(),
-      options: { labelTopN: 0, ...o },
-    }) as unknown as PlotomicsInstance<unknown>;
-  const embedding: Make = (el, o) =>
-    createEmbedding(el, {
-      data: embeddingData(true),
-      options: { showAxes: true, showLegend: false, ...o },
-    }) as unknown as PlotomicsInstance<unknown>;
+    /** A plot drawn and at rest, `w` x `h` px. */
+    async function drawn(w: number, h: number, options = {}) {
+      const el = container(w, h);
+      const plot = make(el, options);
+      instances.push(plot);
+      await expect
+        .poll(async () => {
+          const png = await canvasPNG(el);
+          return png ? drawnPixels(png) : 0;
+        }, poll)
+        .toBeGreaterThan(100);
+      await wait(300);
+      await frames(2);
+      const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+      return { el, plot, canvas };
+    }
 
-  const cases: {
-    name: string;
-    make: Make;
-    width: number;
-    options: Record<string, unknown>;
-  }[] = [];
-  for (const [plot, make] of [
-    ["volcano", volcano],
-    ["embedding", embedding],
-  ] as const) {
-    cases.push({
-      name: `${plot}, resize narrower`,
-      make,
-      width: 400,
-      options: {},
+    /** Zoomed in 4 steps about the centre, and at rest. */
+    async function zoomed(w = 640, h = 480, options = {}) {
+      const d = await drawn(w, h, options);
+      wheel(d.canvas, -120, 4);
+      await settle();
+      await wait(150);
+      expect(buttonShown(d.el)).toBe(true);
+      return d;
+    }
+
+    async function resizeTo(
+      d: { el: HTMLElement; plot: Handle },
+      w: number,
+      h: number,
+    ) {
+      d.el.style.width = `${w}px`;
+      d.el.style.height = `${h}px`;
+      d.plot.resize(w, h);
+      await wait(300);
+      await settle();
+    }
+
+    const size = (c: HTMLCanvasElement) => [
+      Number.parseFloat(c.style.width),
+      Number.parseFloat(c.style.height),
+    ];
+    const mid = (r: [number, number]) => (r[0] + r[1]) / 2;
+    /** Two ranges agree to a millionth of the span of `ref`. */
+    const same = (a: [number, number], b: [number, number], ref = b) =>
+      Math.abs(a[0] - b[0]) <= 1e-6 * span(ref) &&
+      Math.abs(a[1] - b[1]) <= 1e-6 * span(ref);
+    const sameRange = (a: View, b: View) => same(a.x, b.x) && same(a.y, b.y);
+
+    /** Zoom out to the end: the home view of a plot made `w` x `h` px. */
+    async function homeAgrees(
+      d: { el: HTMLElement; canvas: HTMLCanvasElement },
+      w: number,
+      h: number,
+      options = {},
+    ) {
+      wheel(d.canvas, 240, 30);
+      await settle();
+      await wait(300);
+      await settle();
+      const out = scatterView(d.el);
+      const fresh = await drawn(w, h, options);
+      const want = scatterView(fresh.el);
+      expect(sameView(out, want, want, 1e-4), JSON.stringify([out, want])).toBe(
+        true,
+      );
+      expect(buttonShown(d.el)).toBe(false);
+    }
+
+    it("keeps the scale and the centre through a wider area, and shows more around them", async () => {
+      const d = await zoomed();
+      const before = scatterView(d.el);
+      const [w0] = size(d.canvas);
+      await resizeTo(d, 900, 480);
+      const after = scatterView(d.el);
+      const [w1] = size(d.canvas);
+      // Before the fix both axes zoomed out 1.5 times.
+      expect(same(after.y, before.y), JSON.stringify([before, after])).toBe(
+        true,
+      );
+      expect(Math.abs(mid(after.x) - mid(before.x))).toBeLessThan(
+        1e-6 * span(before.x),
+      );
+      expect(span(after.x) / span(before.x)).toBeCloseTo(
+        (w1 as number) / (w0 as number),
+        6,
+      );
+      expect(buttonShown(d.el)).toBe(true);
+      await homeAgrees(d, 900, 480);
     });
-    cases.push({
-      name: `${plot}, resize wider`,
-      make,
-      width: 900,
-      options: {},
-    });
-    cases.push({
-      name: `${plot}, pointSize`,
-      make,
-      width: 640,
-      // Large enough that the room kept for the points at the edges
-      // passes the 4% padding of the fit, which moves the home view.
-      options: { pointSize: 60 },
-    });
-  }
-  cases.push({
-    name: "volcano, pThreshold",
-    make: volcano,
-    width: 640,
-    options: { pThreshold: 1e-40 },
-  });
-  cases.push({
-    name: "embedding, showLegend",
-    make: embedding,
-    width: 640,
-    options: { showLegend: true },
-  });
 
-  /** A plot drawn and at rest. */
-  async function drawn(make: Make, width: number, options = {}) {
-    const el = container(width, 480);
-    const plot = make(el, options);
+    it("keeps the scale and the centre through a shorter area", async () => {
+      const d = await zoomed();
+      const before = scatterView(d.el);
+      const [, h0] = size(d.canvas);
+      await resizeTo(d, 640, 300);
+      const after = scatterView(d.el);
+      const [, h1] = size(d.canvas);
+      expect(same(after.x, before.x), JSON.stringify([before, after])).toBe(
+        true,
+      );
+      expect(Math.abs(mid(after.y) - mid(before.y))).toBeLessThan(
+        1e-6 * span(before.y),
+      );
+      expect(span(after.y) / span(before.y)).toBeCloseTo(
+        (h1 as number) / (h0 as number),
+        6,
+      );
+      await homeAgrees(d, 640, 300);
+    });
+
+    it("comes back to the same view after round trips of the width and the height", async () => {
+      const d = await zoomed();
+      const before = scatterView(d.el);
+      for (let cycle = 1; cycle <= 2; cycle += 1) {
+        await resizeTo(d, 420, 480);
+        await resizeTo(d, 640, 480);
+        // Before the fix one cycle zoomed out 1.7 times, and two went home.
+        expect(
+          sameRange(scatterView(d.el), before),
+          `width, cycle ${cycle}: ${JSON.stringify([before, scatterView(d.el)])}`,
+        ).toBe(true);
+      }
+      for (let cycle = 1; cycle <= 2; cycle += 1) {
+        await resizeTo(d, 640, 300);
+        await resizeTo(d, 640, 480);
+        expect(
+          sameRange(scatterView(d.el), before),
+          `height, cycle ${cycle}: ${JSON.stringify([before, scatterView(d.el)])}`,
+        ).toBe(true);
+      }
+      expect(buttonShown(d.el)).toBe(true);
+    });
+
+    it("comes back to the same view after quick option changes", async () => {
+      const d = await zoomed();
+      const before = scatterView(d.el);
+      const there =
+        name === "volcano"
+          ? { theme: { fontSize: 16 } }
+          : { showLegend: true, theme: { fontSize: 16 } };
+      const back =
+        name === "volcano"
+          ? { theme: { fontSize: 12 } }
+          : { showLegend: false, theme: { fontSize: 12 } };
+      for (let i = 0; i < 3; i += 1) {
+        d.plot.setOptions(there);
+        await wait(10);
+        d.plot.setOptions(back);
+        await wait(10);
+      }
+      await wait(300);
+      await settle();
+      expect(
+        sameRange(scatterView(d.el), before),
+        JSON.stringify([before, scatterView(d.el)]),
+      ).toBe(true);
+    });
+
+    it("keeps the scale and the centre through options in quick succession", async () => {
+      const d = await zoomed();
+      const before = scatterView(d.el);
+      const [w0, h0] = size(d.canvas);
+      const steps =
+        name === "volcano"
+          ? [
+              { pThreshold: 1e-3 },
+              { pointSize: 8 },
+              { theme: { fontSize: 15 } },
+              { pThreshold: 1e-6 },
+            ]
+          : [
+              { showLegend: true },
+              { theme: { fontSize: 15 } },
+              { showLegend: false },
+              { theme: { fontSize: 11 } },
+            ];
+      for (const o of steps) {
+        d.plot.setOptions(o);
+        await wait(10);
+      }
+      await wait(300);
+      await settle();
+      const after = scatterView(d.el);
+      const [w1, h1] = size(d.canvas);
+      const what = JSON.stringify([before, after, w0, h0, w1, h1]);
+      // Before the fix each change fitted the view again around what it
+      // showed, and the view drifted out.
+      for (const [k, ratio] of [
+        ["x", (w1 as number) / (w0 as number)],
+        ["y", (h1 as number) / (h0 as number)],
+      ] as const) {
+        expect(Math.abs(mid(after[k]) - mid(before[k])), what).toBeLessThan(
+          1e-6 * span(before[k]),
+        );
+        expect(span(after[k]) / span(before[k]), what).toBeCloseTo(ratio, 6);
+      }
+    });
+
+    const moves: [string, Record<string, unknown>][] =
+      name === "volcano"
+        ? [
+            ["pThreshold", { pThreshold: 1e-40 }],
+            // Large enough that the room kept for the points at the edges
+            // passes the 4% padding of the fit, which moves the home view.
+            ["pointSize", { pointSize: 60 }],
+          ]
+        : [["showLegend", { showLegend: true }]];
+    for (const [what, options] of moves) {
+      it(`keeps the view through a new ${what}, and zooms out to the new home view`, async () => {
+        const d = await zoomed();
+        const before = scatterView(d.el);
+        const [w0] = size(d.canvas);
+        d.plot.setOptions(options);
+        await wait(300);
+        await settle();
+        const after = scatterView(d.el);
+        const [w1] = size(d.canvas);
+        // The plot area keeps its height; a legend takes width, and the
+        // view keeps its scale and centre on x.
+        expect(same(after.y, before.y), JSON.stringify([before, after])).toBe(
+          true,
+        );
+        expect(Math.abs(mid(after.x) - mid(before.x))).toBeLessThan(
+          1e-6 * span(before.x),
+        );
+        expect(span(after.x) / span(before.x)).toBeCloseTo(
+          (w1 as number) / (w0 as number),
+          6,
+        );
+        expect(buttonShown(d.el)).toBe(true);
+        // Before the fix the zoom out stopped short of the new threshold
+        // line, or at the home view of the old plot area.
+        await homeAgrees(d, 640, 480, options);
+      });
+    }
+
+    it("keeps the exact view through options that do not move the home view", async () => {
+      const d = await zoomed();
+      const ticks = () =>
+        JSON.stringify([tickLabels(d.el, "middle"), tickLabels(d.el, "end")]);
+      const before = ticks();
+      d.plot.setOptions(
+        name === "volcano"
+          ? {
+              fcThreshold: 2,
+              colors: { up: "#ff0000", down: "#0000ff", ns: "#999999" },
+              labelTopN: 5,
+            }
+          : { pointSize: 6, opacity: 0.5, colormap: "rdbu" },
+      );
+      await wait(300);
+      await settle();
+      expect(ticks()).toBe(before);
+      expect(buttonShown(d.el)).toBe(true);
+    });
+  },
+);
+
+describe("volcano home view after a deep zoom", () => {
+  it("matches a fresh fit once the margins settle back, and the button follows it", async () => {
+    const el = container(640, 480);
+    const plot = createVolcano(el, {
+      data: volcanoData(),
+      options: { labelTopN: 0 },
+    }) as unknown as Handle;
     instances.push(plot);
     await expect
       .poll(async () => {
@@ -553,51 +763,41 @@ describe("scatter plot home view after a change while zoomed", () => {
       }, poll)
       .toBeGreaterThan(100);
     await wait(300);
-    await frames(2);
-    return {
-      el,
-      plot,
-      canvas: el.querySelector("canvas") as HTMLCanvasElement,
-    };
-  }
-
-  for (const t of cases) {
-    it(`keeps the data on screen, and zooms out to the new home view: ${t.name}`, async () => {
-      const { el, plot, canvas } = await drawn(t.make, 640);
-      const home = scatterView(el);
-      wheel(canvas, -120, 3);
-      await settle();
-      const before = scatterView(el);
-      expect(buttonShown(el)).toBe(true);
-      if (t.width !== 640) {
-        el.style.width = `${t.width}px`;
-        plot.resize(t.width, 480);
-      } else {
-        plot.setOptions(t.options);
-      }
-      // A resize fits again once it has settled.
-      await wait(400);
-      await settle();
-      const kept = scatterView(el);
-      expect(holds(kept, before, home), "the data region stays in view").toBe(
-        true,
-      );
-      expect(buttonShown(el)).toBe(true);
-      wheel(canvas, 240, 15);
-      await settle();
-      await wait(200);
-      const out = scatterView(el);
-      // The home view of a plot made at this size with these options.
-      const fresh = await drawn(t.make, t.width, t.options);
-      const want = scatterView(fresh.el);
-      // Before the fix the zoom out stopped at the home view of the last
-      // fit: a narrower x range, or a y range short of the threshold line.
-      expect(sameView(out, want, want, 1e-4), JSON.stringify([out, want])).toBe(
-        true,
-      );
-      expect(buttonShown(el)).toBe(false);
-    });
-  }
+    const canvas = el.querySelector("canvas") as HTMLCanvasElement;
+    const left = Number.parseFloat(canvas.style.left);
+    // 130 steps in: the long labels widen the left margin.
+    wheel(canvas, -120, 130);
+    await settle();
+    await wait(300);
+    await settle();
+    expect(Number.parseFloat(canvas.style.left)).toBeGreaterThan(left);
+    el.style.width = "620px";
+    plot.resize(620, 480);
+    await wait(300);
+    await settle();
+    expect(buttonShown(el)).toBe(true);
+    wheel(canvas, 240, 40);
+    await settle();
+    await wait(300);
+    await settle();
+    // Before the fix the zoom out ended at x from -4.404 to 4.404, short of
+    // the home view of a fit at 620 px, with the button hidden.
+    const fresh = container(620, 480);
+    instances.push(
+      createVolcano(fresh, {
+        data: volcanoData(),
+        options: { labelTopN: 0 },
+      }) as unknown as Handle,
+    );
+    await wait(400);
+    await settle();
+    const want = scatterView(fresh);
+    const out = scatterView(el);
+    expect(sameView(out, want, want, 1e-4), JSON.stringify([out, want])).toBe(
+      true,
+    );
+    expect(buttonShown(el)).toBe(false);
+  });
 });
 
 describe.each(SCATTERS)("$name with no data to draw", (c) => {

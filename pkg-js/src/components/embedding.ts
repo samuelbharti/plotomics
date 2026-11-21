@@ -53,7 +53,10 @@ import {
   fitView,
   resizeView,
   isStartView,
-  keepView,
+  START_VIEW,
+  type ViewMatrix,
+  frameView,
+  atView,
   boundCamera,
   createResetButton,
   createRenderLoop,
@@ -538,11 +541,22 @@ export const createEmbedding: PlotomicsFactory<
   // always converted with this one, so a redraw at the current zoom lines up.
   let baseX: [number, number] = [0, 1];
   let baseY: [number, number] = [0, 1];
-  // The plot area at the last fit, in px, which the home view fills.
+  // The plot area at the last fit, in px.
   let fitSize: [number, number] = [0, 0];
-  // Set when the plot area changed while the view was away from home: the
-  // next render fits again and keeps the data region in view.
-  let rehomePending = false;
+  // The home view: the camera view that shows all the data in the plot
+  // area of now. A fit makes it the start view. When the plot area changes
+  // while the view is away from home, the base ranges and the camera stay,
+  // so the view keeps its place and its scale, and the home view frames
+  // the new fit over the old ranges.
+  let homeView: Float32Array = Float32Array.from(START_VIEW);
+  // Whether the camera is at the home view, as of the last change to either.
+  let atHome = true;
+  // True while a fit runs: the plot area it changes is fitted after it.
+  let fitting = false;
+  // The height of the plot area the camera was last placed for, in px.
+  let cameraHeight = 0;
+  // The coordinates of the drawn points, which a fit frames.
+  let fitData: { x: Float32Array; y: Float32Array } | null = null;
   let legend: LegendState = null;
   let selected: number[] = [];
   // The data rows that are drawn, in drawing order: the scatterplot's point k
@@ -629,8 +643,7 @@ export const createEmbedding: PlotomicsFactory<
   const cameraBounds = boundCamera(scatterplot, {
     bounded: () => opts.boundedView !== false,
     aspect: () => innerW() / innerH(),
-    homeAspect: () =>
-      fitSize[0] > 0 && fitSize[1] > 0 ? fitSize[0] / fitSize[1] : 1,
+    home: () => homeView,
   });
   const loop = createRenderLoop((fit) => render(fit));
   let destroyed = false;
@@ -639,9 +652,7 @@ export const createEmbedding: PlotomicsFactory<
   // draw, which happens at measure()'s 640x480 fallback when the container
   // has not been laid out yet. After a pan or zoom it keeps their view.
   const refitAfterResize = afterQuiet(() => {
-    if (!data.columns.x) return;
-    if (isStartView(scatterplot)) applyData(true);
-    else rehome();
+    if (data.columns.x && atHome) applyData(true);
   }, 120);
 
   scatterplot.subscribe("pointOver", (k: number) => {
@@ -666,7 +677,7 @@ export const createEmbedding: PlotomicsFactory<
     xDomain = xScale.domain() as [number, number];
     yDomain = yScale.domain() as [number, number];
     // The reset button shows while the view is away from home.
-    resetButton.show(!isStartView(scatterplot));
+    syncHome();
     renderOverlay();
     // The point the tooltip names has moved with the view.
     forgetHover();
@@ -699,19 +710,98 @@ export const createEmbedding: PlotomicsFactory<
 
   /**
    * Go back to the home view: fit all the data again, at the plot area and
-   * the options of now. At the home view of a fit at this size there is
-   * nothing to do.
+   * the options of now. At the home view there is nothing to do.
    */
   function resetView() {
-    if (destroyed || !data.columns.x) return;
-    if (
-      isStartView(scatterplot) &&
-      innerW() === fitSize[0] &&
-      innerH() === fitSize[1]
-    ) {
-      return;
-    }
+    if (destroyed || !data.columns.x || atHome) return;
     applyData(true);
+  }
+
+  // The padded extents of the points, kept for the points and the padding
+  // they were read with, so a resize reads no point.
+  let extents: {
+    data: { x: Float32Array; y: Float32Array };
+    padding: number;
+    x: [number, number];
+    y: [number, number];
+  } | null = null;
+
+  /**
+   * The data ranges a fit to a plot area `w` x `h` px shows, for the
+   * points and the options of now; null with no point to show.
+   */
+  function fitRanges(
+    w: number,
+    h: number,
+  ): [[number, number], [number, number]] | null {
+    if (!fitData) return null;
+    if (
+      !extents ||
+      extents.data !== fitData ||
+      extents.padding !== opts.padding
+    ) {
+      extents = {
+        data: fitData,
+        padding: opts.padding,
+        x: paddedExtent(fitData.x, opts.padding),
+        y: paddedExtent(fitData.y, opts.padding),
+      };
+    }
+    const x: [number, number] = [...extents.x];
+    const y: [number, number] = [...extents.y];
+    return opts.aspect === "equal" ? equalAspectDomains(x, y, w, h) : [x, y];
+  }
+
+  /**
+   * Frame the home view again, for the plot area and the options of now,
+   * over the base ranges of the last fit, and bound the camera to it. With
+   * `follow`, a camera at home moves to the new home view with it.
+   */
+  function updateHome(follow: boolean) {
+    const ranges = fitRanges(innerW(), innerH());
+    if (!ranges) return;
+    homeView = frameView(
+      ranges[0],
+      ranges[1],
+      baseX,
+      baseY,
+      innerW() / innerH(),
+    );
+    cameraBounds.update();
+    if (follow)
+      void scatterplot.set({ cameraView: Float32Array.from(homeView) });
+    syncHome();
+  }
+
+  /** Read whether the camera is at home, and show the reset button if not. */
+  function syncHome() {
+    const view = scatterplot.get("cameraView") as ViewMatrix | undefined;
+    atHome = !view || atView(view, homeView);
+    resetButton.show(!atHome);
+  }
+
+  /**
+   * The plot area changed: a resize, a new legend gutter, new margins for
+   * the axes, text sizes or padding. The home view follows it, and so does
+   * a camera at home. A fit that runs fits the new area itself.
+   */
+  function areaMoved() {
+    if (fitting) return;
+    // One camera unit is half the plot area's height on both axes, so a
+    // view away from home keeps its data units per pixel, its scale, when
+    // the height changes by scaling with it about its centre. A new width
+    // keeps them as it is: a wider area shows more around the same centre.
+    const h = innerH();
+    if (!atHome && cameraHeight > 0 && h !== cameraHeight) {
+      const view = Float32Array.from(
+        scatterplot.get("cameraView") as ArrayLike<number>,
+      );
+      const k = cameraHeight / h;
+      for (const i of [0, 5, 12, 13]) view[i] = (view[i] as number) * k;
+      void scatterplot.set({ cameraView: view });
+    }
+    cameraHeight = h;
+    updateHome(atHome);
   }
 
   function showTip(i: number) {
@@ -829,6 +919,7 @@ export const createEmbedding: PlotomicsFactory<
       { left: m.left, top: m.top, width: innerW(), height: innerH() },
       theme,
     );
+    areaMoved();
   }
 
   /** One colour per category index, from the theme palette. */
@@ -845,16 +936,29 @@ export const createEmbedding: PlotomicsFactory<
     loop.request(fit);
   }
 
-  /**
-   * Fit the home view again, to the plot area of now, and keep the data
-   * region the view shows: the next render does it.
-   */
-  function rehome() {
-    rehomePending = true;
-    applyData(false);
+  async function render(fit: boolean) {
+    fitting = fit;
+    let fitted = false;
+    try {
+      fitted = await renderPoints(fit);
+    } finally {
+      fitting = false;
+    }
+    // A resize that arrived while this fit ran used the old size for the
+    // base ranges. Fit again at the new one, unless the view has moved; a
+    // view that moved keeps its place, with a home view for the new size.
+    if (
+      fitted &&
+      !destroyed &&
+      (innerW() !== fitSize[0] || innerH() !== fitSize[1])
+    ) {
+      if (isStartView(scatterplot)) applyData(true);
+      else areaMoved();
+    }
   }
 
-  async function render(fit: boolean) {
+  /** Draw the points; whether it fitted the view to them. */
+  async function renderPoints(fit: boolean): Promise<boolean> {
     const cols = data.columns;
     const xAll = cols.x as ArrayLike<number> | undefined;
     const yAll = cols.y as ArrayLike<number> | undefined;
@@ -862,19 +966,23 @@ export const createEmbedding: PlotomicsFactory<
     if (!xAll || !yAll || drawn.length === 0) {
       // With nothing to draw, the view goes home and the reset button,
       // which would have nothing to do, hides.
-      rehomePending = false;
+      fitData = null;
       void scatterplot.clear?.();
+      homeView = Float32Array.from(START_VIEW);
+      cameraBounds.update();
       if (!isStartView(scatterplot)) void scatterplot.reset();
+      atHome = true;
       resetButton.show(false);
       legend = null;
       missingColor = false;
       await updateGutter();
-      if (destroyed) return;
+      if (destroyed) return false;
       renderOverlay();
-      return;
+      return false;
     }
     const x = pickNumbers(xAll, drawn);
     const y = pickNumbers(yAll, drawn);
+    fitData = { x, y };
 
     const color = cols.color;
     const mode =
@@ -929,33 +1037,28 @@ export const createEmbedding: PlotomicsFactory<
       z = new Float32Array(x.length);
     }
     // The legend's width sets the gutter beside the plot area. A new width
-    // resizes the plot area, and the data fits it again, as after a resize
-    // of the widget: at the start view to all the data, and away from it
-    // around the data region on screen.
+    // resizes the plot area, as a resize of the widget does: at home the
+    // data fits it again, and away from home the view keeps its place and
+    // the home view follows the new area.
     const gutterMoved = await updateGutter();
-    if (destroyed) return;
-    const atStart = isStartView(scatterplot);
-    const refit = (gutterMoved && atStart) || fit;
-    const keep = !refit && (rehomePending || gutterMoved);
-    rehomePending = false;
-    const shown = [
-      xScale.domain() as [number, number],
-      yScale.domain() as [number, number],
-    ] as const;
+    if (destroyed) return false;
+    const refit = (gutterMoved && atHome) || fit;
     const fitW = innerW();
     const fitH = innerH();
-    if (refit || keep) {
-      let xShow = paddedExtent(x, opts.padding);
-      let yShow = paddedExtent(y, opts.padding);
-      if (opts.aspect === "equal") {
-        [xShow, yShow] = equalAspectDomains(xShow, yShow, fitW, fitH);
-      }
+    const ranges = fitRanges(fitW, fitH);
+    if (refit && ranges) {
       // One unit is the same number of pixels on both axes of the
       // scatterplot, so domains that "equal" has matched to the plot area's
       // shape keep equal data units per pixel through every pan and zoom.
-      [baseX, baseY] = baseDomains(xShow, yShow, fitW, fitH);
+      [xDomain, yDomain] = ranges;
+      [baseX, baseY] = baseDomains(ranges[0], ranges[1], fitW, fitH);
       fitSize = [fitW, fitH];
-      if (refit) [xDomain, yDomain] = [xShow, yShow];
+      cameraHeight = fitH;
+      homeView = Float32Array.from(START_VIEW);
+      cameraBounds.update();
+      atHome = true;
+    } else {
+      updateHome(false);
     }
     const [xBase, yBase] = [baseX, baseY];
     const px = toNdc(x, xBase);
@@ -965,19 +1068,7 @@ export const createEmbedding: PlotomicsFactory<
     // points come from the same data.
     if (refit) {
       await fitView(scatterplot, xScale, yScale, xBase, yBase);
-      if (destroyed) return;
-    } else if (keep) {
-      await keepView(
-        scatterplot,
-        xScale,
-        yScale,
-        xBase,
-        yBase,
-        shown[0],
-        shown[1],
-        fitW / fitH,
-      );
-      if (destroyed) return;
+      if (destroyed) return false;
     }
     // Colours go in just before the points they belong to. regl-scatterplot
     // reads hex and RGBA arrays only, so a palette colour is read first,
@@ -991,16 +1082,7 @@ export const createEmbedding: PlotomicsFactory<
       opacity: opts.opacity,
     });
     await scatterplot.draw({ x: px, y: py, z }, { zDataType });
-    // A resize that arrived while this fit ran used the old size for the
-    // base ranges. Fit again at the new one, unless the view has moved.
-    if (
-      refit &&
-      !destroyed &&
-      (innerW() !== fitW || innerH() !== fitH) &&
-      isStartView(scatterplot)
-    ) {
-      applyData(true);
-    }
+    return refit;
   }
 
   // ---- overlay rendering (optional axes + legend) ----
@@ -1501,13 +1583,12 @@ export const createEmbedding: PlotomicsFactory<
       // values.
       const areaChanged =
         !sameSides(margin(), prevMargin) || width !== prevW || height !== prevH;
+      // Away from home the view keeps its place through a new plot area,
+      // and the home view follows the area (see areaMoved).
       const refit =
         opts.aspect !== prev.aspect ||
         opts.padding !== prev.padding ||
-        (areaChanged && isStartView(scatterplot));
-      // Away from the start view, a new plot area fits the home view to it
-      // and keeps the data region on screen.
-      if (!refit && areaChanged) rehomePending = true;
+        (areaChanged && atHome);
       if ((opts.boundedView !== false) !== (prev.boundedView !== false)) {
         cameraBounds.update();
       }
