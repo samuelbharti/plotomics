@@ -462,6 +462,191 @@ describe.each(SCATTERS)("$name view limits", (c) => {
   });
 });
 
+describe("scatter plot home view after a change while zoomed", () => {
+  /** Whether `a` holds all of `b`, to `tol` of the range of `home`. */
+  const holds = (a: View, b: View, home: View, tol = 1e-3) =>
+    (["x", "y"] as const).every(
+      (k) =>
+        a[k][0] <= b[k][0] + tol * span(home[k]) &&
+        a[k][1] >= b[k][1] - tol * span(home[k]),
+    );
+
+  /** The volcano genes, with three at p = 0. */
+  function withZeroP() {
+    const d = volcanoData();
+    const x = [...d.columns.x, 3, -3, 2.5];
+    const y = [...d.columns.y, 0, 0, 0];
+    return {
+      columns: { x, y, label: x.map((_, i) => `G${i}`) },
+      meta: { yInfinite: [2000, 2001, 2002] },
+    };
+  }
+
+  type Make = (
+    el: HTMLElement,
+    options: Record<string, unknown>,
+  ) => PlotomicsInstance<unknown>;
+  const volcano: Make = (el, o) =>
+    createVolcano(el, {
+      data: withZeroP(),
+      options: { labelTopN: 0, ...o },
+    }) as unknown as PlotomicsInstance<unknown>;
+  const embedding: Make = (el, o) =>
+    createEmbedding(el, {
+      data: embeddingData(true),
+      options: { showAxes: true, showLegend: false, ...o },
+    }) as unknown as PlotomicsInstance<unknown>;
+
+  const cases: {
+    name: string;
+    make: Make;
+    width: number;
+    options: Record<string, unknown>;
+  }[] = [];
+  for (const [plot, make] of [
+    ["volcano", volcano],
+    ["embedding", embedding],
+  ] as const) {
+    cases.push({
+      name: `${plot}, resize narrower`,
+      make,
+      width: 400,
+      options: {},
+    });
+    cases.push({
+      name: `${plot}, resize wider`,
+      make,
+      width: 900,
+      options: {},
+    });
+    cases.push({
+      name: `${plot}, pointSize`,
+      make,
+      width: 640,
+      // Large enough that the room kept for the points at the edges
+      // passes the 4% padding of the fit, which moves the home view.
+      options: { pointSize: 60 },
+    });
+  }
+  cases.push({
+    name: "volcano, pThreshold",
+    make: volcano,
+    width: 640,
+    options: { pThreshold: 1e-40 },
+  });
+  cases.push({
+    name: "embedding, showLegend",
+    make: embedding,
+    width: 640,
+    options: { showLegend: true },
+  });
+
+  /** A plot drawn and at rest. */
+  async function drawn(make: Make, width: number, options = {}) {
+    const el = container(width, 480);
+    const plot = make(el, options);
+    instances.push(plot);
+    await expect
+      .poll(async () => {
+        const png = await canvasPNG(el);
+        return png ? drawnPixels(png) : 0;
+      }, poll)
+      .toBeGreaterThan(100);
+    await wait(300);
+    await frames(2);
+    return {
+      el,
+      plot,
+      canvas: el.querySelector("canvas") as HTMLCanvasElement,
+    };
+  }
+
+  for (const t of cases) {
+    it(`keeps the data on screen, and zooms out to the new home view: ${t.name}`, async () => {
+      const { el, plot, canvas } = await drawn(t.make, 640);
+      const home = scatterView(el);
+      wheel(canvas, -120, 3);
+      await settle();
+      const before = scatterView(el);
+      expect(buttonShown(el)).toBe(true);
+      if (t.width !== 640) {
+        el.style.width = `${t.width}px`;
+        plot.resize(t.width, 480);
+      } else {
+        plot.setOptions(t.options);
+      }
+      // A resize fits again once it has settled.
+      await wait(400);
+      await settle();
+      const kept = scatterView(el);
+      expect(holds(kept, before, home), "the data region stays in view").toBe(
+        true,
+      );
+      expect(buttonShown(el)).toBe(true);
+      wheel(canvas, 240, 15);
+      await settle();
+      await wait(200);
+      const out = scatterView(el);
+      // The home view of a plot made at this size with these options.
+      const fresh = await drawn(t.make, t.width, t.options);
+      const want = scatterView(fresh.el);
+      // Before the fix the zoom out stopped at the home view of the last
+      // fit: a narrower x range, or a y range short of the threshold line.
+      expect(sameView(out, want, want, 1e-4), JSON.stringify([out, want])).toBe(
+        true,
+      );
+      expect(buttonShown(el)).toBe(false);
+    });
+  }
+});
+
+describe.each(SCATTERS)("$name with no data to draw", (c) => {
+  const empty: [string, Record<string, unknown>][] = [
+    ["no rows", { columns: { x: [], y: [] } }],
+    [
+      "no x that is a number",
+      { columns: { x: [NaN, NaN, NaN], y: [1, 2, 3] } },
+    ],
+    ["no columns", { columns: {} }],
+  ];
+  for (const [what, data] of empty) {
+    it(`hides the reset button and goes home: ${what}`, async () => {
+      const { el, plot, canvas, home } = await startScatter(c);
+      wheel(canvas, -120, 3);
+      await settle();
+      expect(buttonShown(el)).toBe(true);
+      plot.setData(data as never);
+      // Before the fix the button stayed, and did nothing.
+      await expect.poll(() => buttonShown(el), poll).toBe(false);
+      plot.resetView();
+      await settle();
+      expect(buttonShown(el)).toBe(false);
+      // Data again draws and zooms as before.
+      plot.setData(
+        (c.name === "volcano" ? volcanoData() : embeddingData()) as never,
+      );
+      await expect
+        .poll(async () => {
+          const png = await canvasPNG(el);
+          return png ? drawnPixels(png) : 0;
+        }, poll)
+        .toBeGreaterThan(100);
+      await wait(300);
+      await frames(2);
+      expect(sameView(scatterView(el), home, home)).toBe(true);
+      expect(buttonShown(el)).toBe(false);
+      wheel(canvas, -120, 3);
+      await settle();
+      expect(buttonShown(el)).toBe(true);
+      plot.resetView();
+      await expect
+        .poll(() => sameView(scatterView(el), home, home), poll)
+        .toBe(true);
+      await expect.poll(() => buttonShown(el), poll).toBe(false);
+    });
+  }
+});
+
 describe("scatter plot selection and the reset", () => {
   /** The pixels of the canvas in the colour of a selected point. */
   async function selectedPixels(el: HTMLElement): Promise<number> {
@@ -1091,6 +1276,26 @@ describe.each(ZOOMABLE)("$name reset", (z) => {
     expect(await home(el, startView)).toBe(true);
     plot.destroy();
     expect(plot.resetView()).toBeUndefined();
+  });
+
+  it("zooms the plot on a wheel over the reset button, and the page stays", async () => {
+    const { el } = await start();
+    await z.zoom(el);
+    await expect.poll(() => buttonShown(el), poll).toBe(true);
+    const before = z.view(el);
+    const button = resetButton(el);
+    const c = centre(button);
+    const turn = new WheelEvent("wheel", {
+      deltaY: -120,
+      clientX: c.x,
+      clientY: c.y,
+      bubbles: true,
+      cancelable: true,
+    });
+    button.dispatchEvent(turn);
+    // Before the fix the wheel scrolled the page, and the view stayed.
+    expect(turn.defaultPrevented).toBe(true);
+    await expect.poll(() => z.view(el) !== before, poll).toBe(true);
   });
 
   it("leaves the reset button out of the PNG and SVG exports", async () => {

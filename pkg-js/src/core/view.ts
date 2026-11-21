@@ -85,7 +85,9 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 /**
  * Add the reset button of a plot to `parent`, the plot box, and call
  * `onReset` when it is pressed: with the mouse, or with Enter or Space once
- * it has the focus. It is a plain HTML button named "Reset view", so a
+ * it has the focus. A wheel over the button goes to `wheelTarget()`, the
+ * element the plot zooms on, so it zooms as it would over the plot and
+ * the page does not scroll. It is a plain HTML button named "Reset view", so a
  * screen reader names it, and the exports, which draw the canvases and the
  * SVG layers only, never hold it. Its colours come from the theme as the
  * plot reads them inside `el`, the plot's element: the axis colour for the
@@ -97,6 +99,7 @@ export function createResetButton(
   parent: HTMLElement,
   el: HTMLElement,
   onReset: () => void,
+  wheelTarget?: () => Element | null,
 ): ResetButton {
   const button = document.createElement("button");
   button.type = "button";
@@ -134,6 +137,35 @@ export function createResetButton(
     e.stopPropagation();
     onReset();
   });
+  button.addEventListener(
+    "wheel",
+    (e) => {
+      const target = wheelTarget?.();
+      if (!target) return;
+      e.preventDefault();
+      e.stopPropagation();
+      target.dispatchEvent(
+        new WheelEvent("wheel", {
+          deltaX: e.deltaX,
+          deltaY: e.deltaY,
+          deltaZ: e.deltaZ,
+          deltaMode: e.deltaMode,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          screenX: e.screenX,
+          screenY: e.screenY,
+          ctrlKey: e.ctrlKey,
+          shiftKey: e.shiftKey,
+          altKey: e.altKey,
+          metaKey: e.metaKey,
+          buttons: e.buttons,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    },
+    { passive: false },
+  );
   parent.appendChild(button);
 
   let away = false;

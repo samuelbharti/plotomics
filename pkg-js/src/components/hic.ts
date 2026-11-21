@@ -713,7 +713,12 @@ export const createHic: PlotomicsFactory<HicOptions, HicInstance> = (
   plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
   // Over the map, in its top right corner.
-  const resetButton = createResetButton(plot.box, el, () => resetView());
+  const resetButton = createResetButton(
+    plot.box,
+    el,
+    () => resetView(),
+    () => canvas,
+  );
 
   let regl: Regl | null = null;
   let draw: DrawCommand | null = null;

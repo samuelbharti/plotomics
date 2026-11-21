@@ -93,6 +93,62 @@ export function fitView(
 }
 
 /**
+ * The camera view that shows the data region `xShown` x `yShown` after a
+ * fit to the base domains `xBase` and `yBase`, in a plot area `aspect` times
+ * as wide as it is high: centred where the region is, and zoomed so all of
+ * it stays in view. The camera keeps one scale on both axes, so an axis
+ * whose share of the new home view is smaller than the other's shows more
+ * around the region. A region with no width or height gives the home view.
+ */
+export function regionView(
+  xShown: readonly [number, number],
+  yShown: readonly [number, number],
+  xBase: readonly [number, number],
+  yBase: readonly [number, number],
+  aspect: number,
+): Float32Array {
+  const view = new Float32Array(16);
+  for (let i = 0; i < 16; i += 5) view[i] = 1;
+  const [nx0, nx1] = toNdc(xShown, xBase);
+  const [ny0, ny1] = toNdc(yShown, yBase);
+  const hx = Math.abs((nx1 as number) - (nx0 as number)) / 2;
+  const hy = Math.abs((ny1 as number) - (ny0 as number)) / 2;
+  if (!(hx > 0) || !(hy > 0) || !(aspect > 0)) return view;
+  const s = Math.min(aspect / hx, 1 / hy);
+  view[0] = s;
+  view[5] = s;
+  view[12] = (-((nx0 as number) + (nx1 as number)) / 2) * s;
+  view[13] = (-((ny0 as number) + (ny1 as number)) / 2) * s;
+  return view;
+}
+
+/**
+ * Hand new base domains to the scatterplot, as {@link fitView} does, but
+ * keep the data region the view shows, `xShown` x `yShown`, in view (see
+ * {@link regionView}). A plot that zoomed in keeps its place through a fit
+ * to a new plot area or new fit options, and its home view is the new one.
+ * Draw the points over the same base domains, with `toNdc`.
+ */
+export function keepView(
+  scatterplot: ScatterplotView,
+  xScale: DomainScale,
+  yScale: DomainScale,
+  xBase: [number, number],
+  yBase: [number, number],
+  xShown: [number, number],
+  yShown: [number, number],
+  aspect: number,
+): Promise<void> {
+  const view = regionView(xShown, yShown, xBase, yBase, aspect);
+  xScale.domain(xBase);
+  void scatterplot.set({ xScale });
+  yScale.domain(yBase);
+  return scatterplot.set({ yScale }).then(() => {
+    void scatterplot.set({ cameraView: view });
+  });
+}
+
+/**
  * Call `fn` once, `ms` after the last of a run of calls. A dragged window
  * edge sends a resize on every frame; the refit waits until it stops.
  */

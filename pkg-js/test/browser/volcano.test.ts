@@ -1050,9 +1050,10 @@ describe("volcano refit for a new threshold", () => {
     v.setOptions({ pThreshold: 0.05 });
     await new Promise((res) => setTimeout(res, 300));
     expect(yTicks(el).join(",")).toBe(zoomed);
+    // With the line hidden the view of all the data ends below the zoomed
+    // range, so the view goes to that home view.
     v.setOptions({ showThresholdLines: false });
-    await new Promise((res) => setTimeout(res, 300));
-    expect(yTicks(el).join(",")).toBe(zoomed);
+    await expect.poll(() => top(el), slow).toBeLessThan(0.7);
   });
 });
 

@@ -39,6 +39,7 @@ import {
   fitView,
   resizeView,
   isStartView,
+  keepView,
   boundCamera,
   createResetButton,
   createRenderLoop,
@@ -472,6 +473,9 @@ export const createVolcano: PlotomicsFactory<
   let baseY: [number, number] = [0, 1];
   // The plot area at the last fit, in px, which the home view fills.
   let fitSize: [number, number] = [0, 0];
+  // Set when the plot area or a fit option changed while the view was away
+  // from home: the next render fits again and keeps the data region in view.
+  let rehomePending = false;
 
   const xScale = scaleLinear().domain(xDomain);
   const yScale = scaleLinear().domain(yDomain);
@@ -495,8 +499,14 @@ export const createVolcano: PlotomicsFactory<
   const plot = createPlotBox(el);
   plot.box.append(under, canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
-  // Over the layers, in the top right corner of the plot area.
-  const resetButton = createResetButton(plot.box, el, () => resetView());
+  // Over the layers, in the top right corner of the plot area. A wheel
+  // over it zooms the points.
+  const resetButton = createResetButton(
+    plot.box,
+    el,
+    () => resetView(),
+    () => canvas,
+  );
 
   // GPU scatter. It draws points in [-1, 1], and keeps the d3 scales in sync
   // with pan/zoom once fitView() has handed them over. See core/scatter.ts.
@@ -520,9 +530,12 @@ export const createVolcano: PlotomicsFactory<
   const loop = createRenderLoop((fit) => render(fit));
   let destroyed = false;
   // Until the person pans or zooms, the plot keeps showing all the data, so
-  // it fits again once a resize has settled. After that it keeps their view.
+  // it fits again once a resize has settled. After that it keeps their view,
+  // and fits the home view to the new size around it.
   const refitAfterResize = afterQuiet(() => {
-    if (data.columns.x && isStartView(scatterplot)) applyData();
+    if (!data.columns.x) return;
+    if (isStartView(scatterplot)) applyData(true);
+    else rehome();
   }, 120);
 
   scatterplot.subscribe("pointOver", (i: number) => {
@@ -703,6 +716,15 @@ export const createVolcano: PlotomicsFactory<
     loop.request(fit);
   }
 
+  /**
+   * Fit the home view again, to the plot area and the options of now, and
+   * keep the data region the view shows: the next render does it.
+   */
+  function rehome() {
+    rehomePending = true;
+    applyData(false);
+  }
+
   async function render(fit: boolean) {
     const cols = data.columns;
     pts =
@@ -715,13 +737,25 @@ export const createVolcano: PlotomicsFactory<
           )
         : preparePoints([], []);
     if (pts.rows.length === 0) {
+      // With nothing to draw, the view goes home and the reset button,
+      // which would have nothing to do, hides.
+      rehomePending = false;
       void scatterplot.clear?.();
+      if (!isStartView(scatterplot)) void scatterplot.reset();
+      resetButton.show(false);
       renderOverlay();
       return;
     }
     const fitW = innerW();
     const fitH = innerH();
-    if (fit) {
+    // A fit that keeps the view: the data region on screen stays in view.
+    const keep = !fit && rehomePending;
+    rehomePending = false;
+    const shown = [
+      xScale.domain() as [number, number],
+      yScale.domain() as [number, number],
+    ] as const;
+    if (fit || keep) {
       // Each side keeps the radius of a point, and a pixel, past the
       // outermost points, so a large point is not cut by the plot's edge.
       const room = opts.pointSize / 2 + 1;
@@ -736,8 +770,8 @@ export const createVolcano: PlotomicsFactory<
       );
       // The x range stays centred on 0.
       const half = Math.max(Math.abs(x0), Math.abs(x1));
-      xDomain = [-half, half];
-      yDomain = roomForPoints(
+      const xShow: [number, number] = [-half, half];
+      const yShow = roomForPoints(
         yRange(
           pts.yDraw,
           opts.showThresholdLines ? -Math.log10(opts.pThreshold) : undefined,
@@ -747,8 +781,9 @@ export const createVolcano: PlotomicsFactory<
         room,
         fitH,
       );
-      [baseX, baseY] = baseDomains(xDomain, yDomain, fitW, fitH);
+      [baseX, baseY] = baseDomains(xShow, yShow, fitW, fitH);
       fitSize = [fitW, fitH];
+      if (fit) [xDomain, yDomain] = [xShow, yShow];
     }
     const [xBase, yBase] = [baseX, baseY];
 
@@ -771,6 +806,18 @@ export const createVolcano: PlotomicsFactory<
     renderOverlay();
     if (fit) {
       await fitView(scatterplot, xScale, yScale, xBase, yBase);
+      if (destroyed) return;
+    } else if (keep) {
+      await keepView(
+        scatterplot,
+        xScale,
+        yScale,
+        xBase,
+        yBase,
+        shown[0],
+        shown[1],
+        fitW / fitH,
+      );
       if (destroyed) return;
     }
     // Colours go in just before the points they belong to.
@@ -1130,23 +1177,28 @@ export const createVolcano: PlotomicsFactory<
       }
       if (!sameSides(margin, prev) || width !== prevW || height !== prevH) {
         // A new text size or padding changes the plot area, which refits
-        // while the view is untouched, as a resize does.
+        // as a resize does: at the start view to all the data, and away
+        // from it around the data region on screen.
         doResize(outerW, outerH);
-        applyData(isStartView(scatterplot));
+        if (isStartView(scatterplot)) applyData(true);
+        else rehome();
         return;
       }
       // A new p threshold moves its line and the p = 0 genes above it, and
       // the line, shown or hidden, joins or leaves the y range, so the plot
-      // fits again while the view is untouched. No other option changes the
-      // data range, so the current pan/zoom stays.
+      // fits again. No other option changes the data range, so the current
+      // pan/zoom stays.
       // A new point size changes the room kept for the points at the
-      // edges, so it fits again too.
-      applyData(
-        (opts.pThreshold !== prevOpts.pThreshold ||
-          opts.showThresholdLines !== prevOpts.showThresholdLines ||
-          opts.pointSize !== prevOpts.pointSize) &&
-          isStartView(scatterplot),
-      );
+      // edges, so it fits again too. Away from the start view the fit
+      // keeps the data region on screen, and a zoom out reaches the new
+      // home view.
+      const refit =
+        opts.pThreshold !== prevOpts.pThreshold ||
+        opts.showThresholdLines !== prevOpts.showThresholdLines ||
+        opts.pointSize !== prevOpts.pointSize;
+      if (!refit) applyData(false);
+      else if (isStartView(scatterplot)) applyData(true);
+      else rehome();
     },
     resize(w, h) {
       if (w === outerW && h === outerH) return;

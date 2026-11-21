@@ -5,6 +5,7 @@ import {
   boundView,
   createRenderLoop,
   isStartView,
+  regionView,
   toNdc,
 } from "../src/core/scatter.js";
 
@@ -219,5 +220,44 @@ describe("boundView", () => {
     expect(boundView(v, 1, 1)).toBe(false);
     expect(boundView(view(2), 0, 1)).toBe(false);
     expect(boundView(view(2), 1, Number.NaN)).toBe(false);
+  });
+});
+
+describe("regionView", () => {
+  it("shows exactly a region of the same share on both axes", () => {
+    // Base x 0 to 10 and y 0 to 4, on a plot area twice as wide as high.
+    // x 2.5 to 5 is -0.5 to 0 in [-1, 1], half 0.25 of the 2 a unit of
+    // height holds across, so a scale of 8; y 1 to 1.5 is -0.5 to -0.25,
+    // half 0.125 of 1, a scale of 8 too.
+    const v = regionView([2.5, 5], [1, 1.5], [0, 10], [0, 4], 2);
+    expect(v[0]).toBeCloseTo(8, 6);
+    expect(v[5]).toBeCloseTo(8, 6);
+    expect(-(v[12] as number) / 8).toBeCloseTo(-0.25, 6);
+    expect(-(v[13] as number) / 8).toBeCloseTo(-0.375, 6);
+  });
+
+  it("keeps all of the region in view, centred where it is", () => {
+    const v = regionView([2, 4], [1, 2], [0, 10], [0, 4], 1);
+    // x: -0.6 to -0.2 in [-1, 1], half 0.2, so s = 1 / 0.2 = 5 from x;
+    // y: -0.5 to 0, half 0.25, so s = 4 from y. The smaller is 4.
+    expect(v[0]).toBeCloseTo(4, 6);
+    expect(v[5]).toBeCloseTo(4, 6);
+    expect(-(v[12] as number) / 4).toBeCloseTo(-0.4, 6);
+    expect(-(v[13] as number) / 4).toBeCloseTo(-0.25, 6);
+    // What it shows holds the region on both axes.
+    const s = v[0] as number;
+    const cx = -(v[12] as number) / s;
+    const cy = -(v[13] as number) / s;
+    expect(cx - 1 / s).toBeLessThanOrEqual(-0.6 + 1e-6);
+    expect(cx + 1 / s).toBeGreaterThanOrEqual(-0.2 - 1e-6);
+    expect(cy - 1 / s).toBeLessThanOrEqual(-0.5 + 1e-6);
+    expect(cy + 1 / s).toBeGreaterThanOrEqual(0 - 1e-6);
+  });
+
+  it("gives the home view for a region with no width", () => {
+    const v = regionView([3, 3], [1, 2], [0, 10], [0, 4], 1);
+    expect(isStartView({ get: () => v, set: async () => {}, reset() {} })).toBe(
+      true,
+    );
   });
 });

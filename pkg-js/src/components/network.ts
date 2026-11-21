@@ -614,7 +614,13 @@ export const createNetwork: PlotomicsFactory<
   }
   const tooltip: Tooltip = createTooltip(el, theme);
   // Over the graph, in its top right corner, clear of the legend gutter.
-  const resetButton = createResetButton(plot.box, el, () => resetView());
+  // A wheel over it zooms the graph, through sigma's mouse layer.
+  const resetButton = createResetButton(
+    plot.box,
+    el,
+    () => resetView(),
+    () => host.querySelector("canvas.sigma-mouse"),
+  );
 
   let width = 0;
   let height = 0;

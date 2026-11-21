@@ -97,6 +97,8 @@ export {
   toNdc,
   baseDomains,
   fitView,
+  regionView,
+  keepView,
   resizeView,
   isStartView,
   type ViewMatrix,

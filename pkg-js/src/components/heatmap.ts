@@ -534,7 +534,12 @@ export const createHeatmap: PlotomicsFactory<
   plot.box.append(canvas, svg);
   const tooltip: Tooltip = createTooltip(el, theme);
   // Over the matrix, in its top right corner.
-  const resetButton = createResetButton(plot.box, el, () => resetView());
+  const resetButton = createResetButton(
+    plot.box,
+    el,
+    () => resetView(),
+    () => canvas,
+  );
 
   // --- regl setup ---------------------------------------------------------
   // luminance uint8 is core WebGL1 (no float-texture extension needed).
