@@ -25,6 +25,14 @@ jobs:
       - run: pnpm dist
       - run: pnpm -r --filter "./pkg-js/**" typecheck
       - run: pnpm -r --filter "./pkg-js/**" test
+      # The landing page demo (docs/landing) bundles the components from
+      # source, and docs.yml builds it on main only. Type-checking and bundling
+      # it here makes a pkg-js change that breaks the demo fail on the pull
+      # request, not in the docs deploy.
+      - name: Check the landing page demo
+        run: |
+          npx tsc --noEmit -p docs/landing
+          node scripts/build-landing.mjs "$RUNNER_TEMP/landing"
       # gosling.js and igv.js load only in a real browser, so the Node tests
       # above never import them. A dependency bump that breaks either one
       # passes every earlier step. These tests mount both in headless Chromium.
