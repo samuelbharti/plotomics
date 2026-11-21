@@ -3,28 +3,33 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>plotomics: bioinformatics visualization for R, Python and the web</title>
-<meta name="description" content="Bioinformatics visualization widgets built on one TypeScript core and wrapped for R (htmlwidgets) and Python (anywidget): volcano plots, heatmaps, dot plots, violins, embeddings, spatial tissue maps, oncoprints, lollipops, Kaplan-Meier curves, signature profiles, UpSet plots, treemaps, networks and Hi-C, interactive at several hundred thousand points." />
+<title>plotomics: interactive omics figures for R, Python and the web</title>
+<meta name="description" content="Interactive omics figures for R, Python and the web: volcano plots, heatmaps, dot plots, violins, embeddings, spatial tissue maps, oncoprints, lollipops, Kaplan-Meier curves, signature profiles, UpSet plots, treemaps, networks, Hi-C maps and genome browsers, drawn on the GPU from one TypeScript core." />
 <link rel="icon" href="favicon.svg" type="image/svg+xml" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" />
 <style>
   :root {
+    color-scheme: light;
     --bg: #ffffff;
+    --band: #f1f3f5;
     --text: #343a40;
     --heading: #1f2a30;
-    --muted: #6c757d;
+    --muted: #5b6670;
     --link: #2761e3;
     --link-hover: #14448f;
-    --navbar-text: #545455;
-    --border: #e6e9ec;
-    --border-strong: #d5dade;
-    --code-bg: #f7f8fa;
-    --inline-code: #d63384;
+    --border: #e1e5e9;
+    --border-strong: #cfd5db;
+    --code-bg: #f6f7f9;
+    --inline-code: #b8306c;
+    --tint: #e3ebfc;
     --font: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI",
       Roboto, "Helvetica Neue", Arial, sans-serif;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --wrap: 1040px;
+    --wide: 1200px;
+    --gutter: 1.25rem;
   }
 
   * { box-sizing: border-box; }
@@ -36,370 +41,965 @@
     background: var(--bg);
     color: var(--text);
     font-family: var(--font);
-    font-size: 1.05rem;
-    line-height: 1.65;
+    font-size: 1.08rem;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
   }
 
   a { color: var(--link); text-decoration: none; }
   a:hover { color: var(--link-hover); text-decoration: underline; }
-  :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; border-radius: 2px; }
+  :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; border-radius: 3px; }
+  img { max-width: 100%; height: auto; }
+  section[id], h2[id], h3[id] { scroll-margin-top: 1rem; }
 
-  /* navbar: light, gray text, blue hover */
-  .navbar {
-    position: sticky; top: 0; z-index: 10;
-    background: #fff;
-    border-bottom: 1px solid var(--border);
+  .skip {
+    position: absolute; left: 0.75rem; top: -3rem; z-index: 20;
+    background: #fff; padding: 0.4rem 0.8rem; border-radius: 4px;
+    border: 1px solid var(--border-strong);
   }
-  .navbar-inner {
-    max-width: 960px; margin: 0 auto;
-    padding: 0 1.25rem; height: 54px;
-    display: flex; align-items: center; gap: 1.25rem;
+  .skip:focus { top: 0.75rem; }
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
   }
-  .navbar-brand {
-    font-weight: 600; font-size: 1.2rem; color: var(--heading);
-    letter-spacing: -0.01em;
-  }
-  .navbar-brand:hover { color: var(--heading); text-decoration: none; }
-  .navbar-links { margin-left: auto; display: flex; gap: 1.15rem; }
-  .navbar-links a { color: var(--navbar-text); font-size: 0.98rem; font-weight: 400; }
-  .navbar-links a:hover { color: var(--link); text-decoration: none; }
-  @media (max-width: 620px) { .navbar-links a.opt { display: none; } }
 
-  /* content column */
-  main { max-width: 800px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  .wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 var(--gutter); }
+  .wide { max-width: var(--wide); }
 
-  .title-block { margin-bottom: 1.75rem; position: relative; }
-  /* The mark is decorative: the h1 right beside it already says "plotomics",
-     so alt="" keeps a screen reader from announcing the name twice. */
-  .hero-logo { float: right; width: 132px; height: auto; margin: 0 0 1rem 1.25rem; }
-  @media (max-width: 620px) { .hero-logo { width: 96px; } }
-  .title-block h1 {
-    margin: 0; font-size: 2.5rem; font-weight: 700;
-    color: var(--heading); letter-spacing: -0.02em; line-height: 1.1;
+  /* Hero band: navigation, logo, wordmark, tagline */
+  .hero { background: var(--band); }
+  .topnav {
+    max-width: var(--wide); margin: 0 auto; padding: 0.85rem var(--gutter) 0;
+    display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.35rem 1.4rem;
   }
-  .title-block .subtitle {
-    margin: 0.5rem 0 0; font-size: 1.28rem; font-weight: 400; color: var(--muted);
-    line-height: 1.4;
+  .topnav a {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    color: #3d4852; font-size: 1rem; white-space: nowrap;
   }
-  .title-block .meta {
-    margin: 1rem 0 0; font-size: 0.95rem; color: var(--muted);
-    display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem;
+  .topnav a:hover { color: var(--link); text-decoration: none; }
+  .topnav svg { width: 17px; height: 17px; flex: none; }
+  .topnav .short { display: none; }
+  .hero-inner {
+    max-width: var(--wrap); margin: 0 auto;
+    padding: 2.6rem var(--gutter) 3.6rem;
+    display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2.2rem; align-items: center;
   }
-  .title-block .meta a { font-weight: 600; }
+  .hero-logo { width: 150px; height: auto; }
+  .hero h1 {
+    margin: 0; font-size: 4.6rem; font-weight: 700; line-height: 1;
+    letter-spacing: -0.035em; color: var(--heading);
+  }
+  .hero .tagline { margin: 1rem 0 0; font-size: 1.55rem; line-height: 1.3; color: var(--heading); }
+  .hero .subtext { margin: 0.9rem 0 0; font-size: 1.12rem; line-height: 1.5; color: #46515b; }
+  .hero .subtext span { display: block; }
 
+  /* Sections */
   h2 {
-    color: var(--heading); font-weight: 700;
-    font-size: 1.6rem; letter-spacing: -0.01em;
-    margin: 3rem 0 1rem; padding-bottom: 0.4rem;
-    border-bottom: 1px solid var(--border);
+    color: var(--heading); font-weight: 600; font-size: 1.9rem; line-height: 1.2;
+    letter-spacing: -0.01em; margin: 3.2rem 0 1rem;
   }
-  h3 { color: var(--heading); font-weight: 600; font-size: 1.2rem; margin: 1.9rem 0 0.6rem; }
-
-  p { margin: 0 0 1.1rem; }
-  .lead { font-size: 1.15rem; color: #40484e; }
-
-  ul { margin: 0 0 1.1rem; padding-left: 1.3rem; }
-  li { margin: 0.4rem 0; }
-  li > strong { color: var(--heading); }
-
-  hr { border: 0; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+  h3 { color: var(--heading); font-weight: 600; font-size: 1.25rem; margin: 0 0 0.5rem; }
+  p { margin: 0 0 1rem; }
+  .intro { padding-top: 2.4rem; }
+  .live-note {
+    margin: 0 0 1.4rem;
+    padding: 0.75rem 1rem;
+    border-left: 3px solid var(--link);
+    border-radius: 0 6px 6px 0;
+    background: var(--tint);
+    color: var(--text);
+  }
+  .lead { font-size: 1.18rem; color: #3a434b; }
+  .lead + .lead { margin-top: -0.2rem; }
+  ul { margin: 0 0 1rem; padding-left: 1.3rem; }
+  li { margin: 0.45rem 0; }
 
   code {
-    font-family: var(--mono); font-size: 0.86em;
-    color: var(--inline-code);
-    background: #f2f4f6; padding: 0.12em 0.36em; border-radius: 4px;
+    font-family: var(--mono); font-size: 0.86em; color: var(--inline-code);
+    background: #f1f3f6; padding: 0.1em 0.34em; border-radius: 4px;
+    font-variant-ligatures: none; white-space: nowrap;
   }
-  .codeblock { position: relative; margin: 0 0 1.1rem; }
+  .codeblock { position: relative; margin: 0 0 0.9rem; }
   pre {
-    margin: 0; background: var(--code-bg);
-    border: 1px solid var(--border);
-    border-radius: 6px; padding: 0.9rem 1rem; overflow-x: auto;
+    margin: 0; background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.8rem 2.9rem 0.8rem 0.95rem; overflow-x: auto;
+    font-size: 0.86rem; line-height: 1.55; white-space: pre;
   }
   pre code {
-    color: #24292f; background: none; padding: 0;
-    font-size: 0.88rem; line-height: 1.6; white-space: pre;
+    color: #24292f; background: none; padding: 0; font-size: inherit;
+    line-height: inherit; white-space: inherit;
   }
   .copy {
-    position: absolute; top: 0.5rem; right: 0.5rem;
+    position: absolute; top: 0.45rem; right: 0.45rem;
     width: 30px; height: 30px; display: grid; place-items: center;
-    background: #fff; border: 1px solid var(--border-strong);
-    border-radius: 5px; color: var(--muted); cursor: pointer;
-    opacity: 0; transition: opacity 0.12s ease, color 0.12s ease;
+    background: #fff; border: 1px solid var(--border-strong); border-radius: 5px;
+    color: var(--muted); cursor: pointer; padding: 0;
   }
-  .codeblock:hover .copy, .copy:focus-visible { opacity: 1; }
+  a code { color: inherit; }
   .copy:hover { color: var(--link); }
-  .copy.copied { color: #198754; opacity: 1; }
   .copy svg { width: 15px; height: 15px; }
+  .copy .done { display: none; }
+  .copy.copied { color: #198754; }
+  .copy.copied .idle { display: none; }
+  .copy.copied .done { display: block; }
+  .code-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #eceff3; border: 1px solid var(--border); border-bottom: 0;
+    border-radius: 6px 6px 0 0; padding: 0.2rem 0.25rem 0.2rem 0.8rem;
+    font-size: 0.88rem; color: var(--muted);
+  }
+  .code-bar + pre { border-radius: 0 0 6px 6px; padding: 0.7rem 0.75rem; }
+  .code-bar .copy { position: static; width: 28px; height: 28px; }
 
-  .table-wrap { overflow-x: auto; margin: 0 0 1.1rem; }
-  table { border-collapse: collapse; width: 100%; font-size: 0.98rem; }
-  th, td { text-align: left; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); vertical-align: top; }
-  thead th { color: var(--heading); font-weight: 600; border-bottom: 2px solid var(--border-strong); white-space: nowrap; }
-  tbody tr:last-child td { border-bottom: 1px solid var(--border-strong); }
-  td .eng { color: var(--muted); font-family: var(--mono); font-size: 0.82rem; }
-  td strong { color: var(--heading); font-weight: 600; }
+  .cols3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.6rem 2rem; }
+  .cols3 p { font-size: 1rem; }
+  /* Three columns where a code line of 46 characters fits; below that,
+     each language is a row with its code on the right. */
+  .use-cols { gap: 2rem 1.25rem; }
+  .use-cols pre { font-size: 0.72rem; padding: 0.65rem 0.6rem; }
+  /* In three columns, a line too long for a wide font wraps, never hides.
+     In the narrower layouts below, code scrolls instead. */
+  @media (min-width: 1181px) { .use-cols pre { white-space: pre-wrap; } }
+  .note { color: var(--muted); }
 
-  .note {
-    font-size: 0.96rem; color: var(--muted);
-    border-left: 3px solid var(--border-strong);
-    padding: 0.1rem 0 0.1rem 0.9rem; margin: 1.2rem 0;
+  /* Live demo */
+  .demo { margin-top: 1.2rem; }
+  .demo-tabs {
+    display: flex; flex-wrap: wrap; gap: 0.25rem;
+    border-bottom: 1px solid var(--border-strong);
+  }
+  .demo-tabs [role="tab"] {
+    font: inherit; font-size: 1rem; color: #3d4852; background: none;
+    border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0;
+    padding: 0.45rem 0.95rem; margin-bottom: -1px; cursor: pointer;
+  }
+  .demo-tabs [role="tab"]:hover { color: var(--link); background: var(--band); }
+  .demo-tabs [role="tab"][aria-selected="true"] {
+    color: var(--heading); font-weight: 600; background: #fff;
+    border-color: var(--border-strong); border-bottom: 1px solid #fff;
+  }
+  .demo-panel {
+    border: 1px solid var(--border-strong); border-top: 0;
+    border-radius: 0 0 6px 6px; background: #fff;
+  }
+  .demo-stage { position: relative; height: 520px; }
+  /* The plots set their own element to position: relative, so the host
+     takes the stage's size from width and height, not from an inset. */
+  .demo-host { position: relative; width: 100%; height: 100%; }
+  .demo-wait {
+    position: absolute; inset: 0; display: grid; place-items: center; margin: 0;
+    color: var(--muted); text-align: center; padding: 1rem;
+  }
+  .demo-stage[aria-busy="true"]::after {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%;
+    border: 3px solid var(--tint); border-top-color: var(--link);
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .demo-stage[aria-busy="true"]::after { animation: none; } }
+  .demo-status { margin: 0.6rem 0 0; color: var(--muted); font-size: 0.98rem; min-height: 1.6em; }
+
+  /* Building blocks */
+  .blocks { display: grid; gap: 1.9rem; margin-top: 1.6rem; }
+  .block {
+    display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 1.6rem; align-items: center;
+    grid-template-areas: "icon text";
+  }
+  /* Every second row puts its icon on the right. */
+  .block:nth-child(even) { grid-template-columns: minmax(0, 1fr) 84px; grid-template-areas: "text icon"; }
+  .block svg { grid-area: icon; width: 84px; height: 84px; overflow: visible; }
+  .block p { grid-area: text; margin: 0; }
+  .block strong { color: var(--heading); font-weight: 700; }
+
+  /* Gallery band */
+  .band { background: var(--band); margin-top: 3.6rem; padding-bottom: 3rem; }
+  .band h2 { padding-top: 3rem; margin-top: 0; }
+  .gallery-group { margin-top: 2rem; }
+  .gallery-group h3 { font-size: 1.3rem; margin-bottom: 0.9rem; }
+  .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.4rem; }
+  .card {
+    background: #fff; border-radius: 6px; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(31, 42, 48, 0.08), 0 2px 8px rgba(31, 42, 48, 0.06);
+    display: flex; flex-direction: column;
+  }
+  .card img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-bottom: 1px solid var(--border); }
+  .card-body { padding: 0.85rem 1rem 1rem; display: flex; flex-direction: column; flex: 1; }
+  .card h4 { margin: 0 0 0.25rem; font-size: 1.1rem; font-weight: 600; color: var(--heading); }
+  .card p { margin: 0 0 0.7rem; font-size: 0.98rem; line-height: 1.45; }
+  .card .refs {
+    margin: auto 0 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem;
+    font-size: 0.92rem; color: var(--muted);
+  }
+  .refs code { color: inherit; background: none; padding: 0; font-size: 0.92em; }
+
+  /* Resources */
+  .resources { display: grid; grid-template-columns: 1fr 1fr; gap: 0 2.5rem; }
+  .res { list-style: none; padding: 0; margin: 0; }
+  .res li { display: grid; grid-template-columns: 22px 1fr; gap: 0.6rem; align-items: start; margin: 0.55rem 0; }
+  .res svg { width: 20px; height: 20px; margin-top: 0.2rem; color: var(--link); }
+
+  .cite {
+    margin: 0 0 1rem; padding: 0.7rem 1rem; border-left: 3px solid var(--link);
+    background: var(--code-bg);
   }
 
-  footer {
-    max-width: 800px; margin: 0 auto;
-    padding: 1.75rem 1.25rem 3rem;
-    border-top: 1px solid var(--border);
-    color: var(--muted); font-size: 0.92rem;
-    display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; justify-content: space-between;
+  footer { margin-top: 3.5rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.96rem; }
+  footer .wrap { padding-block: 1.8rem 3rem; }
+  footer .wrap p { margin: 0 0 0.6rem; }
+
+  /* Narrow screens */
+  @media (max-width: 1180px) {
+    .use-cols { grid-template-columns: minmax(0, 1fr); }
+    .use-cols > div {
+      display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+      grid-template-rows: auto 1fr; column-gap: 2rem;
+    }
+    .use-cols > div > .codeblock { grid-column: 2; grid-row: 1 / span 2; }
+    .use-cols pre { font-size: 0.82rem; }
   }
-  footer .links { display: flex; gap: 1.25rem; }
+  @media (max-width: 900px) {
+    .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cols3 { grid-template-columns: minmax(0, 1fr); }
+  }
+  /* Seven tabs do not fit one row on a narrow screen, so they wrap as pills. */
+  @media (max-width: 760px) {
+    .demo-tabs { gap: 0.4rem; border-bottom: 0; margin-bottom: 0.7rem; }
+    .demo-tabs button[role="tab"] {
+      border: 1px solid var(--border-strong); border-radius: 999px;
+      padding: 0.3rem 0.8rem; margin: 0; font-size: 0.95rem;
+    }
+    .demo-tabs button[role="tab"][aria-selected="true"] {
+      color: #fff; background: var(--link); border-color: var(--link);
+    }
+    .demo-panel { border-top: 1px solid var(--border-strong); border-radius: 6px; }
+  }
+  @media (max-width: 680px) {
+    :root { --gutter: 1rem; }
+    body { font-size: 1.04rem; }
+    .topnav { justify-content: center; gap: 0.3rem 1.05rem; }
+    .topnav .full {
+      position: absolute; width: 1px; height: 1px; overflow: hidden;
+      clip: rect(0 0 0 0); white-space: nowrap;
+    }
+    .topnav .short { display: inline; }
+    .hero-inner { grid-template-columns: minmax(0, 1fr); gap: 1.2rem; padding: 1.6rem var(--gutter) 2.4rem; justify-items: start; }
+    .hero-logo { width: 92px; }
+    .hero h1 { font-size: 3.2rem; }
+    .hero .tagline { font-size: 1.3rem; margin-top: 0.7rem; }
+    .hero .subtext { font-size: 1.08rem; }
+    h2 { font-size: 1.6rem; margin-top: 2.6rem; }
+    .demo-stage { height: 440px; }
+    .use-cols > div { display: block; }
+    .block, .block:nth-child(even) {
+      grid-template-columns: 52px minmax(0, 1fr); grid-template-areas: "icon text";
+      gap: 1rem; align-items: start;
+    }
+    .block svg { width: 52px; height: 52px; }
+    .cards { grid-template-columns: minmax(0, 1fr); }
+    .resources { grid-template-columns: minmax(0, 1fr); }
+  }
 </style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to the content</a>
 
-<nav class="navbar">
-  <div class="navbar-inner">
-    <a class="navbar-brand" href="#top">plotomics</a>
-    <div class="navbar-links">
-      <a class="opt" href="#installation">Install</a>
-      <a class="opt" href="#motivation">Motivation</a>
-      <a class="opt" href="#components">Components</a>
-      <a href="https://www.samuelbharti.com/plotomics/r/">R docs</a>
-      <a href="https://www.samuelbharti.com/plotomics/py/">Python docs</a>
-      <a href="https://www.samuelbharti.com/plotomics/js/">JavaScript docs</a>
-      <a href="https://github.com/samuelbharti/plotomics">GitHub</a>
+<header class="hero">
+  <nav class="topnav" aria-label="Documentation and source">
+    <a href="https://www.samuelbharti.com/plotomics/r/">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 6.5C10.2 5 7.2 4.5 3 4.8v13.4c4.2-.3 7.2.2 9 1.6 1.8-1.4 4.8-1.9 9-1.6V4.8c-4.2-.3-7.2.2-9 1.7z"/><path d="M12 6.5v13.3"/></svg>
+      <span class="full">R docs</span><span class="short" aria-hidden="true">R</span>
+    </a>
+    <a href="https://www.samuelbharti.com/plotomics/py/">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 6.5C10.2 5 7.2 4.5 3 4.8v13.4c4.2-.3 7.2.2 9 1.6 1.8-1.4 4.8-1.9 9-1.6V4.8c-4.2-.3-7.2.2-9 1.7z"/><path d="M12 6.5v13.3"/></svg>
+      <span class="full">Python docs</span><span class="short" aria-hidden="true">Python</span>
+    </a>
+    <a href="https://www.samuelbharti.com/plotomics/js/">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 6.5C10.2 5 7.2 4.5 3 4.8v13.4c4.2-.3 7.2.2 9 1.6 1.8-1.4 4.8-1.9 9-1.6V4.8c-4.2-.3-7.2.2-9 1.7z"/><path d="M12 6.5v13.3"/></svg>
+      <span class="full">JavaScript docs</span><span class="short" aria-hidden="true">JS</span>
+    </a>
+    <a href="#gallery">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.2"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.2"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.2"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.2"/></svg>
+      <span class="full">Gallery</span><span class="short" aria-hidden="true">Gallery</span>
+    </a>
+    <a href="https://github.com/samuelbharti/plotomics">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 7 3.5 12l5 5M15.5 7l5 5-5 5M13.5 4.5l-3 15"/></svg>
+      <span class="full">GitHub</span><span class="short" aria-hidden="true">GitHub</span>
+    </a>
+  </nav>
+  <div class="hero-inner">
+    <!-- The mark is decorative: the h1 beside it already says "plotomics",
+         so alt="" keeps a screen reader from reading the name twice. -->
+    <img class="hero-logo" src="logo.svg" alt="" width="174" height="200" />
+    <div>
+      <h1>plotomics</h1>
+      <p class="tagline">Interactive omics figures for R, Python and the web.</p>
+      <p class="subtext">
+        <span>Volcano plots, heatmaps, embeddings, oncoprints, survival curves, networks and genome browsers.</span>
+        <span>GPU rendering from one TypeScript core, wrapped for Shiny, Jupyter and plain web pages.</span>
+      </p>
     </div>
   </div>
-</nav>
+</header>
 
-<main id="top">
-  <header class="title-block">
-    <img class="hero-logo" src="logo.svg" alt="" width="132" height="152" />
-    <h1>plotomics</h1>
-    <p class="subtitle">GPU-accelerated bioinformatics visualization for R, Python and the web.</p>
-    <div class="meta">
-      <span>MIT licensed</span>
-      <a href="https://cran.r-project.org/package=plotomics">CRAN</a>
-      <a href="https://pypi.org/project/plotomics/">PyPI</a>
-      <a href="https://www.npmjs.com/package/plotomics">npm</a>
-      <a href="https://github.com/samuelbharti/plotomics">github.com/samuelbharti/plotomics</a>
+<main id="main">
+  <div class="wrap">
+    <section class="intro" aria-label="Introduction">
+      <p class="live-note">
+        <strong><a href="https://github.com/samuelbharti/plotomics-live">Plotomics Live</a></strong> is a live gallery of 26
+        biological visualizations, most of them drawn with plotomics, each shown next to the
+        same plot made with ggplot2. The app is built with
+        <a href="https://github.com/posit-dev/shinyreact">shinyreact</a>.
+      </p>
+      <p class="lead">
+        plotomics is a set of visualization widgets for omics data, built on one TypeScript
+        rendering core and wrapped for R with <a href="https://www.htmlwidgets.org/">htmlwidgets</a>
+        and for Python with <a href="https://anywidget.dev/">anywidget</a>. Rendering runs on
+        WebGL or canvas, and Python sends numeric columns to the browser as a binary buffer instead
+        of JSON, so plots stay interactive at hundreds of thousands of points.
+      </p>
+      <p class="lead">
+        The same figure works in a Jupyter notebook, a Shiny app, the RStudio Viewer, Quarto or a
+        plain web page. <a href="#try">Try seven of the components live</a> below, or see all 17
+        in the <a href="#gallery">gallery</a>.
+      </p>
+    </section>
+
+    <section id="installation" aria-labelledby="installation-title">
+      <h2 id="installation-title">Installation</h2>
+      <div class="cols3">
+        <div>
+          <h3>R</h3>
+          <div class="codeblock">
+            <pre><code>install.packages("plotomics")</code></pre>
+            <button class="copy" type="button" data-copy='install.packages("plotomics")' aria-label="Copy the R install command">
+              <svg class="idle" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              <svg class="done" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
+            </button>
+          </div>
+          <p>Load it with <code>library(plotomics)</code>. Widgets render in the RStudio Viewer,
+            R Markdown, Quarto and Shiny.</p>
+          <p class="note">R carries 15 of the 17 components. The genome browser pair, igv.js and
+            Gosling, is JavaScript and Python only, because their bundles push the installed R
+            package past the 5 MB limit that CRAN sets.</p>
+        </div>
+        <div>
+          <h3>Python</h3>
+          <div class="codeblock">
+            <pre><code>pip install plotomics</code></pre>
+            <button class="copy" type="button" data-copy="pip install plotomics" aria-label="Copy the Python install command">
+              <svg class="idle" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              <svg class="done" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
+            </button>
+          </div>
+          <p>Works in Jupyter, JupyterLab, Colab, VS Code, marimo, Shiny for Python and
+            Streamlit.</p>
+        </div>
+        <div>
+          <h3>JavaScript</h3>
+          <div class="codeblock">
+            <pre><code>pnpm add plotomics</code></pre>
+            <button class="copy" type="button" data-copy="pnpm add plotomics" aria-label="Copy the JavaScript install command">
+              <svg class="idle" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              <svg class="done" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
+            </button>
+          </div>
+          <p>Headless factories with tree-shakeable subpath imports, for example
+            <code>plotomics/embedding</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="try" aria-labelledby="try-title">
+      <h2 id="try-title">Try it</h2>
+      <p>These seven plots run live in the page, on synthetic data, with the code that the R and
+        Python packages ship. On every tab, hover over a mark to read its values. In the
+        embedding, the volcano, the network and the Hi-C map, scroll to zoom and drag to pan. In
+        the embedding, hold Shift and drag to lasso cells, and in the network, click a node to
+        select it.</p>
+      <div id="demo" class="demo">
+        <div class="demo-tabs" role="tablist" aria-label="Live demos">
+          <button type="button" role="tab" id="tab-embedding" aria-selected="true" aria-controls="demo-panel" tabindex="0"
+            data-demo="embedding" data-note="Synthetic data: 100,000 cells laid out like a UMAP of blood immune cells (PBMCs), coloured by cell type.">Embedding</button>
+          <button type="button" role="tab" id="tab-volcano" aria-selected="false" aria-controls="demo-panel" tabindex="-1"
+            data-demo="volcano" data-note="Synthetic data: 20,000 genes compared between CD14 monocytes and CD4 T cells. The hits carry real marker gene names, and the ten strongest each way are labelled.">Volcano</button>
+          <button type="button" role="tab" id="tab-oncoplot" aria-selected="false" aria-controls="demo-panel" tabindex="-1"
+            data-demo="oncoplot" data-note="Synthetic data: 30 breast cancer driver genes altered across 400 samples, with mutation burden, gene frequencies and two clinical strips.">Oncoplot</button>
+          <button type="button" role="tab" id="tab-lollipop" aria-selected="false" aria-controls="demo-panel" tabindex="-1"
+            data-demo="lollipop" data-note="Synthetic data: TP53 variants over the protein's domains, with recurrent changes at the hotspot residues 175, 245, 248, 273 and 282.">Lollipop</button>
+          <button type="button" role="tab" id="tab-km" aria-selected="false" aria-controls="demo-panel" tabindex="-1"
+            data-demo="km" data-note="Synthetic data: three risk groups followed for 100 months, with the number at risk under the curves.">Kaplan-Meier</button>
+          <button type="button" role="tab" id="tab-network" aria-selected="false" aria-controls="demo-panel" tabindex="-1"
+            data-demo="network" data-note="Synthetic edges between real genes of four modules: ribosome, proteasome, cell cycle and interferon response.">Network</button>
+          <button type="button" role="tab" id="tab-hic" aria-selected="false" aria-controls="demo-panel" tabindex="-1"
+            data-demo="hic" data-note="Synthetic data: 10 Mb in 10 kb bins, with distance decay, nested domains, A and B compartments and loops at domain corners. Zoom in to see the nested domains.">Hi-C</button>
+        </div>
+        <div id="demo-panel" class="demo-panel" role="tabpanel" aria-labelledby="tab-embedding">
+          <div class="demo-stage">
+            <p class="demo-wait">The plot loads when this part of the page comes into view.</p>
+          </div>
+        </div>
+        <p class="demo-status" aria-live="polite"></p>
+        <noscript><p>The live demo needs JavaScript. The <a href="#gallery">gallery</a> shows every component as an image.</p></noscript>
+      </div>
+    </section>
+
+    <section id="how-it-is-built" aria-labelledby="built-title">
+      <h2 id="built-title">How it is built</h2>
+      <div class="blocks">
+        <div class="block">
+          <svg aria-hidden="true" viewBox="0 0 64 64" fill="none" stroke="#2761e3" stroke-width="2.2" stroke-linejoin="round">
+            <rect x="3" y="5" width="16" height="13" rx="3" fill="#e3ebfc"/><rect x="24" y="5" width="16" height="13" rx="3" fill="#e3ebfc"/><rect x="45" y="5" width="16" height="13" rx="3" fill="#e3ebfc"/>
+            <path d="M11 18v8l21 14M32 18v22M53 18v8L32 40" stroke-linecap="round"/>
+            <circle cx="32" cy="47" r="10" fill="#2761e3"/>
+            <g fill="#2761e3" stroke="none" font-family="Source Sans 3, Arial, sans-serif" font-weight="700" font-size="8.5" text-anchor="middle"><text x="11" y="14.5">R</text><text x="32" y="14.5">Py</text><text x="53" y="14.5">JS</text></g>
+            <text x="32" y="50" fill="#fff" stroke="none" font-family="Source Sans 3, Arial, sans-serif" font-weight="700" font-size="8.5" text-anchor="middle">TS</text>
+          </svg>
+          <p><strong>One core for three languages.</strong> Each component is written once, in
+            TypeScript. The R package wraps it with htmlwidgets and the Python package with
+            anywidget, so the wrappers stay thin and an R figure and a Python figure come from the
+            same code. <a href="https://github.com/samuelbharti/plotomics/blob/main/docs/architecture.md">Read the architecture</a>.</p>
+        </div>
+        <div class="block">
+          <svg aria-hidden="true" viewBox="0 0 64 64" fill="none" stroke="#2761e3" stroke-width="2.2" stroke-linejoin="round">
+            <rect x="4" y="10" width="56" height="30" rx="4" fill="#e3ebfc"/>
+            <g fill="#2761e3" stroke="none" font-family="ui-monospace, Consolas, monospace" font-weight="700" font-size="10.5"><text x="9" y="22" textLength="46" lengthAdjust="spacingAndGlyphs">0110 1011</text><text x="9" y="34" textLength="46" lengthAdjust="spacingAndGlyphs">1001 0110</text></g>
+            <path d="M14 50h34m-6-6 6 6-6 6" stroke-linecap="round"/>
+          </svg>
+          <p><strong>Numeric columns sent as binary.</strong> Python packs numeric columns into one
+            buffer that the browser reads as typed arrays, with nothing to parse. A million floats
+            are 4 MB that way, against about 20 MB of JSON. R sends JSON arrays, and both paths end
+            in the same data object. <a href="https://github.com/samuelbharti/plotomics/blob/main/docs/architecture.md#data-transport">See the data transport</a>.</p>
+        </div>
+        <div class="block">
+          <svg aria-hidden="true" viewBox="0 0 64 64" fill="none" stroke="#2761e3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="14" y="14" width="36" height="36" rx="4" fill="#e3ebfc"/>
+            <path d="M22 14V6m10 8V6m10 8V6M22 58v-8m10 8v-8m10 8v-8M14 22H6m8 10H6m8 10H6M58 22h-8m8 10h-8m8 10h-8"/>
+            <g fill="#2761e3" stroke="none"><circle cx="24" cy="38" r="2.6"/><circle cx="29" cy="29" r="2.6"/><circle cx="35" cy="33" r="2.6"/><circle cx="40" cy="24" r="2.6"/><circle cx="31" cy="41" r="2.6"/></g>
+          </svg>
+          <p><strong>GPU rendering.</strong> The scatter plots, the expression heatmap and the Hi-C
+            map draw with WebGL through regl-scatterplot and regl, the network through sigma, and the
+            Gosling viewer through PIXI.js. The other plots draw on a 2D canvas. No component makes
+            one DOM node per data point.
+            <a href="https://github.com/samuelbharti/plotomics/blob/main/docs/architecture.md#rendering-strategy-per-component">See the engine of each component</a>.</p>
+        </div>
+        <div class="block">
+          <svg aria-hidden="true" viewBox="0 0 64 64" fill="none" stroke="#2761e3" stroke-width="2.2" stroke-linejoin="round">
+            <path d="M12 4h28l12 12v44H12z" fill="#e3ebfc"/><path d="M40 4v12h12"/>
+            <g fill="#2761e3" stroke="none" font-family="Source Sans 3, Arial, sans-serif" font-weight="700" text-anchor="middle"><text x="32" y="33" font-size="11">SVG</text><text x="32" y="47" font-size="11">PNG</text></g>
+          </svg>
+          <p><strong>Vector text, SVG and PNG export.</strong> Axes, legends and labels are SVG drawn
+            over the canvas, so text stays sharp. Each component exports SVG and PNG with those parts
+            in place. Two are limited by their upstream engine: the Gosling viewer exports PNG only,
+            and the igv.js viewer SVG only.
+            <a href="https://www.samuelbharti.com/plotomics/js/interfaces/plotomics_core.PlotomicsInstance.html">See the export methods</a>.</p>
+        </div>
+        <div class="block">
+          <svg aria-hidden="true" viewBox="0 0 64 64" fill="none" stroke="#2761e3" stroke-width="2.2" stroke-linejoin="round">
+            <rect x="4" y="8" width="56" height="48" rx="5" stroke-dasharray="4 3.2"/>
+            <rect x="13" y="17" width="38" height="30" rx="3" fill="#e3ebfc"/>
+            <path d="M32 17h16a3 3 0 0 1 3 3v24a3 3 0 0 1-3 3H32z" fill="#2761e3"/>
+            <text x="22.5" y="36" fill="#2761e3" stroke="none" font-family="Source Sans 3, Arial, sans-serif" font-weight="700" font-size="11" text-anchor="middle">Aa</text>
+            <text x="41.5" y="36" fill="#fff" stroke="none" font-family="Source Sans 3, Arial, sans-serif" font-weight="700" font-size="11" text-anchor="middle">Aa</text>
+          </svg>
+          <p><strong>Themes.</strong> A theme sets the colours, the font, the font size and the
+            padding, and every text size scales with the font size. A colour can be a CSS variable
+            such as <code>var(--bg)</code>, read on the plot's element, and the core ships a dark
+            theme. <a href="https://www.samuelbharti.com/plotomics/js/interfaces/plotomics_core.PlotomicsTheme.html">See the theme options</a>.</p>
+        </div>
+        <div class="block">
+          <svg aria-hidden="true" viewBox="0 0 64 64" fill="none" stroke="#2761e3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M30 8c13-2 25 5 24 15-1 9-12 13-24 12-11-1-19-5-18-12 1-8 8-14 18-15z" fill="#e3ebfc" stroke-dasharray="4 3"/>
+            <g fill="#2761e3" stroke="none"><circle cx="24" cy="20" r="2.6"/><circle cx="33" cy="16" r="2.6"/><circle cx="40" cy="24" r="2.6"/><circle cx="29" cy="27" r="2.6"/><circle cx="46" cy="18" r="2.6"/></g>
+            <path d="M44 42c-2 9-10 13-24 13M26 49l-6 6 6 6"/>
+          </svg>
+          <p><strong>Selections sent back to R and Python.</strong> A lasso on the embedding sets
+            <code>input$&lt;id&gt;_selected</code> in a Shiny app and <code>widget.selected</code> in
+            Python, and a click on a network node does the same with the node's id.
+            <a href="https://www.samuelbharti.com/plotomics/r/reference/embedding-shiny.html">See the Shiny bindings</a>.</p>
+        </div>
+        <div class="block">
+          <svg aria-hidden="true" viewBox="0 0 64 64" fill="none" stroke="#2761e3" stroke-width="2.2" stroke-linejoin="round">
+            <rect x="6" y="6" width="16" height="16" fill="#2761e3"/><rect x="24" y="6" width="16" height="16" fill="#9db8f2"/><rect x="42" y="6" width="16" height="16" fill="#e3ebfc"/>
+            <rect x="6" y="24" width="16" height="16" fill="#9db8f2"/><rect x="24" y="24" width="16" height="16" fill="#fff" stroke-dasharray="3 2.5"/><rect x="42" y="24" width="16" height="16" fill="#2761e3"/>
+            <rect x="6" y="42" width="16" height="16" fill="#e3ebfc"/><rect x="24" y="42" width="16" height="16" fill="#2761e3"/><rect x="42" y="42" width="16" height="16" fill="#9db8f2"/>
+            <text x="32" y="35.5" fill="#2761e3" stroke="none" font-family="Source Sans 3, Arial, sans-serif" font-weight="700" font-size="9" text-anchor="middle">NA</text>
+          </svg>
+          <p><strong>Missing values drawn as missing.</strong> <code>NA</code>, <code>NaN</code> and
+            <code>Inf</code> from R, and <code>None</code>, <code>NaN</code> and pandas
+            <code>NA</code> from Python, reach the browser as missing. Every plot shows them as a grey
+            cell, an open ring, an "NA" legend key or no mark, never as 0.
+            <a href="https://github.com/samuelbharti/plotomics/blob/main/CHANGELOG.md">See the changelog</a>.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="wrap wide">
+    <section id="use" aria-labelledby="use-title">
+      <h2 id="use-title">Use plotomics in your work</h2>
+      <div class="cols3 use-cols">
+        <div>
+          <h3>In R</h3>
+          <p>Each plot is an htmlwidget. It shows in the RStudio Viewer, R Markdown and Quarto, and
+            each one has an <code>Output()</code> and <code>render()</code> pair for Shiny.
+            <a href="https://www.samuelbharti.com/plotomics/r/reference/km.html"><code>km()</code></a>
+            takes a <code>survfit</code> object as it is.</p>
+          <div class="codeblock">
+            <div class="code-bar"><span>R</span>
+              <button class="copy" type="button" aria-label="Copy the R example">
+                <svg class="idle" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                <svg class="done" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
+              </button>
+            </div>
+<pre><code>library(plotomics)
+library(survival)
+fit &lt;- survfit(Surv(time, status) ~ sex, lung)
+km(fit)</code></pre>
+          </div>
+        </div>
+        <div>
+          <h3>In Python</h3>
+          <p>Each plot is an anywidget, so it displays in a notebook cell. It takes a pandas or
+            polars data frame or a dict of arrays, and a lasso selection comes back as
+            <code>widget.selected</code>.</p>
+          <div class="codeblock">
+            <div class="code-bar"><span>Python</span>
+              <button class="copy" type="button" aria-label="Copy the Python example">
+                <svg class="idle" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                <svg class="done" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
+              </button>
+            </div>
+<pre><code>import numpy as np
+from plotomics import Embedding
+
+k = np.random.randint(0, 8, 100_000)
+x, y = np.random.randn(2, k.size) + 3 * k
+Embedding(dict(x=x, y=y, color=k.astype(str)))</code></pre>
+          </div>
+        </div>
+        <div>
+          <h3>On the web</h3>
+          <p>Each component is a headless factory: give it an element and columns, and it returns a
+            plot with <code>setData</code>, <code>setOptions</code>, <code>resize</code>, export and
+            <code>destroy</code> methods. With a bundler and a <code>&lt;div id="plot"&gt;</code> in
+            the page, this draws a volcano plot.</p>
+          <div class="codeblock">
+            <div class="code-bar"><span>JavaScript</span>
+              <button class="copy" type="button" aria-label="Copy the JavaScript example">
+                <svg class="idle" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                <svg class="done" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
+              </button>
+            </div>
+<pre><code>import { createVolcano } from "plotomics";
+
+const r = () =&gt; 8 * Math.random() - 4;
+const x = new Float32Array(2e4).map(r);
+const y = x.map((v) =&gt; Math.abs(v * r()));
+const el = document.querySelector("#plot");
+createVolcano(el, { data: { columns: { x, y } } });</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section id="gallery" class="band" aria-labelledby="gallery-title">
+    <div class="wrap wide">
+      <h2 id="gallery-title">Gallery</h2>
+      <p>All 17 components, grouped as in the R reference. Each image is the component's own
+        export of synthetic data, and the links under it open its reference page in each
+        language.</p>
+
+      <div class="gallery-group">
+        <h3>Expression and abundance</h3>
+        <div class="cards">
+          <article class="card">
+            <img src="gallery/volcano.webp" width="800" height="600" loading="lazy" decoding="async" alt="Volcano plot of CD14 monocytes against CD4 T cells, with monocyte markers such as LYZ and S100A9 up and T cell markers such as IL7R and CCR7 down." />
+            <div class="card-body">
+              <h4>Volcano plot</h4>
+              <p>Log2 fold change against -log10 p, with threshold guides and the top genes labelled.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/volcano.html">R <code>volcano()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Volcano">Python <code>Volcano</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createVolcano.html">JS <code>createVolcano</code></a>
+              </p>
+            </div>
+          </article>
+          <article class="card">
+            <img src="gallery/heatmap.webp" width="800" height="600" loading="lazy" decoding="async" alt="Expression heatmap in viridis colours, with five bright blocks along the diagonal and a colour bar." />
+            <div class="card-body">
+              <h4>Expression heatmap</h4>
+              <p>A large sample by gene matrix drawn as a GPU texture, with optional row z-scores.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/bioheatmap.html">R <code>bioheatmap()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Heatmap">Python <code>Heatmap</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createHeatmap.html">JS <code>createHeatmap</code></a>
+              </p>
+            </div>
+          </article>
+          <article class="card">
+            <img src="gallery/clustermap.webp" width="800" height="600" loading="lazy" decoding="async" alt="Clustered heatmap in red and blue with four blocks, row and column dendrograms and a z-score colour bar." />
+            <div class="card-body">
+              <h4>Clustered heatmap</h4>
+              <p>Row and column dendrograms around the matrix, in the seaborn.clustermap layout.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/clustermap.html">R <code>clustermap()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Clustermap">Python <code>Clustermap</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createClustermap.html">JS <code>createClustermap</code></a>
+              </p>
+            </div>
+          </article>
+          <article class="card">
+            <img src="gallery/dotplot.webp" width="800" height="600" loading="lazy" decoding="async" alt="Dot plot of 17 marker genes across five cell types, dot size for the share of cells expressing and colour for mean expression." />
+            <div class="card-body">
+              <h4>Marker gene dot plot</h4>
+              <p>Dot area for the share of cells expressing and colour for the level, as in scanpy and Seurat.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/dotplot.html">R <code>dotplot()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Dotplot">Python <code>Dotplot</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createDotplot.html">JS <code>createDotplot</code></a>
+              </p>
+            </div>
+          </article>
+          <article class="card">
+            <img src="gallery/violin.webp" width="800" height="600" loading="lazy" decoding="async" alt="Stacked violins of six genes across five cell types, each marker gene high in its own cell type." />
+            <div class="card-body">
+              <h4>Stacked violin</h4>
+              <p>One row per feature and one violin per group, from densities computed in R or Python.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/violin.html">R <code>violin()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Violin">Python <code>Violin</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createViolin.html">JS <code>createViolin</code></a>
+              </p>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div class="gallery-group">
+        <h3>Single-cell and spatial</h3>
+        <div class="cards">
+          <article class="card">
+            <img src="gallery/embedding.webp" width="800" height="600" loading="lazy" decoding="async" alt="UMAP-like embedding of synthetic blood immune cells in ten cell types, from CD4 T naive to platelets, with a legend." />
+            <div class="card-body">
+              <h4>Embedding</h4>
+              <p>UMAP, t-SNE and PCA scatter at hundreds of thousands of cells, with lasso selection.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/embedding.html">R <code>embedding()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Embedding">Python <code>Embedding</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createEmbedding.html">JS <code>createEmbedding</code></a>
+              </p>
+            </div>
+          </article>
+          <article class="card">
+            <img src="gallery/spatial.webp" width="800" height="600" loading="lazy" decoding="async" alt="Spatial map of capture spots over a pink tissue image, coloured by five tissue domains in rings." />
+            <div class="card-body">
+              <h4>Spatial tissue map</h4>
+              <p>Visium-style spots over the H&amp;E image, coloured by cluster or by a gene.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/spatial.html">R <code>spatial()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Spatial">Python <code>Spatial</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createSpatial.html">JS <code>createSpatial</code></a>
+              </p>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div class="gallery-group">
+        <h3>Cohort and variant genomics</h3>
+        <div class="cards">
+          <article class="card">
+            <img src="gallery/oncoplot.webp" width="800" height="600" loading="lazy" decoding="async" alt="Oncoplot of 20 breast cancer driver genes, TP53 at the top, by 160 samples, with a burden bar chart above, gene frequencies on the right and two clinical strips below." />
+            <div class="card-body">
+              <h4>Oncoplot</h4>
+              <p>Gene by sample alteration classes, with burden and frequency margins and clinical strips.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/oncoplot.html">R <code>oncoplot()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Oncoplot">Python <code>Oncoplot</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createOncoplot.html">JS <code>createOncoplot</code></a>
+              </p>
+            </div>
+          </article>
+          <article class="card">
+            <img src="gallery/lollipop.webp" width="800" height="600" loading="lazy" decoding="async" alt="Lollipop plot along a TP53-like protein, with tall stems at residues 175, 248, 273 and 282 over the DNA-binding domain." />
+            <div class="card-body">
+              <h4>Protein domain lollipop</h4>
+              <p>Variants along a protein over its domains, with head area set by recurrence.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/lollipop.html">R <code>lollipop()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Lollipop">Python <code>Lollipop</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createLollipop.html">JS <code>createLollipop</code></a>
+              </p>
+            </div>
+          </article>
+          <article class="card">
+            <img src="gallery/km.webp" width="800" height="600" loading="lazy" decoding="async" alt="Kaplan-Meier curves for three risk groups, with confidence bands, censoring ticks and a number-at-risk table." />
+            <div class="card-body">
+              <h4>Kaplan-Meier curve</h4>
+              <p>Survival steps with censoring ticks, confidence bands and a number-at-risk table.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/km.html">R <code>km()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Km">Python <code>Km</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createKm.html">JS <code>createKm</code></a>
+              </p>
+            </div>
+          </article>
+          <article class="card">
+            <img src="gallery/profile.webp" width="800" height="600" loading="lazy" decoding="async" alt="SBS96 mutational profile with six coloured substitution blocks and four tall bars in the C&gt;G and C&gt;T blocks." />
+            <div class="card-body">
+              <h4>Categorical profile</h4>
+              <p>The SBS96 mutational signature layout: 96 contexts under six substitution blocks.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/bioprofile.html">R <code>bioprofile()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Profile">Python <code>Profile</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createProfile.html">JS <code>createProfile</code></a>
+              </p>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div class="gallery-group">
+        <h3>Sets, hierarchies and networks</h3>
+        <div class="cards">
+          <article class="card">
+            <img src="gallery/upset.webp" width="800" height="600" loading="lazy" decoding="async" alt="UpSet plot of six gene sets: intersection size bars above a membership matrix, with set sizes on the left." />
+            <div class="card-body">
+              <h4>UpSet plot</h4>
+              <p>Intersection sizes over a set membership matrix, for more sets than a Venn diagram can draw.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/upset.html">R <code>upset()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Upset">Python <code>Upset</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createUpset.html">JS <code>createUpset</code></a>
+              </p>
+            </div>
+          </article>
+          <article class="card">
+            <img src="gallery/treemap.webp" width="800" height="600" loading="lazy" decoding="async" alt="Treemap of six gene sets, the four network modules and the monocyte and T cell markers, each a coloured group of gene tiles." />
+            <div class="card-body">
+              <h4>Gene treemap</h4>
+              <p>Gene sets and pathway composition as nested tiles, coloured by parent or by value.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/treemap.html">R <code>treemap()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Treemap">Python <code>Treemap</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createTreemap.html">JS <code>createTreemap</code></a>
+              </p>
+            </div>
+          </article>
+          <article class="card">
+            <img src="gallery/network.webp" width="800" height="600" loading="lazy" decoding="async" alt="Network of genes in four modules, ribosome, proteasome, cell cycle and interferon response, with a few gene labels and a legend." />
+            <div class="card-body">
+              <h4>Network graph</h4>
+              <p>Force-directed interaction, co-expression and regulatory graphs, drawn with sigma.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/network.html">R <code>network()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Network">Python <code>Network</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createNetwork.html">JS <code>createNetwork</code></a>
+              </p>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div class="gallery-group">
+        <h3>Genome and chromatin</h3>
+        <div class="cards">
+          <article class="card">
+            <img src="gallery/hic.webp" width="800" height="600" loading="lazy" decoding="async" alt="Hi-C contact map of 10 Mb with a bright diagonal, square domains along it, a plaid of compartments and a log colour bar." />
+            <div class="card-body">
+              <h4>Hi-C contact matrix</h4>
+              <p>Hi-C and Micro-C contact maps with a level-of-detail pyramid and no tile server.</p>
+              <p class="refs">
+                <a href="https://www.samuelbharti.com/plotomics/r/reference/hic.html">R <code>hic()</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#HiC">Python <code>HiC</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createHic.html">JS <code>createHic</code></a>
+              </p>
+            </div>
+          </article>
+          <article class="card">
+            <img src="gallery/igv.webp" width="800" height="600" loading="lazy" decoding="async" alt="igv.js view of a synthetic 6 kb reference with a ruler, a gene track and a signal track with four peaks." />
+            <div class="card-body">
+              <h4>Genome viewer (igv.js)</h4>
+              <p>A track browser for BAM, BigWig, VCF, BED and refGene data, streamed by igv.js.</p>
+              <p class="refs">
+                <span>Not in the R package</span>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#IGV">Python <code>IGV</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createIgv.html">JS <code>createIgv</code></a>
+              </p>
+            </div>
+          </article>
+          <article class="card">
+            <img src="gallery/gosling.webp" width="800" height="600" loading="lazy" decoding="async" alt="Circular Gosling view of chr1 to chr8, with a ring of signal bars outside a ring of coloured segments." />
+            <div class="card-body">
+              <h4>Genome viewer (Gosling)</h4>
+              <p>Declarative genomics figures from a Gosling spec: circos, ideograms, linked views.</p>
+              <p class="refs">
+                <span>Not in the R package</span>
+                <a href="https://www.samuelbharti.com/plotomics/py/plotomics.html#Gosling">Python <code>Gosling</code></a>
+                <a href="https://www.samuelbharti.com/plotomics/js/variables/plotomics.createGosling.html">JS <code>createGosling</code></a>
+              </p>
+            </div>
+          </article>
+        </div>
+      </div>
     </div>
-  </header>
+  </section>
 
-  <p class="lead">
-    plotomics is a set of visualization widgets built on one TypeScript rendering core,
-    wrapped for <strong>R</strong> with <a href="https://www.htmlwidgets.org/">htmlwidgets</a>
-    and for <strong>Python</strong> with <a href="https://anywidget.dev/">anywidget</a>.
-    Numeric data is sent to the browser as a binary buffer instead of JSON, so plots stay
-    interactive at hundreds of thousands to millions of points. The same figure works in a
-    Jupyter notebook, a Shiny app, the RStudio Viewer, or a plain web page.
-  </p>
+  <div class="wrap">
+    <section id="motivation" aria-labelledby="motivation-title">
+      <h2 id="motivation-title">Motivation</h2>
+      <p>
+        I built plotomics because I kept hitting the same wall in my own work. A 500,000-cell
+        embedding or a 20,000-gene volcano plot is common today. Most plotting tools were built for
+        a few thousand marks. Past that count, a figure stops being readable before the data stops
+        being interesting.
+      </p>
+      <p>
+        A second problem had nothing to do with size. My work runs on both R and Python, so the
+        same figure gets built twice, once per language, and the two copies drift. I draw a
+        heatmap in R and a different one in a Python notebook, and I cannot say which one is
+        correct without reading both.
+      </p>
+      <p>
+        So I write each component once and wrap it thinly for both languages, so the notebook and
+        the paper agree. plotomics is not a general plotting library by design, and for a small,
+        static figure, better tools already exist.
+        <a href="https://github.com/samuelbharti/plotomics/blob/main/docs/motivation.md">Read the
+        full motivation</a> for the goals, the non-goals, how it compares with ComplexHeatmap,
+        maftools, survminer, Seurat and scanpy, and when to use one of those instead.
+      </p>
+    </section>
 
-  <h2 id="installation">Installation</h2>
+    <section id="plotly" aria-labelledby="plotly-title">
+      <h2 id="plotly-title">Compared with plotly</h2>
+      <p>
+        For the scatter alone, plotly comes close. <code>plotly.js</code> has a WebGL trace,
+        <code>scattergl</code>, and it draws a million points. The default SVG
+        <code>scatter</code> trace is the one that emits one DOM node per point and gives out in
+        the low tens of thousands. The differences are narrower:
+      </p>
+      <ul>
+        <li>plotly's R and Python bindings send coordinates as JSON. plotomics sends numeric
+          columns from Python as a binary buffer and reads them as typed arrays, so nothing is
+          parsed on arrival.</li>
+        <li>The domain figures are already built. An oncoprint with burden and frequency margins,
+          a Kaplan-Meier curve with an aligned number-at-risk table, an UpSet matrix and an SBS96
+          profile are each a large custom build in plotly, and one function call here.</li>
+        <li>plotly's R and Python APIs are separate surfaces that drift. Here both wrappers pack
+          the same payload for the same renderer, so an R figure and a Python figure cannot
+          disagree.</li>
+      </ul>
+      <p>
+        Against that, plotly is far more general, more mature and better documented. For a chart
+        that is not one of the 17 components, plotly is the better tool.
+      </p>
+    </section>
 
-  <h3>R</h3>
-  <div class="codeblock">
-    <button class="copy" type="button" data-copy='install.packages("plotomics")' aria-label="Copy R install command">
-      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-    </button>
-    <pre><code>install.packages(<span style="color:#0a7c42">"plotomics"</span>)</code></pre>
+    <section id="resources" aria-labelledby="resources-title">
+      <h2 id="resources-title">Resources</h2>
+      <div class="resources">
+        <ul class="res">
+          <li>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 6.5C10.2 5 7.2 4.5 3 4.8v13.4c4.2-.3 7.2.2 9 1.6 1.8-1.4 4.8-1.9 9-1.6V4.8c-4.2-.3-7.2.2-9 1.7z"/><path d="M12 6.5v13.3"/></svg>
+            <span><a href="https://www.samuelbharti.com/plotomics/r/">R reference</a>, generated by pkgdown</span>
+          </li>
+          <li>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 6.5C10.2 5 7.2 4.5 3 4.8v13.4c4.2-.3 7.2.2 9 1.6 1.8-1.4 4.8-1.9 9-1.6V4.8c-4.2-.3-7.2.2-9 1.7z"/><path d="M12 6.5v13.3"/></svg>
+            <span><a href="https://www.samuelbharti.com/plotomics/py/">Python reference</a>, generated by pdoc</span>
+          </li>
+          <li>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 6.5C10.2 5 7.2 4.5 3 4.8v13.4c4.2-.3 7.2.2 9 1.6 1.8-1.4 4.8-1.9 9-1.6V4.8c-4.2-.3-7.2.2-9 1.7z"/><path d="M12 6.5v13.3"/></svg>
+            <span><a href="https://www.samuelbharti.com/plotomics/js/">JavaScript reference</a>, generated by TypeDoc</span>
+          </li>
+          <li>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 3 9 4.5-9 4.5-9-4.5z"/><path d="m3 12 9 4.5 9-4.5M3 16.5 12 21l9-4.5"/></svg>
+            <span><a href="https://github.com/samuelbharti/plotomics/blob/main/docs/architecture.md">Architecture</a>, how the shared core is built and wrapped</span>
+          </li>
+          <li>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg>
+            <span><a href="https://github.com/samuelbharti/plotomics/blob/main/docs/motivation.md">Motivation</a>, the goals, the non-goals and when to use another package</span>
+          </li>
+          <li>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8.5h18"/><path d="m10 11.5 5 3-5 3z" fill="currentColor"/></svg>
+            <span><a href="https://github.com/samuelbharti/plotomics/tree/main/examples">Examples</a>, runnable Shiny and shiny-react apps</span>
+          </li>
+        </ul>
+        <ul class="res">
+          <li>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor"/></svg>
+            <span><a href="https://github.com/samuelbharti/plotomics/blob/main/CHANGELOG.md">Changelog</a>, what each release changed</span>
+          </li>
+          <li>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+            <span><a href="https://github.com/samuelbharti/plotomics/blob/main/CONTRIBUTING.md">Contributing</a>, the recipe for a new component</span>
+          </li>
+          <li>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v6"/><circle cx="12" cy="16.5" r="0.6" fill="currentColor"/></svg>
+            <span><a href="https://github.com/samuelbharti/plotomics/issues">Issues</a>, for bugs and questions</span>
+          </li>
+          <li>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>
+            <span><a href="https://cran.r-project.org/package=plotomics">R package on CRAN</a></span>
+          </li>
+          <li>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>
+            <span><a href="https://samuelbharti.r-universe.dev/plotomics">R package on r-universe</a></span>
+          </li>
+          <li>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>
+            <span><a href="https://pypi.org/project/plotomics/">Python package on PyPI</a></span>
+          </li>
+          <li>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>
+            <span><a href="https://www.npmjs.com/package/plotomics">JavaScript package on npm</a></span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="citing" aria-labelledby="citing-title">
+      <h2 id="citing-title">Citing plotomics</h2>
+      <p>If plotomics contributed to work you publish, please cite it:</p>
+      <p class="cite">Bharti, S. (2026). plotomics: High-Performance Bioinformatics Visualizations.
+        Zenodo. <a href="https://doi.org/10.5281/zenodo.21926306">https://doi.org/10.5281/zenodo.21926306</a></p>
+      <div class="codeblock">
+        <div class="code-bar"><span>BibTeX</span>
+          <button class="copy" type="button" aria-label="Copy the BibTeX entry">
+            <svg class="idle" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            <svg class="done" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
+          </button>
+        </div>
+<pre><code>@software{bharti_plotomics,
+  author    = {Bharti, Samuel},
+  title     = {plotomics: High-Performance Bioinformatics Visualizations},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.21926306},
+  url       = {https://github.com/samuelbharti/plotomics}
+}</code></pre>
+      </div>
+      <p>That DOI is the Zenodo concept DOI: it always resolves to the newest release. Zenodo also
+        gives each version a DOI of its own, for when you need to pin the exact release you ran.
+        In R, <code>citation("plotomics")</code> gives the entry with this DOI, and
+        <a href="https://github.com/samuelbharti/plotomics/blob/main/CITATION.cff">CITATION.cff</a>
+        carries the same metadata for GitHub's "Cite this repository" button.</p>
+    </section>
   </div>
-  <p>Load it with <code>library(plotomics)</code>. Widgets also render outside Shiny, in the
-    RStudio Viewer, R Markdown, and Quarto. R carries 15 of the 17 components. The
-    genome-browser pair, igv.js and Gosling, is JavaScript and Python only, because their
-    bundles push the installed R package past CRAN's 5 MB limit.</p>
-
-  <h3>Python</h3>
-  <div class="codeblock">
-    <button class="copy" type="button" data-copy="pip install plotomics" aria-label="Copy Python install command">
-      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-    </button>
-    <pre><code>pip install plotomics</code></pre>
-  </div>
-  <p>Works in Jupyter, JupyterLab, Colab, VS Code, marimo, Shiny for Python, and Streamlit.</p>
-
-  <h3>JavaScript</h3>
-  <div class="codeblock">
-    <button class="copy" type="button" data-copy="pnpm add plotomics" aria-label="Copy npm install command">
-      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-    </button>
-    <pre><code>pnpm add plotomics</code></pre>
-  </div>
-  <p>Headless factories with tree-shakeable subpath imports, for example
-    <code>plotomics/embedding</code>.</p>
-
-  <p class="note">
-    plotomics ships through <a href="https://cran.r-project.org/package=plotomics">CRAN</a>,
-    <a href="https://pypi.org/project/plotomics/">PyPI</a>, and
-    <a href="https://www.npmjs.com/package/plotomics">npm</a>.
-  </p>
-
-  <hr />
-
-  <h2 id="motivation">Motivation</h2>
-  <p>
-    I built plotomics because I kept hitting the same wall in my own work. A
-    500,000-cell embedding or a 20,000-gene volcano plot is common today. Most
-    plotting tools were built for a few thousand marks. Past that count, a
-    figure stops being readable before the data stops being interesting.
-  </p>
-  <p>
-    A second problem had nothing to do with size. My work runs on both R and
-    Python, so the same figure gets built twice, once per language, and the
-    two copies drift apart. I draw a heatmap in R and a different one in a
-    Python notebook, and I cannot say which one is correct without reading
-    both.
-  </p>
-  <p>
-    So I write each component once and wrap it thinly for both languages, so
-    the notebook and the paper agree. plotomics is not a general plotting
-    library by design, and for a small, static figure, better tools already
-    exist.
-    <a href="https://github.com/samuelbharti/plotomics/blob/main/docs/motivation.md">Read the
-    full motivation</a> for the goals, the non-goals, how it compares with
-    ComplexHeatmap, maftools, survminer, Seurat and scanpy, and when to use
-    one of those instead.
-  </p>
-
-  <hr />
-
-  <h2 id="components">Components</h2>
-  <p>Each component is a headless factory that runs the same way in a notebook, a Shiny
-    app, or a web page. The R and Python wrappers stay thin because the rendering logic
-    lives in the shared core.</p>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>Component</th><th>Figure it produces</th><th>Rendering engine</th><th>Data scale</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><strong>Volcano plot</strong></td><td>Volcano: log<sub>2</sub> fold change against &minus;log<sub>10</sub> p, with threshold guides and top-N gene labels.</td><td><span class="eng">regl-scatterplot</span> (WebGL point sprites), <span class="eng">d3-scale</span>, <span class="eng">d3-array</span></td><td>200k points in the dev harness</td></tr>
-        <tr><td><strong>Expression heatmap</strong></td><td>Sample by gene expression matrix, optional row z-score, colorbar.</td><td><span class="eng">regl</span> (WebGL; the matrix is uploaded as a float texture and sampled in a shader)</td><td>1000 &times; 1000 = 1M cells</td></tr>
-        <tr><td><strong>Clustered heatmap</strong></td><td>Clustered heatmap with row and column dendrograms. The <span class="eng">seaborn.clustermap</span> / Morpheus layout.</td><td>Canvas 2-D <span class="eng">ImageData</span>, one pixel per cell then scaled; <span class="eng">ml-hclust</span> for the linkage; dendrograms in SVG</td><td>120 &times; 60 in the dev harness</td></tr>
-        <tr><td><strong>Marker gene dot plot</strong></td><td>Marker gene dot plot. The equivalent of <span class="eng">scanpy sc.pl.dotplot</span> or Seurat <span class="eng">DotPlot()</span>.</td><td>Canvas 2-D, SVG overlay</td><td>Panel scale: features &times; groups</td></tr>
-        <tr><td><strong>Stacked violin</strong></td><td>Stacked violin panel. The equivalent of <span class="eng">scanpy sc.pl.stacked_violin</span> or Seurat <span class="eng">VlnPlot()</span>.</td><td>Canvas 2-D, SVG overlay. Densities are estimated upstream, in R or Python</td><td>Payload scales with the density grid, not the cell count</td></tr>
-        <tr><td><strong>Embedding</strong></td><td>UMAP, t-SNE and PCA score plots, coloured categorically or continuously, with lasso selection.</td><td><span class="eng">regl-scatterplot</span> (WebGL point sprites, one draw call), <span class="eng">d3-scale</span></td><td>150k in the dev harness, 500k in the README example</td></tr>
-        <tr><td><strong>Spatial tissue map</strong></td><td>Visium-style spot map drawn over the H&amp;E section, coloured by cluster or by a gene.</td><td>Canvas 2-D, one arc per spot; image and spots share a single computed fit</td><td>Visium scale, ~4k spots in the dev harness. <strong>Not the path for Xenium-scale single cells</strong>, see the note below</td></tr>
-        <tr><td><strong>Oncoplot (OncoPrint)</strong></td><td>OncoPrint / oncoplot: gene by sample alteration classes, burden and frequency margins, clinical strips. The <span class="eng">maftools</span> / cBioPortal figure.</td><td>Canvas 2-D for the whole grid, SVG for labels and legend</td><td>60 genes &times; 1,200 samples = 72k cells</td></tr>
-        <tr><td><strong>Protein domain lollipop</strong></td><td>Protein domain lollipop, also called a mutation needle plot, over Pfam/InterPro domain rectangles.</td><td>Canvas 2-D, SVG overlay</td><td>Hundreds to a few thousand variants</td></tr>
-        <tr><td><strong>Kaplan-Meier curve</strong></td><td>Kaplan-Meier survival curves with censoring ticks, confidence bands and a number-at-risk table.</td><td>Canvas 2-D, SVG overlay. The fit comes from <span class="eng">survival</span> or <span class="eng">lifelines</span></td><td>A handful of strata</td></tr>
-        <tr><td><strong>Categorical profile</strong></td><td>SBS96 mutational signature profile: 96 trinucleotide contexts under six substitution-class header blocks.</td><td>Canvas 2-D, SVG overlay</td><td>96 contexts, generalises to a few thousand bins</td></tr>
-        <tr><td><strong>UpSet plot</strong></td><td>UpSet plot: intersection sizes as bars over a set-membership matrix, for where a Venn diagram is no longer drawable.</td><td>Canvas 2-D, SVG overlay. Exclusive intersections are computed in R or Python</td><td>Dozens of sets</td></tr>
-        <tr><td><strong>Gene treemap</strong></td><td>Treemap of gene sets and pathway composition, coloured by parent or by value.</td><td>Canvas 2-D + <span class="eng">d3-hierarchy</span> (squarified treemap layout)</td><td>60k leaves in the dev harness</td></tr>
-        <tr><td><strong>Network graph</strong></td><td>Force-directed biological networks: protein interaction, co-expression, regulatory graphs.</td><td><span class="eng">sigma</span> v3 (WebGL) + <span class="eng">graphology</span> + <span class="eng">graphology-layout-forceatlas2</span></td><td>5k nodes in the dev harness</td></tr>
-        <tr><td><strong>Hi-C contact matrix</strong></td><td>Hi-C and Micro-C contact maps, log or linear intensity, symmetric fill.</td><td><span class="eng">regl</span> (WebGL) with its own level-of-detail pyramid. No tile server, and no HiGlass</td><td>1024 &times; 1024 &asymp; 1M bins</td></tr>
-        <tr><td><strong>Genome viewer</strong></td><td>Track-based genome browser: BAM alignments, BigWig coverage, VCF, BED, refGene.</td><td><span class="eng">igv.js</span>, which streams and tiles internally</td><td>Whole genome, streamed from the server</td></tr>
-        <tr><td><strong>Genomics figures</strong></td><td>Declarative genomics figures from a Gosling spec: circos, ideograms, linked and stacked views.</td><td><span class="eng">gosling.js</span> on <span class="eng">PIXI.js</span> (WebGL)</td><td>Whole genome, per the spec</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <p class="note">
-    <strong>On &ldquo;data scale&rdquo;.</strong> These are the synthetic sizes the dev harness
-    actually drives, not benchmark results. They say what each component is built and
-    exercised for, not where it stops.
-  </p>
-
-  <h3>Worked example: a million cells</h3>
-  <p>
-    Take a 1M-cell Xenium run. The cell centroids go through the <strong>embedding</strong>
-    component, which is <code>regl-scatterplot</code>: points become WebGL sprites drawn from
-    GPU buffers rather than one node per point, and the coordinates arrive from Python as a
-    <code>Float32Array</code> buffer rather than JSON. The x and y for a million cells is two
-    million float32s, so 8 MB of binary the browser hands straight to the GPU, against
-    roughly 40 MB of JSON text it would otherwise parse first. Colour by cluster, lasso a region, and read the selected indices back in
-    Shiny.
-  </p>
-  <p>
-    What you do <em>not</em> get on that path is the H&amp;E underlay. The
-    <strong>spatial</strong> component is the one that puts measurements on the histology
-    image, and it draws one canvas arc per spot, which is sized for Visium-scale slides of a
-    few thousand spots. Registering a million single cells to the image is not something it
-    does today. That is a real limitation and worth knowing before you plan a figure around
-    it.
-  </p>
-
-  <h3>Could plotly not do this?</h3>
-  <p>
-    For the scatter, largely yes, and it is worth being straight about that.
-    <code>plotly.js</code> has a WebGL trace, <code>scattergl</code>, and it will draw a
-    million points. Anyone who tells you plotly cannot handle large scatter is describing
-    the default SVG <code>scatter</code> trace, which emits one DOM node per point and dies
-    in the low tens of thousands. The real differences are narrower and more boring:
-  </p>
-  <ul>
-    <li><strong>How the data gets there.</strong> plotly's R and Python bindings serialise
-      coordinates as JSON. plotomics ships numeric columns as a binary buffer through
-      anywidget and reads them as typed arrays, so nothing is parsed on arrival.</li>
-    <li><strong>The domain figure is already built.</strong> An oncoprint with burden and
-      frequency margins, a Kaplan-Meier with an aligned number-at-risk table, an UpSet
-      matrix, an SBS96 profile with its six header blocks: each is a substantial custom
-      build in plotly, and one function call here.</li>
-    <li><strong>One implementation, two languages.</strong> plotly's R and Python APIs are
-      separate surfaces that drift. Here both wrappers pack the same payload for the same
-      renderer, so an R figure and a Python figure cannot disagree.</li>
-  </ul>
-  <p>
-    Against that, plotly is far more general, much more mature, and better documented. If
-    you need a chart that is not one of the components above, it is the better tool, and the
-    <a href="https://github.com/samuelbharti/plotomics/blob/main/docs/motivation.md">motivation
-    doc</a> is explicit about the other cases where an established package should win.
-  </p>
-
-  <h2 id="goals">How it works</h2>
-  <ul>
-    <li><strong>Logic lives once.</strong> Every component is written one time, in TypeScript.
-      The R and Python wrappers stay thin, so the two do not drift apart.</li>
-    <li><strong>Built for large data.</strong> Rendering runs on WebGL or canvas. Numeric
-      columns travel as a binary buffer, so a million floats arrive as about 4&nbsp;MB instead
-      of about 20&nbsp;MB of JSON.</li>
-    <li><strong>Made for figures.</strong> Axes, legends, and labels are drawn as vectors, and
-      components export to SVG and PNG. Two are limited by their upstream engine: the Gosling
-      viewer exports PNG only, and the igv.js viewer SVG only.</li>
-    <li><strong>Runs anywhere.</strong> Jupyter, Shiny, the RStudio Viewer, Quarto, or a static
-      page. A lasso selection is sent back to your R or Python session.</li>
-  </ul>
-
-  <h2 id="documentation">Documentation</h2>
-  <ul>
-    <li><a href="https://www.samuelbharti.com/plotomics/r/">R reference</a>, generated by pkgdown</li>
-    <li><a href="https://www.samuelbharti.com/plotomics/py/">Python reference</a>, generated by pdoc</li>
-    <li><a href="https://www.samuelbharti.com/plotomics/js/">JavaScript reference</a>, generated by TypeDoc</li>
-    <li><a href="https://github.com/samuelbharti/plotomics/blob/main/docs/architecture.md">Architecture</a>, how the shared core is built and wrapped</li>
-    <li><a href="https://github.com/samuelbharti/plotomics/tree/main/examples">Examples and gallery</a></li>
-    <li><a href="https://github.com/samuelbharti/plotomics/blob/main/CONTRIBUTING.md">Contributing</a></li>
-    <li><a href="https://github.com/samuelbharti/plotomics/blob/main/CHANGELOG.md">Changelog</a></li>
-  </ul>
-  <h3>Package registries</h3>
-  <ul>
-    <li><a href="https://samuelbharti.r-universe.dev/plotomics">R package on r-universe</a></li>
-    <li><a href="https://pypi.org/project/plotomics/">Python package on PyPI</a></li>
-    <li><a href="https://www.npmjs.com/package/plotomics">JavaScript package on npm</a></li>
-  </ul>
 </main>
 
 <footer>
-  <span>MIT License. <a href="https://www.samuelbharti.com">Samuel Bharti</a></span>
-  <span class="links">
-    <a href="https://github.com/samuelbharti/plotomics">GitHub</a>
-    <a href="https://www.samuelbharti.com/plotomics/r/">R docs</a>
-    <a href="https://www.samuelbharti.com/plotomics/py/">Python docs</a>
-    <a href="https://www.samuelbharti.com/plotomics/js/">JavaScript docs</a>
-  </span>
+  <div class="wrap">
+    <p>plotomics is released under the
+      <a href="https://github.com/samuelbharti/plotomics/blob/main/LICENSE">MIT License</a>.
+      It is written by <a href="https://www.samuelbharti.com">Samuel Bharti</a>.</p>
+    <p>Barret Schloerke and Carson Sievert advise the work as thesis advisors. Posit Software, PBC
+      funded early work on the package and holds its copyright together with the author.</p>
+  </div>
 </footer>
 
-<script>
-  document.querySelectorAll(".copy").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      navigator.clipboard.writeText(btn.getAttribute("data-copy")).then(function () {
-        btn.classList.add("copied");
-        var prev = btn.innerHTML;
-        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>';
-        setTimeout(function () { btn.classList.remove("copied"); btn.innerHTML = prev; }, 1400);
-      });
-    });
-  });
-</script>
+<p id="copy-status" class="visually-hidden" aria-live="polite"></p>
+<script type="module" src="landing/main.js"></script>
 </body>
 </html>
