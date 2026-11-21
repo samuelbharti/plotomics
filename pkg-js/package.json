@@ -165,7 +165,7 @@
     "playwright": "^1.64.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "sigma": "^3.0.3",
+    "sigma": "^4.0.6",
     "typedoc": "^0.28.20",
     "typescript": "^5.6.3",
     "vite": "^8.3.6",
