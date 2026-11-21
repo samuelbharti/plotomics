@@ -610,7 +610,8 @@ describe("volcano tick labels deep in a zoom", () => {
     // The 20,000 genes of the zoom test above, zoomed 40 and then 60 wheel
     // steps. Before the fix the exact y labels, such as "0.85630" and
     // "0.8562928", ran under the y title, as the margin held about five
-    // characters.
+    // characters. A bounded view stops at 1/10,000 of the data, short of
+    // such labels, so this view is free.
     let s = 3;
     const r = () => {
       s = (s * 1103515245 + 12345) % 2147483648;
@@ -629,7 +630,7 @@ describe("volcano tick labels deep in a zoom", () => {
     instances.push(
       createVolcano(el, {
         data: { columns: { x, y } },
-        options: { labelTopN: 0 },
+        options: { labelTopN: 0, boundedView: false },
       }),
     );
     await expect
@@ -715,7 +716,8 @@ describe("volcano tick labels deep in a zoom", () => {
 describe("volcano zoomed past the precision of its numbers", () => {
   it("draws no tick label off its axis", async () => {
     // At 250 px, about 70 wheel steps leave the view no width. Before the
-    // fix its one tick had no place and its label went to the corner.
+    // fix its one tick had no place and its label went to the corner. Only
+    // a free view zooms that far.
     const n = 2000;
     let s = 3;
     const r = () => {
@@ -728,7 +730,7 @@ describe("volcano zoomed past the precision of its numbers", () => {
     instances.push(
       createVolcano(el, {
         data: { columns: { x, y } },
-        options: { labelTopN: 0 },
+        options: { labelTopN: 0, boundedView: false },
       }),
     );
     await expect
@@ -871,14 +873,14 @@ describe("volcano tooltip after the view moves", () => {
    * centred on 0, and y runs from 0 to 8 with the same room above and
    * below), with the tooltip naming it.
    */
-  async function hovered() {
+  async function hovered(boundedView = true) {
     const el = container(800, 400);
     instances.push(
       createVolcano(el, {
         data: {
           columns: { x: [-3, 0, 3], y: [0, 4, 8], label: ["G1", "G2", "G3"] },
         },
-        options: { labelTopN: 0, pointSize: 8 },
+        options: { labelTopN: 0, pointSize: 8, boundedView },
       }),
     );
     await expect
@@ -964,7 +966,8 @@ describe("volcano tooltip after the view moves", () => {
   });
 
   it("hides the tooltip after a drag pan, and shows it again on a move", async () => {
-    const { el, canvas, centre, tip } = await hovered();
+    // A view bounded to the data has nothing to pan at its start.
+    const { el, canvas, centre, tip } = await hovered(false);
     const start = yTicks(el).join(",");
     await drag(canvas, centre);
     await expect.poll(() => yTicks(el).join(","), slow).not.toBe(start);
@@ -1047,9 +1050,10 @@ describe("volcano refit for a new threshold", () => {
     v.setOptions({ pThreshold: 0.05 });
     await new Promise((res) => setTimeout(res, 300));
     expect(yTicks(el).join(",")).toBe(zoomed);
+    // With the line hidden the view of all the data ends below the zoomed
+    // range, so the view goes to that home view.
     v.setOptions({ showThresholdLines: false });
-    await new Promise((res) => setTimeout(res, 300));
-    expect(yTicks(el).join(",")).toBe(zoomed);
+    await expect.poll(() => top(el), slow).toBeLessThan(0.7);
   });
 });
 

@@ -15,6 +15,7 @@ volcano(
   y_label = "-log10 p-value",
   show_threshold_lines = TRUE,
   label_top_n = 10,
+  bounded_view = TRUE,
   theme = NULL,
   width = NULL,
   height = NULL,
@@ -50,6 +51,12 @@ The y axis then always reaches the p-value guide.}
 \item{label_top_n}{Number of top up- and down-regulated genes to label.
 \code{Inf} labels every up- and down-regulated gene, as in \code{\link[=lollipop]{lollipop()}}; \code{0}
 labels none.}
+
+\item{bounded_view}{Keep pan and zoom inside the data: zooming out
+stops at the view that shows all of it, a pan stops at its edges, and
+zooming in stops at 1/10,000 of its range. \code{FALSE} lets the view move
+freely. Either way a double-click, or the reset button in the top
+right corner of the plot, goes back to the view of all the data.}
 
 \item{theme}{Optional named list of theme overrides (colors, fonts, ...)
 merged over the component defaults in the browser. \code{NULL} uses the default

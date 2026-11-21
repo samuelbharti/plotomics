@@ -1074,11 +1074,13 @@ describe("embedding axes deep in a zoom", () => {
     // then 60 wheel steps. Before the fix the exact labels, seven and more
     // characters long, ran under the y title, as the margin held about
     // five.
+    // A bounded view stops at 1/10,000 of the data, short of such labels,
+    // so this view is free.
     const el = container(800, 480);
     instances.push(
       createEmbedding(el, {
         data: { columns: cells() },
-        options: { showAxes: true },
+        options: { showAxes: true, boundedView: false },
       }),
     );
     await expect
@@ -1400,12 +1402,13 @@ describe("spatial colour bar with long labels", () => {
 describe("embedding axes zoomed past the precision of their numbers", () => {
   it("draws no tick label off its axis", async () => {
     // At 250 px, about 70 wheel steps leave the view no width. Before the
-    // fix its one tick had no place and its label went to the corner.
+    // fix its one tick had no place and its label went to the corner. Only
+    // a free view zooms that far.
     const el = container(250, 300);
     instances.push(
       createEmbedding(el, {
         data: { columns: cells() },
-        options: { showAxes: true, showLegend: false },
+        options: { showAxes: true, showLegend: false, boundedView: false },
       }),
     );
     await expect
@@ -1450,7 +1453,10 @@ describe("embedding tooltip after the view moves", () => {
    * An embedding whose middle cell sits at the centre of the plot, with the
    * tooltip naming it.
    */
-  async function hovered(mouseMode: "panZoom" | "lasso" = "panZoom") {
+  async function hovered(
+    mouseMode: "panZoom" | "lasso" = "panZoom",
+    boundedView = true,
+  ) {
     const el = container(600, 400);
     instances.push(
       createEmbedding(el, {
@@ -1462,6 +1468,7 @@ describe("embedding tooltip after the view moves", () => {
           pointSize: 8,
           pointScaleMode: "constant",
           mouseMode,
+          boundedView,
         },
       }),
     );
@@ -1552,7 +1559,8 @@ describe("embedding tooltip after the view moves", () => {
   });
 
   it("hides the tooltip after a drag pan, and shows it again on a move", async () => {
-    const { el, canvas, centre, tip, move } = await hovered();
+    // A view bounded to the data has nothing to pan at its start.
+    const { el, canvas, centre, tip, move } = await hovered("panZoom", false);
     const start = svgTexts(el).join(",");
     await drag(canvas, centre);
     await expect

@@ -12,6 +12,7 @@ from ._base import (
     STATIC,
     PlotomicsWidget,
     _column,
+    _require_flag,
     _text_or_none,
     _to_float32,
     pack_columns,
@@ -50,6 +51,12 @@ class Volcano(PlotomicsWidget):
     show_threshold_lines:
         Draw the fold-change / p-value threshold guide lines. The y axis then
         always reaches the p-value guide.
+    bounded_view:
+        Keep pan and zoom inside the data: zooming out stops at the view
+        that shows all of it, a pan stops at its edges, and zooming in stops
+        at 1/10,000 of its range. ``False`` lets the view move freely.
+        Either way a double-click, or the reset button in the top right
+        corner of the plot, goes back to the view of all the data.
     theme:
         Optional theme overrides forwarded to the JS renderer. Its
         ``padding`` entry is the space in px between the edge of the widget
@@ -91,6 +98,7 @@ class Volcano(PlotomicsWidget):
         label_top_n: int = 10,
         colors: dict | None = None,
         show_threshold_lines: bool = True,
+        bounded_view: bool = True,
         theme: dict | None = None,
         height: int = 480,
         **kwargs: Any,
@@ -100,6 +108,7 @@ class Volcano(PlotomicsWidget):
         if x is None or y is None:
             raise ValueError("`data` must provide `x` and `y` columns.")
 
+        bounded_view = _require_flag(bounded_view, "bounded_view")
         x_arr = _to_float32(x, "x")
         y_arr = _to_float32(y, "y")
         if x_arr.size == 0:
@@ -139,6 +148,7 @@ class Volcano(PlotomicsWidget):
             "yLabel": y_label,
             "labelTopN": top_n,
             "showThresholdLines": show_threshold_lines,
+            "boundedView": bounded_view,
         }
         if colors is not None:
             options["colors"] = dict(colors)
