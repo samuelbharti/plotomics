@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>plotomics: interactive omics figures for R, Python and the web</title>
-<meta name="description" content="Interactive omics figures for R, Python and the web: volcano plots, heatmaps, dot plots, violins, embeddings, spatial tissue maps, oncoprints, lollipops, Kaplan-Meier curves, signature profiles, UpSet plots, treemaps, networks, Hi-C maps and genome browsers, drawn on the GPU from one TypeScript core." />
+<meta name="description" content="Interactive omics figures for R, Python and the web: volcano plots, heatmaps, dot plots, violins, embeddings, spatial tissue maps, oncoprints, lollipops, Kaplan-Meier curves, signature profiles, UpSet plots, treemaps, networks, Hi-C maps and genome browsers, drawn with WebGL and canvas from one TypeScript core." />
 <link rel="icon" href="favicon.svg" type="image/svg+xml" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -336,7 +336,7 @@
       <p class="tagline">Interactive omics figures for R, Python and the web.</p>
       <p class="subtext">
         <span>Volcano plots, heatmaps, embeddings, oncoprints, survival curves, networks and genome browsers.</span>
-        <span>GPU rendering from one TypeScript core, wrapped for Shiny, Jupyter and plain web pages.</span>
+        <span>WebGL and canvas rendering from one TypeScript core, wrapped for Shiny, Jupyter and plain web pages.</span>
       </p>
     </div>
   </div>
@@ -346,8 +346,8 @@
   <div class="wrap">
     <section class="intro" aria-label="Introduction">
       <p class="live-note">
-        <strong><a href="https://github.com/samuelbharti/plotomics-live">Plotomics Live</a></strong> is a live gallery of 26
-        biological visualizations, most of them drawn with plotomics, each shown next to the
+        <strong><a href="https://github.com/samuelbharti/plotomics-live">Plotomics Live</a></strong> is a gallery app of 26
+        biological visualizations, most of them drawn with plotomics and shown next to the
         same plot made with ggplot2. The app is built with
         <a href="https://github.com/posit-dev/shinyreact">shinyreact</a>.
       </p>
@@ -424,7 +424,7 @@
           <button type="button" role="tab" id="tab-volcano" aria-selected="false" aria-controls="demo-panel" tabindex="-1"
             data-demo="volcano" data-note="Synthetic data: 20,000 genes compared between CD14 monocytes and CD4 T cells. The hits carry real marker gene names, and the ten strongest each way are labelled.">Volcano</button>
           <button type="button" role="tab" id="tab-oncoplot" aria-selected="false" aria-controls="demo-panel" tabindex="-1"
-            data-demo="oncoplot" data-note="Synthetic data: 30 breast cancer driver genes altered across 400 samples, with mutation burden, gene frequencies and two clinical strips.">Oncoplot</button>
+            data-demo="oncoplot" data-note="Synthetic data: 20 breast cancer driver genes altered across 400 samples, with mutation burden, gene frequencies and two clinical strips.">Oncoplot</button>
           <button type="button" role="tab" id="tab-lollipop" aria-selected="false" aria-controls="demo-panel" tabindex="-1"
             data-demo="lollipop" data-note="Synthetic data: TP53 variants over the protein's domains, with recurrent changes at the hotspot residues 175, 245, 248, 273 and 282.">Lollipop</button>
           <button type="button" role="tab" id="tab-km" aria-selected="false" aria-controls="demo-panel" tabindex="-1"
@@ -434,7 +434,8 @@
           <button type="button" role="tab" id="tab-hic" aria-selected="false" aria-controls="demo-panel" tabindex="-1"
             data-demo="hic" data-note="Synthetic data: 10 Mb in 10 kb bins, with distance decay, nested domains, A and B compartments and loops at domain corners. Zoom in to see the nested domains.">Hi-C</button>
         </div>
-        <div id="demo-panel" class="demo-panel" role="tabpanel" aria-labelledby="tab-embedding">
+        <!-- biome-ignore lint/a11y/noNoninteractiveTabindex: the WAI-ARIA tabs pattern puts the panel in the Tab order after its tab list -->
+        <div id="demo-panel" class="demo-panel" role="tabpanel" aria-labelledby="tab-embedding" tabindex="0">
           <div class="demo-stage">
             <p class="demo-wait">The plot loads when this part of the page comes into view.</p>
           </div>
@@ -881,9 +882,10 @@ createVolcano(el, { data: { columns: { x, y } } });</code></pre>
         the low tens of thousands. The differences are narrower:
       </p>
       <ul>
-        <li>plotly's R and Python bindings send coordinates as JSON. plotomics sends numeric
-          columns from Python as a binary buffer and reads them as typed arrays, so nothing is
-          parsed on arrival.</li>
+        <li>Since plotly.py 6.0, plotly's Python binding encodes numpy arrays as base64 text
+          inside the figure JSON, and its R binding sends JSON numbers. From Python, plotomics
+          sends numeric columns as one binary buffer through anywidget, which the browser reads
+          as typed arrays. From R, both send JSON.</li>
         <li>The domain figures are already built. An oncoprint with burden and frequency margins,
           a Kaplan-Meier curve with an aligned number-at-risk table, an UpSet matrix and an SBS96
           profile are each a large custom build in plotly, and one function call here.</li>

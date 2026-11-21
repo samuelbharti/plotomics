@@ -153,7 +153,8 @@ function setupDemo(): void {
       const next = tabs[to[event.key] ?? -1];
       if (!next) return;
       event.preventDefault();
-      for (const t of tabs) t.tabIndex = t === next ? 0 : -1;
+      // The Tab stop stays on the open tab until another one opens, so Tab
+      // from any tab goes on to the panel.
       next.focus();
     });
   }

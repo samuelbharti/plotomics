@@ -13,9 +13,9 @@
 
 <img src="assets/logo.png" align="right" width="150" alt="plotomics" />
 
-> **[Plotomics Live](https://github.com/samuelbharti/plotomics-live)** is a live gallery of 26 biological
-> visualizations, most of them drawn with plotomics, each shown next to the
-> same plot made with ggplot2. The app is built with
+> **[Plotomics Live](https://github.com/samuelbharti/plotomics-live)** is a gallery app of 26 biological
+> visualizations, most of them drawn with plotomics and shown next to the same
+> plot made with ggplot2. The app is built with
 > [shinyreact](https://github.com/posit-dev/shinyreact).
 
 **Lightweight, GPU-accelerated bioinformatics visualization components for JavaScript, R and Python.**
@@ -134,18 +134,20 @@ for Visium-scale slides. Registering a million single cells onto the histology i
 not something it does today. That is a genuine limitation, not an oversight to
 work around.
 
-**Could plotly not do this?** For the scatter, largely yes.
-`plotly.js` has a WebGL trace, `scattergl`, and it will draw a million points;
-anyone claiming otherwise is describing the default SVG `scatter` trace, which
-emits one DOM node per point. The honest differences are narrower: plotly's R and
-Python bindings serialise coordinates as JSON where plotomics ships a binary
-buffer; the domain figures here (an oncoprint with margins, a KM with an aligned
-risk table, an UpSet matrix, an SBS96 profile) are each a substantial custom build
-in plotly and one call here; and plotly's R and Python APIs are separate surfaces
-that drift, where both wrappers here pack one payload for one renderer. Against
-that, plotly is far more general and more mature. See
-[docs/motivation.md](docs/motivation.md) for where an established package should
-win.
+**Could plotly not do this?** For the scatter, largely yes. `plotly.js` has a
+WebGL trace, `scattergl`, and it will draw a million points; anyone claiming
+otherwise is describing the default SVG `scatter` trace, which emits one DOM
+node per point. The honest differences are narrower: since plotly.py 6.0,
+plotly's Python binding encodes numpy arrays as base64 text inside the figure
+JSON and its R binding sends JSON numbers, where plotomics sends numeric columns
+from Python as one binary buffer through anywidget that the browser reads as
+typed arrays (from R, both send JSON); the domain figures here (an oncoprint
+with margins, a KM with an aligned risk table, an UpSet matrix, an SBS96
+profile) are each a substantial custom build in plotly and one call here; and
+plotly's R and Python APIs are separate surfaces that drift, where both wrappers
+here pack one payload for one renderer. Against that, plotly is far more general
+and more mature. See [docs/motivation.md](docs/motivation.md) for where an
+established package should win.
 
 ## Repository layout
 
