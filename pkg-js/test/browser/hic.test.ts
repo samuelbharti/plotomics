@@ -351,6 +351,66 @@ describe("hic axis text in narrow widgets", () => {
   });
 });
 
+describe("hic y axis title", () => {
+  const genome = {
+    columns: { values: decay(200) },
+    meta: { n: 200, binSize: 250_000, chrom: "chr1" },
+  };
+
+  it("sits next to the tick labels at every width, not at the edge of the widget", () => {
+    // In a wide widget the square map is centred, and before the fix the
+    // title stayed at the left edge: at 1440 px about 240 px from the
+    // labels of its axis.
+    for (const [w, h] of [
+      [300, 480],
+      [640, 480],
+      [1024, 480],
+      [1440, 480],
+      [1600, 480],
+      [800, 900],
+    ] as const) {
+      for (const fontSize of [8, 12, 20]) {
+        const el = container(w, h);
+        const hic = createHic(el, {
+          data: genome,
+          options: { label: "chr (synthetic)", theme: { fontSize } },
+        });
+        const what = `${w} x ${h}, font ${fontSize}`;
+        const texts = Array.from(
+          el.querySelectorAll("svg text"),
+        ) as SVGTextElement[];
+        const title = texts.find((t) =>
+          (t.getAttribute("transform") ?? "").startsWith("rotate(-90"),
+        );
+        const labels = texts.filter(
+          (t) => t.getAttribute("text-anchor") === "end",
+        );
+        expect(labels.length, what).toBeGreaterThan(1);
+        if (!title) {
+          // A margin too narrow for the title leaves it out.
+          expect(w, what).toBeLessThan(400);
+          hic.destroy();
+          el.remove();
+          continue;
+        }
+        const t = title.getBoundingClientRect();
+        const labelsLeft = Math.min(
+          ...labels.map((l) => l.getBoundingClientRect().left),
+        );
+        const box = el.getBoundingClientRect();
+        // Clear of the labels and inside the widget, a few px from the
+        // labels: the 4 px the margin keeps, and what the widest label
+        // the axis can show leaves over the ones it shows.
+        expect(t.right, what).toBeLessThanOrEqual(labelsLeft + 0.5);
+        expect(t.left, what).toBeGreaterThanOrEqual(box.left);
+        expect(labelsLeft - t.right, what).toBeLessThan(fontSize * 1.2 + 6);
+        hic.destroy();
+        el.remove();
+      }
+    }
+  });
+});
+
 describe("hic cells with no contacts", () => {
   /** A seeded random number in [0, 1). */
   function seeded(seed: number) {

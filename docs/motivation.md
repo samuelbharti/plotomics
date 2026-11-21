@@ -151,9 +151,13 @@ points. The claim that plotly cannot handle large scatter describes its *default
 of thousands. That is a footgun, not a ceiling. So the honest differences are
 narrower and less exciting than "it is faster":
 
-1. **Transport.** plotly's R and Python bindings serialise coordinates into the
-   figure as JSON. plotomics ships numeric columns as a binary buffer through
-   anywidget and reads them as typed arrays. This is the 8 MB against 40 MB above.
+1. **Transport.** plotly's R binding serialises coordinates into the figure as
+   JSON numbers. Since plotly.py 6.0, its Python binding encodes numpy arrays as
+   base64 text inside the figure JSON: a third larger than the binary, far
+   smaller than JSON numbers, and still text in a JSON document. From Python,
+   plotomics ships numeric columns as one binary buffer through anywidget, and
+   the browser reads it as typed arrays. The 8 MB against 40 MB above is the
+   comparison with JSON numbers. From R, plotomics sends JSON too.
 2. **The domain figure already exists.** `scattergl` gives you a fast scatter. It
    does not give you an oncoprint with burden and frequency margins and memo
    sorting, a Kaplan-Meier with a number-at-risk table aligned to the same time

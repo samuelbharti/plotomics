@@ -10,6 +10,7 @@ from ._base import (
     PlotomicsWidget,
     _category_levels,
     _column,
+    _require_flag,
     _text_or_none,
     _to_float32,
     pack_columns,
@@ -75,6 +76,12 @@ class Network(PlotomicsWidget):
     show_legend:
         Draw a legend of the node groups, in a gutter on the right, when
         ``nodes`` has a ``group`` column.
+    bounded_view:
+        Keep pan and zoom inside the graph: zooming out stops at the view
+        that shows all of it, a pan stops at its edges, and zooming in stops
+        at 1/10,000 of its range. ``False`` lets the view move freely.
+        Either way a double-click, or the reset button in the top right
+        corner of the plot, goes back to the view of the whole graph.
     theme:
         Optional theme overrides forwarded to the JS renderer. Its
         ``padding`` entry is the space in px between the edge of the widget
@@ -125,10 +132,12 @@ class Network(PlotomicsWidget):
         directed: bool = False,
         palette: list[str] | None = None,
         show_legend: bool = True,
+        bounded_view: bool = True,
         theme: dict | None = None,
         height: int = 480,
         **kwargs: Any,
     ) -> None:
+        bounded_view = _require_flag(bounded_view, "bounded_view")
         node_id = _column(nodes, "id")
         if node_id is None:
             raise ValueError("`nodes` must provide an `id` column.")
@@ -230,6 +239,7 @@ class Network(PlotomicsWidget):
             "defaultNodeSize": default_node_size,
             "directed": directed,
             "showLegend": show_legend,
+            "boundedView": bounded_view,
         }
         if default_edge_color is not None:
             options["defaultEdgeColor"] = str(default_edge_color)

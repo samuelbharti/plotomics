@@ -47,8 +47,15 @@ export interface PlotomicsInstance<TOptions = Record<string, unknown>> {
   destroy(): void;
 }
 
-/** Factory signature every component module must export as `create<Name>`. */
-export type PlotomicsFactory<TOptions = Record<string, unknown>> = (
+/**
+ * Factory signature every component module must export as `create<Name>`.
+ * `TInstance` is the handle it returns, for a component whose handle has
+ * methods of its own, such as the `resetView()` of the plots that zoom.
+ */
+export type PlotomicsFactory<
+  TOptions = Record<string, unknown>,
+  TInstance extends PlotomicsInstance<TOptions> = PlotomicsInstance<TOptions>,
+> = (
   el: HTMLElement,
   initial: { data?: PlotomicsData; options?: Partial<TOptions> },
-) => PlotomicsInstance<TOptions>;
+) => TInstance;

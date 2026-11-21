@@ -460,12 +460,13 @@ describe("network recolour on resize()", () => {
       },
     };
   };
-  const make = (el: HTMLElement) =>
+  const make = (el: HTMLElement, boundedView = true) =>
     createNetwork(el, {
       data: ring(),
       options: {
         showLegend: false,
         theme: { categorical: ["var(--a)", "var(--b)"] },
+        boundedView,
       },
     });
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -496,7 +497,9 @@ describe("network recolour on resize()", () => {
     const el = container(640, 480);
     el.style.setProperty("--a", "#e6194b");
     el.style.setProperty("--b", "#3cb44b");
-    const inst = make(el);
+    // The wheel zooms out past the view of the whole graph, which only a
+    // free view does.
+    const inst = make(el, false);
     instances.push(inst);
     await settled("network");
     const mouse = el.querySelector(".sigma-mouse") as HTMLElement;

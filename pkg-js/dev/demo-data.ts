@@ -34,7 +34,7 @@ export function syntheticCohort(
     for (let c = 0; c < nsamples; c += 1) {
       if (Math.random() < p) {
         codes[c] = 1 + Math.floor(Math.random() * classes.length);
-        tmb[c] += 1;
+        tmb[c] = (tmb[c] as number) + 1;
         hits += 1;
       }
     }

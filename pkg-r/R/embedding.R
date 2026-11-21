@@ -43,6 +43,12 @@
 #'   the outermost points being clipped by the canvas border.
 #' @param show_axes Draw the axis frame + ticks (embeddings usually hide axes).
 #' @param show_legend Draw the legend (discrete swatches or a colorbar).
+#' @param bounded_view Keep pan and zoom inside the data: zooming out
+#'   stops at the view that shows all of it, a pan stops at its edges, and
+#'   zooming in stops at 1/10,000 of its range. `FALSE` lets the view move
+#'   freely. Either way a double-click, or the reset button in the top
+#'   right corner of the plot, goes back to the view of all the data.
+#'   A double-click also clears the lasso selection.
 #' @param theme Optional named list of theme overrides (colors, fonts, ...)
 #'   merged over the component defaults in the browser. `NULL` uses the default
 #'   theme.
@@ -85,6 +91,7 @@ embedding <- function(data,
                       y_label = "UMAP 2",
                       show_axes = FALSE,
                       show_legend = TRUE,
+                      bounded_view = TRUE,
                       theme = NULL,
                       width = NULL,
                       height = NULL,
@@ -101,6 +108,7 @@ embedding <- function(data,
   aspect <- match.arg(aspect)
   point_scale_mode <- match.arg(point_scale_mode)
   bv_require_nonempty(nrow(data), "data")
+  bounded_view <- bv_require_flag(bounded_view, "bounded_view")
 
   x <- bv_require_numeric(data$x, "x")
   bv_check_finite(x, "x")
@@ -139,7 +147,8 @@ embedding <- function(data,
     xLabel = x_label,
     yLabel = y_label,
     showAxes = show_axes,
-    showLegend = show_legend
+    showLegend = show_legend,
+    boundedView = bounded_view
   )
   if (!is.null(categories)) options$categories <- as.list(categories)
   if (!is.null(theme)) options$theme <- theme

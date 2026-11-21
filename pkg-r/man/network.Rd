@@ -16,6 +16,7 @@ network(
   directed = FALSE,
   palette = NULL,
   show_legend = TRUE,
+  bounded_view = TRUE,
   theme = NULL,
   width = NULL,
   height = NULL,
@@ -67,6 +68,12 @@ categorical palette used for node groups.}
 
 \item{show_legend}{Draw a legend of the node groups, in a gutter on the
 right, when \code{nodes} has a \code{group} column.}
+
+\item{bounded_view}{Keep pan and zoom inside the graph: zooming out
+stops at the view that shows all of it, a pan stops at its edges, and
+zooming in stops at 1/10,000 of its range. \code{FALSE} lets the view move
+freely. Either way a double-click, or the reset button in the top
+right corner of the plot, goes back to the view of the whole graph.}
 
 \item{theme}{Optional named list of theme overrides (colors, fonts, ...)
 merged over the component defaults in the browser. \code{NULL} uses the default

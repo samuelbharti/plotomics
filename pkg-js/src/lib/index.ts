@@ -28,6 +28,7 @@ export {
   defaultEmbeddingOptions,
   type EmbeddingOptions,
   type EmbeddingColorMode,
+  type EmbeddingInstance,
 } from "../components/embedding.js";
 
 export {
@@ -40,6 +41,7 @@ export {
   createHeatmap,
   defaultHeatmapOptions,
   type HeatmapOptions,
+  type HeatmapInstance,
 } from "../components/heatmap.js";
 
 export {
@@ -48,6 +50,7 @@ export {
   type HicOptions,
   type HicColormap,
   type HicTransform,
+  type HicInstance,
 } from "../components/hic.js";
 
 export {
@@ -84,6 +87,7 @@ export {
   defaultNetworkOptions,
   type NetworkOptions,
   type NetworkLayout,
+  type NetworkInstance,
 } from "../components/network.js";
 
 export {
@@ -132,4 +136,5 @@ export {
   createVolcano,
   defaultVolcanoOptions,
   type VolcanoOptions,
+  type VolcanoInstance,
 } from "../components/volcano.js";
